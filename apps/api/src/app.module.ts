@@ -6,6 +6,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { ProvidersModule } from './providers/providers.module';
 import { ContactDirectoryModule } from './contact-directory/contact-directory.module';
+import { ContactsModule } from './contacts/contacts.module';
 
 @Module({
   imports: [
@@ -13,7 +14,8 @@ import { ContactDirectoryModule } from './contact-directory/contact-directory.mo
     DatabaseModule,
     HealthModule,
     ProvidersModule,
-    ContactDirectoryModule
+    ContactDirectoryModule,
+    ContactsModule
   ]
 })
 export class AppModule implements NestModule {
