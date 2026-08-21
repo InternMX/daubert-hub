@@ -54,10 +54,11 @@ describe('ProvidersRepository', () => {
       total: 1,
       providers: [{ id: '9007199254740993', commercial_name: 'Acme', provider_type: 'PROVEEDOR', status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null }]
     });
-    expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM core.empresas company'), ['PROVEEDOR', 'Acme']);
-    expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining('ORDER BY lower(btrim(fiscal.razon_social)) DESC NULLS LAST, company.empresa_id'), ['PROVEEDOR', 'Acme', 10, 10]);
+    expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM core.empresas company'), ['PROVEEDOR', 'Acme', 'ACTIVO']);
+    expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining('ORDER BY lower(btrim(fiscal.razon_social)) DESC NULLS LAST, company.empresa_id'), ['PROVEEDOR', 'Acme', 'ACTIVO', 10, 10]);
     expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')");
+    expect(query.mock.calls[0]?.[0]).toContain("company.estatus = 'INACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("FROM core.alias_empresa alias");
     expect(query.mock.calls[0]?.[0]).toContain("alias.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain('ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC');

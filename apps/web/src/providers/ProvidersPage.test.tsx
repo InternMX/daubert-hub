@@ -42,7 +42,7 @@ describe('ProvidersPage', () => {
     expect(screen.getByRole('link', { name: 'Transportes Acme' })).toHaveAttribute('href', '/providers/1');
     expect(screen.getByRole('columnheader', { name: 'Nombre comercial' })).toHaveAttribute('aria-sort', 'ascending');
     expect(screen.getByText('RFC').closest('button')).toBeNull();
-    expect(screen.getByText('Estado').closest('button')).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Estado' }).closest('button')).toBeNull();
   });
 
   it('uses query parameters for the initial request and filter changes', async () => {

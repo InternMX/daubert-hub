@@ -69,6 +69,14 @@ async function patchProvider(id, payload, requestId) {
   return { response, body };
 }
 
+async function changeProviderStatus(id, action, requestId) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/providers/${id}/${action}`, {
+    method: 'POST', headers: { 'x-request-id': requestId }
+  });
+  const body = await response.json();
+  return { response, body };
+}
+
 async function queryWithAuditContext(pool, requestId, text, values) {
   const client = await pool.connect();
   try {
@@ -207,6 +215,27 @@ async function run() {
     assert(listed.body.data.every((provider) => typeof provider.id === 'string'), 'Provider listing returned a non-string company ID.');
     const listedFiscal = listed.body.data.find((provider) => provider.id === withFiscal.body.data.id);
     assert(listedFiscal.fiscal && listedFiscal.fiscal.id === withFiscal.body.data.fiscal.id && listedFiscal.fiscal.legalName === 'Hub Test Legal Name', 'Provider listing did not select the current fiscal record.');
+
+    const deactivateRequestId = `provider-deactivate-${randomUUID()}`;
+    requestIds.add(deactivateRequestId);
+    const deactivated = await changeProviderStatus(noFiscal.body.data.id, 'deactivate', deactivateRequestId);
+    assert(deactivated.response.status === 201 && deactivated.body.data.status === 'INACTIVO', `Provider deactivation failed: ${JSON.stringify(deactivated.body)}`);
+    const defaultAfterDeactivate = await getProviders(`?search=${encodeURIComponent(marker)}`);
+    assert(defaultAfterDeactivate.body.meta.total === 2 && defaultAfterDeactivate.body.data.every((provider) => provider.id !== noFiscal.body.data.id), 'Default directory included an inactive provider.');
+    const inactiveDirectory = await getProviders(`?search=${encodeURIComponent(marker)}&status=INACTIVO`);
+    assert(inactiveDirectory.body.meta.total === 1 && inactiveDirectory.body.data[0].id === noFiscal.body.data.id, 'Inactive directory filter is incorrect.');
+    const allDirectory = await getProviders(`?search=${encodeURIComponent(marker)}&status=ALL`);
+    assert(allDirectory.body.meta.total === 3, 'All directory filter did not include active and inactive providers.');
+    const inactiveDetail = await getProvider(noFiscal.body.data.id);
+    assert(inactiveDetail.response.status === 200 && inactiveDetail.body.data.status === 'INACTIVO' && inactiveDetail.body.data.roles.join(',') === 'PROVEEDOR' && inactiveDetail.body.data.fiscal === null, 'Deactivation changed provider membership or detail data.');
+    const repeatedDeactivate = await changeProviderStatus(noFiscal.body.data.id, 'deactivate', `provider-deactivate-${randomUUID()}`);
+    assert(repeatedDeactivate.response.status === 409 && repeatedDeactivate.body.code === 'PROVIDER_ALREADY_INACTIVE', 'Repeated deactivation did not return the expected conflict.');
+    const reactivateRequestId = `provider-reactivate-${randomUUID()}`;
+    requestIds.add(reactivateRequestId);
+    const reactivated = await changeProviderStatus(noFiscal.body.data.id, 'reactivate', reactivateRequestId);
+    assert(reactivated.response.status === 201 && reactivated.body.data.status === 'ACTIVO', `Provider reactivation failed: ${JSON.stringify(reactivated.body)}`);
+    const lifecycleAudit = await pool.query(`SELECT ${auditTableColumn} AS table_name FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [deactivateRequestId, reactivateRequestId]]);
+    assert(lifecycleAudit.rows.length === 2 && lifecycleAudit.rows.every((row) => row.table_name === 'empresas'), 'Lifecycle audit touched tables other than core.empresas.');
 
     const commercialDescending = await getProviders(`?search=${encodeURIComponent(marker)}&sortBy=commercialName&sortOrder=desc`);
     assert(commercialDescending.body.data.map((provider) => provider.commercialName).join(',') === [`${marker}_WITH_FISCAL`, `${marker}_NO_FISCAL`, `${marker}_FREIGHT`].join(','), 'Descending commercial-name sorting is incorrect.');

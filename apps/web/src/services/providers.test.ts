@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createProvider, getProvider, listProviders, resolveApiBaseUrl } from './providers';
+import { createProvider, deactivateProvider, getProvider, listProviders, reactivateProvider, resolveApiBaseUrl } from './providers';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -40,6 +40,24 @@ describe('listProviders', () => {
   it('maps network failures to a safe API error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network detail')));
     await expect(listProviders({ page: 1, pageSize: 25, sortBy: 'commercialName', sortOrder: 'asc' })).rejects.toMatchObject({ status: 0 });
+  });
+
+  it('serializes non-default status filters', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await listProviders({ status: 'INACTIVO', page: 1, pageSize: 25, sortBy: 'commercialName', sortOrder: 'asc' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/providers?page=1&pageSize=25&status=INACTIVO');
+  });
+});
+
+describe('provider lifecycle', () => {
+  it('posts lifecycle actions and returns the updated provider', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: { id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: null, fiscal: null } }), { status: 200, headers: { 'x-request-id': 'request-6' } })));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deactivateProvider('121')).resolves.toMatchObject({ provider: { status: 'INACTIVO' }, requestId: 'request-6' });
+    await reactivateProvider('121');
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/providers/121/deactivate', { method: 'POST' });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/providers/121/reactivate', { method: 'POST' });
   });
 });
 

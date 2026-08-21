@@ -18,6 +18,12 @@ export enum SortOrder {
   Desc = 'desc'
 }
 
+export enum ProviderStatusFilter {
+  Active = 'ACTIVO',
+  Inactive = 'INACTIVO',
+  All = 'ALL'
+}
+
 export class ListProvidersDto {
   @IsOptional()
   @Transform(trimSearch)
@@ -27,6 +33,10 @@ export class ListProvidersDto {
   @IsOptional()
   @IsEnum(ProviderType)
   providerType?: ProviderType;
+
+  @IsOptional()
+  @IsEnum(ProviderStatusFilter)
+  status?: ProviderStatusFilter = ProviderStatusFilter.Active;
 
   @IsEnum(ProviderSortBy)
   sortBy = ProviderSortBy.CommercialName;

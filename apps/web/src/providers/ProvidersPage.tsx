@@ -23,7 +23,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
-import { listProviders, type ListedProviders, type ProviderSortBy, type ProviderType, type SortOrder } from '../services/providers';
+import { listProviders, type ListedProviders, type ProviderSortBy, type ProviderStatus, type ProviderType, type SortOrder } from '../services/providers';
 
 const providerTypeLabels: Record<ProviderType, string> = {
   PROVEEDOR: 'Proveedor',
@@ -43,9 +43,11 @@ function getQuery(searchParams: URLSearchParams) {
   const providerType = searchParams.get('providerType');
   const sortBy = searchParams.get('sortBy');
   const sortOrder = searchParams.get('sortOrder');
+  const status = searchParams.get('status');
   return {
     search: searchParams.get('search')?.trim() || '',
     providerType: providerType === 'PROVEEDOR' || providerType === 'SERVICIO' || providerType === 'FLETE' ? providerType as ProviderType : undefined,
+    status: status === 'INACTIVO' || status === 'ALL' ? status as ProviderStatus : 'ACTIVO' as ProviderStatus,
     page: positiveInteger(searchParams.get('page'), 1),
     pageSize: pageSizeOptions.includes(positiveInteger(searchParams.get('pageSize'), 25)) ? positiveInteger(searchParams.get('pageSize'), 25) : 25,
     sortBy: sortBy === 'providerType' || sortBy === 'legalName' || sortBy === 'commercialName' ? sortBy as ProviderSortBy : 'commercialName',
@@ -82,12 +84,12 @@ export function ProvidersPage() {
     let active = true;
     setLoading(true);
     setError(false);
-    listProviders({ search: query.search, providerType: query.providerType, page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder })
+    listProviders({ search: query.search, providerType: query.providerType, ...(query.status !== 'ACTIVO' ? { status: query.status } : {}), page: query.page, pageSize: query.pageSize, sortBy: query.sortBy, sortOrder: query.sortOrder })
       .then((response) => { if (active) setResult(response); })
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [query.page, query.pageSize, query.providerType, query.search, query.sortBy, query.sortOrder, retry]);
+  }, [query.page, query.pageSize, query.providerType, query.search, query.sortBy, query.sortOrder, query.status, retry]);
 
   function updateQuery(values: Record<string, string | null>) {
     setSearchParams((current) => {
@@ -102,7 +104,7 @@ export function ProvidersPage() {
     updateQuery({ sortBy, sortOrder, page: '1' });
   }
 
-  const isFiltered = Boolean(query.search || query.providerType);
+  const isFiltered = Boolean(query.search || query.providerType || query.status !== 'ACTIVO');
   const start = result && result.meta.total > 0 ? (result.meta.page - 1) * result.meta.pageSize + 1 : 0;
   const end = result ? Math.min(result.meta.page * result.meta.pageSize, result.meta.total) : 0;
 
@@ -119,6 +121,12 @@ export function ProvidersPage() {
           <Select labelId="provider-type-label" label="Tipo de proveedor" value={query.providerType ?? ''} onChange={(event) => updateQuery({ providerType: event.target.value || null, page: '1' })}>
             <MenuItem value="">Todos</MenuItem>
             {Object.entries(providerTypeLabels).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <FormControl sx={{ minWidth: { md: 150 } }}>
+          <InputLabel id="status-label">Estado del directorio</InputLabel>
+          <Select labelId="status-label" label="Estado" value={query.status} onChange={(event) => updateQuery({ status: event.target.value === 'ACTIVO' ? null : event.target.value, page: '1' })}>
+            <MenuItem value="ACTIVO">Activos</MenuItem><MenuItem value="INACTIVO">Inactivos</MenuItem><MenuItem value="ALL">Activos e inactivos</MenuItem>
           </Select>
         </FormControl>
         <FormControl sx={{ minWidth: { md: 150 } }}>

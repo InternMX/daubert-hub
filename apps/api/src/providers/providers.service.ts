@@ -83,6 +83,25 @@ export class ProvidersService {
     }
   }
 
+  async deactivate(id: number, requestId: string): Promise<GetProviderResponse> {
+    return this.changeStatus(id, 'INACTIVO', requestId);
+  }
+
+  async reactivate(id: number, requestId: string): Promise<GetProviderResponse> {
+    return this.changeStatus(id, 'ACTIVO', requestId);
+  }
+
+  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<GetProviderResponse> {
+    try {
+      const provider = await this.repository.changeStatus(id, status, requestId);
+      if (!provider) throw new NotFoundException('Proveedor no encontrado.');
+      return this.mapGetResponse(provider);
+    } catch (error) {
+      this.throwKnownConflict(error);
+      throw error;
+    }
+  }
+
   private throwKnownConflict(error: unknown): void {
     const databaseError = error as PostgreSqlError;
     if ((error as { code?: string }).code === 'MULTI_ROLE_PROVIDER') {
@@ -93,6 +112,15 @@ export class ProvidersService {
     }
     if ((error as { code?: string }).code === 'FISCAL_CHANGE_MODE_REQUIRED') {
       throw new BadRequestException({ code: 'FISCAL_CHANGE_MODE_REQUIRED', message: 'Indica si el cambio de RFC es una corrección o una nueva identidad fiscal.' });
+    }
+    if ((error as { code?: string }).code === 'PROVIDER_ALREADY_INACTIVE') {
+      throw new ConflictException({ code: 'PROVIDER_ALREADY_INACTIVE', message: 'El proveedor ya está inactivo.' });
+    }
+    if ((error as { code?: string }).code === 'PROVIDER_ALREADY_ACTIVE') {
+      throw new ConflictException({ code: 'PROVIDER_ALREADY_ACTIVE', message: 'El proveedor ya está activo.' });
+    }
+    if ((error as { code?: string }).code === 'PROVIDER_STATUS_NOT_MANAGEABLE') {
+      throw new ConflictException({ code: 'PROVIDER_STATUS_NOT_MANAGEABLE', message: 'El estado actual del proveedor no puede administrarse desde este flujo.' });
     }
     if (databaseError.code !== '23505') return;
     if (databaseError.constraint === 'uq_empresas_nombre_comercial') {

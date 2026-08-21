@@ -3,7 +3,7 @@ import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import type { CreateProviderDto } from './dto/create-provider.dto';
 import { FiscalChangeMode, type UpdateProviderDto } from './dto/update-provider.dto';
-import { ProviderSortBy, SortOrder, type ListProvidersDto } from './dto/list-providers.dto';
+import { ProviderSortBy, ProviderStatusFilter, SortOrder, type ListProvidersDto } from './dto/list-providers.dto';
 
 interface CompanyRow extends QueryResultRow {
   empresa_id: string;
@@ -49,6 +49,7 @@ interface LockedProviderRow extends QueryResultRow {
   tipo_empresa: string;
   nombre_comercial: string;
   observaciones: string | null;
+  estatus: string;
   roles: string[];
 }
 
@@ -57,6 +58,7 @@ interface LockedCompanyRow extends QueryResultRow {
   tipo_empresa: string;
   nombre_comercial: string;
   observaciones: string | null;
+  estatus: string;
 }
 
 interface LockedFiscalRow extends FiscalRow {
@@ -106,7 +108,7 @@ export class ProvidersRepository {
         ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC
         LIMIT 1
       ) fiscal ON TRUE
-      JOIN LATERAL (
+       JOIN LATERAL (
         SELECT role.rol
         FROM core.empresa_roles role
         WHERE role.empresa_id = company.empresa_id
@@ -115,7 +117,11 @@ export class ProvidersRepository {
           AND ($1::text IS NULL OR role.rol = $1)
         ORDER BY CASE WHEN role.rol = company.tipo_empresa THEN 0 ELSE 1 END, role.rol
         LIMIT 1
-      ) provider_role ON TRUE
+       ) provider_role ON TRUE
+        AND (
+          (company.estatus = 'ACTIVO' AND $3::text IN ('ACTIVO', 'ALL'))
+          OR (company.estatus = 'INACTIVO' AND $3::text IN ('INACTIVO', 'ALL'))
+        )
         AND (
           $2::text IS NULL
            OR lower(btrim(company.nombre_comercial)) LIKE '%' || lower($2) || '%'
@@ -129,7 +135,7 @@ export class ProvidersRepository {
                AND lower(btrim(alias.alias_normalizado)) LIKE '%' || lower($2) || '%'
            )
          )`;
-    const values = [input.providerType ?? null, input.search ?? null];
+    const values = [input.providerType ?? null, input.search ?? null, input.status ?? ProviderStatusFilter.Active];
     const sortExpression = sortExpressions[input.sortBy] ?? sortExpressions[ProviderSortBy.CommercialName];
     const sortOrder = input.sortOrder === SortOrder.Desc ? 'DESC' : 'ASC';
     const [count] = await this.database.query<{ total: string }>(`SELECT count(*)::int AS total ${filter}`, values);
@@ -145,7 +151,7 @@ export class ProvidersRepository {
         fiscal.rfc
       ${filter}
       ORDER BY ${sortExpression} ${sortOrder} NULLS LAST, company.empresa_id
-      LIMIT $3 OFFSET $4`, [...values, input.pageSize, (input.page - 1) * input.pageSize]);
+       LIMIT $4 OFFSET $5`, [...values, input.pageSize, (input.page - 1) * input.pageSize]);
     return { total: Number(count?.total ?? 0), providers };
   }
 
@@ -226,9 +232,29 @@ export class ProvidersRepository {
     }
   }
 
+  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<FoundProviderRecord | null> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      await this.setAuditContext(client, requestId);
+      const company = await this.lockProvider(client, id);
+      if (!company) { await client.query('COMMIT'); return null; }
+      if (company.estatus === 'BLOQUEADO') throw Object.assign(new Error('PROVIDER_STATUS_NOT_MANAGEABLE'), { code: 'PROVIDER_STATUS_NOT_MANAGEABLE' });
+      if (company.estatus === targetStatus) {
+        throw Object.assign(new Error(targetStatus === 'ACTIVO' ? 'PROVIDER_ALREADY_ACTIVE' : 'PROVIDER_ALREADY_INACTIVE'), { code: targetStatus === 'ACTIVO' ? 'PROVIDER_ALREADY_ACTIVE' : 'PROVIDER_ALREADY_INACTIVE' });
+      }
+      await client.query('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', [targetStatus, id]);
+      await client.query('COMMIT');
+      return this.findById(id);
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* Preserve the database error. */ }
+      throw error;
+    } finally { client.release(); }
+  }
+
   private async lockProvider(client: PoolClient, id: number): Promise<LockedProviderRow | null> {
     const company = await client.query<LockedCompanyRow>(
-      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
+      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
     const row = company.rows[0];
     if (!row) return null;
     const roles = await client.query<{ rol: string }>(`

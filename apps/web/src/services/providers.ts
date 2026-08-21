@@ -1,6 +1,7 @@
 export type ProviderType = 'PROVEEDOR' | 'SERVICIO' | 'FLETE';
 export type ProviderSortBy = 'commercialName' | 'providerType' | 'legalName';
 export type SortOrder = 'asc' | 'desc';
+export type ProviderStatus = 'ACTIVO' | 'INACTIVO' | 'ALL';
 
 export interface CreateProviderInput {
   commercialName: string;
@@ -33,6 +34,7 @@ export interface UpdateProviderInput {
 export interface ListProvidersInput {
   search?: string;
   providerType?: ProviderType;
+  status?: ProviderStatus;
   sortBy: ProviderSortBy;
   sortOrder: SortOrder;
   page: number;
@@ -86,6 +88,7 @@ export async function listProviders(input: ListProvidersInput): Promise<ListedPr
   const query = new URLSearchParams({ page: String(input.page), pageSize: String(input.pageSize) });
   if (input.search) query.set('search', input.search);
   if (input.providerType) query.set('providerType', input.providerType);
+  if (input.status && input.status !== 'ACTIVO') query.set('status', input.status);
   if (input.sortBy !== 'commercialName') query.set('sortBy', input.sortBy);
   if (input.sortOrder !== 'asc') query.set('sortOrder', input.sortOrder);
 
@@ -140,3 +143,19 @@ export async function updateProvider(id: string, input: UpdateProviderInput): Pr
   if (typeof body !== 'object' || body === null || !('data' in body)) throw new ProviderApiError(response.status, undefined, requestId);
   return { provider: body.data as ProviderDetail, requestId };
 }
+
+async function changeProviderStatus(id: string, action: 'deactivate' | 'reactivate'): Promise<{ provider: ProviderDetail; requestId: string | null }> {
+  let response: Response;
+  try { response = await fetch(`${baseUrl}/providers/${encodeURIComponent(id)}/${action}`, { method: 'POST' }); } catch { throw new ProviderApiError(0, undefined, null); }
+  const requestId = response.headers.get('x-request-id');
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code = typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : undefined;
+    throw new ProviderApiError(response.status, code, requestId);
+  }
+  if (typeof body !== 'object' || body === null || !('data' in body)) throw new ProviderApiError(response.status, undefined, requestId);
+  return { provider: body.data as ProviderDetail, requestId };
+}
+
+export function deactivateProvider(id: string) { return changeProviderStatus(id, 'deactivate'); }
+export function reactivateProvider(id: string) { return changeProviderStatus(id, 'reactivate'); }

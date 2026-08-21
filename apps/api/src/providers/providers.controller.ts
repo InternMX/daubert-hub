@@ -34,4 +34,16 @@ export class ProvidersController {
     if (id < 1) throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
     return this.providers.update(id, input, request.requestId);
   }
+
+  @Post(':id/deactivate')
+  deactivate(@Param('id', ParseIntPipe) id: number, @Req() request: RequestWithId): Promise<GetProviderResponse> {
+    if (id < 1) throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
+    return this.providers.deactivate(id, request.requestId);
+  }
+
+  @Post(':id/reactivate')
+  reactivate(@Param('id', ParseIntPipe) id: number, @Req() request: RequestWithId): Promise<GetProviderResponse> {
+    if (id < 1) throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
+    return this.providers.reactivate(id, request.requestId);
+  }
 }

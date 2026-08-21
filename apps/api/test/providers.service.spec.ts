@@ -73,4 +73,16 @@ describe('ProvidersService', () => {
     const service = new ProvidersService({ update: vi.fn() } as never);
     await expect(service.update(121, { fiscal: { legalName: 'Acme SA', rfc: 'ACM010101AA1', changeMode: FiscalChangeMode.NewIdentity } }, 'request-update')).rejects.toMatchObject({ status: 400 });
   });
+
+  it('changes only the provider lifecycle status through the repository', async () => {
+    const changeStatus = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
+    const service = new ProvidersService({ changeStatus } as never);
+    await expect(service.deactivate(121, 'request-status')).resolves.toMatchObject({ data: { status: 'INACTIVO' } });
+    expect(changeStatus).toHaveBeenCalledWith(121, 'INACTIVO', 'request-status');
+  });
+
+  it('maps lifecycle conflicts to safe 409 responses', async () => {
+    const service = new ProvidersService({ changeStatus: vi.fn().mockRejectedValue({ code: 'PROVIDER_ALREADY_INACTIVE' }) } as never);
+    await expect(service.deactivate(121, 'request-status')).rejects.toMatchObject({ status: 409, response: { code: 'PROVIDER_ALREADY_INACTIVE' } });
+  });
 });

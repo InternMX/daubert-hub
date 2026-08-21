@@ -12,12 +12,15 @@ describe('ListProvidersDto', () => {
   it('defaults pagination, sorting, and trims search', async () => {
     const result = await validateQuery({ search: '  Acme  ' });
     expect(result.errors).toBe(0);
-    expect(result.dto).toMatchObject({ search: 'Acme', page: 1, pageSize: 25, sortBy: 'commercialName', sortOrder: 'asc' });
+    expect(result.dto).toMatchObject({ search: 'Acme', status: 'ACTIVO', page: 1, pageSize: 25, sortBy: 'commercialName', sortOrder: 'asc' });
   });
 
   it('accepts provider filters and sorting and rejects invalid values', async () => {
     expect((await validateQuery({ providerType: 'FLETE', page: '2', pageSize: '100', sortBy: 'legalName', sortOrder: 'desc' })).errors).toBe(0);
     expect((await validateQuery({ providerType: 'CLIENTE' })).errors).toBeGreaterThan(0);
+    expect((await validateQuery({ status: 'INACTIVO' })).errors).toBe(0);
+    expect((await validateQuery({ status: 'ALL' })).errors).toBe(0);
+    expect((await validateQuery({ status: 'BLOQUEADO' })).errors).toBeGreaterThan(0);
     expect((await validateQuery({ page: '0' })).errors).toBeGreaterThan(0);
     expect((await validateQuery({ pageSize: '101' })).errors).toBeGreaterThan(0);
     expect((await validateQuery({ sortBy: 'rfc' })).errors).toBeGreaterThan(0);
