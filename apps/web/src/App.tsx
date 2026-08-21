@@ -1,29 +1,12 @@
 import { Button, Paper, Stack, Typography } from '@mui/material';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
-import { EmptyState } from './components/EmptyState';
 import { PageHeader } from './components/PageHeader';
 import { NewProviderPage } from './providers/NewProviderPage';
 import { ProviderDetailPage } from './providers/ProviderDetailPage';
 import { EditProviderPage } from './providers/EditProviderPage';
 import { ProvidersPage } from './providers/ProvidersPage';
-
-interface DirectoryPageProps {
-  title: string;
-  description: string;
-  emptyDescription: string;
-}
-
-function DirectoryPage({ title, description, emptyDescription }: DirectoryPageProps) {
-  return (
-    <>
-      <PageHeader title={title} description={description}>
-        {title === 'Proveedores' && <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>}
-      </PageHeader>
-      <EmptyState title="No hay información para mostrar." description={emptyDescription} />
-    </>
-  );
-}
+import { ContactsPage } from './contacts/ContactsPage';
 
 function HomePage() {
   return (
@@ -53,7 +36,7 @@ export function App() {
         <Route path="/providers/new" element={<NewProviderPage />} />
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
         <Route path="/providers/:id" element={<ProviderDetailPage />} />
-        <Route path="/contacts" element={<DirectoryPage title="Contactos" description="Gestiona los contactos asociados a proveedores y operaciones." emptyDescription="La consulta de contactos estará disponible en una próxima iteración." />} />
+        <Route path="/contacts" element={<ContactsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

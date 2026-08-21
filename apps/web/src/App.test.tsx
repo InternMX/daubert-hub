@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
@@ -9,7 +9,7 @@ function renderApp(path = '/') {
 }
 
 describe('application navigation', () => {
-  it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/contacts', 'Contactos']])('renders %s', (path, title) => {
+  it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/contacts', 'Directorio de contactos']])('renders %s', (path, title) => {
     renderApp(path);
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
   });
@@ -27,8 +27,8 @@ describe('application navigation', () => {
     await user.click(screen.getByRole('link', { name: 'Proveedores' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Proveedores' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Contactos' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'Contactos' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: 'Inicio' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Directorio de contactos' })).toBeInTheDocument();
+    await user.click(within(screen.getByLabelText('Navegación principal')).getByRole('link', { name: 'Inicio' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument();
   });
 

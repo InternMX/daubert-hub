@@ -59,6 +59,12 @@ async function getProvider(id) {
   return { response, body };
 }
 
+async function getContactDirectory(path = '') {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies${path}`);
+  const body = await response.json();
+  return { response, body };
+}
+
 async function patchProvider(id, payload, requestId) {
   const response = await fetch(`http://127.0.0.1:${port}/api/providers/${id}`, {
     method: 'PATCH',
@@ -128,6 +134,12 @@ async function run() {
     api.stdout.on('data', (chunk) => { startupOutput += chunk; });
     api.stderr.on('data', (chunk) => { startupOutput += chunk; });
     await waitForApi();
+
+    const directory = await getContactDirectory('?page=1&pageSize=25');
+    assert(directory.response.status === 200 && directory.body.data.length > 0 && directory.body.data.every((company) => typeof company.id === 'string' && Number.isInteger(company.contactCount)), 'Contact directory list failed or did not preserve company IDs/counts.');
+    const directoryDetail = await getContactDirectory(`/${directory.body.data[0].id}`);
+    assert(directoryDetail.response.status === 200 && Array.isArray(directoryDetail.body.data.contacts), 'Contact directory detail failed.');
+    assert(!JSON.stringify(directoryDetail.body).includes('recibe_notificacion_pago') && !JSON.stringify(directoryDetail.body).includes('tipo_destinatario_pago'), 'Contact directory exposed payment routing fields.');
 
     const noFiscalRequestId = `provider-${randomUUID()}`;
     requestIds.add(noFiscalRequestId);

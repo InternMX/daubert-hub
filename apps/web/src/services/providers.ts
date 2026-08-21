@@ -52,13 +52,8 @@ export class ProviderApiError extends Error {
   }
 }
 
-export function resolveApiBaseUrl(value: string | undefined = import.meta.env.VITE_API_BASE_URL): string {
-  const configured = value?.trim();
-  if (!configured || configured === 'undefined' || configured === 'null') return '/api';
-  return configured.replace(/\/+$/, '') || '/api';
-}
-
-const baseUrl = resolveApiBaseUrl();
+export { resolveApiBaseUrl } from './api';
+import { apiBaseUrl as baseUrl } from './api';
 
 export async function createProvider(input: CreateProviderInput): Promise<{ provider: CreatedProvider; requestId: string | null }> {
   let response: Response;
