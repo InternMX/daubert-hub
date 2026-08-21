@@ -4,6 +4,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
+import { CompanyStatusChip } from '../components/CompanyStatusChip';
 import { deactivateProvider, getProvider, ProviderApiError, reactivateProvider, type ProviderDetail, type ProviderType } from '../services/providers';
 
 const providerTypeLabels: Record<ProviderType, string> = {
@@ -20,7 +21,6 @@ const roleLabels: Record<string, string> = {
   OTRO: 'Otro'
 };
 
-const statusLabels: Record<string, string> = { ACTIVO: 'Activo', INACTIVO: 'Inactivo' };
 
 function DetailField({ label, value }: { label: string; value: string }) {
   return <Box><Typography variant="overline" color="text.secondary">{label}</Typography><Typography>{value}</Typography></Box>;
@@ -85,7 +85,7 @@ export function ProviderDetailPage() {
           <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Información general</Typography>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}>
             <DetailField label="Tipo" value={providerTypeLabels[provider.providerType]} />
-            <Box><Typography variant="overline" color="text.secondary">Estado</Typography><Box><Chip label={statusLabels[provider.status] ?? provider.status} color={provider.status === 'ACTIVO' ? 'success' : 'default'} size="small" /></Box></Box>
+            <Box><Typography variant="overline" color="text.secondary">Estado</Typography><Box><CompanyStatusChip status={provider.status} /></Box></Box>
           </Stack>
           {!(provider.roles.length === 1 && provider.roles[0] === provider.providerType) && <Box sx={{ mt: 3 }}><Typography variant="overline" color="text.secondary">Roles</Typography><Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 0.5 }}>{provider.roles.map((role) => <Chip key={role} label={roleLabels[role] ?? role} size="small" variant="outlined" />)}</Stack></Box>}
           <Box sx={{ mt: 3 }}><Typography variant="overline" color="text.secondary">Notas internas</Typography><Typography>{provider.notes?.trim() || 'Sin notas registradas.'}</Typography></Box>

@@ -36,6 +36,7 @@ describe('ProvidersPage', () => {
     expect(screen.getByText('Flete')).toBeInTheDocument();
     expect(screen.getByText('Activo')).toBeInTheDocument();
     expect(screen.getByText('Inactivo')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estado: Activo')).toHaveTextContent('✓');
     expect(screen.getAllByText('—')).toHaveLength(2);
     expect(screen.getByText('Servicios Norte SA')).toBeInTheDocument();
     expect(screen.getByText('SNX010101AA1')).toBeInTheDocument();

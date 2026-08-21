@@ -23,6 +23,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
+import { CompanyStatusChip } from '../components/CompanyStatusChip';
 import { listProviders, type ListedProviders, type ProviderSortBy, type ProviderStatus, type ProviderType, type SortOrder } from '../services/providers';
 
 const providerTypeLabels: Record<ProviderType, string> = {
@@ -31,7 +32,6 @@ const providerTypeLabels: Record<ProviderType, string> = {
   FLETE: 'Flete'
 };
 
-const statusLabels: Record<string, string> = { ACTIVO: 'Activo', INACTIVO: 'Inactivo' };
 const pageSizeOptions = [25, 50, 100];
 
 function positiveInteger(value: string | null, fallback: number): number {
@@ -151,7 +151,7 @@ export function ProvidersPage() {
                 <TableCell sortDirection={query.sortBy === 'legalName' ? query.sortOrder : false}><TableSortLabel active={query.sortBy === 'legalName'} direction={query.sortBy === 'legalName' ? query.sortOrder : 'asc'} onClick={() => updateSort('legalName')}>Razón social</TableSortLabel></TableCell>
                 <TableCell>RFC</TableCell><TableCell>Estado</TableCell>
               </TableRow></TableHead>
-              <TableBody>{result.data.map((provider) => <TableRow key={provider.id}><TableCell><Link to={`/providers/${provider.id}`} state={{ directoryPath: `${location.pathname}${location.search}` }}>{provider.commercialName}</Link>{provider.matchedAlias && <Typography variant="body2" color="text.secondary" noWrap title={provider.matchedAlias} sx={{ maxWidth: 260 }}>Coincidencia por alias: {provider.matchedAlias}</Typography>}</TableCell><TableCell>{providerTypeLabels[provider.providerType]}</TableCell><TableCell>{provider.fiscal?.legalName ?? '—'}</TableCell><TableCell>{provider.fiscal?.rfc ?? '—'}</TableCell><TableCell>{statusLabels[provider.status] ?? provider.status}</TableCell></TableRow>)}</TableBody>
+              <TableBody>{result.data.map((provider) => <TableRow key={provider.id}><TableCell><Link to={`/providers/${provider.id}`} state={{ directoryPath: `${location.pathname}${location.search}` }}>{provider.commercialName}</Link>{provider.matchedAlias && <Typography variant="body2" color="text.secondary" noWrap title={provider.matchedAlias} sx={{ maxWidth: 260 }}>Coincidencia por alias: {provider.matchedAlias}</Typography>}</TableCell><TableCell>{providerTypeLabels[provider.providerType]}</TableCell><TableCell>{provider.fiscal?.legalName ?? '—'}</TableCell><TableCell>{provider.fiscal?.rfc ?? '—'}</TableCell><TableCell><CompanyStatusChip status={provider.status} /></TableCell></TableRow>)}</TableBody>
             </Table>
           </Box>
           <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" spacing={1} sx={{ px: 2, py: 1.5 }}>
