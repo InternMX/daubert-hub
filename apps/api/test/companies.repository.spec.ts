@@ -16,6 +16,11 @@ describe('CompaniesRepository', () => {
     expect(sql).toContain('fiscal.rfc');
     expect(sql).toContain("alias.estatus = 'ACTIVO'");
     expect(sql).toContain('CASE WHEN $1::text IS NULL OR lower(btrim(company.nombre_comercial))');
+    expect(sql).toContain('CASE WHEN lower(btrim(alias.alias_normalizado)) = lower($1) THEN 0 ELSE 1 END');
+    expect(sql).toContain("CASE WHEN lower(btrim(alias.alias_normalizado)) LIKE lower($1) || '%' THEN 0 ELSE 1 END");
+    expect(sql).toContain('length(btrim(alias.alias_normalizado))');
+    expect(sql).toContain('lower(btrim(alias.alias_normalizado)),');
+    expect(sql).toContain('EXISTS (');
     expect(sql).not.toContain('core.contactos');
     expect(sql).not.toContain('core.medios_contacto');
     expect(sql).not.toContain('empresa_roles');
