@@ -20,7 +20,7 @@ describe('ContactsPage', () => {
     expect(screen.queryByText(/PARA|CCO|receives payment/i)).not.toBeInTheDocument();
   });
   it('debounces search and keeps it in the directory request', async () => {
-    vi.useFakeTimers(); listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); renderPage(); await act(async () => {}); listMock.mockClear(); fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: 'Facturación' } }); await act(async () => { await vi.advanceTimersByTimeAsync(300); }); expect(listMock).toHaveBeenCalledWith({ search: 'Facturación', page: 1, pageSize: 25 });
+    vi.useFakeTimers(); listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); renderPage(); await act(async () => {}); listMock.mockClear(); fireEvent.change(screen.getByLabelText('Empresa, contacto, correo, teléfono o área'), { target: { value: 'Facturación' } }); await act(async () => { await vi.advanceTimersByTimeAsync(300); }); expect(listMock).toHaveBeenCalledWith({ search: 'Facturación', page: 1, pageSize: 25 });
   });
   it('shows an empty contact state for a selected company', async () => {
     listMock.mockResolvedValue({ data: [{ id: '2', commercialName: 'NOVAPAK', companyType: 'PROVEEDOR', contactCount: 0 }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }); detailMock.mockResolvedValue({ company: { id: '2', commercialName: 'NOVAPAK', companyType: 'PROVEEDOR' }, contacts: [] }); renderPage('/contacts?company=2'); expect(await screen.findByText('No hay contactos registrados para esta empresa.')).toBeInTheDocument();
