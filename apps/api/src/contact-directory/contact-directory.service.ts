@@ -7,7 +7,7 @@ export class ContactDirectoryService {
   constructor(private readonly repository: ContactDirectoryRepository) {}
   async list(input: ListContactDirectoryCompaniesDto) {
     const result = await this.repository.list(input);
-    return { data: result.companies.map((company) => ({ id: company.id, commercialName: company.commercial_name, companyType: company.company_type, contactCount: Number(company.contact_count) })), meta: { page: input.page, pageSize: input.pageSize, total: result.total, totalPages: Math.ceil(result.total / input.pageSize) } };
+    return { data: result.companies.map((company) => ({ id: company.id, commercialName: company.commercial_name, companyType: company.company_type, contactCount: Number(company.contact_count), matchedAlias: company.matched_alias })), meta: { page: input.page, pageSize: input.pageSize, total: result.total, totalPages: Math.ceil(result.total / input.pageSize) } };
   }
   async get(id: number) {
     const result = await this.repository.findById(id);

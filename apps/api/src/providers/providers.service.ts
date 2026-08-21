@@ -27,6 +27,7 @@ export interface ListProvidersResponse {
     providerType: string;
     status: string;
     notes: string | null;
+    matchedAlias: string | null;
     fiscal: { id: string; legalName: string; rfc: string } | null;
   }>;
   meta: { page: number; pageSize: number; total: number; totalPages: number };
@@ -167,6 +168,7 @@ export class ProvidersService {
         providerType: provider.provider_type,
         status: provider.status,
         notes: provider.notes,
+        matchedAlias: provider.matched_alias,
         fiscal: provider.fiscal_id && provider.legal_name && provider.rfc
           ? { id: provider.fiscal_id, legalName: provider.legal_name, rfc: provider.rfc }
           : null

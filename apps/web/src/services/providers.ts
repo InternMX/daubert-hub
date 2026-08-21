@@ -19,6 +19,8 @@ export interface CreatedProvider {
   fiscal: { id: string; legalName: string; rfc: string } | null;
 }
 
+export interface ListedProvider extends CreatedProvider { matchedAlias?: string | null; }
+
 export interface ProviderDetail extends CreatedProvider {
   roles: string[];
 }
@@ -42,7 +44,7 @@ export interface ListProvidersInput {
 }
 
 export interface ListedProviders {
-  data: CreatedProvider[];
+  data: ListedProvider[];
   meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
 

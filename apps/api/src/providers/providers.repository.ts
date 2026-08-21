@@ -33,6 +33,7 @@ interface ListedProviderRow extends QueryResultRow {
   fiscal_id: string | null;
   legal_name: string | null;
   rfc: string | null;
+  matched_alias: string | null;
 }
 
 export interface ListedProvidersRecord {
@@ -148,7 +149,21 @@ export class ProvidersRepository {
         company.observaciones AS notes,
         fiscal.empresa_fiscal_id::text AS fiscal_id,
         fiscal.razon_social AS legal_name,
-        fiscal.rfc
+        fiscal.rfc,
+        CASE WHEN $2::text IS NULL OR lower(btrim(company.nombre_comercial)) LIKE '%' || lower($2) || '%' THEN NULL ELSE (
+          SELECT alias.alias
+          FROM core.alias_empresa alias
+          WHERE alias.empresa_id = company.empresa_id
+            AND alias.estatus = 'ACTIVO'
+            AND lower(btrim(alias.alias_normalizado)) LIKE '%' || lower($2) || '%'
+          ORDER BY
+            CASE WHEN lower(btrim(alias.alias_normalizado)) = lower($2) THEN 0 ELSE 1 END,
+            CASE WHEN lower(btrim(alias.alias_normalizado)) LIKE lower($2) || '%' THEN 0 ELSE 1 END,
+            length(btrim(alias.alias_normalizado)),
+            lower(btrim(alias.alias_normalizado)),
+            alias.alias
+          LIMIT 1
+        ) END AS matched_alias
       ${filter}
       ORDER BY ${sortExpression} ${sortOrder} NULLS LAST, company.empresa_id
        LIMIT $4 OFFSET $5`, [...values, input.pageSize, (input.page - 1) * input.pageSize]);
