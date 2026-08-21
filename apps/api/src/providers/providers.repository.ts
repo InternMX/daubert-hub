@@ -118,10 +118,17 @@ export class ProvidersRepository {
       ) provider_role ON TRUE
         AND (
           $2::text IS NULL
-          OR lower(btrim(company.nombre_comercial)) LIKE '%' || lower($2) || '%'
-          OR lower(btrim(fiscal.razon_social)) LIKE '%' || lower($2) || '%'
-          OR lower(btrim(fiscal.rfc)) LIKE '%' || lower($2) || '%'
-        )`;
+           OR lower(btrim(company.nombre_comercial)) LIKE '%' || lower($2) || '%'
+           OR lower(btrim(fiscal.razon_social)) LIKE '%' || lower($2) || '%'
+           OR lower(btrim(fiscal.rfc)) LIKE '%' || lower($2) || '%'
+           OR EXISTS (
+             SELECT 1
+             FROM core.alias_empresa alias
+             WHERE alias.empresa_id = company.empresa_id
+               AND alias.estatus = 'ACTIVO'
+               AND lower(btrim(alias.alias_normalizado)) LIKE '%' || lower($2) || '%'
+           )
+         )`;
     const values = [input.providerType ?? null, input.search ?? null];
     const sortExpression = sortExpressions[input.sortBy] ?? sortExpressions[ProviderSortBy.CommercialName];
     const sortOrder = input.sortOrder === SortOrder.Desc ? 'DESC' : 'ASC';

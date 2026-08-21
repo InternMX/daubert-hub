@@ -171,6 +171,13 @@ async function run() {
     const otherCompany = await queryWithAuditContext(pool, otherRequestId, 'INSERT INTO core.empresas (tipo_empresa, nombre_comercial) VALUES ($1, $2) RETURNING empresa_id::text', ['OTRO', `${marker}_OTHER`]);
     createdIds.add(otherCompany.rows[0].empresa_id);
     await queryWithAuditContext(pool, otherRequestId, "INSERT INTO core.empresa_roles (empresa_id, rol) VALUES ($1, 'OTRO')", [otherCompany.rows[0].empresa_id]);
+    const aliasRequestId = `provider-alias-${randomUUID()}`;
+    requestIds.add(aliasRequestId);
+    const exactAlias = `${marker}_ALIAS_EXACT`;
+    const sharedAlias = `${marker}_ALIAS_MULTI`;
+    await queryWithAuditContext(pool, aliasRequestId,
+      'INSERT INTO core.alias_empresa (empresa_id, alias, alias_normalizado, tipo_alias, estatus) VALUES ($1, $2, $2, $3, $4), ($1, $5, $5, $3, $4), ($1, $6, $6, $3, $4), ($7, $8, $8, $3, $4), ($9, $10, $10, $3, $4)',
+      [noFiscal.body.data.id, exactAlias, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'ACTIVO', `${sharedAlias}_ONE`, `${sharedAlias}_THREE`, withFiscal.body.data.id, `${sharedAlias}_TWO`, clientCompany.rows[0].empresa_id, `${marker}_CLIENT_ONLY_ALIAS`]);
     for (const id of [clientCompany.rows[0].empresa_id, otherCompany.rows[0].empresa_id, '999999999999999']) {
       const nonProviderDetail = await getProvider(id);
       assert(nonProviderDetail.response.status === 404, `Non-provider detail ${id} did not return 404.`);
@@ -179,6 +186,19 @@ async function run() {
       const invalidDetail = await getProvider(id);
       assert(invalidDetail.response.status === 400, `Invalid provider ID ${id} did not return 400.`);
     }
+
+    const exactAliasSearch = await getProviders(`?search=${encodeURIComponent(`  ${exactAlias.toLowerCase()}  `)}`);
+    assert(exactAliasSearch.response.status === 200 && exactAliasSearch.body.meta.total === 1 && exactAliasSearch.body.data[0].id === noFiscal.body.data.id, 'Exact, trimmed, case-insensitive alias search failed.');
+    const partialAliasSearch = await getProviders(`?search=${encodeURIComponent('alias_exact')}`);
+    assert(partialAliasSearch.body.meta.total === 1 && partialAliasSearch.body.data[0].id === noFiscal.body.data.id, 'Partial alias search failed.');
+    const sharedAliasSearch = await getProviders(`?search=${encodeURIComponent(sharedAlias)}&sortBy=commercialName&sortOrder=asc&page=1&pageSize=1`);
+    assert(sharedAliasSearch.body.meta.total === 2 && sharedAliasSearch.body.meta.totalPages === 2 && sharedAliasSearch.body.data.length === 1 && sharedAliasSearch.body.data[0].id === noFiscal.body.data.id, 'Alias search duplicated a provider or did not paginate after sorting.');
+    const sharedAliasSecondPage = await getProviders(`?search=${encodeURIComponent(sharedAlias)}&sortBy=commercialName&sortOrder=asc&page=2&pageSize=1`);
+    assert(sharedAliasSecondPage.body.data.length === 1 && sharedAliasSecondPage.body.data[0].id === withFiscal.body.data.id, 'Alias search pagination is incorrect.');
+    const aliasWithType = await getProviders(`?search=${encodeURIComponent(sharedAlias)}&providerType=PROVEEDOR`);
+    assert(aliasWithType.body.meta.total === 1 && aliasWithType.body.data[0].id === noFiscal.body.data.id, 'Alias search did not compose with provider type filtering.');
+    const clientOnlyAliasSearch = await getProviders(`?search=${encodeURIComponent(`${marker}_CLIENT_ONLY_ALIAS`)}`);
+    assert(clientOnlyAliasSearch.body.meta.total === 0, 'CLIENTE-only alias exposed a non-provider.');
 
     const listed = await getProviders(`?search=${encodeURIComponent(`  ${marker.toLowerCase()}  `)}`);
     assert(listed.response.status === 200, `Provider listing failed: ${JSON.stringify(listed.body)}`);

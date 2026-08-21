@@ -32,6 +32,7 @@ describe('ProvidersPage', () => {
     expect(screen.getByRole('link', { name: 'Inicio' })).toHaveAttribute('href', '/');
     expect(within(screen.getByLabelText('Migas de pan')).getByText('Proveedores')).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByText('Transportes Acme')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Nombre, razón social, RFC o alias')).toBeInTheDocument();
     expect(screen.getByText('Flete')).toBeInTheDocument();
     expect(screen.getByText('Activo')).toBeInTheDocument();
     expect(screen.getByText('Inactivo')).toBeInTheDocument();

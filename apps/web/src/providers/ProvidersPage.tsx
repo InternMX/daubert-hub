@@ -113,7 +113,7 @@ export function ProvidersPage() {
         <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
       </PageHeader>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mt: 4, maxWidth: 1080 }}>
-        <TextField label="Buscar proveedor" placeholder="Nombre, razón social o RFC" value={search} onChange={(event) => setSearch(event.target.value)} fullWidth />
+        <TextField label="Buscar proveedor" placeholder="Nombre, razón social, RFC o alias" value={search} onChange={(event) => setSearch(event.target.value)} fullWidth />
         <FormControl sx={{ minWidth: { md: 240 } }}>
           <InputLabel id="provider-type-label">Tipo de proveedor</InputLabel>
           <Select labelId="provider-type-label" label="Tipo de proveedor" value={query.providerType ?? ''} onChange={(event) => updateQuery({ providerType: event.target.value || null, page: '1' })}>

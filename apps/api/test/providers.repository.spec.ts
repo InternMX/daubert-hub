@@ -58,6 +58,8 @@ describe('ProvidersRepository', () => {
     expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining('ORDER BY lower(btrim(fiscal.razon_social)) DESC NULLS LAST, company.empresa_id'), ['PROVEEDOR', 'Acme', 10, 10]);
     expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')");
+    expect(query.mock.calls[0]?.[0]).toContain("FROM core.alias_empresa alias");
+    expect(query.mock.calls[0]?.[0]).toContain("alias.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain('ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC');
     expect(query.mock.calls[1]?.[0]).toContain('ORDER BY lower(btrim(fiscal.razon_social)) DESC NULLS LAST, company.empresa_id');
   });
