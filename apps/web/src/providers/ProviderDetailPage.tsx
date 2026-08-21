@@ -2,6 +2,7 @@ import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Typography } 
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
+import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { getProvider, ProviderApiError, type ProviderDetail, type ProviderType } from '../services/providers';
 
@@ -58,6 +59,7 @@ export function ProviderDetailPage() {
 
   return (
     <>
+      <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Proveedores', to: directoryPath }, { label: provider.commercialName }]} />
       <PageHeader title={provider.commercialName} description="Detalle del proveedor.">
         <Button component={Link} to={`/providers/${id}/edit`} state={{ directoryPath }} variant="contained">Editar proveedor</Button>
         <Button component={Link} to={directoryPath}>Volver a proveedores</Button>

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +29,8 @@ describe('NewProviderPage', () => {
     api.createProvider.mockResolvedValue({ provider: { id: '121', commercialName: 'Novapak', providerType: 'PROVEEDOR', status: 'ACTIVO', notes: null, fiscal: { id: '122', legalName: 'Novapak SA', rfc: 'ABC123456XYZ' } }, requestId: 'request-1' });
     const user = userEvent.setup();
     renderPage();
+    expect(screen.getByRole('link', { name: 'Proveedores' })).toHaveAttribute('href', '/providers');
+    expect(within(screen.getByLabelText('Migas de pan')).getByText('Nuevo proveedor')).toHaveAttribute('aria-current', 'page');
     await fillValidForm(user);
     await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
     expect(await screen.findByRole('heading', { name: 'Proveedor registrado' })).toBeInTheDocument();

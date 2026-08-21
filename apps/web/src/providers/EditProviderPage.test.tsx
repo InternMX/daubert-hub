@@ -22,6 +22,10 @@ describe('EditProviderPage', () => {
     getProviderMock.mockResolvedValue(provider);
     renderPage();
     expect(await screen.findByDisplayValue('Acme')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Proveedores' })).toHaveAttribute('href', '/providers?search=Acme&page=2');
+    expect(screen.getByRole('link', { name: 'Acme' })).toHaveAttribute('href', '/providers/121');
+    expect(screen.getByText('Editar')).toHaveAttribute('aria-current', 'page');
+    expect(getProviderMock).toHaveBeenCalledTimes(1);
     expect(screen.getByDisplayValue('ACM010101AA1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
   });

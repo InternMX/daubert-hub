@@ -21,6 +21,7 @@ import {
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
+import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { listProviders, type ListedProviders, type ProviderSortBy, type ProviderType, type SortOrder } from '../services/providers';
 
@@ -107,6 +108,7 @@ export function ProvidersPage() {
 
   return (
     <>
+      <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Proveedores' }]} />
       <PageHeader title="Proveedores" description="Consulta y administra proveedores, proveedores de servicios y fletes.">
         <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
       </PageHeader>

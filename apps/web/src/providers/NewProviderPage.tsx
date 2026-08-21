@@ -2,6 +2,7 @@ import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
+import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { createProvider, type CreatedProvider } from '../services/providers';
 import { ProviderForm } from './ProviderForm';
 
@@ -35,6 +36,7 @@ export function NewProviderPage() {
   const [provider, setProvider] = useState<CreatedProvider | null>(null);
   return (
     <>
+      <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Proveedores', to: '/providers' }, { label: 'Nuevo proveedor' }]} />
       <PageHeader title="Nuevo proveedor" description="Registra un proveedor, proveedor de servicios o flete.">
         <Button variant="text" onClick={() => navigate('/providers')}>Volver a proveedores</Button>
       </PageHeader>

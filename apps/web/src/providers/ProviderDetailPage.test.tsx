@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +24,9 @@ describe('ProviderDetailPage', () => {
     renderPage();
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Transportes Acme' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Proveedores' })).toHaveAttribute('href', '/providers');
+    expect(within(screen.getByLabelText('Migas de pan')).getByText('Transportes Acme')).toHaveAttribute('aria-current', 'page');
+    expect(getProviderMock).toHaveBeenCalledTimes(1);
     expect(screen.getAllByText('Flete')).toHaveLength(2);
     expect(screen.getByText('Activo')).toBeInTheDocument();
     expect(screen.getByText('Proveedor')).toBeInTheDocument();
@@ -37,6 +40,7 @@ describe('ProviderDetailPage', () => {
     renderPage('/providers/121', { directoryPath: '/providers?search=Acme&page=2' });
 
     expect(await screen.findByText('Acme SA de CV')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Proveedores' })).toHaveAttribute('href', '/providers?search=Acme&page=2');
     expect(screen.getByText('ACM010101AA1')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Volver a proveedores' }));
     expect(screen.getByText('Directorio de proveedores')).toBeInTheDocument();

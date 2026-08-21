@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +29,8 @@ describe('ProvidersPage', () => {
       { id: '2', commercialName: 'Servicios Norte', providerType: 'SERVICIO', status: 'INACTIVO', notes: null, fiscal: { id: 'f2', legalName: 'Servicios Norte SA', rfc: 'SNX010101AA1' } }
     ], meta: { page: 1, pageSize: 25, total: 2, totalPages: 1 } });
     renderPage();
+    expect(screen.getByRole('link', { name: 'Inicio' })).toHaveAttribute('href', '/');
+    expect(within(screen.getByLabelText('Migas de pan')).getByText('Proveedores')).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByText('Transportes Acme')).toBeInTheDocument();
     expect(screen.getByText('Flete')).toBeInTheDocument();
     expect(screen.getByText('Activo')).toBeInTheDocument();
