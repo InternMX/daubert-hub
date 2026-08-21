@@ -140,6 +140,8 @@ async function run() {
     const directoryDetail = await getContactDirectory(`/${directory.body.data[0].id}`);
     assert(directoryDetail.response.status === 200 && Array.isArray(directoryDetail.body.data.contacts), 'Contact directory detail failed.');
     assert(!JSON.stringify(directoryDetail.body).includes('recibe_notificacion_pago') && !JSON.stringify(directoryDetail.body).includes('tipo_destinatario_pago'), 'Contact directory exposed payment routing fields.');
+    const adhecintasDirectory = await getContactDirectory('/99');
+    assert(adhecintasDirectory.response.status === 200 && adhecintasDirectory.body.data.contacts.length === 4 && adhecintasDirectory.body.data.contacts.every((contact) => contact.methods.length > 0 && contact.methods.every((method) => method.type === 'CORREO')), 'Contact directory did not return ADHECINTAS active contact methods.');
 
     const noFiscalRequestId = `provider-${randomUUID()}`;
     requestIds.add(noFiscalRequestId);

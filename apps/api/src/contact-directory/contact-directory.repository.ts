@@ -32,7 +32,7 @@ export class ContactDirectoryRepository {
     const contacts = await this.database.query<ContactRow>(`SELECT contacto_id::text AS id, nombre AS name, tipo_contacto AS contact_type, area, cargo AS position, es_contacto_principal AS is_primary
       FROM core.contactos WHERE empresa_id = $1 AND estatus = 'ACTIVO'
       ORDER BY es_contacto_principal DESC, CASE WHEN tipo_contacto = 'PERSONA' AND nombre IS NOT NULL THEN 0 WHEN tipo_contacto = 'BUZON_GENERICO' THEN 1 WHEN tipo_contacto = 'AREA' THEN 2 ELSE 3 END, lower(coalesce(area, nombre, '')), contacto_id`, [id]);
-    const methods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text, tipo_medio AS type, valor, es_principal AS is_primary FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'ACTIVO'
+    const methods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor, es_principal AS is_primary FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'ACTIVO'
       ORDER BY contacto_id, es_principal DESC, CASE tipo_medio WHEN 'CORREO' THEN 1 WHEN 'TELEFONO' THEN 2 WHEN 'WHATSAPP' THEN 3 WHEN 'OTRO' THEN 4 ELSE 5 END, lower(btrim(valor)), medio_id`, [contacts.map((contact) => contact.id)]) : [];
     const byContact = new Map<string, MethodRow[]>();
     methods.forEach((method) => byContact.set(method.contact_id, [...(byContact.get(method.contact_id) ?? []), method]));
