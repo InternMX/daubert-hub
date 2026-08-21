@@ -35,9 +35,9 @@ describe('ContactsPage global creation', () => {
     expect(within(drawer).getByText('Empresa')).toBeInTheDocument(); expect(within(drawer).getByText('ALMEX')).toBeInTheDocument(); expect(within(drawer).queryByRole('combobox', { name: 'Empresa' })).not.toBeInTheDocument();
   });
 
-  it('debounces the company lookup', async () => {
+  it('keeps an alias-only server result instead of filtering it by commercial name', async () => {
     listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); companySearchMock.mockResolvedValue([lookup]); renderPage('/contacts'); const drawer = await globalDrawer(); const input = within(drawer).getByRole('combobox', { name: 'Empresa' });
-    const user = userEvent.setup(); await user.click(input); await user.type(input, 'sol'); expect(companySearchMock).not.toHaveBeenCalled(); await waitFor(() => expect(companySearchMock).toHaveBeenCalledWith('sol'), { timeout: 2000 });
+    const user = userEvent.setup(); await user.click(input); await user.type(input, 'soluciones inte'); expect(companySearchMock).not.toHaveBeenCalled(); await waitFor(() => expect(companySearchMock).toHaveBeenCalledWith('soluciones inte'), { timeout: 2000 }); expect(await screen.findByRole('option', { name: /SILYM/ })).toBeInTheDocument(); expect(screen.getByText('Coincidencia por alias: SOLUCIONES INTEGRALES')).toBeInTheDocument();
   });
 
   it('requires an explicit result selection and posts that company ID', async () => {
