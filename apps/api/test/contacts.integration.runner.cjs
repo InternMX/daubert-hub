@@ -46,6 +46,18 @@ async function postContact(payload, requestId) {
   return { response, body: await response.json() };
 }
 
+async function changeMethodStatus(id, action, requestId) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}/${action}`, {
+    method: 'POST', headers: { 'x-request-id': requestId }
+  });
+  return { response, body: await response.json() };
+}
+
+async function getContactDirectory(id) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies/${id}`);
+  return { response, body: await response.json() };
+}
+
 async function queryWithAuditContext(pool, requestId, text, values) {
   const client = await pool.connect();
   try {
@@ -129,6 +141,32 @@ async function run() {
     assert(auditRows.rows.filter((row) => row.schema_name === 'core' && row.table_name === 'contactos').length === 1, 'Missing audit insert for the contact.');
     assert(auditRows.rows.filter((row) => row.schema_name === 'core' && row.table_name === 'medios_contacto').length === 5, 'Missing audit inserts for contact methods.');
     assert(auditRows.rows.every((row) => String(row.operation).toUpperCase().includes('INSERT') && row.origin === 'DAUBERT_HUB' && row.request_id === contactRequestId), 'Contact audit origin, request ID, or operation is inconsistent.');
+
+    const methodIds = created.body.data.methods.map((method) => method.id);
+    for (const methodId of methodIds) {
+      const requestId = `method-deactivate-${randomUUID()}`;
+      requestIds.add(requestId);
+      const deactivated = await changeMethodStatus(methodId, 'deactivate', requestId);
+      assert(deactivated.response.status === 200 && deactivated.body.data.status === 'INACTIVO' && deactivated.body.data.id === methodId, `Method deactivation failed: ${JSON.stringify(deactivated.body)}`);
+      assert(!JSON.stringify(deactivated.body).includes('recibe_notificacion_pago') && !JSON.stringify(deactivated.body).includes('tipo_destinatario_pago'), 'Method lifecycle response exposed payment routing fields.');
+      const lifecycleAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', requestId]);
+      assert(lifecycleAudit.rows.length === 1 && lifecycleAudit.rows[0].schema_name === 'core' && lifecycleAudit.rows[0].table_name === 'medios_contacto' && String(lifecycleAudit.rows[0].operation).toUpperCase().includes('UPDATE') && lifecycleAudit.rows[0].origin === 'DAUBERT_HUB' && lifecycleAudit.rows[0].request_id === requestId, 'Method lifecycle audit context or update event is inconsistent.');
+    }
+    const noActiveMethods = await pool.query('SELECT estatus FROM core.contactos WHERE contacto_id = $1', [created.body.data.id]);
+    assert(noActiveMethods.rows[0].estatus === 'ACTIVO', 'Deactivating the last active method changed the contact lifecycle.');
+    const directoryWithInactiveMethods = await getContactDirectory(activeCompanyId);
+    const directoryContact = directoryWithInactiveMethods.body.data.contacts.find((contact) => contact.id === created.body.data.id);
+    assert(directoryWithInactiveMethods.response.status === 200 && directoryContact && directoryContact.methods.length === 0 && directoryContact.inactiveMethods.length === 5, 'Directory did not return separate inactive methods for an active contact.');
+    const duplicate = await changeMethodStatus(methodIds[0], 'deactivate', `method-duplicate-${randomUUID()}`);
+    assert(duplicate.response.status === 409 && duplicate.body.code === 'METHOD_ALREADY_INACTIVE', 'Repeated method deactivation did not return a safe conflict.');
+    const reactivateRequestId = `method-reactivate-${randomUUID()}`;
+    requestIds.add(reactivateRequestId);
+    const reactivated = await changeMethodStatus(methodIds[0], 'reactivate', reactivateRequestId);
+    assert(reactivated.response.status === 200 && reactivated.body.data.status === 'ACTIVO', `Method reactivation failed: ${JSON.stringify(reactivated.body)}`);
+    const restoredMethod = await pool.query('SELECT estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE medio_id = $1', [methodIds[0]]);
+    assert(restoredMethod.rows.length === 1 && restoredMethod.rows[0].estatus === 'ACTIVO' && restoredMethod.rows[0].es_principal === false && restoredMethod.rows[0].recibe_notificacion_pago === false && restoredMethod.rows[0].tipo_destinatario_pago === null, 'Method lifecycle changed fields other than status.');
+    const missing = await changeMethodStatus('999999999999999', 'deactivate', `method-missing-${randomUUID()}`);
+    assert(missing.response.status === 404, 'Missing method did not return a safe 404.');
 
     for (const [companyId, expectedStatus, label] of [[inactiveCompanyId, 409, 'inactive'], [blockedCompanyId, 409, 'blocked'], ['999999999999999', 404, 'nonexistent']]) {
       const rejected = await postContact({ companyId, contactType: 'PERSONA', name: `${marker} REJECTED`, methods: [{ type: 'CORREO', value: `rejected.${marker.toLowerCase()}@example.test` }] }, `contact-${label}-${randomUUID()}`);

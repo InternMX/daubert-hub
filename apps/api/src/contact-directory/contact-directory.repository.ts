@@ -6,7 +6,7 @@ import type { ListContactDirectoryCompaniesDto } from './dto/list-contact-direct
 interface CompanyRow extends QueryResultRow { id: string; commercial_name: string; company_type: string; contact_count: string; matched_alias: string | null; }
 interface ContactRow extends QueryResultRow { id: string; name: string | null; contact_type: string; area: string | null; position: string | null; is_primary: boolean; }
 interface MethodRow extends QueryResultRow { id: string; contact_id: string; type: string; value: string; is_primary: boolean; }
-export interface CompanyDetailRecord { company: Omit<CompanyRow, 'contact_count'>; contacts: Array<ContactRow & { methods: MethodRow[] }>; }
+export interface CompanyDetailRecord { company: Omit<CompanyRow, 'contact_count'>; contacts: Array<ContactRow & { methods: MethodRow[]; inactiveMethods: MethodRow[] }>; }
 
 @Injectable()
 export class ContactDirectoryRepository {
@@ -42,8 +42,12 @@ export class ContactDirectoryRepository {
       ORDER BY es_contacto_principal DESC, CASE WHEN tipo_contacto = 'PERSONA' AND nombre IS NOT NULL THEN 0 WHEN tipo_contacto = 'BUZON_GENERICO' THEN 1 WHEN tipo_contacto = 'AREA' THEN 2 ELSE 3 END, lower(coalesce(area, nombre, '')), contacto_id`, [id]);
     const methods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor AS value, es_principal AS is_primary FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'ACTIVO'
       ORDER BY contacto_id, es_principal DESC, CASE tipo_medio WHEN 'CORREO' THEN 1 WHEN 'TELEFONO' THEN 2 WHEN 'WHATSAPP' THEN 3 WHEN 'OTRO' THEN 4 ELSE 5 END, lower(btrim(valor)), medio_id`, [contacts.map((contact) => contact.id)]) : [];
+    const inactiveMethods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor AS value, es_principal AS is_primary FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'INACTIVO'
+      ORDER BY contacto_id, es_principal DESC, CASE tipo_medio WHEN 'CORREO' THEN 1 WHEN 'TELEFONO' THEN 2 WHEN 'WHATSAPP' THEN 3 WHEN 'OTRO' THEN 4 ELSE 5 END, lower(btrim(valor)), medio_id`, [contacts.map((contact) => contact.id)]) : [];
     const byContact = new Map<string, MethodRow[]>();
+    const inactiveByContact = new Map<string, MethodRow[]>();
     methods.forEach((method) => byContact.set(method.contact_id, [...(byContact.get(method.contact_id) ?? []), method]));
-    return { company, contacts: contacts.map((contact) => ({ ...contact, methods: byContact.get(contact.id) ?? [] })) };
+    inactiveMethods.forEach((method) => inactiveByContact.set(method.contact_id, [...(inactiveByContact.get(method.contact_id) ?? []), method]));
+    return { company, contacts: contacts.map((contact) => ({ ...contact, methods: byContact.get(contact.id) ?? [], inactiveMethods: inactiveByContact.get(contact.id) ?? [] })) };
   }
 }
