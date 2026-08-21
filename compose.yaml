@@ -1,0 +1,14 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: daubert_hub_test
+      POSTGRES_USER: daubert_test
+      POSTGRES_PASSWORD: local-test-only
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daubert_test -d daubert_hub_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

@@ -1,0 +1,61 @@
+import { Button, Paper, Stack, Typography } from '@mui/material';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { AppShell } from './components/AppShell';
+import { EmptyState } from './components/EmptyState';
+import { PageHeader } from './components/PageHeader';
+import { NewProviderPage } from './providers/NewProviderPage';
+import { ProviderDetailPage } from './providers/ProviderDetailPage';
+import { EditProviderPage } from './providers/EditProviderPage';
+import { ProvidersPage } from './providers/ProvidersPage';
+
+interface DirectoryPageProps {
+  title: string;
+  description: string;
+  emptyDescription: string;
+}
+
+function DirectoryPage({ title, description, emptyDescription }: DirectoryPageProps) {
+  return (
+    <>
+      <PageHeader title={title} description={description}>
+        {title === 'Proveedores' && <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>}
+      </PageHeader>
+      <EmptyState title="No hay información para mostrar." description={emptyDescription} />
+    </>
+  );
+}
+
+function HomePage() {
+  return (
+    <>
+      <PageHeader title="Inicio" description="Centro de trabajo para la gestión operativa de Daubert Cromwell." />
+      <Paper variant="outlined" sx={{ mt: 4, p: { xs: 3, sm: 4 }, maxWidth: 920 }}>
+        <Typography variant="h2">Acciones rápidas</Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2.5 }}>
+          <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
+          <Button variant="outlined" disabled>Nuevo contacto</Button>
+        </Stack>
+      </Paper>
+      <Paper variant="outlined" sx={{ mt: 2, p: { xs: 3, sm: 4 }, maxWidth: 920 }}>
+        <Typography variant="h2">Actividad reciente</Typography>
+        <Typography color="text.secondary" sx={{ mt: 1 }}>No hay actividad reciente para mostrar.</Typography>
+      </Paper>
+    </>
+  );
+}
+
+export function App() {
+  return (
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/providers" element={<ProvidersPage />} />
+        <Route path="/providers/new" element={<NewProviderPage />} />
+        <Route path="/providers/:id/edit" element={<EditProviderPage />} />
+        <Route path="/providers/:id" element={<ProviderDetailPage />} />
+        <Route path="/contacts" element={<DirectoryPage title="Contactos" description="Gestiona los contactos asociados a proveedores y operaciones." emptyDescription="La consulta de contactos estará disponible en una próxima iteración." />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AppShell>
+  );
+}

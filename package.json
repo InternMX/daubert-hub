@@ -1,0 +1,22 @@
+{
+  "name": "daubert-hub",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm run dev --workspace=@daubert/api",
+    "dev:web": "npm run dev --workspace=@daubert/web",
+    "build": "npm run build --workspace=@daubert/api && npm run build --workspace=@daubert/web",
+    "lint": "npm run lint --workspace=@daubert/api && npm run lint --workspace=@daubert/web",
+    "typecheck": "npm run typecheck --workspace=@daubert/api && npm run typecheck --workspace=@daubert/web",
+    "test": "npm run test --workspace=@daubert/api && npm run test --workspace=@daubert/web",
+    "test:api": "npm run test --workspace=@daubert/api",
+    "test:web": "npm run test --workspace=@daubert/web",
+    "test:integration": "npm run test:integration --workspace=@daubert/api",
+    "validate": "npm run typecheck && npm run lint && npm run test && npm run test:integration && npm run build"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  }
+}
