@@ -4,7 +4,8 @@ import { ProviderApiError } from './providers';
 export type CompanyType = 'PROVEEDOR' | 'SERVICIO' | 'FLETE' | 'CLIENTE' | 'OTRO';
 export type ContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'OTRO';
 export interface DirectoryCompany { id: string; commercialName: string; companyType: CompanyType; contactCount: number; matchedAlias?: string | null; }
-export interface DirectoryContact { id: string; name: string | null; contactType: string; area: string | null; position: string | null; isPrimary: boolean; methods: Array<{ id: string; type: ContactMethodType; value: string; isPrimary: boolean }>; }
+export interface DirectoryContactMethod { id: string; type: ContactMethodType; value: string; isPrimary: boolean; }
+export interface DirectoryContact { id: string; name: string | null; contactType: string; area: string | null; position: string | null; isPrimary: boolean; methods: DirectoryContactMethod[]; inactiveMethods: DirectoryContactMethod[]; }
 export interface DirectoryCompanyDetail { company: Omit<DirectoryCompany, 'contactCount' | 'matchedAlias'>; contacts: DirectoryContact[]; }
 export interface DirectoryList { data: DirectoryCompany[]; meta: { page: number; pageSize: number; total: number; totalPages: number }; }
 
