@@ -1,5 +1,4 @@
-import { Close } from '@mui/icons-material';
-import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ContactApiError } from '../services/contacts';
@@ -9,7 +8,7 @@ const methodTypes: Array<{ value: AddContactMethodType; label: string }> = [{ va
 const phonePattern = /^(?=.*\d)[+\d\s().-]+(?:\s*(?:ext\.?|x)\s*\d+)?$/i;
 function placeholder(type: AddContactMethodType): string { return type === 'CORREO' ? 'correo@empresa.com' : '+52 449 123 4567'; }
 
-export function AddContactMethodDialog({ contact, onClose, onAdded }: { contact: { id: string; label: string } | null; onClose: () => void; onAdded: (contactId: string, method: AddedContactMethod) => void }) {
+export function AddContactMethodForm({ contact, onClose, onAdded }: { contact: { id: string; label: string }; onClose: () => void; onAdded: (contactId: string, method: AddedContactMethod) => void }) {
   const [type, setType] = useState<AddContactMethodType>('CORREO');
   const [value, setValue] = useState('');
   const [valueError, setValueError] = useState<string | null>(null);
@@ -26,16 +25,20 @@ export function AddContactMethodDialog({ contact, onClose, onAdded }: { contact:
     return null;
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (!contact || submittingRef.current) return;
+    event.preventDefault(); if (submittingRef.current) return;
     const trimmed = value.trim(); const error = validationError(trimmed); setValueError(error); setSubmitError(null); if (error) return;
     submittingRef.current = true; setSubmitting(true);
-    try { const method = await addContactMethod(contact.id, { type, value: trimmed }); const contactId = contact.id; reset(); onClose(); onAdded(contactId, method); }
+    try { const method = await addContactMethod(contact.id, { type, value: trimmed }); reset(); onClose(); onAdded(contact.id, method); }
     catch (error) { if (error instanceof ContactApiError && error.code === 'CONTACT_METHOD_DUPLICATE') setSubmitError('Este medio ya existe para este contacto.'); else setSubmitError('No fue posible agregar el medio de contacto. Inténtalo nuevamente.'); }
     finally { submittingRef.current = false; setSubmitting(false); }
   }
-  return <Dialog open={Boolean(contact)} onClose={close} maxWidth="xs" fullWidth PaperProps={{ component: 'form', noValidate: true, onSubmit: submit }}>
-    <DialogTitle sx={{ pr: 6 }}>Agregar medio de contacto<IconButton aria-label="Cerrar" onClick={close} disabled={submitting} sx={{ position: 'absolute', right: 12, top: 12 }}><Close /></IconButton></DialogTitle>
-    <DialogContent><Stack spacing={2.25} sx={{ pt: 0.5 }}><Typography variant="body2" color="text.secondary">{contact?.label}</Typography>{submitError && <Alert severity="error">{submitError}</Alert>}<FormControl fullWidth disabled={submitting}><InputLabel id="add-method-type-label">Tipo</InputLabel><Select labelId="add-method-type-label" label="Tipo" value={type} onChange={(event) => changeType(event.target.value as AddContactMethodType)}>{methodTypes.map((methodType) => <MenuItem key={methodType.value} value={methodType.value}>{methodType.label}</MenuItem>)}</Select></FormControl><TextField label="Valor" value={value} placeholder={placeholder(type)} onChange={(event) => setValue(event.target.value)} error={Boolean(valueError)} helperText={valueError} disabled={submitting} autoFocus fullWidth /></Stack></DialogContent>
-    <DialogActions><Button type="button" onClick={close} disabled={submitting}>Cancelar</Button><Button type="submit" variant="contained" disabled={submitting} startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : undefined}>Agregar</Button></DialogActions>
-  </Dialog>;
+  return <Box component="form" aria-label={`Agregar medio para ${contact.label}`} noValidate onSubmit={submit} sx={{ mt: 0.75, mb: 0.5, px: { xs: 1, sm: 1.5 }, py: 1.25, bgcolor: 'action.hover', borderRadius: 1 }}>
+    <Typography variant="body2" fontWeight={700} sx={{ mb: 1.25 }}>Agregar medio</Typography>
+    {submitError && <Alert severity="error" sx={{ mb: 1.25 }}>{submitError}</Alert>}
+    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ sm: 'flex-start' }}>
+      <FormControl size="small" disabled={submitting} sx={{ width: { xs: '100%', sm: 150 }, flexShrink: 0 }}><InputLabel id={`add-method-type-${contact.id}`}>Tipo</InputLabel><Select labelId={`add-method-type-${contact.id}`} label="Tipo" value={type} onChange={(event) => changeType(event.target.value as AddContactMethodType)}>{methodTypes.map((methodType) => <MenuItem key={methodType.value} value={methodType.value}>{methodType.label}</MenuItem>)}</Select></FormControl>
+      <TextField label="Valor" value={value} placeholder={placeholder(type)} onChange={(event) => setValue(event.target.value)} error={Boolean(valueError)} helperText={valueError} disabled={submitting} size="small" autoFocus fullWidth />
+    </Stack>
+    <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 1 }}><Button type="button" size="small" onClick={close} disabled={submitting}>Cancelar</Button><Button type="submit" size="small" variant="contained" disabled={submitting} startIcon={submitting ? <CircularProgress size={14} color="inherit" /> : undefined}>Agregar</Button></Stack>
+  </Box>;
 }
