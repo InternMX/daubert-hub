@@ -5,6 +5,8 @@ import { ContactApiError } from './contacts';
 export type AddContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP';
 export interface AddContactMethodInput { type: AddContactMethodType; value: string; }
 export interface AddedContactMethod { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO'; }
+export interface EditContactMethodInput { type?: AddContactMethodType; value?: string; }
+export interface EditedContactMethod { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO' | 'INACTIVO'; }
 
 export interface ContactMethodLifecycleResult {
   id: string;
@@ -48,4 +50,20 @@ export async function addContactMethod(contactId: string, input: AddContactMetho
     throw new ContactApiError(response.status, code, requestId);
   }
   return body.data as AddedContactMethod;
+}
+
+export async function editContactMethod(id: string, input: EditContactMethodInput): Promise<EditedContactMethod> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/contact-methods/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
+  } catch {
+    throw new ContactApiError(0, undefined, null);
+  }
+  const requestId = response.headers.get('x-request-id');
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok || typeof body !== 'object' || body === null || !('data' in body)) {
+    const code = typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : undefined;
+    throw new ContactApiError(response.status, code, requestId);
+  }
+  return body.data as EditedContactMethod;
 }

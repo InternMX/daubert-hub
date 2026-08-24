@@ -3,16 +3,16 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createContact, updateContact } from '../services/contacts';
-import { addContactMethod, deactivateContactMethod, reactivateContactMethod } from '../services/contactMethods';
+import { addContactMethod, deactivateContactMethod, editContactMethod, reactivateContactMethod } from '../services/contactMethods';
 import { searchCompanies } from '../services/companies';
 import { getContactDirectoryCompany, listContactDirectoryCompanies, type DirectoryContactMethod } from '../services/contactDirectory';
 import { ContactsPage } from './ContactsPage';
 
 vi.mock('../services/contactDirectory', () => ({ listContactDirectoryCompanies: vi.fn(), getContactDirectoryCompany: vi.fn() }));
 vi.mock('../services/contacts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/contacts')>()), createContact: vi.fn(), updateContact: vi.fn() }));
-vi.mock('../services/contactMethods', () => ({ addContactMethod: vi.fn(), deactivateContactMethod: vi.fn(), reactivateContactMethod: vi.fn() }));
+vi.mock('../services/contactMethods', () => ({ addContactMethod: vi.fn(), deactivateContactMethod: vi.fn(), editContactMethod: vi.fn(), reactivateContactMethod: vi.fn() }));
 vi.mock('../services/companies', () => ({ searchCompanies: vi.fn() }));
-const listMock = vi.mocked(listContactDirectoryCompanies); const detailMock = vi.mocked(getContactDirectoryCompany); const createMock = vi.mocked(createContact); const updateMock = vi.mocked(updateContact); const addMethodMock = vi.mocked(addContactMethod); const deactivateMock = vi.mocked(deactivateContactMethod); const reactivateMock = vi.mocked(reactivateContactMethod); const companySearchMock = vi.mocked(searchCompanies);
+const listMock = vi.mocked(listContactDirectoryCompanies); const detailMock = vi.mocked(getContactDirectoryCompany); const createMock = vi.mocked(createContact); const updateMock = vi.mocked(updateContact); const addMethodMock = vi.mocked(addContactMethod); const editMethodMock = vi.mocked(editContactMethod); const deactivateMock = vi.mocked(deactivateContactMethod); const reactivateMock = vi.mocked(reactivateContactMethod); const companySearchMock = vi.mocked(searchCompanies);
 const company = { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const, contactCount: 0 };
 const detail = { company: { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const }, contacts: [] };
 const lookup = { id: '31', commercialName: 'SILYM', companyType: 'SERVICIO' as const, legalName: 'RUBEN MARQUEZ CORTES', rfc: 'SIM010101AAA', matchedAlias: 'SOLUCIONES INTEGRALES' };
@@ -24,6 +24,7 @@ async function globalDrawer() { fireEvent.click(screen.getAllByRole('button', { 
 async function selectMethodType(drawer: HTMLElement, index: number, label: string) { fireEvent.mouseDown(within(drawer).getAllByLabelText('Tipo')[index]!); fireEvent.click(await screen.findByRole('option', { name: label })); }
 const activeMethod = { id: '9007199254740993', type: 'CORREO' as const, value: 'activo@example.test', isPrimary: true };
 const inactiveMethod = { id: '9007199254740994', type: 'OTRO' as const, value: 'anterior@example.test', isPrimary: false };
+const inactivePhoneMethod = { id: '9007199254740995', type: 'TELEFONO' as const, value: '+52 449 555 0101', isPrimary: false };
 function contactDetail(methods: DirectoryContactMethod[] = [activeMethod], inactiveMethods: DirectoryContactMethod[] = [inactiveMethod]) { return { company: detail.company, contacts: [{ id: '20', name: 'Contacto Sintético', contactType: 'PERSONA' as const, area: 'Compras', position: null, notes: 'Nota inicial', isPrimary: false, methods, inactiveMethods }] }; }
 async function lifecyclePage(initial = contactDetail()) { listMock.mockResolvedValue({ data: [{ ...company, contactCount: 1 }], meta: { page: 2, pageSize: 25, total: 1, totalPages: 1 } }); detailMock.mockResolvedValue(initial); renderPage(); await screen.findByText('Contacto Sintético'); }
 
@@ -64,12 +65,12 @@ describe('ContactsPage global creation', () => {
 });
 
 describe('ContactsPage contact method lifecycle', () => {
-  it('shows only the deactivate action for an active method and cancel sends no request', async () => {
+  it('shows Editar before Desactivar for an active method and lifecycle cancel sends no request', async () => {
     await lifecyclePage(contactDetail([activeMethod], []));
     expect(screen.queryByText('Medios inactivos (0)')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` }));
-    expect(await screen.findByRole('menuitem', { name: 'Desactivar' })).toBeInTheDocument();
-    expect(screen.queryByText('Editar')).not.toBeInTheDocument(); expect(screen.queryByText('Eliminar')).not.toBeInTheDocument(); expect(screen.queryByText('Confirmar')).not.toBeInTheDocument();
+    const edit = await screen.findByRole('menuitem', { name: 'Editar' }); const deactivate = screen.getByRole('menuitem', { name: 'Desactivar' }); expect(edit).toBeInTheDocument(); expect(edit.compareDocumentPosition(deactivate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Eliminar')).not.toBeInTheDocument(); expect(screen.queryByText('Confirmar')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Desactivar' }));
     const dialog = await screen.findByRole('dialog', { name: 'Desactivar medio de contacto' });
     expect(within(dialog).getByText('Este medio dejará de aparecer como activo para este contacto. Podrás reactivarlo posteriormente.')).toBeInTheDocument();
@@ -101,7 +102,7 @@ describe('ContactsPage contact method lifecycle', () => {
     expect(screen.getByText(inactiveMethod.value)).not.toBeVisible(); fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'true'); expect(screen.getByText(inactiveMethod.value)).toBeVisible();
     detailMock.mockResolvedValue(contactDetail([inactiveMethod], []));
     fireEvent.click(screen.getByRole('button', { name: `Acciones para Otro: ${inactiveMethod.value}` }));
-    expect(await screen.findByRole('menuitem', { name: 'Reactivar' })).toBeInTheDocument(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: 'Reactivar' })).toBeInTheDocument(); expect(screen.queryByRole('menuitem', { name: 'Editar' })).not.toBeInTheDocument(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Reactivar' }));
     expect(reactivateMock).toHaveBeenCalledWith('9007199254740994'); expect(await screen.findByText('Medio de contacto reactivado.')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('Medios inactivos (1)')).not.toBeInTheDocument()); expect(screen.getByText(inactiveMethod.value)).toBeVisible();
@@ -111,6 +112,45 @@ describe('ContactsPage contact method lifecycle', () => {
     deactivateMock.mockRejectedValue(new Error('backend internals')); await lifecyclePage(contactDetail([activeMethod], []));
     fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Desactivar' })); fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Desactivar' }));
     expect(await screen.findByText('No fue posible desactivar el medio de contacto.')).toBeInTheDocument(); expect(screen.queryByText('backend internals')).not.toBeInTheDocument(); expect(screen.getByText('Contacto Sintético')).toBeInTheDocument();
+  });
+});
+
+describe('ContactsPage contact method editing', () => {
+  it('opens an active inline edit with persisted values and keeps it active after success', async () => {
+    const corrected = { ...activeMethod, value: 'corrected@example.test' }; const refreshed = contactDetail([corrected], [inactivePhoneMethod]); editMethodMock.mockResolvedValue({ id: activeMethod.id, type: 'CORREO', value: corrected.value, status: 'ACTIVO' }); await lifecyclePage(contactDetail([activeMethod], [inactivePhoneMethod])); detailMock.mockResolvedValue(refreshed);
+    fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); const edit = await screen.findByRole('menuitem', { name: 'Editar' }); expect(edit.compareDocumentPosition(screen.getByRole('menuitem', { name: 'Desactivar' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); fireEvent.click(edit);
+    const form = screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` }); expect(within(form).getByRole('combobox', { name: 'Tipo' })).toHaveTextContent('Correo'); expect(within(form).getByRole('textbox', { name: 'Valor' })).toHaveValue(activeMethod.value); fireEvent.change(within(form).getByRole('textbox', { name: 'Valor' }), { target: { value: corrected.value } }); fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(editMethodMock).toHaveBeenCalledWith(activeMethod.id, { value: corrected.value })); expect(await screen.findByText('Medio de contacto actualizado.')).toBeInTheDocument(); expect(screen.queryByRole('form', { name: `Editar medio ${activeMethod.value}` })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: `Acciones para Correo: ${corrected.value}` })).toBeInTheDocument(); await waitFor(() => expect(detailMock).toHaveBeenCalledTimes(2)); expect(screen.getByRole('button', { name: 'Medios inactivos (1)' })).toBeInTheDocument(); expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
+  });
+
+  it('shows Editar before Reactivar and keeps an edited method in the inactive section', async () => {
+    const corrected = { ...inactivePhoneMethod, value: '+52 449 555 0199' }; const refreshed = contactDetail([activeMethod], [corrected]); editMethodMock.mockResolvedValue({ id: inactivePhoneMethod.id, type: 'TELEFONO', value: corrected.value, status: 'INACTIVO' }); await lifecyclePage(contactDetail([activeMethod], [inactivePhoneMethod])); detailMock.mockResolvedValue(refreshed); fireEvent.click(screen.getByRole('button', { name: 'Medios inactivos (1)' })); fireEvent.click(screen.getByRole('button', { name: `Acciones para Teléfono: ${inactivePhoneMethod.value}` }));
+    const edit = await screen.findByRole('menuitem', { name: 'Editar' }); const reactivate = screen.getByRole('menuitem', { name: 'Reactivar' }); expect(edit.compareDocumentPosition(reactivate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); fireEvent.click(edit); const form = screen.getByRole('form', { name: `Editar medio ${inactivePhoneMethod.value}` }); expect(within(form).getByRole('combobox', { name: 'Tipo' })).toHaveTextContent('Teléfono'); expect(within(form).getByRole('textbox', { name: 'Valor' })).toHaveValue(inactivePhoneMethod.value); fireEvent.change(within(form).getByRole('textbox', { name: 'Valor' }), { target: { value: corrected.value } }); fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(editMethodMock).toHaveBeenCalledWith(inactivePhoneMethod.id, { value: corrected.value })); expect(await screen.findByText('Medio de contacto actualizado.')).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Medios inactivos (1)' })).toHaveAttribute('aria-expanded', 'true'); expect(screen.getByRole('button', { name: `Acciones para Teléfono: ${corrected.value}` })).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })).toBeInTheDocument();
+  });
+
+  it('allows only one Add-or-Edit form and resets each form when another action opens', async () => {
+    const secondMethod = { id: '9007199254740996', type: 'WHATSAPP' as const, value: '+52 449 555 0102', isPrimary: false }; await lifecyclePage(contactDetail([activeMethod, secondMethod], [])); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); const addForm = screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' }); fireEvent.change(within(addForm).getByRole('textbox', { name: 'Valor' }), { target: { value: 'unsaved@example.test' } }); fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Editar' }));
+    expect(screen.queryByRole('form', { name: 'Agregar medio para Contacto Sintético' })).not.toBeInTheDocument(); const firstEdit = screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` }); fireEvent.change(within(firstEdit).getByRole('textbox', { name: 'Valor' }), { target: { value: 'unsaved-edit@example.test' } }); fireEvent.click(screen.getByRole('button', { name: `Acciones para WhatsApp: ${secondMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Editar' }));
+    expect(screen.queryByRole('form', { name: `Editar medio ${activeMethod.value}` })).not.toBeInTheDocument(); expect(within(screen.getByRole('form', { name: `Editar medio ${secondMethod.value}` })).getByRole('textbox', { name: 'Valor' })).toHaveValue(secondMethod.value); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' }));
+    expect(screen.queryByRole('form', { name: `Editar medio ${secondMethod.value}` })).not.toBeInTheDocument(); expect(within(screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' })).getByRole('textbox', { name: 'Valor' })).toHaveValue(''); expect(editMethodMock).not.toHaveBeenCalled(); expect(addMethodMock).not.toHaveBeenCalled();
+  });
+
+  it('does not let an older PATCH completion close a newer Add form', async () => {
+    let resolveEdit!: (value: { id: string; type: 'CORREO'; value: string; status: 'ACTIVO' }) => void; editMethodMock.mockReturnValue(new Promise((resolve) => { resolveEdit = resolve; })); await lifecyclePage(contactDetail([activeMethod], [])); fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Editar' })); const editForm = screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` }); fireEvent.change(within(editForm).getByRole('textbox', { name: 'Valor' }), { target: { value: 'corrected@example.test' } }); fireEvent.click(within(editForm).getByRole('button', { name: 'Guardar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); const addForm = screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' }); fireEvent.change(within(addForm).getByRole('textbox', { name: 'Valor' }), { target: { value: 'newer@example.test' } }); resolveEdit({ id: activeMethod.id, type: 'CORREO', value: 'corrected@example.test', status: 'ACTIVO' });
+    expect(await screen.findByText('Medio de contacto actualizado.')).toBeInTheDocument(); expect(screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' })).toBeInTheDocument(); expect(within(screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' })).getByRole('textbox', { name: 'Valor' })).toHaveValue('newer@example.test');
+  });
+
+  it('does not let an older PATCH completion close a reopened editor for the same method', async () => {
+    let resolveEdit!: (value: { id: string; type: 'CORREO'; value: string; status: 'ACTIVO' }) => void; editMethodMock.mockReturnValue(new Promise((resolve) => { resolveEdit = resolve; })); await lifecyclePage(contactDetail([activeMethod], [])); fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Editar' })); const oldForm = screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` }); fireEvent.change(within(oldForm).getByRole('textbox', { name: 'Valor' }), { target: { value: 'older@example.test' } }); fireEvent.click(within(oldForm).getByRole('button', { name: 'Guardar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Editar' })); const reopened = screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` }); fireEvent.change(within(reopened).getByRole('textbox', { name: 'Valor' }), { target: { value: 'newer@example.test' } }); resolveEdit({ id: activeMethod.id, type: 'CORREO', value: 'older@example.test', status: 'ACTIVO' });
+    expect(await screen.findByText('Medio de contacto actualizado.')).toBeInTheDocument(); expect(screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` })).toBeInTheDocument(); expect(within(screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` })).getByRole('textbox', { name: 'Valor' })).toHaveValue('newer@example.test');
+  });
+
+  it('cancel restores the persisted row and sends no PATCH', async () => {
+    await lifecyclePage(contactDetail([activeMethod], [])); fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Editar' })); const form = screen.getByRole('form', { name: `Editar medio ${activeMethod.value}` }); fireEvent.change(within(form).getByRole('textbox', { name: 'Valor' }), { target: { value: 'unsaved@example.test' } }); fireEvent.click(within(form).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByRole('form', { name: `Editar medio ${activeMethod.value}` })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })).toBeInTheDocument(); expect(screen.queryByText('unsaved@example.test')).not.toBeInTheDocument(); expect(editMethodMock).not.toHaveBeenCalled();
   });
 });
 

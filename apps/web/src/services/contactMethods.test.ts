@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addContactMethod, deactivateContactMethod, reactivateContactMethod } from './contactMethods';
+import { addContactMethod, deactivateContactMethod, editContactMethod, reactivateContactMethod } from './contactMethods';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -19,5 +19,13 @@ describe('contact method lifecycle client', () => {
     await expect(addContactMethod('9007199254740993', { type: 'CORREO', value: 'second@example.test' })).resolves.toMatchObject({ id: '205', status: 'ACTIVO' });
     expect(fetchMock).toHaveBeenCalledWith('/api/contacts/9007199254740993/methods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'CORREO', value: 'second@example.test' }) });
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({ type: 'CORREO', value: 'second@example.test' });
+  });
+
+  it.each([{ value: 'corrected@example.test' }, { type: 'TELEFONO' as const }, { type: 'WHATSAPP' as const, value: '+52 449 555 0200' }])('PATCHes only changed method fields %#', async (input) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), json: async () => ({ data: { id: '9007199254740993', type: input.type ?? 'CORREO', value: input.value ?? 'safe@example.test', status: 'ACTIVO' } }) });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(editContactMethod('9007199254740993', input)).resolves.toMatchObject({ id: '9007199254740993' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/contact-methods/9007199254740993', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual(input);
   });
 });

@@ -3,23 +3,28 @@ import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Di
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
 import type { ContactMethodType, DirectoryContactMethod } from '../services/contactDirectory';
+import type { EditedContactMethod } from '../services/contactMethods';
+import { EditContactMethodForm, type EditableDirectoryContactMethod } from './EditContactMethodForm';
 
 const methodLabels: Record<ContactMethodType, string> = { CORREO: 'Correo', TELEFONO: 'Teléfono', WHATSAPP: 'WhatsApp', OTRO: 'Otro' };
 
-export function ContactMethodRow({ method, inactive = false, pending, onDeactivate, onReactivate }: { method: DirectoryContactMethod; inactive?: boolean; pending: boolean; onDeactivate?: (id: string) => Promise<boolean>; onReactivate?: (id: string) => Promise<boolean> }) {
+export function ContactMethodRow({ method, inactive = false, pending, editing = false, onEdit, onEditClose, onEdited, onDeactivate, onReactivate }: { method: DirectoryContactMethod; inactive?: boolean; pending: boolean; editing?: boolean; onEdit?: (method: DirectoryContactMethod) => void; onEditClose?: () => void; onEdited?: (method: EditedContactMethod) => void; onDeactivate?: (id: string) => Promise<boolean>; onReactivate?: (id: string) => Promise<boolean> }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const label = `${methodLabels[method.type]}: ${method.value}`;
   function openMenu(event: MouseEvent<HTMLElement>) { setAnchor(event.currentTarget); }
   function chooseDeactivate() { setAnchor(null); setConfirmOpen(true); }
+  function chooseEdit() { setAnchor(null); onEdit?.(method); }
   async function deactivate() { if (!onDeactivate || pending) return; if (await onDeactivate(method.id)) setConfirmOpen(false); }
   async function reactivate() { setAnchor(null); if (!onReactivate || pending) return; await onReactivate(method.id); }
+  if (editing && method.type !== 'OTRO' && onEditClose && onEdited) return <EditContactMethodForm method={method as EditableDirectoryContactMethod} onClose={onEditClose} onEdited={onEdited} />;
   return <>
     <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, color: inactive ? 'text.secondary' : 'text.primary' }}>
       <Box sx={{ minWidth: 0, flex: 1 }}><Typography component="span" variant="body2" color="text.secondary">{methodLabels[method.type]}:</Typography> <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{method.value}</Typography></Box>
       <IconButton size="small" aria-label={`Acciones para ${label}`} onClick={openMenu} disabled={pending}>{pending ? <CircularProgress size={18} /> : <MoreVert fontSize="small" />}</IconButton>
     </Box>
     <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+      {method.type !== 'OTRO' && onEdit && <MenuItem onClick={chooseEdit}>Editar</MenuItem>}
       {inactive ? <MenuItem onClick={reactivate} disabled={pending}>Reactivar</MenuItem> : <MenuItem onClick={chooseDeactivate}>Desactivar</MenuItem>}
     </Menu>
     {!inactive && <Dialog open={confirmOpen} onClose={() => !pending && setConfirmOpen(false)} maxWidth="xs" fullWidth>
