@@ -3,16 +3,16 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createContact, updateContact } from '../services/contacts';
-import { deactivateContactMethod, reactivateContactMethod } from '../services/contactMethods';
+import { addContactMethod, deactivateContactMethod, reactivateContactMethod } from '../services/contactMethods';
 import { searchCompanies } from '../services/companies';
 import { getContactDirectoryCompany, listContactDirectoryCompanies, type DirectoryContactMethod } from '../services/contactDirectory';
 import { ContactsPage } from './ContactsPage';
 
 vi.mock('../services/contactDirectory', () => ({ listContactDirectoryCompanies: vi.fn(), getContactDirectoryCompany: vi.fn() }));
 vi.mock('../services/contacts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/contacts')>()), createContact: vi.fn(), updateContact: vi.fn() }));
-vi.mock('../services/contactMethods', () => ({ deactivateContactMethod: vi.fn(), reactivateContactMethod: vi.fn() }));
+vi.mock('../services/contactMethods', () => ({ addContactMethod: vi.fn(), deactivateContactMethod: vi.fn(), reactivateContactMethod: vi.fn() }));
 vi.mock('../services/companies', () => ({ searchCompanies: vi.fn() }));
-const listMock = vi.mocked(listContactDirectoryCompanies); const detailMock = vi.mocked(getContactDirectoryCompany); const createMock = vi.mocked(createContact); const updateMock = vi.mocked(updateContact); const deactivateMock = vi.mocked(deactivateContactMethod); const reactivateMock = vi.mocked(reactivateContactMethod); const companySearchMock = vi.mocked(searchCompanies);
+const listMock = vi.mocked(listContactDirectoryCompanies); const detailMock = vi.mocked(getContactDirectoryCompany); const createMock = vi.mocked(createContact); const updateMock = vi.mocked(updateContact); const addMethodMock = vi.mocked(addContactMethod); const deactivateMock = vi.mocked(deactivateContactMethod); const reactivateMock = vi.mocked(reactivateContactMethod); const companySearchMock = vi.mocked(searchCompanies);
 const company = { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const, contactCount: 0 };
 const detail = { company: { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const }, contacts: [] };
 const lookup = { id: '31', commercialName: 'SILYM', companyType: 'SERVICIO' as const, legalName: 'RUBEN MARQUEZ CORTES', rfc: 'SIM010101AAA', matchedAlias: 'SOLUCIONES INTEGRALES' };
@@ -111,6 +111,28 @@ describe('ContactsPage contact method lifecycle', () => {
     deactivateMock.mockRejectedValue(new Error('backend internals')); await lifecyclePage(contactDetail([activeMethod], []));
     fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Desactivar' })); fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Desactivar' }));
     expect(await screen.findByText('No fue posible desactivar el medio de contacto.')).toBeInTheDocument(); expect(screen.queryByText('backend internals')).not.toBeInTheDocument(); expect(screen.getByText('Contacto Sintético')).toBeInTheDocument();
+  });
+});
+
+describe('ContactsPage contact method creation', () => {
+  it('places Agregar medio after active methods and keeps it available with zero active methods', async () => {
+    await lifecyclePage(contactDetail([], [inactiveMethod]));
+    const add = screen.getByRole('button', { name: 'Agregar medio' }); const inactive = screen.getByRole('button', { name: 'Medios inactivos (1)' }); expect(screen.getByText('Sin medios activos')).toBeInTheDocument(); expect(add).toBeInTheDocument(); expect(inactive).toBeInTheDocument(); expect(add.compareDocumentPosition(inactive) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('opens with contact context and cancel sends no request', async () => {
+    await lifecyclePage(); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio' })); const dialog = await screen.findByRole('dialog', { name: 'Agregar medio de contacto' });
+    expect(within(dialog).getByText('Contacto Sintético')).toBeInTheDocument(); fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' })); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(addMethodMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['CORREO', 'Correo', 'second@example.test'],
+    ['TELEFONO', 'Teléfono', '+52 449 555 0301'],
+    ['WHATSAPP', 'WhatsApp', '+52 449 555 0302']
+  ] as const)('adds a second %s, refreshes detail, and preserves URL state', async (type, label, value) => {
+    const first = { id: `first-${type}`, type, value: `first-${type}`, isPrimary: false }; const added = { id: `added-${type}`, type, value, status: 'ACTIVO' as const }; const initial = contactDetail([first], [inactiveMethod]); const refreshed = contactDetail([first, { ...added, isPrimary: false }], [inactiveMethod]);
+    addMethodMock.mockResolvedValue(added); await lifecyclePage(initial); detailMock.mockResolvedValue(refreshed); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio' })); const dialog = await screen.findByRole('dialog'); if (type !== 'CORREO') await selectMethodType(dialog, 0, label); fireEvent.change(within(dialog).getByRole('textbox', { name: 'Valor' }), { target: { value: ` ${value} ` } }); fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar' }));
+    await waitFor(() => expect(addMethodMock).toHaveBeenCalledWith('20', { type, value })); expect(await screen.findByText('Medio de contacto agregado.')).toBeInTheDocument(); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(screen.getByText(value)).toBeInTheDocument(); expect(screen.getByRole('button', { name: `Acciones para ${label}: ${value}` })).toBeInTheDocument(); await waitFor(() => expect(detailMock).toHaveBeenCalledTimes(2)); expect(screen.getByRole('button', { name: 'Medios inactivos (1)' })).toBeInTheDocument(); expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
   });
 });
 
