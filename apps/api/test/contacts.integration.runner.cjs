@@ -206,7 +206,7 @@ async function run() {
     assert(noActiveMethods.rows[0].estatus === 'ACTIVO', 'Deactivating the last active method changed the contact lifecycle.');
     const directoryWithInactiveMethods = await getContactDirectory(activeCompanyId);
     const directoryContact = directoryWithInactiveMethods.body.data.contacts.find((contact) => contact.id === created.body.data.id);
-    assert(directoryWithInactiveMethods.response.status === 200 && directoryContact && directoryContact.methods.length === 0 && directoryContact.inactiveMethods.length === 5, 'Directory did not return separate inactive methods for an active contact.');
+    assert(directoryWithInactiveMethods.response.status === 200 && directoryContact && directoryContact.notes === 'integration fixture' && directoryContact.methods.length === 0 && directoryContact.inactiveMethods.length === 5, 'Directory did not return contact notes and separate inactive methods for an active contact.');
     const duplicate = await changeMethodStatus(methodIds[0], 'deactivate', `method-duplicate-${randomUUID()}`);
     assert(duplicate.response.status === 409 && duplicate.body.code === 'METHOD_ALREADY_INACTIVE', 'Repeated method deactivation did not return a safe conflict.');
     const reactivateRequestId = `method-reactivate-${randomUUID()}`;

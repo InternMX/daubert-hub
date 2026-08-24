@@ -12,6 +12,6 @@ export class ContactDirectoryService {
   async get(id: number) {
     const result = await this.repository.findById(id);
     if (!result) throw new NotFoundException('Empresa no encontrada.');
-    return { data: { company: { id: result.company.id, commercialName: result.company.commercial_name, companyType: result.company.company_type }, contacts: result.contacts.map((contact) => ({ id: contact.id, name: contact.name, contactType: contact.contact_type, area: contact.area, position: contact.position, isPrimary: contact.is_primary, methods: contact.methods.map((method) => ({ id: method.id, type: method.type, value: method.value, isPrimary: method.is_primary })), inactiveMethods: contact.inactiveMethods.map((method) => ({ id: method.id, type: method.type, value: method.value, isPrimary: method.is_primary })) })) } };
+    return { data: { company: { id: result.company.id, commercialName: result.company.commercial_name, companyType: result.company.company_type }, contacts: result.contacts.map((contact) => ({ id: contact.id, name: contact.name, contactType: contact.contact_type, area: contact.area, position: contact.position, notes: contact.notes, isPrimary: contact.is_primary, methods: contact.methods.map((method) => ({ id: method.id, type: method.type, value: method.value, isPrimary: method.is_primary })), inactiveMethods: contact.inactiveMethods.map((method) => ({ id: method.id, type: method.type, value: method.value, isPrimary: method.is_primary })) })) } };
   }
 }

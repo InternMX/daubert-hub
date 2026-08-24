@@ -26,6 +26,9 @@ export interface CreatedContact {
   methods: Array<{ id: string; type: CreateContactMethodType; value: string; status: string; isPrimary: boolean }>;
 }
 
+export type UpdateContactInput = Partial<Pick<CreatedContact, 'name' | 'area' | 'position' | 'notes'>>;
+export type UpdatedContact = Omit<CreatedContact, 'methods'>;
+
 export class ContactApiError extends Error {
   constructor(public readonly status: number, public readonly code: string | undefined, public readonly requestId: string | null) {
     super('Contact API request failed');
@@ -47,4 +50,21 @@ export async function createContact(input: CreateContactInput): Promise<{ contac
   }
   if (typeof body !== 'object' || body === null || !('data' in body)) throw new ContactApiError(response.status, undefined, requestId);
   return { contact: body.data as CreatedContact, requestId };
+}
+
+export async function updateContact(id: string, input: UpdateContactInput): Promise<{ contact: UpdatedContact; requestId: string | null }> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/contacts/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
+  } catch {
+    throw new ContactApiError(0, undefined, null);
+  }
+  const requestId = response.headers.get('x-request-id');
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code = typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : undefined;
+    throw new ContactApiError(response.status, code, requestId);
+  }
+  if (typeof body !== 'object' || body === null || !('data' in body)) throw new ContactApiError(response.status, undefined, requestId);
+  return { contact: body.data as UpdatedContact, requestId };
 }
