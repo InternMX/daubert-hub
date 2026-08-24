@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import type { AddContactMethodDto } from './dto/add-contact-method.dto';
+
+interface LockedContactRow extends QueryResultRow {
+  id: string;
+  status: string;
+  company_status: string;
+}
 
 interface LockedMethodRow extends QueryResultRow {
   id: string;
@@ -25,6 +32,32 @@ export interface ContactMethodRecord {
 @Injectable()
 export class ContactMethodsRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async add(contactId: string, input: AddContactMethodDto, requestId: string): Promise<ContactMethodRecord | null> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      await this.setAuditContext(client, requestId);
+      const contact = await this.lockContact(client, contactId);
+      if (!contact) { await client.query('COMMIT'); return null; }
+      if (contact.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
+      if (contact.status !== 'ACTIVO') throw Object.assign(new Error('CONTACT_NOT_ACTIVE'), { code: 'CONTACT_NOT_ACTIVE' });
+      if (await this.methodExists(client, contactId, input)) throw Object.assign(new Error('CONTACT_METHOD_DUPLICATE'), { code: 'CONTACT_METHOD_DUPLICATE' });
+      const result = await client.query<ContactMethodRecord>(`
+        INSERT INTO core.medios_contacto
+          (contacto_id, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago)
+        VALUES ($1, $2, $3, 'ACTIVO', FALSE, FALSE, NULL)
+        RETURNING medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type,
+          valor AS value, estatus AS status, es_principal AS is_primary`, [contactId, input.type, input.value]);
+      await client.query('COMMIT');
+      return result.rows[0]!;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* Preserve the database error. */ }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<ContactMethodRecord | null> {
     const client = await this.database.connect();
@@ -59,6 +92,25 @@ export class ContactMethodsRepository {
       WHERE method.medio_id = $1
       FOR UPDATE OF method, contact, company`, [id]);
     return result.rows[0] ?? null;
+  }
+
+  private async lockContact(client: PoolClient, id: string): Promise<LockedContactRow | null> {
+    const result = await client.query<LockedContactRow>(`
+      SELECT contact.contacto_id::text AS id, contact.estatus AS status, company.estatus AS company_status
+      FROM core.contactos contact
+      JOIN core.empresas company ON company.empresa_id = contact.empresa_id
+      WHERE contact.contacto_id = $1
+      FOR UPDATE OF contact, company`, [id]);
+    return result.rows[0] ?? null;
+  }
+
+  private async methodExists(client: PoolClient, contactId: string, input: AddContactMethodDto): Promise<boolean> {
+    const comparison = input.type === 'CORREO' ? 'LOWER(BTRIM(valor)) = LOWER($3)' : 'BTRIM(valor) = $3';
+    const result = await client.query(`
+      SELECT 1 FROM core.medios_contacto
+      WHERE contacto_id = $1 AND tipo_medio = $2 AND ${comparison}
+      LIMIT 1`, [contactId, input.type, input.value]);
+    return result.rows.length > 0;
   }
 
   private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {

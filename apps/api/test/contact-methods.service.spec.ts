@@ -1,9 +1,53 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ContactMethodsService } from '../src/contact-methods/contact-methods.service';
+import { ContactMethodType } from '../src/contacts/dto/create-contact.dto';
 
 const method = { id: '9007199254740993', contact_id: '121', type: 'CORREO', value: 'safe@example.test', status: 'INACTIVO', is_primary: false };
 
 describe('ContactMethodsService', () => {
+  it.each([
+    [ContactMethodType.Email, 'second@example.test'],
+    [ContactMethodType.Phone, '+52 449 222 2222'],
+    [ContactMethodType.WhatsApp, '449 123 4567 ext. 204']
+  ] as const)('adds %s and returns only safe creation fields', async (type, value) => {
+    const add = vi.fn().mockResolvedValue({ ...method, id: '205', type, value, status: 'ACTIVO' });
+    const service = new ContactMethodsService({ add } as never);
+    const response = await service.add('121', { type, value }, 'request-add');
+    expect(response).toEqual({ data: { id: '205', type, value, status: 'ACTIVO' } });
+    expect(response.data).not.toHaveProperty('contactId');
+    expect(response.data).not.toHaveProperty('isPrimary');
+    expect(JSON.stringify(response)).not.toMatch(/recibe_notificacion_pago|tipo_destinatario_pago/);
+    expect(add).toHaveBeenCalledWith('121', { type, value }, 'request-add');
+  });
+
+  it.each([
+    [{ type: ContactMethodType.Email, value: '' }, 'obligatorio'],
+    [{ type: ContactMethodType.Email, value: 'not-an-email' }, 'no es válido'],
+    [{ type: ContactMethodType.Email, value: `${'a'.repeat(310)}@example.test` }, 'longitud máxima'],
+    [{ type: ContactMethodType.Phone, value: 'call me' }, 'no es válido'],
+    [{ type: ContactMethodType.WhatsApp, value: '1'.repeat(101) }, 'longitud máxima']
+  ] as const)('rejects invalid method value %#', async (input, message) => {
+    const add = vi.fn();
+    const service = new ContactMethodsService({ add } as never);
+    await expect(service.add('121', input, 'request-add')).rejects.toMatchObject({ status: 400, response: { message: expect.stringContaining(message) } });
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it.each(['CONTACT_METHOD_DUPLICATE', '23505'])('maps duplicate error %s to a safe conflict', async (code) => {
+    const service = new ContactMethodsService({ add: vi.fn().mockRejectedValue({ code }) } as never);
+    await expect(service.add('121', { type: ContactMethodType.Email, value: 'safe@example.test' }, 'request-add')).rejects.toMatchObject({ status: 409, response: { code: 'CONTACT_METHOD_DUPLICATE' } });
+  });
+
+  it.each(['CONTACT_NOT_ACTIVE', 'COMPANY_NOT_ACTIVE'])('rejects unsafe parent state %s', async (code) => {
+    const service = new ContactMethodsService({ add: vi.fn().mockRejectedValue({ code }) } as never);
+    await expect(service.add('121', { type: ContactMethodType.Email, value: 'safe@example.test' }, 'request-add')).rejects.toMatchObject({ status: 409, response: { code } });
+  });
+
+  it('returns a safe 404 for a missing contact', async () => {
+    const service = new ContactMethodsService({ add: vi.fn().mockResolvedValue(null) } as never);
+    await expect(service.add('121', { type: ContactMethodType.Email, value: 'safe@example.test' }, 'request-add')).rejects.toMatchObject({ status: 404 });
+  });
+
   it('changes a method lifecycle status without exposing payment-routing data', async () => {
     const changeStatus = vi.fn().mockResolvedValue(method);
     const service = new ContactMethodsService({ changeStatus } as never);

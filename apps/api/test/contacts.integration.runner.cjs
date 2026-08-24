@@ -55,6 +55,15 @@ async function patchContact(id, payload, requestId) {
   return { response, body: await response.json() };
 }
 
+async function addContactMethod(id, payload, requestId) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contacts/${id}/methods`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    body: JSON.stringify(payload)
+  });
+  return { response, body: await response.json() };
+}
+
 async function changeMethodStatus(id, action, requestId) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}/${action}`, {
     method: 'POST', headers: { 'x-request-id': requestId }
@@ -93,6 +102,14 @@ async function createCompany(pool, suffix, status) {
   return id;
 }
 
+async function createDirectContact(pool, companyId, suffix, status) {
+  const result = await queryWithAuditContext(pool, setupRequestId,
+    `INSERT INTO core.contactos (empresa_id, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal)
+     VALUES ($1, 'PERSONA', $2, 'Integration', 'Synthetic Contact', 'method safety fixture', $3, FALSE)
+     RETURNING contacto_id::text`, [companyId, `${marker}_${suffix}`, status]);
+  return result.rows[0].contacto_id;
+}
+
 async function run() {
   const { url, databaseName } = parseTestDatabaseUrl(process.env.TEST_DATABASE_URL);
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
@@ -122,6 +139,120 @@ async function run() {
     const activeCompanyId = await createCompany(pool, 'ACTIVE', 'ACTIVO');
     const inactiveCompanyId = await createCompany(pool, 'INACTIVE', 'INACTIVO');
     const blockedCompanyId = await createCompany(pool, 'BLOCKED', 'BLOQUEADO');
+
+    const addMethodFixtureRequestId = `method-add-fixture-${randomUUID()}`;
+    requestIds.add(addMethodFixtureRequestId);
+    const originalEmail = `original.${marker.toLowerCase()}@example.test`;
+    const originalPhone = '+52 449 555 0200';
+    const originalInactivePhone = '+52 449 555 0201';
+    const addMethodFixture = await postContact({
+      companyId: activeCompanyId,
+      contactType: 'PERSONA',
+      name: `${marker} METHOD ADD`,
+      area: 'Compras',
+      position: 'Compradora',
+      notes: 'add method fixture',
+      methods: [
+        { type: 'CORREO', value: originalEmail },
+        { type: 'TELEFONO', value: originalPhone },
+        { type: 'TELEFONO', value: originalInactivePhone }
+      ]
+    }, addMethodFixtureRequestId);
+    assert(addMethodFixture.response.status === 201, `Add-method fixture creation failed: ${JSON.stringify(addMethodFixture.body)}`);
+    const addMethodContactId = addMethodFixture.body.data.id;
+    const originalInactiveMethodId = addMethodFixture.body.data.methods[2].id;
+    const fixtureDeactivateRequestId = `method-add-fixture-deactivate-${randomUUID()}`;
+    requestIds.add(fixtureDeactivateRequestId);
+    const fixtureDeactivated = await changeMethodStatus(originalInactiveMethodId, 'deactivate', fixtureDeactivateRequestId);
+    assert(fixtureDeactivated.response.status === 200, `Add-method inactive fixture setup failed: ${JSON.stringify(fixtureDeactivated.body)}`);
+
+    const contactBeforeMethodAdds = (await pool.query('SELECT contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [addMethodContactId])).rows[0];
+    const companyBeforeMethodAdds = (await pool.query('SELECT empresa_id::text, tipo_empresa, nombre_comercial, estatus FROM core.empresas WHERE empresa_id = $1', [activeCompanyId])).rows[0];
+    const methodsBeforeAdds = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [addMethodContactId]);
+    assert(methodsBeforeAdds.rows.length === 3 && methodsBeforeAdds.rows.filter((method) => method.estatus === 'ACTIVO').length === 2 && methodsBeforeAdds.rows.filter((method) => method.estatus === 'INACTIVO').length === 1, 'Add-method fixture does not have two active methods and one inactive method.');
+
+    const addedEmail = `second.${marker.toLowerCase()}@example.test`;
+    const additions = [
+      { requestId: `method-add-email-${randomUUID()}`, payload: { type: 'CORREO', value: addedEmail } },
+      { requestId: `method-add-phone-${randomUUID()}`, payload: { type: 'TELEFONO', value: '449 123 4567 ext. 204' } },
+      { requestId: `method-add-whatsapp-${randomUUID()}`, payload: { type: 'WHATSAPP', value: '+52 449 555 0202' } }
+    ];
+    const addedMethodIds = [];
+    for (const addition of additions) {
+      requestIds.add(addition.requestId);
+      const added = await addContactMethod(addMethodContactId, addition.payload, addition.requestId);
+      assert(added.response.status === 201, `Method ${addition.payload.type} creation failed: ${JSON.stringify(added.body)}`);
+      assert(added.response.headers.get('x-request-id') === addition.requestId, `Method ${addition.payload.type} response did not preserve x-request-id.`);
+      assert(typeof added.body.data.id === 'string' && added.body.data.type === addition.payload.type && added.body.data.value === addition.payload.value && added.body.data.status === 'ACTIVO', `Method ${addition.payload.type} response is inconsistent.`);
+      assert(Object.keys(added.body.data).sort().join(',') === 'id,status,type,value', `Method ${addition.payload.type} response exposed fields outside the safe contract.`);
+      addedMethodIds.push(added.body.data.id);
+    }
+
+    const methodsAfterAdds = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [addMethodContactId]);
+    const persistedAdditions = methodsAfterAdds.rows.filter((method) => addedMethodIds.includes(method.medio_id));
+    assert(methodsAfterAdds.rows.length === 6 && persistedAdditions.length === 3, 'Method creation did not add exactly three rows.');
+    assert(persistedAdditions.every((method) => method.estatus === 'ACTIVO' && method.es_principal === false && method.recibe_notificacion_pago === false && method.tipo_destinatario_pago === null), 'New methods did not persist explicit active/non-primary/non-payment values.');
+    const originalMethodsAfterAdds = methodsAfterAdds.rows.filter((method) => !addedMethodIds.includes(method.medio_id));
+    assert(JSON.stringify(originalMethodsAfterAdds) === JSON.stringify(methodsBeforeAdds.rows), 'Method creation changed an existing active or inactive method.');
+    const contactAfterMethodAdds = (await pool.query('SELECT contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [addMethodContactId])).rows[0];
+    const companyAfterMethodAdds = (await pool.query('SELECT empresa_id::text, tipo_empresa, nombre_comercial, estatus FROM core.empresas WHERE empresa_id = $1', [activeCompanyId])).rows[0];
+    assert(JSON.stringify(contactAfterMethodAdds) === JSON.stringify(contactBeforeMethodAdds), 'Method creation changed contact data or lifecycle.');
+    assert(JSON.stringify(companyAfterMethodAdds) === JSON.stringify(companyBeforeMethodAdds), 'Method creation changed company data or lifecycle.');
+
+    const directoryAfterAdds = await getContactDirectory(activeCompanyId);
+    const addedDirectoryContact = directoryAfterAdds.body.data.contacts.find((contact) => contact.id === addMethodContactId);
+    assert(directoryAfterAdds.response.status === 200 && addedDirectoryContact && addedDirectoryContact.methods.length === 5 && addedDirectoryContact.inactiveMethods.length === 1, 'Directory did not return all active additions while preserving inactiveMethods.');
+    assert(addedDirectoryContact.methods.filter((method) => method.type === 'CORREO').length === 2 && addedDirectoryContact.methods.filter((method) => method.type === 'TELEFONO').length === 2 && addedDirectoryContact.methods.filter((method) => method.type === 'WHATSAPP').length === 1, 'Directory collapsed multiple same-type or mixed methods.');
+    assert(addedDirectoryContact.inactiveMethods[0].id === originalInactiveMethodId, 'Directory changed the original inactive method.');
+
+    for (const addition of additions) {
+      const methodAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', addition.requestId]);
+      assert(methodAudit.rows.length === 1 && methodAudit.rows[0].schema_name === 'core' && methodAudit.rows[0].table_name === 'medios_contacto' && String(methodAudit.rows[0].operation).toUpperCase().includes('INSERT') && methodAudit.rows[0].origin === 'DAUBERT_HUB' && methodAudit.rows[0].request_id === addition.requestId, `Method ${addition.payload.type} audit event is inconsistent.`);
+    }
+
+    for (const [payload, label] of [[{ type: 'CORREO', value: addedEmail }, 'exact email'], [{ type: 'CORREO', value: addedEmail.toUpperCase() }, 'case-insensitive email'], [{ type: 'TELEFONO', value: '449 123 4567 ext. 204' }, 'exact phone']]) {
+      const duplicate = await addContactMethod(addMethodContactId, payload, `method-add-duplicate-${randomUUID()}`);
+      assert(duplicate.response.status === 409 && duplicate.body.code === 'CONTACT_METHOD_DUPLICATE', `${label} duplicate was not rejected safely.`);
+    }
+    const countAfterDuplicates = await pool.query('SELECT count(*)::int AS count FROM core.medios_contacto WHERE contacto_id = $1', [addMethodContactId]);
+    assert(countAfterDuplicates.rows[0].count === 6, 'Duplicate method rejection inserted an extra row.');
+
+    const crossContactCreateRequestId = `method-add-cross-contact-fixture-${randomUUID()}`;
+    requestIds.add(crossContactCreateRequestId);
+    const crossContact = await postContact({ companyId: activeCompanyId, contactType: 'PERSONA', name: `${marker} CROSS CONTACT`, methods: [{ type: 'TELEFONO', value: '+52 449 555 0299' }] }, crossContactCreateRequestId);
+    assert(crossContact.response.status === 201, `Cross-contact fixture creation failed: ${JSON.stringify(crossContact.body)}`);
+    const crossContactRequestId = `method-add-cross-contact-${randomUUID()}`;
+    requestIds.add(crossContactRequestId);
+    const crossContactAddition = await addContactMethod(crossContact.body.data.id, { type: 'CORREO', value: addedEmail.toUpperCase() }, crossContactRequestId);
+    assert(crossContactAddition.response.status === 201, `Same value on a different contact was rejected: ${JSON.stringify(crossContactAddition.body)}`);
+
+    const concurrentValue = '+52 449 555 0288';
+    const concurrentRequestIds = [`method-add-concurrent-a-${randomUUID()}`, `method-add-concurrent-b-${randomUUID()}`];
+    concurrentRequestIds.forEach((requestId) => requestIds.add(requestId));
+    const concurrentAdds = await Promise.all(concurrentRequestIds.map((requestId) => addContactMethod(crossContact.body.data.id, { type: 'WHATSAPP', value: concurrentValue }, requestId)));
+    assert(concurrentAdds.map(({ response }) => response.status).sort().join(',') === '201,409', `Concurrent equivalent requests were not serialized safely: ${concurrentAdds.map(({ response }) => response.status).join(',')}`);
+    const concurrentRows = await pool.query('SELECT count(*)::int AS count FROM core.medios_contacto WHERE contacto_id = $1 AND tipo_medio = $2 AND valor = $3', [crossContact.body.data.id, 'WHATSAPP', concurrentValue]);
+    assert(concurrentRows.rows[0].count === 1, 'Concurrent equivalent requests created duplicate method rows.');
+
+    for (const [payload, label] of [[{ type: 'CORREO', value: ' ' }, 'blank'], [{ type: 'CORREO', value: 'not-an-email' }, 'invalid email'], [{ type: 'OTRO', value: 'legacy' }, 'OTRO'], [{ type: 'SMS', value: '449 123 4567' }, 'unsupported type']]) {
+      const invalid = await addContactMethod(addMethodContactId, payload, `method-add-invalid-${randomUUID()}`);
+      assert(invalid.response.status === 400, `${label} method payload was not rejected.`);
+    }
+
+    const unsafeContacts = [
+      [await createDirectContact(pool, activeCompanyId, 'PENDING_CONTACT', 'PENDIENTE'), 'pending'],
+      [await createDirectContact(pool, activeCompanyId, 'INACTIVE_CONTACT', 'INACTIVO'), 'inactive'],
+      [await createDirectContact(pool, activeCompanyId, 'REJECTED_CONTACT', 'RECHAZADO'), 'rejected'],
+      [await createDirectContact(pool, inactiveCompanyId, 'INACTIVE_COMPANY_CONTACT', 'ACTIVO'), 'inactive company'],
+      [await createDirectContact(pool, blockedCompanyId, 'BLOCKED_COMPANY_CONTACT', 'ACTIVO'), 'blocked company']
+    ];
+    for (const [contactId, label] of unsafeContacts) {
+      const rejected = await addContactMethod(contactId, { type: 'CORREO', value: `${label.replace(/ /g, '.')}.${marker.toLowerCase()}@example.test` }, `method-add-unsafe-${randomUUID()}`);
+      assert(rejected.response.status === 409, `${label} did not reject method creation safely.`);
+    }
+    const missingContactMethod = await addContactMethod('999999999999999', { type: 'CORREO', value: `missing.${marker.toLowerCase()}@example.test` }, `method-add-missing-${randomUUID()}`);
+    assert(missingContactMethod.response.status === 404, 'Nonexistent contact did not reject method creation safely.');
+
     const contactRequestId = `contact-create-${randomUUID()}`;
     requestIds.add(contactRequestId);
     const methods = [
