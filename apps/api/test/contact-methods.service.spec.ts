@@ -48,6 +48,43 @@ describe('ContactMethodsService', () => {
     await expect(service.add('121', { type: ContactMethodType.Email, value: 'safe@example.test' }, 'request-add')).rejects.toMatchObject({ status: 404 });
   });
 
+  it.each([
+    [ContactMethodType.Email, 'corrected@example.test', 'ACTIVO'],
+    [ContactMethodType.Phone, '+52 449 555 0200 ext. 4', 'ACTIVO'],
+    [ContactMethodType.WhatsApp, '449 555 0201', 'ACTIVO'],
+    [ContactMethodType.Phone, '449 555 0202', 'INACTIVO']
+  ] as const)('edits %s in place and returns only safe fields', async (type, value, status) => {
+    const edit = vi.fn().mockResolvedValue({ ...method, id: '205', type, value, status });
+    const service = new ContactMethodsService({ edit } as never);
+    await expect(service.edit('205', { type, value }, 'request-edit')).resolves.toEqual({ data: { id: '205', type, value, status } });
+    expect(edit).toHaveBeenCalledWith('205', { type, value }, 'request-edit');
+  });
+
+  it.each([{ value: 'corrected@example.test' }, { type: ContactMethodType.Phone }])('passes partial edit payload %# to the repository', async (input) => {
+    const edit = vi.fn().mockResolvedValue(method);
+    const service = new ContactMethodsService({ edit } as never);
+    await service.edit('205', input, 'request-edit');
+    expect(edit).toHaveBeenCalledWith('205', input, 'request-edit');
+  });
+
+  it('rejects an empty edit before accessing the repository', async () => {
+    const edit = vi.fn();
+    const service = new ContactMethodsService({ edit } as never);
+    await expect(service.edit('205', {}, 'request-edit')).rejects.toMatchObject({ status: 400 });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it.each(['METHOD_STATUS_NOT_MANAGEABLE', 'CONTACT_NOT_ACTIVE', 'COMPANY_NOT_ACTIVE', 'CONTACT_METHOD_DUPLICATE', '23505'])('maps edit conflict %s safely', async (code) => {
+    const service = new ContactMethodsService({ edit: vi.fn().mockRejectedValue({ code }) } as never);
+    const expectedCode = code === '23505' ? 'CONTACT_METHOD_DUPLICATE' : code;
+    await expect(service.edit('205', { value: 'corrected@example.test' }, 'request-edit')).rejects.toMatchObject({ status: 409, response: { code: expectedCode } });
+  });
+
+  it('returns a safe 404 for a missing method edit', async () => {
+    const service = new ContactMethodsService({ edit: vi.fn().mockResolvedValue(null) } as never);
+    await expect(service.edit('205', { value: 'corrected@example.test' }, 'request-edit')).rejects.toMatchObject({ status: 404 });
+  });
+
   it('changes a method lifecycle status without exposing payment-routing data', async () => {
     const changeStatus = vi.fn().mockResolvedValue(method);
     const service = new ContactMethodsService({ changeStatus } as never);

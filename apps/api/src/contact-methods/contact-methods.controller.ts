@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Req } from '@nestjs/common';
 import type { RequestWithId } from '../common/request-id.middleware';
 import { AddContactMethodDto } from './dto/add-contact-method.dto';
+import { EditContactMethodDto } from './dto/edit-contact-method.dto';
 import { ContactMethodsService, type AddedContactMethodResponse, type ContactMethodResponse } from './contact-methods.service';
 
 @Controller('contacts')
@@ -18,6 +19,13 @@ export class ContactMethodsForContactsController {
 @Controller('contact-methods')
 export class ContactMethodsController {
   constructor(private readonly contactMethods: ContactMethodsService) {}
+
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  edit(@Param('id') id: string, @Body() input: EditContactMethodDto, @Req() request: RequestWithId): Promise<AddedContactMethodResponse> {
+    if (!/^[1-9]\d*$/.test(id) || BigInt(id) > 9223372036854775807n) throw new BadRequestException('El identificador del medio de contacto debe ser un entero positivo.');
+    return this.contactMethods.edit(id, input, request.requestId);
+  }
 
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)

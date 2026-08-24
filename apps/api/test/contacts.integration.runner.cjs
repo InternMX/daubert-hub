@@ -64,6 +64,15 @@ async function addContactMethod(id, payload, requestId) {
   return { response, body: await response.json() };
 }
 
+async function patchContactMethod(id, payload, requestId) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    body: JSON.stringify(payload)
+  });
+  return { response, body: await response.json() };
+}
+
 async function changeMethodStatus(id, action, requestId) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}/${action}`, {
     method: 'POST', headers: { 'x-request-id': requestId }
@@ -252,6 +261,131 @@ async function run() {
     }
     const missingContactMethod = await addContactMethod('999999999999999', { type: 'CORREO', value: `missing.${marker.toLowerCase()}@example.test` }, `method-add-missing-${randomUUID()}`);
     assert(missingContactMethod.response.status === 404, 'Nonexistent contact did not reject method creation safely.');
+
+    const editFixtureRequestId = `method-edit-fixture-${randomUUID()}`;
+    requestIds.add(editFixtureRequestId);
+    const duplicateEmail = `duplicate.${marker.toLowerCase()}@example.test`;
+    const editFixture = await postContact({
+      companyId: activeCompanyId,
+      contactType: 'PERSONA',
+      name: `${marker} METHOD EDIT`,
+      methods: [
+        { type: 'CORREO', value: 'typo@example.test' },
+        { type: 'TELEFONO', value: '+52 449 555 0301' },
+        { type: 'WHATSAPP', value: '+52 449 555 0302' },
+        { type: 'CORREO', value: duplicateEmail },
+        { type: 'TELEFONO', value: '+52 449 555 0303' }
+      ]
+    }, editFixtureRequestId);
+    assert(editFixture.response.status === 201, `Edit-method fixture creation failed: ${JSON.stringify(editFixture.body)}`);
+    const editContactId = editFixture.body.data.id;
+    const [activeEmailId, inactivePhoneId, changedTypeId, , activePhoneId] = editFixture.body.data.methods.map((item) => item.id);
+    await queryWithAuditContext(pool, setupRequestId,
+      `UPDATE core.medios_contacto SET es_principal = TRUE, recibe_notificacion_pago = TRUE,
+       tipo_destinatario_pago = 'CC', observaciones = 'Preserve edit metadata' WHERE medio_id = $1`, [activeEmailId]);
+    const editDeactivateRequestId = `method-edit-deactivate-${randomUUID()}`;
+    requestIds.add(editDeactivateRequestId);
+    const editDeactivated = await changeMethodStatus(inactivePhoneId, 'deactivate', editDeactivateRequestId);
+    assert(editDeactivated.response.status === 200, `Edit-method inactive setup failed: ${JSON.stringify(editDeactivated.body)}`);
+
+    const emailBeforeEdit = (await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones FROM core.medios_contacto WHERE medio_id = $1', [activeEmailId])).rows[0];
+    const emailEditRequestId = `method-edit-email-${randomUUID()}`;
+    requestIds.add(emailEditRequestId);
+    const correctedEmail = await patchContactMethod(activeEmailId, { value: 'corrected@example.test' }, emailEditRequestId);
+    assert(correctedEmail.response.status === 200 && correctedEmail.response.headers.get('x-request-id') === emailEditRequestId, `Active email edit failed: ${JSON.stringify(correctedEmail.body)}`);
+    assert(JSON.stringify(correctedEmail.body) === JSON.stringify({ data: { id: activeEmailId, type: 'CORREO', value: 'corrected@example.test', status: 'ACTIVO' } }), 'Method edit response did not expose exactly the safe updated representation with a string ID.');
+    const emailAfterEdit = (await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones FROM core.medios_contacto WHERE medio_id = $1', [activeEmailId])).rows[0];
+    assert(emailAfterEdit.medio_id === emailBeforeEdit.medio_id && emailAfterEdit.contacto_id === emailBeforeEdit.contacto_id && emailAfterEdit.estatus === emailBeforeEdit.estatus && emailAfterEdit.es_principal === emailBeforeEdit.es_principal && emailAfterEdit.recibe_notificacion_pago === emailBeforeEdit.recibe_notificacion_pago && emailAfterEdit.tipo_destinatario_pago === emailBeforeEdit.tipo_destinatario_pago && emailAfterEdit.observaciones === emailBeforeEdit.observaciones, 'Email edit changed the ID, parent, status, principal, payment routing, or observations.');
+    assert(emailAfterEdit.valor === 'corrected@example.test', 'Email edit did not persist the corrected value.');
+    const methodEditAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', emailEditRequestId]);
+    assert(methodEditAudit.rows.length === 1 && methodEditAudit.rows[0].schema_name === 'core' && methodEditAudit.rows[0].table_name === 'medios_contacto' && String(methodEditAudit.rows[0].operation).toUpperCase().includes('UPDATE') && methodEditAudit.rows[0].origin === 'DAUBERT_HUB' && methodEditAudit.rows[0].request_id === emailEditRequestId, 'Method edit audit was not exactly one DAUBERT_HUB UPDATE with the HTTP request ID.');
+
+    const inactiveValueRequestId = `method-edit-inactive-value-${randomUUID()}`;
+    requestIds.add(inactiveValueRequestId);
+    const inactiveValue = await patchContactMethod(inactivePhoneId, { value: '+52 449 555 0311 ext. 8' }, inactiveValueRequestId);
+    assert(inactiveValue.response.status === 200 && inactiveValue.body.data.id === inactivePhoneId && inactiveValue.body.data.type === 'TELEFONO' && inactiveValue.body.data.status === 'INACTIVO', `Inactive method value edit failed: ${JSON.stringify(inactiveValue.body)}`);
+    const inactiveTypeRequestId = `method-edit-inactive-type-${randomUUID()}`;
+    requestIds.add(inactiveTypeRequestId);
+    const inactiveType = await patchContactMethod(inactivePhoneId, { type: 'WHATSAPP' }, inactiveTypeRequestId);
+    assert(inactiveType.response.status === 200 && inactiveType.body.data.type === 'WHATSAPP' && inactiveType.body.data.status === 'INACTIVO', `Inactive method type edit failed: ${JSON.stringify(inactiveType.body)}`);
+
+    const whatsappValueRequestId = `method-edit-whatsapp-value-${randomUUID()}`;
+    requestIds.add(whatsappValueRequestId);
+    const whatsappValue = await patchContactMethod(changedTypeId, { value: '+52 449 555 0322' }, whatsappValueRequestId);
+    assert(whatsappValue.response.status === 200 && whatsappValue.body.data.type === 'WHATSAPP', `WhatsApp value edit failed: ${JSON.stringify(whatsappValue.body)}`);
+    const typeChangeRequestId = `method-edit-type-${randomUUID()}`;
+    requestIds.add(typeChangeRequestId);
+    const changedType = await patchContactMethod(changedTypeId, { type: 'TELEFONO' }, typeChangeRequestId);
+    assert(changedType.response.status === 200 && changedType.body.data.id === changedTypeId && changedType.body.data.type === 'TELEFONO' && changedType.body.data.value === '+52 449 555 0322' && changedType.body.data.status === 'ACTIVO', `WHATSAPP to TELEFONO edit failed: ${JSON.stringify(changedType.body)}`);
+    const phoneEditRequestId = `method-edit-phone-${randomUUID()}`;
+    requestIds.add(phoneEditRequestId);
+    const phoneEdit = await patchContactMethod(activePhoneId, { value: '+52 449 555 0333 x 9' }, phoneEditRequestId);
+    assert(phoneEdit.response.status === 200 && phoneEdit.body.data.type === 'TELEFONO' && phoneEdit.body.data.value === '+52 449 555 0333 x 9', `Active phone edit failed: ${JSON.stringify(phoneEdit.body)}`);
+
+    const ownValueRequestId = `method-edit-own-value-${randomUUID()}`;
+    requestIds.add(ownValueRequestId);
+    const ownValue = await patchContactMethod(activeEmailId, { value: 'corrected@example.test' }, ownValueRequestId);
+    assert(ownValue.response.status === 200, `Method incorrectly conflicted with its own unchanged value: ${JSON.stringify(ownValue.body)}`);
+    const methodCountBeforeDuplicates = (await pool.query('SELECT count(*)::int AS count FROM core.medios_contacto WHERE contacto_id = $1', [editContactId])).rows[0].count;
+    for (const [methodId, payload, label] of [[activeEmailId, { value: duplicateEmail }, 'email duplicate'], [activeEmailId, { value: duplicateEmail.toUpperCase() }, 'case-insensitive email duplicate'], [activePhoneId, { value: '+52 449 555 0322' }, 'phone duplicate']]) {
+      const duplicateEdit = await patchContactMethod(methodId, payload, `method-edit-duplicate-${randomUUID()}`);
+      assert(duplicateEdit.response.status === 409 && duplicateEdit.body.code === 'CONTACT_METHOD_DUPLICATE', `${label} edit was not rejected safely.`);
+    }
+    const rowsAfterDuplicateEdits = await pool.query('SELECT medio_id::text, tipo_medio, valor FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [editContactId]);
+    assert(rowsAfterDuplicateEdits.rows.length === methodCountBeforeDuplicates, 'Duplicate edit created a replacement or duplicate row.');
+    assert(rowsAfterDuplicateEdits.rows.find((row) => row.medio_id === activeEmailId).valor === 'corrected@example.test' && rowsAfterDuplicateEdits.rows.find((row) => row.medio_id === activePhoneId).valor === '+52 449 555 0333 x 9', 'Duplicate rejection changed the original method.');
+
+    const concurrentEditMethodIds = [];
+    for (const value of ['+52 449 555 0381', '+52 449 555 0382']) {
+      const requestId = `method-edit-concurrent-fixture-${randomUUID()}`;
+      requestIds.add(requestId);
+      const createdMethod = await addContactMethod(editContactId, { type: 'TELEFONO', value }, requestId);
+      assert(createdMethod.response.status === 201, `Concurrent edit fixture failed: ${JSON.stringify(createdMethod.body)}`);
+      concurrentEditMethodIds.push(createdMethod.body.data.id);
+    }
+    const concurrentEditRequestIds = [`method-edit-concurrent-a-${randomUUID()}`, `method-edit-concurrent-b-${randomUUID()}`];
+    concurrentEditRequestIds.forEach((requestId) => requestIds.add(requestId));
+    const concurrentEdits = await Promise.all(concurrentEditMethodIds.map((methodId, index) => patchContactMethod(methodId, { value: '+52 449 555 0399' }, concurrentEditRequestIds[index])));
+    assert(concurrentEdits.map(({ response }) => response.status).sort().join(',') === '200,409', `Concurrent equivalent edits were not serialized safely: ${concurrentEdits.map(({ response }) => response.status).join(',')}`);
+    const concurrentEditRows = await pool.query('SELECT count(*)::int AS count FROM core.medios_contacto WHERE contacto_id = $1 AND tipo_medio = $2 AND valor = $3', [editContactId, 'TELEFONO', '+52 449 555 0399']);
+    assert(concurrentEditRows.rows[0].count === 1, 'Concurrent equivalent edits created duplicate resulting methods.');
+
+    const crossContactEditRequestId = `method-edit-cross-contact-${randomUUID()}`;
+    requestIds.add(crossContactEditRequestId);
+    const crossContactMethodId = crossContact.body.data.methods[0].id;
+    const crossContactEdit = await patchContactMethod(crossContactMethodId, { value: '+52 449 555 0322' }, crossContactEditRequestId);
+    assert(crossContactEdit.response.status === 200, `Same type/value on another contact was rejected: ${JSON.stringify(crossContactEdit.body)}`);
+
+    for (const [methodId, payload, label] of [[activeEmailId, { value: ' ' }, 'blank'], [activeEmailId, { value: 'invalid-email' }, 'invalid email'], [activeEmailId, { type: 'TELEFONO' }, 'invalid final pair'], [activeEmailId, { type: 'OTRO' }, 'OTRO'], [activeEmailId, { type: 'SMS' }, 'unsupported type'], [activeEmailId, {}, 'empty PATCH']]) {
+      const invalid = await patchContactMethod(methodId, payload, `method-edit-invalid-${randomUUID()}`);
+      assert(invalid.response.status === 400, `${label} method edit was not rejected.`);
+    }
+
+    const unsafeEditMethods = [
+      [await createDirectContact(pool, activeCompanyId, 'EDIT_INACTIVE_CONTACT', 'INACTIVO'), 'ACTIVO', 'inactive contact'],
+      [await createDirectContact(pool, activeCompanyId, 'EDIT_PENDING_CONTACT', 'PENDIENTE'), 'ACTIVO', 'pending contact'],
+      [await createDirectContact(pool, activeCompanyId, 'EDIT_REJECTED_CONTACT', 'RECHAZADO'), 'ACTIVO', 'rejected contact'],
+      [await createDirectContact(pool, inactiveCompanyId, 'EDIT_INACTIVE_COMPANY', 'ACTIVO'), 'ACTIVO', 'inactive company'],
+      [await createDirectContact(pool, blockedCompanyId, 'EDIT_BLOCKED_COMPANY', 'ACTIVO'), 'ACTIVO', 'blocked company'],
+      [editContactId, 'PENDIENTE', 'pending method'],
+      [editContactId, 'RECHAZADO', 'rejected method']
+    ];
+    for (const [contactId, status, label] of unsafeEditMethods) {
+      const directMethod = await queryWithAuditContext(pool, setupRequestId,
+        `INSERT INTO core.medios_contacto (contacto_id, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago)
+         VALUES ($1, 'CORREO', $2, $3, FALSE, FALSE) RETURNING medio_id::text`, [contactId, `${label.replace(/ /g, '.')}.${marker.toLowerCase()}@example.test`, status]);
+      const rejected = await patchContactMethod(directMethod.rows[0].medio_id, { value: `corrected.${label.replace(/ /g, '.')}.${marker.toLowerCase()}@example.test` }, `method-edit-unsafe-${randomUUID()}`);
+      assert(rejected.response.status === 409, `${label} did not reject method editing safely.`);
+    }
+    const missingMethodEdit = await patchContactMethod('999999999999999', { value: 'missing@example.test' }, `method-edit-missing-${randomUUID()}`);
+    assert(missingMethodEdit.response.status === 404, 'Nonexistent method did not reject editing safely.');
+    const oversizedMethodEdit = await patchContactMethod('9223372036854775808', { value: 'oversized@example.test' }, `method-edit-oversized-${randomUUID()}`);
+    assert(oversizedMethodEdit.response.status === 400, 'Out-of-range method ID did not reject editing safely.');
+
+    const directoryAfterMethodEdits = await getContactDirectory(activeCompanyId);
+    const editedDirectoryContact = directoryAfterMethodEdits.body.data.contacts.find((contact) => contact.id === editContactId);
+    assert(editedDirectoryContact.methods.some((item) => item.id === activeEmailId && item.value === 'corrected@example.test'), 'Directory did not show the corrected active method.');
+    assert(editedDirectoryContact.inactiveMethods.some((item) => item.id === inactivePhoneId && item.value === '+52 449 555 0311 ext. 8' && item.type === 'WHATSAPP'), 'Directory did not show the corrected inactive method in inactiveMethods.');
 
     const contactRequestId = `contact-create-${randomUUID()}`;
     requestIds.add(contactRequestId);

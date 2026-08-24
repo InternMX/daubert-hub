@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import type { AddContactMethodDto } from './dto/add-contact-method.dto';
+import type { EditContactMethodDto } from './dto/edit-contact-method.dto';
+import { validateContactMethod } from './contact-method-validation';
 
 interface LockedContactRow extends QueryResultRow {
   id: string;
@@ -81,7 +83,36 @@ export class ContactMethodsRepository {
     }
   }
 
-  private async lockMethod(client: PoolClient, id: number): Promise<LockedMethodRow | null> {
+  async edit(id: string, input: EditContactMethodDto, requestId: string): Promise<ContactMethodRecord | null> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      await this.setAuditContext(client, requestId);
+      const method = await this.lockMethod(client, id);
+      if (!method) { await client.query('COMMIT'); return null; }
+      if (method.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
+      if (method.contact_status !== 'ACTIVO') throw Object.assign(new Error('CONTACT_NOT_ACTIVE'), { code: 'CONTACT_NOT_ACTIVE' });
+      if (method.status !== 'ACTIVO' && method.status !== 'INACTIVO') throw Object.assign(new Error('METHOD_STATUS_NOT_MANAGEABLE'), { code: 'METHOD_STATUS_NOT_MANAGEABLE' });
+      const resulting = { type: input.type ?? method.type, value: input.value ?? method.value };
+      validateContactMethod(resulting.type, resulting.value);
+      if (await this.methodExists(client, method.contact_id, resulting, method.id)) throw Object.assign(new Error('CONTACT_METHOD_DUPLICATE'), { code: 'CONTACT_METHOD_DUPLICATE' });
+      const result = await client.query<ContactMethodRecord>(`
+        UPDATE core.medios_contacto
+        SET tipo_medio = $1, valor = $2
+        WHERE medio_id = $3
+        RETURNING medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type,
+          valor AS value, estatus AS status, es_principal AS is_primary`, [resulting.type, resulting.value, id]);
+      await client.query('COMMIT');
+      return result.rows[0]!;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* Preserve the database error. */ }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async lockMethod(client: PoolClient, id: number | string): Promise<LockedMethodRow | null> {
     const result = await client.query<LockedMethodRow>(`
       SELECT method.medio_id::text AS id, method.contacto_id::text AS contact_id, method.tipo_medio AS type,
         method.valor AS value, method.estatus AS status, method.es_principal AS is_primary,
@@ -104,12 +135,13 @@ export class ContactMethodsRepository {
     return result.rows[0] ?? null;
   }
 
-  private async methodExists(client: PoolClient, contactId: string, input: AddContactMethodDto): Promise<boolean> {
+  private async methodExists(client: PoolClient, contactId: string, input: { type: string; value: string }, excludedMethodId?: string): Promise<boolean> {
     const comparison = input.type === 'CORREO' ? 'LOWER(BTRIM(valor)) = LOWER($3)' : 'BTRIM(valor) = $3';
     const result = await client.query(`
       SELECT 1 FROM core.medios_contacto
       WHERE contacto_id = $1 AND tipo_medio = $2 AND ${comparison}
-      LIMIT 1`, [contactId, input.type, input.value]);
+        AND ($4::bigint IS NULL OR medio_id <> $4::bigint)
+      LIMIT 1`, [contactId, input.type, input.value, excludedMethodId ?? null]);
     return result.rows.length > 0;
   }
 

@@ -70,4 +70,82 @@ describe('ContactMethodsRepository', () => {
     await expect(repository.changeStatus(121, 'INACTIVO', 'request-1')).rejects.toMatchObject({ code: 'COMPANY_NOT_ACTIVE' });
     expect(query).toHaveBeenNthCalledWith(5, 'ROLLBACK');
   });
+
+  it.each([
+    [{ value: 'corrected@example.test' }, 'CORREO', 'corrected@example.test', 'ACTIVO'],
+    [{ type: ContactMethodType.Phone }, 'TELEFONO', '449 555 0200', 'ACTIVO'],
+    [{ type: ContactMethodType.WhatsApp, value: '+52 449 555 0201' }, 'WHATSAPP', '+52 449 555 0201', 'INACTIVO']
+  ] as const)('updates only the resulting type/value in place for partial payload %#', async (input, type, value, status) => {
+    const locked = { id: '205', contact_id: '31', type: 'CORREO', value: '449 555 0200', status, is_primary: true, contact_status: 'ACTIVO', company_status: 'ACTIVO' };
+    const updated = { id: '205', contact_id: '31', type, value, status, is_primary: true };
+    const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [locked] }).mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [updated] }).mockResolvedValueOnce(undefined);
+    const { repository, client } = repositoryWithClient(query);
+    await expect(repository.edit('205', input, 'request-edit')).resolves.toEqual(updated);
+    expect(query).toHaveBeenNthCalledWith(2, "SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
+    expect(query).toHaveBeenNthCalledWith(3, "SELECT set_config('app.request_id', $1, true)", ['request-edit']);
+    expect(query.mock.calls[3]?.[0]).toContain('FOR UPDATE OF method, contact, company');
+    expect(query.mock.calls[4]?.[0]).toContain('medio_id <> $4::bigint');
+    expect(query.mock.calls[4]?.[1]).toEqual(['31', type, value, '205']);
+    expect(query.mock.calls[5]?.[0]).toContain('SET tipo_medio = $1, valor = $2');
+    expect(query.mock.calls[5]?.[0]).not.toMatch(/estatus\s*=|es_principal\s*=|recibe_notificacion_pago\s*=|tipo_destinatario_pago\s*=|observaciones\s*=/);
+    expect(query.mock.calls[5]?.[1]).toEqual([type, value, '205']);
+    expect(query).toHaveBeenNthCalledWith(7, 'COMMIT');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('excludes the edited row while checking case-insensitive email duplicates', async () => {
+    const locked = { id: '205', contact_id: '31', type: 'CORREO', value: 'same@example.test', status: 'ACTIVO', is_primary: false, contact_status: 'ACTIVO', company_status: 'ACTIVO' };
+    const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [locked] }).mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [locked] }).mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.edit('205', { value: 'same@example.test' }, 'request-edit')).resolves.toEqual(locked);
+    expect(query.mock.calls[4]?.[0]).toContain('LOWER(BTRIM(valor)) = LOWER($3)');
+    expect(query.mock.calls[4]?.[1]).toEqual(['31', 'CORREO', 'same@example.test', '205']);
+  });
+
+  it('rejects a duplicate resulting value and rolls back without updating', async () => {
+    const locked = { id: '205', contact_id: '31', type: 'TELEFONO', value: '449 555 0200', status: 'ACTIVO', is_primary: false, contact_status: 'ACTIVO', company_status: 'ACTIVO' };
+    const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [locked] }).mockResolvedValueOnce({ rows: [{}] }).mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.edit('205', { value: '449 555 0201' }, 'request-edit')).rejects.toMatchObject({ code: 'CONTACT_METHOD_DUPLICATE' });
+    expect(query).toHaveBeenNthCalledWith(6, 'ROLLBACK');
+    expect(query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('UPDATE core.medios_contacto'))).toBe(false);
+  });
+
+  it('validates the final pair after applying a type-only patch', async () => {
+    const locked = { id: '205', contact_id: '31', type: 'CORREO', value: 'safe@example.test', status: 'ACTIVO', is_primary: false, contact_status: 'ACTIVO', company_status: 'ACTIVO' };
+    const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [locked] }).mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.edit('205', { type: ContactMethodType.Phone }, 'request-edit')).rejects.toMatchObject({ status: 400 });
+    expect(query).toHaveBeenNthCalledWith(5, 'ROLLBACK');
+  });
+
+  it.each([
+    ['PENDIENTE', 'ACTIVO', 'ACTIVO', 'METHOD_STATUS_NOT_MANAGEABLE'],
+    ['RECHAZADO', 'ACTIVO', 'ACTIVO', 'METHOD_STATUS_NOT_MANAGEABLE'],
+    ['ACTIVO', 'INACTIVO', 'ACTIVO', 'CONTACT_NOT_ACTIVE'],
+    ['ACTIVO', 'PENDIENTE', 'ACTIVO', 'CONTACT_NOT_ACTIVE'],
+    ['ACTIVO', 'RECHAZADO', 'ACTIVO', 'CONTACT_NOT_ACTIVE'],
+    ['ACTIVO', 'ACTIVO', 'INACTIVO', 'COMPANY_NOT_ACTIVE'],
+    ['ACTIVO', 'ACTIVO', 'BLOQUEADO', 'COMPANY_NOT_ACTIVE']
+  ])('rejects unsafe method/contact/company states %#', async (status, contactStatus, companyStatus, code) => {
+    const locked = { id: '205', contact_id: '31', type: 'CORREO', value: 'safe@example.test', status, is_primary: false, contact_status: contactStatus, company_status: companyStatus };
+    const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [locked] }).mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.edit('205', { value: 'corrected@example.test' }, 'request-edit')).rejects.toMatchObject({ code });
+  });
+
+  it('returns null for a nonexistent method without attempting an update', async () => {
+    const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.edit('999999999999999', { value: 'corrected@example.test' }, 'request-edit')).resolves.toBeNull();
+    expect(query).toHaveBeenNthCalledWith(5, 'COMMIT');
+  });
 });
