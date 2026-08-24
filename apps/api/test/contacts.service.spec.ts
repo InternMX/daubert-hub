@@ -70,4 +70,29 @@ describe('ContactsService', () => {
     expect(JSON.stringify(response)).not.toContain('recibe_notificacion_pago');
     expect(JSON.stringify(response)).not.toContain('tipo_destinatario_pago');
   });
+
+  it('rejects an empty contact patch', async () => {
+    await expect(new ContactsService({ update: vi.fn() } as never).update('121', {}, 'request-edit')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('returns updated contact data with string bigint IDs and no payment routing', async () => {
+    const record = { contacto_id: '9007199254740993', empresa_id: '9007199254740994', tipo_contacto: 'PERSONA', nombre: 'María López', area: 'Compras', cargo: null, observaciones: 'Editada', estatus: 'ACTIVO', es_contacto_principal: false };
+    const update = vi.fn().mockResolvedValue(record); const service = new ContactsService({ update } as never);
+    const response = await service.update(record.contacto_id, { name: 'María López', position: null }, 'request-edit');
+    expect(update).toHaveBeenCalledWith(record.contacto_id, { name: 'María López', position: null }, 'request-edit');
+    expect(response).toEqual({ data: { id: record.contacto_id, companyId: record.empresa_id, contactType: 'PERSONA', name: 'María López', area: 'Compras', position: null, notes: 'Editada', status: 'ACTIVO', isPrimary: false } });
+    expect(JSON.stringify(response)).not.toMatch(/recibe_notificacion_pago|tipo_destinatario_pago/);
+  });
+
+  it('returns 404 for a nonexistent contact edit', async () => {
+    await expect(new ContactsService({ update: vi.fn().mockResolvedValue(null) } as never).update('999999999999999', { notes: 'x' }, 'request-edit')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it.each([
+    ['CONTACT_NOT_ACTIVE', 409], ['COMPANY_NOT_ACTIVE', 409], ['PERSON_NAME_REQUIRED', 400], ['CONTACT_AREA_REQUIRED', 400],
+    ['CONTACT_NAME_NOT_ALLOWED', 400], ['CONTACT_POSITION_NOT_ALLOWED', 400], ['CONTACT_TYPE_NOT_EDITABLE', 409], ['CONTACT_NO_CHANGES', 400]
+  ])('maps contact edit error %s safely', async (code, status) => {
+    const service = new ContactsService({ update: vi.fn().mockRejectedValue({ code }) } as never);
+    await expect(service.update('121', { notes: 'x' }, 'request-edit')).rejects.toMatchObject({ status, response: expect.not.stringContaining('SQL') });
+  });
 });

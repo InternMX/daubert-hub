@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { ContactType, type CreateContactDto, type CreateContactMethodDto } from './dto/create-contact.dto';
+import type { UpdateContactDto } from './dto/update-contact.dto';
 
 interface CompanyRow extends QueryResultRow {
   empresa_id: string;
   estatus: string;
 }
 
-interface ContactRow extends QueryResultRow {
+export interface ContactRow extends QueryResultRow {
   contacto_id: string;
   empresa_id: string;
   tipo_contacto: string;
@@ -61,6 +62,33 @@ export class ContactsRepository {
     }
   }
 
+  async update(id: string, input: UpdateContactDto, requestId: string): Promise<ContactRow | null> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      await this.setAuditContext(client, requestId);
+      const contact = await this.lockContact(client, id);
+      if (!contact) { await client.query('COMMIT'); return null; }
+      if (contact.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
+      if (contact.estatus !== 'ACTIVO') throw Object.assign(new Error('CONTACT_NOT_ACTIVE'), { code: 'CONTACT_NOT_ACTIVE' });
+      const changes = this.contactChanges(contact, input);
+      if (changes.length === 0) throw Object.assign(new Error('CONTACT_NO_CHANGES'), { code: 'CONTACT_NO_CHANGES' });
+      const values = changes.map((change) => change.value);
+      values.push(id);
+      const result = await client.query<ContactRow>(`
+        UPDATE core.contactos SET ${changes.map((change, index) => `${change.column} = $${index + 1}`).join(', ')}
+        WHERE contacto_id = $${values.length}
+        RETURNING contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal`, values);
+      await client.query('COMMIT');
+      return result.rows[0]!;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* Preserve the original database error. */ }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);
@@ -73,6 +101,41 @@ export class ContactsRepository {
     if (company.estatus === 'INACTIVO') throw Object.assign(new Error('COMPANY_INACTIVE'), { code: 'COMPANY_INACTIVE' });
     if (company.estatus === 'BLOQUEADO') throw Object.assign(new Error('COMPANY_BLOCKED'), { code: 'COMPANY_BLOCKED' });
     if (company.estatus !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
+  }
+
+  private async lockContact(client: PoolClient, id: string): Promise<ContactRow & { company_status: string } | null> {
+    const result = await client.query<ContactRow & { company_status: string }>(`
+      SELECT contact.contacto_id::text, contact.empresa_id::text, contact.tipo_contacto, contact.nombre,
+        contact.area, contact.cargo, contact.observaciones, contact.estatus, contact.es_contacto_principal,
+        company.estatus AS company_status
+      FROM core.contactos contact
+      JOIN core.empresas company ON company.empresa_id = contact.empresa_id
+      WHERE contact.contacto_id = $1
+      FOR UPDATE OF contact, company`, [id]);
+    return result.rows[0] ?? null;
+  }
+
+  private contactChanges(contact: ContactRow, input: UpdateContactDto): Array<{ column: string; value: string | null }> {
+    const changes: Array<{ column: string; value: string | null }> = [];
+    if (contact.tipo_contacto === ContactType.Person) {
+      if (input.name !== undefined) {
+        if (!input.name) throw Object.assign(new Error('PERSON_NAME_REQUIRED'), { code: 'PERSON_NAME_REQUIRED' });
+        changes.push({ column: 'nombre', value: input.name });
+      }
+      if (input.area !== undefined) changes.push({ column: 'area', value: input.area });
+      if (input.position !== undefined) changes.push({ column: 'cargo', value: input.position });
+    } else if (contact.tipo_contacto === ContactType.Area || contact.tipo_contacto === ContactType.GenericMailbox) {
+      if (input.area !== undefined) {
+        if (!input.area) throw Object.assign(new Error('CONTACT_AREA_REQUIRED'), { code: 'CONTACT_AREA_REQUIRED' });
+        changes.push({ column: 'area', value: input.area });
+      }
+      if (input.name !== undefined && input.name !== null) throw Object.assign(new Error('CONTACT_NAME_NOT_ALLOWED'), { code: 'CONTACT_NAME_NOT_ALLOWED' });
+      if (input.position !== undefined && input.position !== null) throw Object.assign(new Error('CONTACT_POSITION_NOT_ALLOWED'), { code: 'CONTACT_POSITION_NOT_ALLOWED' });
+    } else {
+      throw Object.assign(new Error('CONTACT_TYPE_NOT_EDITABLE'), { code: 'CONTACT_TYPE_NOT_EDITABLE' });
+    }
+    if (input.notes !== undefined) changes.push({ column: 'observaciones', value: input.notes });
+    return changes;
   }
 
   private async insertContact(client: PoolClient, input: CreateContactDto): Promise<ContactRow> {

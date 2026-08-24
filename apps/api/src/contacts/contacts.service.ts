@@ -1,9 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContactMethodType, ContactType, type CreateContactDto } from './dto/create-contact.dto';
-import { ContactsRepository, type CreatedContactRecord } from './contacts.repository';
+import type { UpdateContactDto } from './dto/update-contact.dto';
+import { ContactsRepository, type ContactRow, type CreatedContactRecord } from './contacts.repository';
 
-export interface CreateContactResponse {
-  data: {
+interface ContactData {
     id: string;
     companyId: string;
     contactType: string;
@@ -13,9 +13,9 @@ export interface CreateContactResponse {
     notes: string | null;
     status: string;
     isPrimary: boolean;
-    methods: Array<{ id: string; type: string; value: string; status: string; isPrimary: boolean }>;
-  };
 }
+export interface CreateContactResponse { data: ContactData & { methods: Array<{ id: string; type: string; value: string; status: string; isPrimary: boolean }> }; }
+export interface UpdateContactResponse { data: ContactData; }
 
 @Injectable()
 export class ContactsService {
@@ -25,6 +25,18 @@ export class ContactsService {
     this.validate(input);
     try {
       return this.mapResponse(await this.repository.create(input, requestId));
+    } catch (error) {
+      this.throwKnownError(error);
+      throw error;
+    }
+  }
+
+  async update(id: string, input: UpdateContactDto, requestId: string): Promise<UpdateContactResponse> {
+    if (Object.keys(input).length === 0) throw new BadRequestException('Proporciona al menos un campo para actualizar.');
+    try {
+      const contact = await this.repository.update(id, input, requestId);
+      if (!contact) throw new NotFoundException('Contacto no encontrado.');
+      return this.mapContactResponse(contact);
     } catch (error) {
       this.throwKnownError(error);
       throw error;
@@ -60,6 +72,13 @@ export class ContactsService {
     if (code === 'COMPANY_INACTIVE') throw new ConflictException({ code, message: 'La empresa está inactiva.' });
     if (code === 'COMPANY_BLOCKED') throw new ConflictException({ code, message: 'La empresa está bloqueada.' });
     if (code === 'COMPANY_NOT_ACTIVE') throw new ConflictException({ code, message: 'La empresa no está activa.' });
+    if (code === 'CONTACT_NOT_ACTIVE') throw new ConflictException({ code, message: 'El contacto debe estar activo para editarse.' });
+    if (code === 'PERSON_NAME_REQUIRED') throw new BadRequestException({ code, message: 'El nombre es obligatorio para contactos de tipo PERSONA.' });
+    if (code === 'CONTACT_AREA_REQUIRED') throw new BadRequestException({ code, message: 'El área es obligatoria para este tipo de contacto.' });
+    if (code === 'CONTACT_NAME_NOT_ALLOWED') throw new BadRequestException({ code, message: 'El nombre no aplica para este tipo de contacto.' });
+    if (code === 'CONTACT_POSITION_NOT_ALLOWED') throw new BadRequestException({ code, message: 'El cargo no aplica para este tipo de contacto.' });
+    if (code === 'CONTACT_TYPE_NOT_EDITABLE') throw new ConflictException({ code, message: 'Este tipo de contacto no puede editarse desde este flujo.' });
+    if (code === 'CONTACT_NO_CHANGES') throw new BadRequestException({ code, message: 'Proporciona al menos un cambio aplicable.' });
   }
 
   private mapResponse(created: CreatedContactRecord): CreateContactResponse {
@@ -77,5 +96,9 @@ export class ContactsService {
         methods: created.methods.map((method) => ({ id: method.medio_id, type: method.tipo_medio, value: method.valor, status: method.estatus, isPrimary: method.es_principal }))
       }
     };
+  }
+
+  private mapContactResponse(contact: ContactRow): UpdateContactResponse {
+    return { data: { id: contact.contacto_id, companyId: contact.empresa_id, contactType: contact.tipo_contacto, name: contact.nombre, area: contact.area, position: contact.cargo, notes: contact.observaciones, status: contact.estatus, isPrimary: contact.es_contacto_principal } };
   }
 }

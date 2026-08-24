@@ -46,6 +46,15 @@ async function postContact(payload, requestId) {
   return { response, body: await response.json() };
 }
 
+async function patchContact(id, payload, requestId) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contacts/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    body: JSON.stringify(payload)
+  });
+  return { response, body: await response.json() };
+}
+
 async function changeMethodStatus(id, action, requestId) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}/${action}`, {
     method: 'POST', headers: { 'x-request-id': requestId }
@@ -141,6 +150,47 @@ async function run() {
     assert(auditRows.rows.filter((row) => row.schema_name === 'core' && row.table_name === 'contactos').length === 1, 'Missing audit insert for the contact.');
     assert(auditRows.rows.filter((row) => row.schema_name === 'core' && row.table_name === 'medios_contacto').length === 5, 'Missing audit inserts for contact methods.');
     assert(auditRows.rows.every((row) => String(row.operation).toUpperCase().includes('INSERT') && row.origin === 'DAUBERT_HUB' && row.request_id === contactRequestId), 'Contact audit origin, request ID, or operation is inconsistent.');
+
+    const editPersonCreateId = `contact-edit-person-create-${randomUUID()}`;
+    requestIds.add(editPersonCreateId);
+    const editPerson = await postContact({ companyId: activeCompanyId, contactType: 'PERSONA', name: `${marker} Maria Lopez`, area: 'Compras', position: 'Compradora', notes: 'Observación inicial', methods: [{ type: 'CORREO', value: `edit.${marker.toLowerCase()}@example.test` }, { type: 'TELEFONO', value: '+52 449 555 0188' }] }, editPersonCreateId);
+    assert(editPerson.response.status === 201, `PERSONA edit fixture creation failed: ${JSON.stringify(editPerson.body)}`);
+    const editPersonId = editPerson.body.data.id;
+    const inactiveEditMethodId = editPerson.body.data.methods[1].id;
+    const editMethodDeactivateId = `contact-edit-method-deactivate-${randomUUID()}`;
+    requestIds.add(editMethodDeactivateId);
+    const editMethodDeactivated = await changeMethodStatus(inactiveEditMethodId, 'deactivate', editMethodDeactivateId);
+    assert(editMethodDeactivated.response.status === 200, `PERSONA inactive method setup failed: ${JSON.stringify(editMethodDeactivated.body)}`);
+    const methodsBeforeEdit = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [editPersonId]);
+    assert(methodsBeforeEdit.rows.length === 2 && methodsBeforeEdit.rows.filter((method) => method.estatus === 'ACTIVO').length === 1 && methodsBeforeEdit.rows.filter((method) => method.estatus === 'INACTIVO').length === 1, 'PERSONA edit fixture did not have one active and one inactive method.');
+
+    const editPersonRequestId = `contact-edit-person-${randomUUID()}`;
+    requestIds.add(editPersonRequestId);
+    const editedPerson = await patchContact(editPersonId, { name: `${marker} María López`, area: 'Compras y Abastecimiento', position: null, notes: 'Observación actualizada' }, editPersonRequestId);
+    assert(editedPerson.response.status === 200, `PERSONA PATCH failed: ${JSON.stringify(editedPerson.body)}`);
+    assert(editedPerson.response.headers.get('x-request-id') === editPersonRequestId, 'PERSONA PATCH did not preserve x-request-id.');
+    assert(editedPerson.body.data.id === editPersonId && typeof editedPerson.body.data.id === 'string' && editedPerson.body.data.companyId === activeCompanyId && editedPerson.body.data.contactType === 'PERSONA' && editedPerson.body.data.name === `${marker} María López` && editedPerson.body.data.area === 'Compras y Abastecimiento' && editedPerson.body.data.position === null && editedPerson.body.data.notes === 'Observación actualizada' && editedPerson.body.data.status === 'ACTIVO', 'PERSONA PATCH response did not return the updated immutable representation.');
+    assert(!JSON.stringify(editedPerson.body).includes('recibe_notificacion_pago') && !JSON.stringify(editedPerson.body).includes('tipo_destinatario_pago'), 'PERSONA PATCH exposed payment routing fields.');
+    const storedEditedPerson = await pool.query('SELECT contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [editPersonId]);
+    const personRow = storedEditedPerson.rows[0];
+    assert(personRow && personRow.empresa_id === activeCompanyId && personRow.tipo_contacto === 'PERSONA' && personRow.nombre === `${marker} María López` && personRow.area === 'Compras y Abastecimiento' && personRow.cargo === null && personRow.observaciones === 'Observación actualizada' && personRow.estatus === 'ACTIVO' && personRow.es_contacto_principal === false, 'PERSONA PATCH changed immutable fields or failed to persist descriptive fields.');
+    const methodsAfterEdit = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [editPersonId]);
+    assert(JSON.stringify(methodsAfterEdit.rows) === JSON.stringify(methodsBeforeEdit.rows), 'PERSONA PATCH changed active/inactive methods or payment metadata.');
+    const editAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', editPersonRequestId]);
+    assert(editAudit.rows.length === 1 && editAudit.rows[0].schema_name === 'core' && editAudit.rows[0].table_name === 'contactos' && String(editAudit.rows[0].operation).toUpperCase().includes('UPDATE') && editAudit.rows[0].origin === 'DAUBERT_HUB' && editAudit.rows[0].request_id === editPersonRequestId, 'PERSONA PATCH audit event was not one DAUBERT_HUB contact UPDATE with the request ID.');
+
+    for (const [contactType, initialArea, updatedArea] of [['AREA', 'Compras', 'Compras y Abastecimiento'], ['BUZON_GENERICO', 'Pagos', 'Pagos a Proveedores']]) {
+      const createId = `contact-edit-${contactType.toLowerCase()}-create-${randomUUID()}`;
+      requestIds.add(createId);
+      const fixture = await postContact({ companyId: activeCompanyId, contactType, area: initialArea, notes: 'Inicial', methods: [{ type: 'CORREO', value: `${contactType.toLowerCase()}.${marker.toLowerCase()}@example.test` }] }, createId);
+      assert(fixture.response.status === 201, `${contactType} edit fixture creation failed: ${JSON.stringify(fixture.body)}`);
+      const editId = `contact-edit-${contactType.toLowerCase()}-${randomUUID()}`;
+      requestIds.add(editId);
+      const edited = await patchContact(fixture.body.data.id, { area: updatedArea, notes: `Nota ${contactType}` }, editId);
+      assert(edited.response.status === 200 && edited.body.data.contactType === contactType && edited.body.data.area === updatedArea && edited.body.data.name === null && edited.body.data.position === null, `${contactType} PATCH response violated type rules: ${JSON.stringify(edited.body)}`);
+      const stored = (await pool.query('SELECT empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [fixture.body.data.id])).rows[0];
+      assert(stored.empresa_id === activeCompanyId && stored.tipo_contacto === contactType && stored.nombre === null && stored.area === updatedArea && stored.cargo === null && stored.observaciones === `Nota ${contactType}` && stored.estatus === 'ACTIVO' && stored.es_contacto_principal === false, `${contactType} PATCH did not preserve immutable fields.`);
+    }
 
     const methodIds = created.body.data.methods.map((method) => method.id);
     for (const methodId of methodIds) {
