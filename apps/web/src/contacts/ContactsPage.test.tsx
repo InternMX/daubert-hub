@@ -34,7 +34,19 @@ describe('ContactsPage global creation', () => {
   it('renders the global action and opens a company autocomplete with no selected company', async () => {
     listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); renderPage('/contacts');
     expect(await screen.findByRole('button', { name: 'Agregar contacto' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     const drawer = await globalDrawer(); expect(within(drawer).getByRole('combobox', { name: 'Empresa' })).toBeInTheDocument(); expect(within(drawer).queryByText('ALMEX')).not.toBeInTheDocument();
+  });
+
+  it('opens the global drawer from the action URL and Cancelar clears only the action parameter', async () => {
+    listMock.mockResolvedValue({ data: [], meta: { page: 2, pageSize: 25, total: 0, totalPages: 0 } }); renderPage('/contacts?action=new-contact&search=keep&page=2&pageSize=25');
+    const drawer = await screen.findByRole('dialog');
+    const companyInput = within(drawer).getByRole('combobox', { name: 'Empresa' });
+    expect(companyInput).toBeVisible(); expect(companyInput).toHaveValue(''); expect(within(drawer).queryByText('ALMEX')).not.toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByTestId('location')).toHaveTextContent('?search=keep&page=2&pageSize=25');
+    expect(screen.getByTestId('location')).not.toHaveTextContent('action=');
   });
 
   it('keeps the company fixed and hides autocomplete in contextual mode', async () => {
@@ -48,10 +60,10 @@ describe('ContactsPage global creation', () => {
   });
 
   it('requires an explicit result selection and posts that company ID', async () => {
-    listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); companySearchMock.mockResolvedValue([{ ...lookup, matchedAlias: null, commercialName: 'SOLUCIONES EN DESARROLLO' }]); createMock.mockResolvedValue({ contact: { id: '9' } as never, requestId: 'request-1' }); renderPage('/contacts?search=keep&page=2'); const drawer = await globalDrawer(); const form = within(drawer); const input = form.getByRole('combobox', { name: 'Empresa' });
+    listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); companySearchMock.mockResolvedValue([{ ...lookup, matchedAlias: null, commercialName: 'SOLUCIONES EN DESARROLLO' }]); createMock.mockResolvedValue({ contact: { id: '9' } as never, requestId: 'request-1' }); renderPage('/contacts?action=new-contact&search=keep&page=2'); const drawer = await screen.findByRole('dialog'); const form = within(drawer); const input = form.getByRole('combobox', { name: 'Empresa' });
     const user = userEvent.setup(); await user.click(input); await user.type(input, 'sol'); await waitFor(() => expect(companySearchMock).toHaveBeenCalledWith('sol')); fireEvent.click(await screen.findByText('SOLUCIONES EN DESARROLLO')); expect(screen.queryByText(/Coincidencia por alias:/)).not.toBeInTheDocument();
     fireEvent.change(form.getByRole('textbox', { name: 'Nombre' }), { target: { value: 'María' } }); fireEvent.change(form.getByRole('textbox', { name: 'Valor' }), { target: { value: 'maria@example.test' } }); fireEvent.click(form.getByRole('button', { name: 'Guardar contacto' }));
-    await waitFor(() => expect(createMock).toHaveBeenCalledWith({ companyId: '31', contactType: 'PERSONA', name: 'María', area: null, position: null, notes: null, methods: [{ type: 'CORREO', value: 'maria@example.test' }] })); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(await screen.findByText('Contacto registrado correctamente.')).toBeInTheDocument(); expect(screen.getByTestId('location')).toHaveTextContent('search=keep&page=2');
+    await waitFor(() => expect(createMock).toHaveBeenCalledWith({ companyId: '31', contactType: 'PERSONA', name: 'María', area: null, position: null, notes: null, methods: [{ type: 'CORREO', value: 'maria@example.test' }] })); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(await screen.findByText('Contacto registrado correctamente.')).toBeInTheDocument(); expect(screen.getByTestId('location')).toHaveTextContent('search=keep&page=2'); expect(screen.getByTestId('location')).not.toHaveTextContent('action=');
   });
 
   it('does not submit typed but unselected company text and Cancelar clears it', async () => {

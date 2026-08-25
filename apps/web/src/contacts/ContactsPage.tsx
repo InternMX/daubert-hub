@@ -24,8 +24,9 @@ export function ContactsPage() {
   const searchQuery = params.get('search')?.trim() || ''; const page = positive(params.get('page'), 1); const pageSize = positive(params.get('pageSize'), 25); const selectedId = params.get('company');
   const [search, setSearch] = useState(searchQuery); const [companies, setCompanies] = useState<DirectoryCompany[]>([]); const [total, setTotal] = useState(0); const [listLoading, setListLoading] = useState(true); const [listError, setListError] = useState(false); const [listRetry, setListRetry] = useState(0);
   const [detail, setDetail] = useState<DirectoryCompanyDetail | null>(null); const [detailLoading, setDetailLoading] = useState(false); const [detailError, setDetailError] = useState(false); const [detailRetry, setDetailRetry] = useState(0);
-  const [drawerOpen, setDrawerOpen] = useState(false); const [drawerCompany, setDrawerCompany] = useState<{ id: string; commercialName: string } | null>(null); const [editContact, setEditContact] = useState<DirectoryContact | null>(null); const [methodForm, setMethodForm] = useState<MethodFormState | null>(null); const [feedback, setFeedback] = useState<string | null>(null); const [pendingIds, setPendingIds] = useState<Set<string>>(new Set()); const pendingIdsRef = useRef(new Set<string>()); const detailRefreshRef = useRef(0); const methodFormIdRef = useRef(0);
+  const [drawerOpen, setDrawerOpen] = useState(() => params.get('action') === 'new-contact'); const [drawerCompany, setDrawerCompany] = useState<{ id: string; commercialName: string } | null>(null); const [editContact, setEditContact] = useState<DirectoryContact | null>(null); const [methodForm, setMethodForm] = useState<MethodFormState | null>(null); const [feedback, setFeedback] = useState<string | null>(null); const [pendingIds, setPendingIds] = useState<Set<string>>(new Set()); const pendingIdsRef = useRef(new Set<string>()); const detailRefreshRef = useRef(0); const methodFormIdRef = useRef(0);
   useEffect(() => setSearch(searchQuery), [searchQuery]);
+  useEffect(() => { if (params.get('action') === 'new-contact') { setDrawerCompany(null); setDrawerOpen(true); } }, [params]);
   useEffect(() => { const timer = window.setTimeout(() => { if (search === searchQuery) return; setParams((current) => { const next = new URLSearchParams(current); if (search.trim()) next.set('search', search.trim()); else next.delete('search'); next.set('page', '1'); return next; }); }, 300); return () => window.clearTimeout(timer); }, [search, searchQuery, setParams]);
   useEffect(() => { let active = true; setListLoading(true); setListError(false); listContactDirectoryCompanies({ search: searchQuery, page, pageSize }).then((result) => { if (!active) return; setCompanies(result.data); setTotal(result.meta.total); if (result.data.length && !result.data.some((company) => company.id === selectedId)) setParams((current) => { const next = new URLSearchParams(current); next.set('company', result.data[0]!.id); return next; }); }).catch(() => active && setListError(true)).finally(() => active && setListLoading(false)); return () => { active = false; }; }, [searchQuery, page, pageSize, selectedId, listRetry, setParams]);
   useEffect(() => { if (!selectedId) { setDetail(null); return; } let active = true; setDetailLoading(true); setDetailError(false); getContactDirectoryCompany(selectedId).then((result) => active && setDetail(result)).catch(() => active && setDetailError(true)).finally(() => active && setDetailLoading(false)); return () => { active = false; }; }, [selectedId, detailRetry]);
@@ -34,6 +35,7 @@ export function ContactsPage() {
   function created(companyId: string) { if (companyId === selectedId) setDetailRetry((value) => value + 1); setListRetry((value) => value + 1); setFeedback('Contacto registrado correctamente.'); }
   function openGlobalDrawer() { setDrawerCompany(null); setDrawerOpen(true); }
   function openContextualDrawer() { if (!detail) return; setDrawerCompany(detail.company); setDrawerOpen(true); }
+  function closeDrawer() { setDrawerOpen(false); if (params.get('action') === 'new-contact') setParams((current) => { const next = new URLSearchParams(current); next.delete('action'); return next; }, { replace: true }); }
   function openAddMethod(contactId: string) { setMethodForm({ mode: 'add', contactId, formId: ++methodFormIdRef.current }); }
   function openEditMethod(contactId: string, methodId: string) { setMethodForm({ mode: 'edit', contactId, methodId, formId: ++methodFormIdRef.current }); }
   async function refreshDetail(companyId: string): Promise<void> { const refreshId = ++detailRefreshRef.current; const refreshed = await getContactDirectoryCompany(companyId); setDetail((current) => current?.company.id === companyId && detailRefreshRef.current === refreshId ? refreshed : current); }
@@ -83,7 +85,7 @@ export function ContactsPage() {
         </>}
       </Paper>
     </Box>
-    <ContactDrawer company={drawerCompany} open={drawerOpen} onClose={() => setDrawerOpen(false)} onCreated={created} />
+    <ContactDrawer company={drawerCompany} open={drawerOpen} onClose={closeDrawer} onCreated={created} />
     <ContactEditDrawer company={detail?.company ?? null} contact={editContact} onClose={() => setEditContact(null)} onUpdated={updated} />
     <Snackbar open={Boolean(feedback)} autoHideDuration={4000} onClose={() => setFeedback(null)} message={feedback} />
   </>;

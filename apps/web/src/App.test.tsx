@@ -1,11 +1,12 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { App } from './App';
 
+function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function renderApp(path = '/') {
-  return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[path]}><App /><Location /></MemoryRouter>);
 }
 
 describe('application navigation', () => {
@@ -37,5 +38,15 @@ describe('application navigation', () => {
     renderApp('/providers');
     await user.click(screen.getByRole('link', { name: 'Nuevo proveedor' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Nuevo proveedor' })).toBeInTheDocument();
+  });
+
+  it('enables both Home quick actions and navigates contact creation through the action URL', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    expect(screen.getByRole('link', { name: 'Nuevo proveedor' })).toHaveAttribute('href', '/providers/new');
+    const contact = screen.getByRole('link', { name: 'Nuevo contacto' });
+    expect(contact).toHaveAttribute('href', '/contacts?action=new-contact');
+    await user.click(contact);
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/contacts?action=new-contact'));
   });
 });

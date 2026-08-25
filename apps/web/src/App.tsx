@@ -16,7 +16,7 @@ function HomePage() {
         <Typography variant="h2">Acciones rápidas</Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2.5 }}>
           <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
-          <Button variant="outlined" disabled>Nuevo contacto</Button>
+          <Button component={Link} to="/contacts?action=new-contact" variant="contained">Nuevo contacto</Button>
         </Stack>
       </Paper>
       <Paper variant="outlined" sx={{ mt: 2, p: { xs: 3, sm: 4 }, maxWidth: 920 }}>
