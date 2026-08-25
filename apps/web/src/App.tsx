@@ -2,6 +2,7 @@ import { Button, Paper, Stack, Typography } from '@mui/material';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { PageHeader } from './components/PageHeader';
+import { RecentActivity } from './components/RecentActivity';
 import { NewProviderPage } from './providers/NewProviderPage';
 import { ProviderDetailPage } from './providers/ProviderDetailPage';
 import { EditProviderPage } from './providers/EditProviderPage';
@@ -21,7 +22,7 @@ function HomePage() {
       </Paper>
       <Paper variant="outlined" sx={{ mt: 2, p: { xs: 3, sm: 4 }, maxWidth: 920 }}>
         <Typography variant="h2">Actividad reciente</Typography>
-        <Typography color="text.secondary" sx={{ mt: 1 }}>No hay actividad reciente para mostrar.</Typography>
+        <RecentActivity />
       </Paper>
     </>
   );

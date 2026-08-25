@@ -9,6 +9,7 @@ import { ContactDirectoryModule } from './contact-directory/contact-directory.mo
 import { ContactsModule } from './contacts/contacts.module';
 import { CompaniesModule } from './companies/companies.module';
 import { ContactMethodsModule } from './contact-methods/contact-methods.module';
+import { RecentActivityModule } from './recent-activity/recent-activity.module';
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { ContactMethodsModule } from './contact-methods/contact-methods.module';
     ContactDirectoryModule,
     ContactsModule,
     CompaniesModule,
-    ContactMethodsModule
+    ContactMethodsModule,
+    RecentActivityModule
   ]
 })
 export class AppModule implements NestModule {

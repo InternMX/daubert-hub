@@ -1,8 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { listRecentActivity } from './services/recentActivity';
+
+vi.mock('./services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
+const activityMock = vi.mocked(listRecentActivity);
 
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function renderApp(path = '/') {
@@ -10,6 +14,7 @@ function renderApp(path = '/') {
 }
 
 describe('application navigation', () => {
+  beforeEach(() => activityMock.mockResolvedValue([]));
   it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/contacts', 'Directorio de contactos']])('renders %s', (path, title) => {
     renderApp(path);
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
@@ -35,7 +40,7 @@ describe('application navigation', () => {
 
   it('opens the new provider flow from providers and home', async () => {
     const user = userEvent.setup();
-    renderApp('/providers');
+    renderApp();
     await user.click(screen.getByRole('link', { name: 'Nuevo proveedor' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Nuevo proveedor' })).toBeInTheDocument();
   });
