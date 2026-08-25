@@ -43,6 +43,25 @@ export class ContactsService {
     }
   }
 
+  deactivate(id: string, requestId: string): Promise<UpdateContactResponse> {
+    return this.changeStatus(id, 'INACTIVO', requestId);
+  }
+
+  reactivate(id: string, requestId: string): Promise<UpdateContactResponse> {
+    return this.changeStatus(id, 'ACTIVO', requestId);
+  }
+
+  private async changeStatus(id: string, status: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<UpdateContactResponse> {
+    try {
+      const contact = await this.repository.changeStatus(id, status, requestId);
+      if (!contact) throw new NotFoundException('Contacto no encontrado.');
+      return this.mapContactResponse(contact);
+    } catch (error) {
+      this.throwKnownError(error);
+      throw error;
+    }
+  }
+
   private validate(input: CreateContactDto): void {
     if (input.contactType === ContactType.Person && !input.name) {
       throw new BadRequestException('El nombre es obligatorio para contactos de tipo PERSONA.');
@@ -73,6 +92,9 @@ export class ContactsService {
     if (code === 'COMPANY_BLOCKED') throw new ConflictException({ code, message: 'La empresa está bloqueada.' });
     if (code === 'COMPANY_NOT_ACTIVE') throw new ConflictException({ code, message: 'La empresa no está activa.' });
     if (code === 'CONTACT_NOT_ACTIVE') throw new ConflictException({ code, message: 'El contacto debe estar activo para editarse.' });
+    if (code === 'CONTACT_ALREADY_INACTIVE') throw new ConflictException({ code, message: 'El contacto ya está inactivo.' });
+    if (code === 'CONTACT_ALREADY_ACTIVE') throw new ConflictException({ code, message: 'El contacto ya está activo.' });
+    if (code === 'CONTACT_STATUS_NOT_MANAGEABLE') throw new ConflictException({ code, message: 'El estado actual del contacto no puede administrarse desde este flujo.' });
     if (code === 'PERSON_NAME_REQUIRED') throw new BadRequestException({ code, message: 'El nombre es obligatorio para contactos de tipo PERSONA.' });
     if (code === 'CONTACT_AREA_REQUIRED') throw new BadRequestException({ code, message: 'El área es obligatoria para este tipo de contacto.' });
     if (code === 'CONTACT_NAME_NOT_ALLOWED') throw new BadRequestException({ code, message: 'El nombre no aplica para este tipo de contacto.' });

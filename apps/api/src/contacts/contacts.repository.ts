@@ -89,6 +89,37 @@ export class ContactsRepository {
     }
   }
 
+  async changeStatus(id: string, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<ContactRow | null> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      await this.setAuditContext(client, requestId);
+      const contact = await this.lockContact(client, id);
+      if (!contact) { await client.query('COMMIT'); return null; }
+      if (contact.company_status === 'INACTIVO') throw Object.assign(new Error('COMPANY_INACTIVE'), { code: 'COMPANY_INACTIVE' });
+      if (contact.company_status === 'BLOQUEADO') throw Object.assign(new Error('COMPANY_BLOCKED'), { code: 'COMPANY_BLOCKED' });
+      if (contact.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
+      if (contact.estatus !== 'ACTIVO' && contact.estatus !== 'INACTIVO') {
+        throw Object.assign(new Error('CONTACT_STATUS_NOT_MANAGEABLE'), { code: 'CONTACT_STATUS_NOT_MANAGEABLE' });
+      }
+      if (contact.estatus === targetStatus) {
+        const code = targetStatus === 'ACTIVO' ? 'CONTACT_ALREADY_ACTIVE' : 'CONTACT_ALREADY_INACTIVE';
+        throw Object.assign(new Error(code), { code });
+      }
+      const result = await client.query<ContactRow>(`
+        UPDATE core.contactos SET estatus = $1
+        WHERE contacto_id = $2
+        RETURNING contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal`, [targetStatus, id]);
+      await client.query('COMMIT');
+      return result.rows[0]!;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* Preserve the original database error. */ }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);

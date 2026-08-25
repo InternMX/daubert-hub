@@ -95,4 +95,33 @@ describe('ContactsService', () => {
     const service = new ContactsService({ update: vi.fn().mockRejectedValue({ code }) } as never);
     await expect(service.update('121', { notes: 'x' }, 'request-edit')).rejects.toMatchObject({ status, response: expect.not.stringContaining('SQL') });
   });
+
+  it.each([
+    ['deactivate', 'INACTIVO'],
+    ['reactivate', 'ACTIVO']
+  ] as const)('%s preserves all normal contact fields and the exact string ID', async (operation, status) => {
+    const record = { contacto_id: '9223372036854775807', empresa_id: '9007199254740994', tipo_contacto: 'PERSONA', nombre: 'María López', area: 'Compras', cargo: 'Compradora', observaciones: 'Conservar', estatus: status, es_contacto_principal: true };
+    const changeStatus = vi.fn().mockResolvedValue(record);
+    const service = new ContactsService({ changeStatus } as never);
+    const response = await service[operation](record.contacto_id, 'request-status');
+    expect(changeStatus).toHaveBeenCalledWith(record.contacto_id, status, 'request-status');
+    expect(response).toEqual({ data: { id: record.contacto_id, companyId: record.empresa_id, contactType: 'PERSONA', name: 'María López', area: 'Compras', position: 'Compradora', notes: 'Conservar', status, isPrimary: true } });
+  });
+
+  it.each(['deactivate', 'reactivate'] as const)('returns 404 when %s cannot find the contact', async (operation) => {
+    const service = new ContactsService({ changeStatus: vi.fn().mockResolvedValue(null) } as never);
+    await expect(service[operation]('9223372036854775807', 'request-status')).rejects.toMatchObject({ status: 404, message: 'Contacto no encontrado.' });
+  });
+
+  it.each([
+    ['CONTACT_ALREADY_ACTIVE', 'El contacto ya está activo.'],
+    ['CONTACT_ALREADY_INACTIVE', 'El contacto ya está inactivo.'],
+    ['CONTACT_STATUS_NOT_MANAGEABLE', 'El estado actual del contacto no puede administrarse desde este flujo.'],
+    ['COMPANY_INACTIVE', 'La empresa está inactiva.'],
+    ['COMPANY_BLOCKED', 'La empresa está bloqueada.'],
+    ['COMPANY_NOT_ACTIVE', 'La empresa no está activa.']
+  ])('maps lifecycle conflict %s safely', async (code, message) => {
+    const service = new ContactsService({ changeStatus: vi.fn().mockRejectedValue({ code, detail: 'SQL internals' }) } as never);
+    await expect(service.reactivate('121', 'request-status')).rejects.toMatchObject({ status: 409, response: { code, message } });
+  });
 });

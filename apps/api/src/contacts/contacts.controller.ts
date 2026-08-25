@@ -17,7 +17,27 @@ export class ContactsController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() input: UpdateContactDto, @Req() request: RequestWithId): Promise<UpdateContactResponse> {
-    if (!/^[1-9]\d*$/.test(id)) throw new BadRequestException('El identificador del contacto debe ser un entero positivo.');
+    this.assertValidId(id);
     return this.contacts.update(id, input, request.requestId);
+  }
+
+  @Post(':id/deactivate')
+  @HttpCode(HttpStatus.OK)
+  deactivate(@Param('id') id: string, @Req() request: RequestWithId): Promise<UpdateContactResponse> {
+    this.assertValidId(id);
+    return this.contacts.deactivate(id, request.requestId);
+  }
+
+  @Post(':id/reactivate')
+  @HttpCode(HttpStatus.OK)
+  reactivate(@Param('id') id: string, @Req() request: RequestWithId): Promise<UpdateContactResponse> {
+    this.assertValidId(id);
+    return this.contacts.reactivate(id, request.requestId);
+  }
+
+  private assertValidId(id: string): void {
+    if (!/^[1-9]\d*$/.test(id) || BigInt(id) > 9223372036854775807n) {
+      throw new BadRequestException('El identificador del contacto debe ser un entero positivo.');
+    }
   }
 }

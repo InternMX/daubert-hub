@@ -43,4 +43,69 @@ describe('ContactsRepository', () => {
     expect(query).toHaveBeenLastCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    ['INACTIVO', 'ACTIVO'],
+    ['ACTIVO', 'INACTIVO']
+  ] as const)('changes contact status from %s to %s using exact bigint strings and status-only SQL', async (currentStatus, targetStatus) => {
+    const id = '9223372036854775807';
+    const locked = { contacto_id: id, empresa_id: '31', tipo_contacto: 'PERSONA', nombre: 'María López', area: 'Compras', cargo: 'Compradora', observaciones: 'Conservar', estatus: currentStatus, es_contacto_principal: true, company_status: 'ACTIVO' };
+    const updated = { ...locked, estatus: targetStatus };
+    const query = vi.fn()
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [locked] })
+      .mockResolvedValueOnce({ rows: [updated] })
+      .mockResolvedValueOnce(undefined);
+    const { repository, client } = repositoryWithClient(query);
+
+    await expect(repository.changeStatus(id, targetStatus, 'request-status')).resolves.toEqual(updated);
+    expect(query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(query).toHaveBeenNthCalledWith(2, "SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
+    expect(query).toHaveBeenNthCalledWith(3, "SELECT set_config('app.request_id', $1, true)", ['request-status']);
+    expect(query.mock.calls[3]).toEqual([expect.stringContaining('FOR UPDATE OF contact, company'), [id]]);
+    expect(query.mock.calls[4]).toEqual([expect.stringMatching(/UPDATE core\.contactos SET estatus = \$1[\s\S]*RETURNING contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal/), [targetStatus, id]]);
+    expect(query.mock.calls.flatMap((call) => String(call[0])) .join(' ')).not.toMatch(/medios_contacto|CASCADE/i);
+    expect(query).toHaveBeenLastCalledWith('COMMIT');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
+
+  it('returns null for a missing contact without issuing an update', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.changeStatus('9007199254740993', 'INACTIVO', 'request-status')).resolves.toBeNull();
+    expect(query.mock.calls.some((call) => String(call[0]).includes('UPDATE core.contactos'))).toBe(false);
+    expect(query).toHaveBeenLastCalledWith('COMMIT');
+  });
+
+  it.each([
+    ['ACTIVO', 'ACTIVO', 'CONTACT_ALREADY_ACTIVE'],
+    ['INACTIVO', 'INACTIVO', 'CONTACT_ALREADY_INACTIVE'],
+    ['PENDIENTE', 'ACTIVO', 'CONTACT_STATUS_NOT_MANAGEABLE'],
+    ['RECHAZADO', 'INACTIVO', 'CONTACT_STATUS_NOT_MANAGEABLE']
+  ])('rejects contact status %s targeting %s with %s', async (currentStatus, targetStatus, code) => {
+    const query = vi.fn()
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ contacto_id: '121', estatus: currentStatus, company_status: 'ACTIVO' }] })
+      .mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.changeStatus('121', targetStatus as 'ACTIVO' | 'INACTIVO', 'request-status')).rejects.toMatchObject({ code });
+    expect(query.mock.calls.some((call) => String(call[0]).includes('UPDATE core.contactos'))).toBe(false);
+    expect(query).toHaveBeenLastCalledWith('ROLLBACK');
+  });
+
+  it.each([
+    ['INACTIVO', 'COMPANY_INACTIVE'],
+    ['BLOQUEADO', 'COMPANY_BLOCKED'],
+    ['PENDIENTE', 'COMPANY_NOT_ACTIVE']
+  ])('rejects parent company status %s safely', async (companyStatus, code) => {
+    const query = vi.fn()
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ contacto_id: '121', estatus: 'INACTIVO', company_status: companyStatus }] })
+      .mockResolvedValueOnce(undefined);
+    const { repository } = repositoryWithClient(query);
+    await expect(repository.changeStatus('121', 'ACTIVO', 'request-status')).rejects.toMatchObject({ code });
+    expect(query.mock.calls.some((call) => String(call[0]).includes('UPDATE core.contactos'))).toBe(false);
+  });
 });

@@ -80,6 +80,19 @@ async function changeMethodStatus(id, action, requestId) {
   return { response, body: await response.json() };
 }
 
+async function changeContactStatus(id, action, requestId) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/contacts/${id}/${action}`, {
+    method: 'POST', headers: { 'x-request-id': requestId }
+  });
+  return { response, body: await response.json() };
+}
+
+async function getContactDirectoryList(search) {
+  const query = new URLSearchParams({ search, page: '1', pageSize: '20' });
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies?${query}`);
+  return { response, body: await response.json() };
+}
+
 async function getContactDirectory(id) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies/${id}`);
   return { response, body: await response.json() };
@@ -486,6 +499,134 @@ async function run() {
     for (const [companyId, expectedStatus, label] of [[inactiveCompanyId, 409, 'inactive'], [blockedCompanyId, 409, 'blocked'], ['999999999999999', 404, 'nonexistent']]) {
       const rejected = await postContact({ companyId, contactType: 'PERSONA', name: `${marker} REJECTED`, methods: [{ type: 'CORREO', value: `rejected.${marker.toLowerCase()}@example.test` }] }, `contact-${label}-${randomUUID()}`);
       assert(rejected.response.status === expectedStatus, `${label} company did not reject contact creation safely.`);
+    }
+
+    const contactColumns = 'contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal';
+    const methodColumns = 'medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones';
+    const companyColumns = 'empresa_id::text, tipo_empresa, nombre_comercial, estatus';
+    const contactSnapshot = async (contactId) => (await pool.query(`SELECT ${contactColumns} FROM core.contactos WHERE contacto_id = $1`, [contactId])).rows[0];
+    const methodSnapshot = async (contactId) => (await pool.query(`SELECT ${methodColumns} FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id`, [contactId])).rows;
+    const companySnapshot = async (companyId) => (await pool.query(`SELECT ${companyColumns} FROM core.empresas WHERE empresa_id = $1`, [companyId])).rows[0];
+    const directoryCompany = async (companyId, search) => {
+      const result = await getContactDirectoryList(search);
+      assert(result.response.status === 200, `Contact Directory list failed: ${JSON.stringify(result.body)}`);
+      const company = result.body.data.find((item) => item.id === companyId);
+      assert(company && typeof company.id === 'string', `Contact Directory list omitted company ${companyId}.`);
+      return company;
+    };
+    const assertContactLifecycleAudit = async (requestId) => {
+      const audit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE request_id = $1`, [requestId]);
+      assert(audit.rows.length === 1 && audit.rows[0].schema_name === 'core' && audit.rows[0].table_name === 'contactos' && String(audit.rows[0].operation).toUpperCase().includes('UPDATE') && audit.rows[0].origin === 'DAUBERT_HUB' && audit.rows[0].request_id === requestId, `Contact lifecycle request ${requestId} was not exactly one correlated DAUBERT_HUB core.contactos UPDATE.`);
+    };
+    const expectedLifecycleData = (row, status) => ({
+      id: row.contacto_id,
+      companyId: row.empresa_id,
+      contactType: row.tipo_contacto,
+      name: row.nombre,
+      area: row.area,
+      position: row.cargo,
+      notes: row.observaciones,
+      status,
+      isPrimary: row.es_contacto_principal
+    });
+    const assertSuccessfulContactLifecycle = async ({ contactId, companyId, action, status, requestId, beforeContact, beforeMethods, beforeCompany }) => {
+      requestIds.add(requestId);
+      const changed = await changeContactStatus(contactId, action, requestId);
+      assert(changed.response.status === 200, `Contact ${action} did not return explicit 200: ${JSON.stringify(changed.body)}`);
+      assert(changed.response.headers.get('x-request-id') === requestId, `Contact ${action} did not preserve x-request-id.`);
+      assert(JSON.stringify(changed.body) === JSON.stringify({ data: expectedLifecycleData(beforeContact, status) }), `Contact ${action} did not return all normal fields, string BIGINT IDs, and the expected status.`);
+      assert(!JSON.stringify(changed.body).includes('recibe_notificacion_pago') && !JSON.stringify(changed.body).includes('tipo_destinatario_pago'), `Contact ${action} exposed payment routing.`);
+      const afterContact = await contactSnapshot(contactId);
+      assert(afterContact.estatus === status, `Contact ${action} did not persist ${status}.`);
+      assert(JSON.stringify({ ...afterContact, estatus: beforeContact.estatus }) === JSON.stringify(beforeContact), `Contact ${action} changed a core.contactos field other than estatus.`);
+      assert(JSON.stringify(await methodSnapshot(contactId)) === JSON.stringify(beforeMethods), `Contact ${action} changed a method row, status, parent, principal, payment metadata, observations, value, or type.`);
+      assert(JSON.stringify(await companySnapshot(companyId)) === JSON.stringify(beforeCompany), `Contact ${action} changed company data or lifecycle.`);
+      await assertContactLifecycleAudit(requestId);
+      return afterContact;
+    };
+
+    const lifecycleCompanyId = await createCompany(pool, 'LIFECYCLE_SINGLE', 'ACTIVO');
+    const lifecycleContactId = await createDirectContact(pool, lifecycleCompanyId, 'LIFECYCLE_SINGLE', 'ACTIVO');
+    const lifecycleMethods = await queryWithAuditContext(pool, setupRequestId,
+      `INSERT INTO core.medios_contacto (contacto_id, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones)
+       VALUES ($1, 'CORREO', $2, 'ACTIVO', TRUE, TRUE, 'CC', 'Active payment metadata'),
+              ($1, 'TELEFONO', $3, 'INACTIVO', FALSE, TRUE, 'CC', 'Inactive payment metadata')
+       RETURNING medio_id::text, estatus`, [lifecycleContactId, `lifecycle.${marker.toLowerCase()}@example.test`, '+52 449 555 0401']);
+    await queryWithAuditContext(pool, setupRequestId, 'UPDATE core.contactos SET es_contacto_principal = TRUE WHERE contacto_id = $1', [lifecycleContactId]);
+    assert(lifecycleMethods.rows.length === 2, 'Single-contact lifecycle methods were not created.');
+    let lifecycleContactBefore = await contactSnapshot(lifecycleContactId);
+    const lifecycleMethodsBefore = await methodSnapshot(lifecycleContactId);
+    const lifecycleCompanyBefore = await companySnapshot(lifecycleCompanyId);
+    assert(lifecycleContactBefore.es_contacto_principal === true && lifecycleMethodsBefore.some((method) => method.estatus === 'ACTIVO' && method.es_principal === true && method.recibe_notificacion_pago === true && method.tipo_destinatario_pago === 'CC' && method.observaciones === 'Active payment metadata') && lifecycleMethodsBefore.some((method) => method.estatus === 'INACTIVO' && method.recibe_notificacion_pago === true && method.tipo_destinatario_pago === 'CC' && method.observaciones === 'Inactive payment metadata'), 'Lifecycle fixture lacks meaningful non-default contact method/payment metadata.');
+
+    const lifecycleCompanySearch = `${marker}_LIFECYCLE_SINGLE`;
+    const lifecycleListBefore = await directoryCompany(lifecycleCompanyId, lifecycleCompanySearch);
+    assert(lifecycleListBefore.contactCount === 1, 'Single-contact directory count did not start at one active contact.');
+    const lifecycleDetailBefore = await getContactDirectory(lifecycleCompanyId);
+    const lifecycleActiveBefore = lifecycleDetailBefore.body.data.contacts.find((contact) => contact.id === lifecycleContactId);
+    assert(lifecycleDetailBefore.response.status === 200 && lifecycleActiveBefore && lifecycleDetailBefore.body.data.inactiveContacts.length === 0 && lifecycleActiveBefore.notes === lifecycleContactBefore.observaciones && lifecycleActiveBefore.methods.length === 1 && lifecycleActiveBefore.inactiveMethods.length === 1, 'Single-contact directory detail did not initially partition active/inactive methods.');
+    assert(!JSON.stringify(lifecycleDetailBefore.body).includes('recibe_notificacion_pago') && !JSON.stringify(lifecycleDetailBefore.body).includes('tipo_destinatario_pago'), 'Contact Directory detail exposed payment routing metadata.');
+
+    const contactDeactivateRequestId = `contact-deactivate-${randomUUID()}`;
+    lifecycleContactBefore = await assertSuccessfulContactLifecycle({ contactId: lifecycleContactId, companyId: lifecycleCompanyId, action: 'deactivate', status: 'INACTIVO', requestId: contactDeactivateRequestId, beforeContact: lifecycleContactBefore, beforeMethods: lifecycleMethodsBefore, beforeCompany: lifecycleCompanyBefore });
+    const lifecycleListInactive = await directoryCompany(lifecycleCompanyId, lifecycleCompanySearch);
+    assert(lifecycleListInactive.contactCount === 0 && (await companySnapshot(lifecycleCompanyId)).estatus === 'ACTIVO', 'Last-contact deactivation did not produce count zero while preserving the ACTIVO company.');
+    const lifecycleDetailInactive = await getContactDirectory(lifecycleCompanyId);
+    const lifecycleInactive = lifecycleDetailInactive.body.data.inactiveContacts.find((contact) => contact.id === lifecycleContactId);
+    assert(lifecycleDetailInactive.response.status === 200 && lifecycleDetailInactive.body.data.contacts.length === 0 && lifecycleInactive && lifecycleInactive.status === 'INACTIVO' && lifecycleInactive.notes === lifecycleContactBefore.observaciones, 'Deactivated contact did not move from contacts to inactiveContacts with status and notes.');
+    assert(lifecycleInactive.methods.length === 1 && lifecycleInactive.inactiveMethods.length === 1 && lifecycleInactive.methods[0].id === lifecycleMethodsBefore.find((method) => method.estatus === 'ACTIVO').medio_id && lifecycleInactive.inactiveMethods[0].id === lifecycleMethodsBefore.find((method) => method.estatus === 'INACTIVO').medio_id, 'Inactive contact methods were not partitioned solely by method status.');
+    assert(!JSON.stringify(lifecycleDetailInactive.body).includes('recibe_notificacion_pago') && !JSON.stringify(lifecycleDetailInactive.body).includes('tipo_destinatario_pago'), 'Inactive Contact Directory detail exposed payment routing metadata.');
+    const duplicateContactDeactivate = await changeContactStatus(lifecycleContactId, 'deactivate', `contact-deactivate-repeated-${randomUUID()}`);
+    assert(duplicateContactDeactivate.response.status === 409 && duplicateContactDeactivate.body.code === 'CONTACT_ALREADY_INACTIVE', 'Repeated contact deactivation did not return CONTACT_ALREADY_INACTIVE.');
+
+    const contactReactivateRequestId = `contact-reactivate-${randomUUID()}`;
+    lifecycleContactBefore = await assertSuccessfulContactLifecycle({ contactId: lifecycleContactId, companyId: lifecycleCompanyId, action: 'reactivate', status: 'ACTIVO', requestId: contactReactivateRequestId, beforeContact: lifecycleContactBefore, beforeMethods: lifecycleMethodsBefore, beforeCompany: lifecycleCompanyBefore });
+    const lifecycleListRestored = await directoryCompany(lifecycleCompanyId, lifecycleCompanySearch);
+    const lifecycleDetailRestored = await getContactDirectory(lifecycleCompanyId);
+    const lifecycleActiveRestored = lifecycleDetailRestored.body.data.contacts.find((contact) => contact.id === lifecycleContactId);
+    assert(lifecycleListRestored.contactCount === 1 && lifecycleActiveRestored && lifecycleDetailRestored.body.data.inactiveContacts.length === 0 && lifecycleActiveRestored.methods.length === 1 && lifecycleActiveRestored.inactiveMethods.length === 1, 'Reactivation did not restore list count and move the contact back to contacts.');
+    const duplicateContactReactivate = await changeContactStatus(lifecycleContactId, 'reactivate', `contact-reactivate-repeated-${randomUUID()}`);
+    assert(duplicateContactReactivate.response.status === 409 && duplicateContactReactivate.body.code === 'CONTACT_ALREADY_ACTIVE', 'Repeated contact reactivation did not return CONTACT_ALREADY_ACTIVE.');
+
+    const multiCompanyId = await createCompany(pool, 'LIFECYCLE_MULTI', 'ACTIVO');
+    const multiFirstId = await createDirectContact(pool, multiCompanyId, 'LIFECYCLE_MULTI_FIRST', 'ACTIVO');
+    const multiSecondId = await createDirectContact(pool, multiCompanyId, 'LIFECYCLE_MULTI_SECOND', 'ACTIVO');
+    let multiFirstBefore = await contactSnapshot(multiFirstId);
+    const multiMethodsBefore = await methodSnapshot(multiFirstId);
+    const multiCompanyBefore = await companySnapshot(multiCompanyId);
+    const multiCompanySearch = `${marker}_LIFECYCLE_MULTI`;
+    assert((await directoryCompany(multiCompanyId, multiCompanySearch)).contactCount === 2, 'Multi-contact directory count did not start at two.');
+    const multiDeactivateRequestId = `contact-multi-deactivate-${randomUUID()}`;
+    multiFirstBefore = await assertSuccessfulContactLifecycle({ contactId: multiFirstId, companyId: multiCompanyId, action: 'deactivate', status: 'INACTIVO', requestId: multiDeactivateRequestId, beforeContact: multiFirstBefore, beforeMethods: multiMethodsBefore, beforeCompany: multiCompanyBefore });
+    const multiListInactive = await directoryCompany(multiCompanyId, multiCompanySearch);
+    const multiDetailInactive = await getContactDirectory(multiCompanyId);
+    assert(multiListInactive.contactCount === 1 && multiDetailInactive.body.data.contacts.length === 1 && multiDetailInactive.body.data.contacts[0].id === multiSecondId && multiDetailInactive.body.data.inactiveContacts.length === 1 && multiDetailInactive.body.data.inactiveContacts[0].id === multiFirstId && multiDetailInactive.body.data.inactiveContacts[0].status === 'INACTIVO', 'Multi-contact deactivation did not retain one active contact and separate one inactive contact.');
+    const multiReactivateRequestId = `contact-multi-reactivate-${randomUUID()}`;
+    await assertSuccessfulContactLifecycle({ contactId: multiFirstId, companyId: multiCompanyId, action: 'reactivate', status: 'ACTIVO', requestId: multiReactivateRequestId, beforeContact: multiFirstBefore, beforeMethods: multiMethodsBefore, beforeCompany: multiCompanyBefore });
+    const multiDetailRestored = await getContactDirectory(multiCompanyId);
+    assert((await directoryCompany(multiCompanyId, multiCompanySearch)).contactCount === 2 && multiDetailRestored.body.data.contacts.length === 2 && multiDetailRestored.body.data.inactiveContacts.length === 0, 'Multi-contact reactivation did not restore both active contacts and count two.');
+
+    const pendingLifecycleId = await createDirectContact(pool, activeCompanyId, 'LIFECYCLE_PENDING', 'PENDIENTE');
+    const rejectedLifecycleId = await createDirectContact(pool, activeCompanyId, 'LIFECYCLE_REJECTED', 'RECHAZADO');
+    const inactiveParentLifecycleId = await createDirectContact(pool, inactiveCompanyId, 'LIFECYCLE_INACTIVE_PARENT', 'ACTIVO');
+    const blockedParentLifecycleId = await createDirectContact(pool, blockedCompanyId, 'LIFECYCLE_BLOCKED_PARENT', 'ACTIVO');
+    const lifecycleRejections = [
+      [pendingLifecycleId, 'CONTACT_STATUS_NOT_MANAGEABLE', 'pending contact'],
+      [rejectedLifecycleId, 'CONTACT_STATUS_NOT_MANAGEABLE', 'rejected contact'],
+      [inactiveParentLifecycleId, 'COMPANY_INACTIVE', 'inactive parent'],
+      [blockedParentLifecycleId, 'COMPANY_BLOCKED', 'blocked parent']
+    ];
+    for (const [contactId, code, label] of lifecycleRejections) {
+      for (const action of ['deactivate', 'reactivate']) {
+        const rejected = await changeContactStatus(contactId, action, `contact-${label.replace(/ /g, '-')}-${action}-${randomUUID()}`);
+        assert(rejected.response.status === 409 && rejected.body.code === code, `${label} ${action} did not return 409 ${code}.`);
+      }
+    }
+    for (const action of ['deactivate', 'reactivate']) {
+      const missingContact = await changeContactStatus('999999999999999', action, `contact-missing-${action}-${randomUUID()}`);
+      assert(missingContact.response.status === 404, `Missing contact ${action} did not return 404.`);
+      const oversizedContact = await changeContactStatus('9223372036854775808', action, `contact-oversized-${action}-${randomUUID()}`);
+      assert(oversizedContact.response.status === 400, `Out-of-range contact ${action} did not return 400.`);
     }
 
     const rollbackRequestId = `contact-rollback-${randomUUID()}`;
