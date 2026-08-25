@@ -549,22 +549,23 @@ async function run() {
     const lifecycleContactId = await createDirectContact(pool, lifecycleCompanyId, 'LIFECYCLE_SINGLE', 'ACTIVO');
     const lifecycleMethods = await queryWithAuditContext(pool, setupRequestId,
       `INSERT INTO core.medios_contacto (contacto_id, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones)
-       VALUES ($1, 'CORREO', $2, 'ACTIVO', TRUE, TRUE, 'CC', 'Active payment metadata'),
-              ($1, 'TELEFONO', $3, 'INACTIVO', FALSE, TRUE, 'CC', 'Inactive payment metadata')
-       RETURNING medio_id::text, estatus`, [lifecycleContactId, `lifecycle.${marker.toLowerCase()}@example.test`, '+52 449 555 0401']);
+        VALUES ($1, 'CORREO', $2, 'ACTIVO', TRUE, TRUE, 'CC', 'Active payment metadata'),
+               ($1, 'TELEFONO', $3, 'ACTIVO', FALSE, FALSE, NULL, 'Active telephone'),
+               ($1, 'WHATSAPP', $4, 'INACTIVO', FALSE, FALSE, NULL, 'Inactive WhatsApp')
+        RETURNING medio_id::text, estatus`, [lifecycleContactId, `lifecycle.${marker.toLowerCase()}@example.test`, '+52 449 555 0401', '+52 449 555 0402']);
     await queryWithAuditContext(pool, setupRequestId, 'UPDATE core.contactos SET es_contacto_principal = TRUE WHERE contacto_id = $1', [lifecycleContactId]);
-    assert(lifecycleMethods.rows.length === 2, 'Single-contact lifecycle methods were not created.');
+    assert(lifecycleMethods.rows.length === 3, 'Single-contact lifecycle methods were not created.');
     let lifecycleContactBefore = await contactSnapshot(lifecycleContactId);
     const lifecycleMethodsBefore = await methodSnapshot(lifecycleContactId);
     const lifecycleCompanyBefore = await companySnapshot(lifecycleCompanyId);
-    assert(lifecycleContactBefore.es_contacto_principal === true && lifecycleMethodsBefore.some((method) => method.estatus === 'ACTIVO' && method.es_principal === true && method.recibe_notificacion_pago === true && method.tipo_destinatario_pago === 'CC' && method.observaciones === 'Active payment metadata') && lifecycleMethodsBefore.some((method) => method.estatus === 'INACTIVO' && method.recibe_notificacion_pago === true && method.tipo_destinatario_pago === 'CC' && method.observaciones === 'Inactive payment metadata'), 'Lifecycle fixture lacks meaningful non-default contact method/payment metadata.');
+    assert(lifecycleContactBefore.es_contacto_principal === true && lifecycleMethodsBefore.some((method) => method.tipo_medio === 'CORREO' && method.estatus === 'ACTIVO' && method.es_principal === true && method.recibe_notificacion_pago === true && method.tipo_destinatario_pago === 'CC' && method.observaciones === 'Active payment metadata') && lifecycleMethodsBefore.some((method) => method.tipo_medio === 'TELEFONO' && method.estatus === 'ACTIVO' && method.es_principal === false && method.recibe_notificacion_pago === false && method.tipo_destinatario_pago === null && method.observaciones === 'Active telephone') && lifecycleMethodsBefore.some((method) => method.tipo_medio === 'WHATSAPP' && method.estatus === 'INACTIVO' && method.es_principal === false && method.recibe_notificacion_pago === false && method.tipo_destinatario_pago === null && method.observaciones === 'Inactive WhatsApp'), 'Lifecycle fixture lacks the active email/phone, inactive WhatsApp, or meaningful payment metadata.');
 
     const lifecycleCompanySearch = `${marker}_LIFECYCLE_SINGLE`;
     const lifecycleListBefore = await directoryCompany(lifecycleCompanyId, lifecycleCompanySearch);
     assert(lifecycleListBefore.contactCount === 1, 'Single-contact directory count did not start at one active contact.');
     const lifecycleDetailBefore = await getContactDirectory(lifecycleCompanyId);
     const lifecycleActiveBefore = lifecycleDetailBefore.body.data.contacts.find((contact) => contact.id === lifecycleContactId);
-    assert(lifecycleDetailBefore.response.status === 200 && lifecycleActiveBefore && lifecycleDetailBefore.body.data.inactiveContacts.length === 0 && lifecycleActiveBefore.notes === lifecycleContactBefore.observaciones && lifecycleActiveBefore.methods.length === 1 && lifecycleActiveBefore.inactiveMethods.length === 1, 'Single-contact directory detail did not initially partition active/inactive methods.');
+    assert(lifecycleDetailBefore.response.status === 200 && lifecycleActiveBefore && lifecycleDetailBefore.body.data.inactiveContacts.length === 0 && lifecycleActiveBefore.notes === lifecycleContactBefore.observaciones && lifecycleActiveBefore.methods.length === 2 && lifecycleActiveBefore.inactiveMethods.length === 1, 'Single-contact directory detail did not initially partition active/inactive methods.');
     assert(!JSON.stringify(lifecycleDetailBefore.body).includes('recibe_notificacion_pago') && !JSON.stringify(lifecycleDetailBefore.body).includes('tipo_destinatario_pago'), 'Contact Directory detail exposed payment routing metadata.');
 
     const contactDeactivateRequestId = `contact-deactivate-${randomUUID()}`;
@@ -574,7 +575,7 @@ async function run() {
     const lifecycleDetailInactive = await getContactDirectory(lifecycleCompanyId);
     const lifecycleInactive = lifecycleDetailInactive.body.data.inactiveContacts.find((contact) => contact.id === lifecycleContactId);
     assert(lifecycleDetailInactive.response.status === 200 && lifecycleDetailInactive.body.data.contacts.length === 0 && lifecycleInactive && lifecycleInactive.status === 'INACTIVO' && lifecycleInactive.notes === lifecycleContactBefore.observaciones, 'Deactivated contact did not move from contacts to inactiveContacts with status and notes.');
-    assert(lifecycleInactive.methods.length === 1 && lifecycleInactive.inactiveMethods.length === 1 && lifecycleInactive.methods[0].id === lifecycleMethodsBefore.find((method) => method.estatus === 'ACTIVO').medio_id && lifecycleInactive.inactiveMethods[0].id === lifecycleMethodsBefore.find((method) => method.estatus === 'INACTIVO').medio_id, 'Inactive contact methods were not partitioned solely by method status.');
+    assert(lifecycleInactive.methods.length === 2 && lifecycleInactive.inactiveMethods.length === 1 && lifecycleInactive.methods.every((method) => lifecycleMethodsBefore.some((row) => row.medio_id === method.id && row.estatus === 'ACTIVO')) && lifecycleInactive.inactiveMethods[0].id === lifecycleMethodsBefore.find((method) => method.estatus === 'INACTIVO').medio_id, 'Inactive contact methods were not partitioned solely by method status.');
     assert(!JSON.stringify(lifecycleDetailInactive.body).includes('recibe_notificacion_pago') && !JSON.stringify(lifecycleDetailInactive.body).includes('tipo_destinatario_pago'), 'Inactive Contact Directory detail exposed payment routing metadata.');
     const duplicateContactDeactivate = await changeContactStatus(lifecycleContactId, 'deactivate', `contact-deactivate-repeated-${randomUUID()}`);
     assert(duplicateContactDeactivate.response.status === 409 && duplicateContactDeactivate.body.code === 'CONTACT_ALREADY_INACTIVE', 'Repeated contact deactivation did not return CONTACT_ALREADY_INACTIVE.');
@@ -584,7 +585,7 @@ async function run() {
     const lifecycleListRestored = await directoryCompany(lifecycleCompanyId, lifecycleCompanySearch);
     const lifecycleDetailRestored = await getContactDirectory(lifecycleCompanyId);
     const lifecycleActiveRestored = lifecycleDetailRestored.body.data.contacts.find((contact) => contact.id === lifecycleContactId);
-    assert(lifecycleListRestored.contactCount === 1 && lifecycleActiveRestored && lifecycleDetailRestored.body.data.inactiveContacts.length === 0 && lifecycleActiveRestored.methods.length === 1 && lifecycleActiveRestored.inactiveMethods.length === 1, 'Reactivation did not restore list count and move the contact back to contacts.');
+    assert(lifecycleListRestored.contactCount === 1 && lifecycleActiveRestored && lifecycleDetailRestored.body.data.inactiveContacts.length === 0 && lifecycleActiveRestored.methods.length === 2 && lifecycleActiveRestored.inactiveMethods.length === 1, 'Reactivation did not restore list count and move the contact back to contacts.');
     const duplicateContactReactivate = await changeContactStatus(lifecycleContactId, 'reactivate', `contact-reactivate-repeated-${randomUUID()}`);
     assert(duplicateContactReactivate.response.status === 409 && duplicateContactReactivate.body.code === 'CONTACT_ALREADY_ACTIVE', 'Repeated contact reactivation did not return CONTACT_ALREADY_ACTIVE.');
 
