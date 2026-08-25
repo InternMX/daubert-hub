@@ -8,7 +8,7 @@ import { EditContactMethodForm, type EditableDirectoryContactMethod } from './Ed
 
 const methodLabels: Record<ContactMethodType, string> = { CORREO: 'Correo', TELEFONO: 'Teléfono', WHATSAPP: 'WhatsApp', OTRO: 'Otro' };
 
-export function ContactMethodRow({ method, inactive = false, pending, editing = false, onEdit, onEditClose, onEdited, onDeactivate, onReactivate }: { method: DirectoryContactMethod; inactive?: boolean; pending: boolean; editing?: boolean; onEdit?: (method: DirectoryContactMethod) => void; onEditClose?: () => void; onEdited?: (method: EditedContactMethod) => void; onDeactivate?: (id: string) => Promise<boolean>; onReactivate?: (id: string) => Promise<boolean> }) {
+export function ContactMethodRow({ method, inactive = false, pending, editing = false, readOnly = false, onEdit, onEditClose, onEdited, onDeactivate, onReactivate }: { method: DirectoryContactMethod; inactive?: boolean; pending: boolean; editing?: boolean; readOnly?: boolean; onEdit?: (method: DirectoryContactMethod) => void; onEditClose?: () => void; onEdited?: (method: EditedContactMethod) => void; onDeactivate?: (id: string) => Promise<boolean>; onReactivate?: (id: string) => Promise<boolean> }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const label = `${methodLabels[method.type]}: ${method.value}`;
@@ -18,6 +18,7 @@ export function ContactMethodRow({ method, inactive = false, pending, editing = 
   async function deactivate() { if (!onDeactivate || pending) return; if (await onDeactivate(method.id)) setConfirmOpen(false); }
   async function reactivate() { setAnchor(null); if (!onReactivate || pending) return; await onReactivate(method.id); }
   if (editing && method.type !== 'OTRO' && onEditClose && onEdited) return <EditContactMethodForm method={method as EditableDirectoryContactMethod} onClose={onEditClose} onEdited={onEdited} />;
+  if (readOnly) return <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, color: inactive ? 'text.secondary' : 'text.primary' }}><Box sx={{ minWidth: 0, flex: 1 }}><Typography component="span" variant="body2" color="text.secondary">{methodLabels[method.type]}:</Typography> <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{method.value}</Typography></Box></Box>;
   return <>
     <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 32, color: inactive ? 'text.secondary' : 'text.primary' }}>
       <Box sx={{ minWidth: 0, flex: 1 }}><Typography component="span" variant="body2" color="text.secondary">{methodLabels[method.type]}:</Typography> <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>{method.value}</Typography></Box>

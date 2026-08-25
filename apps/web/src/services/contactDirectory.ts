@@ -7,7 +7,7 @@ export type DirectoryContactType = 'PERSONA' | 'AREA' | 'BUZON_GENERICO';
 export interface DirectoryCompany { id: string; commercialName: string; companyType: CompanyType; contactCount: number; matchedAlias?: string | null; }
 export interface DirectoryContactMethod { id: string; type: ContactMethodType; value: string; isPrimary: boolean; }
 export interface DirectoryContact { id: string; name: string | null; contactType: DirectoryContactType; area: string | null; position: string | null; notes: string | null; isPrimary: boolean; methods: DirectoryContactMethod[]; inactiveMethods: DirectoryContactMethod[]; }
-export interface DirectoryCompanyDetail { company: Omit<DirectoryCompany, 'contactCount' | 'matchedAlias'>; contacts: DirectoryContact[]; }
+export interface DirectoryCompanyDetail { company: Omit<DirectoryCompany, 'contactCount' | 'matchedAlias'>; contacts: DirectoryContact[]; inactiveContacts: DirectoryContact[]; }
 export interface DirectoryList { data: DirectoryCompany[]; meta: { page: number; pageSize: number; total: number; totalPages: number }; }
 
 async function request<T>(path: string): Promise<T> {

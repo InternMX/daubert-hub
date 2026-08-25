@@ -5,19 +5,21 @@ import { useSearchParams } from 'react-router-dom';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { getContactDirectoryCompany, listContactDirectoryCompanies, type CompanyType, type DirectoryCompany, type DirectoryCompanyDetail, type DirectoryContact, type DirectoryContactMethod } from '../services/contactDirectory';
-import type { UpdatedContact } from '../services/contacts';
+import { deactivateContact, reactivateContact, type UpdatedContact } from '../services/contacts';
 import { deactivateContactMethod, reactivateContactMethod, type AddedContactMethod, type EditedContactMethod } from '../services/contactMethods';
 import { AddContactMethodForm } from './AddContactMethodForm';
 import { ContactActionsMenu } from './ContactActionsMenu';
 import { ContactDrawer } from './ContactDrawer';
 import { ContactEditDrawer } from './ContactEditDrawer';
 import { ContactMethodRow } from './ContactMethodRow';
+import { DeactivateContactDialog } from './DeactivateContactDialog';
+import { InactiveContactsSection } from './InactiveContactsSection';
 import { InactiveMethodsSection } from './InactiveMethodsSection';
+import { contactTitle } from './contactDisplay';
 
 const companyLabels: Record<CompanyType, string> = { PROVEEDOR: 'Proveedor', SERVICIO: 'Proveedor de servicios', FLETE: 'Flete', CLIENTE: 'Cliente', OTRO: 'Otro' };
 type MethodFormState = { mode: 'add'; contactId: string; formId: number } | { mode: 'edit'; contactId: string; methodId: string; formId: number };
 function positive(value: string | null, fallback: number) { const number = Number(value); return Number.isInteger(number) && number > 0 ? number : fallback; }
-function contactTitle(contact: DirectoryCompanyDetail['contacts'][number]) { return contact.name?.trim() || contact.area?.trim() || (contact.contactType === 'BUZON_GENERICO' ? 'Buzón general' : 'Contacto sin nombre'); }
 
 export function ContactsPage() {
   const [params, setParams] = useSearchParams();
@@ -25,6 +27,7 @@ export function ContactsPage() {
   const [search, setSearch] = useState(searchQuery); const [companies, setCompanies] = useState<DirectoryCompany[]>([]); const [total, setTotal] = useState(0); const [listLoading, setListLoading] = useState(true); const [listError, setListError] = useState(false); const [listRetry, setListRetry] = useState(0);
   const [detail, setDetail] = useState<DirectoryCompanyDetail | null>(null); const [detailLoading, setDetailLoading] = useState(false); const [detailError, setDetailError] = useState(false); const [detailRetry, setDetailRetry] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(() => params.get('action') === 'new-contact'); const [drawerCompany, setDrawerCompany] = useState<{ id: string; commercialName: string } | null>(null); const [editContact, setEditContact] = useState<DirectoryContact | null>(null); const [methodForm, setMethodForm] = useState<MethodFormState | null>(null); const [feedback, setFeedback] = useState<string | null>(null); const [pendingIds, setPendingIds] = useState<Set<string>>(new Set()); const pendingIdsRef = useRef(new Set<string>()); const detailRefreshRef = useRef(0); const methodFormIdRef = useRef(0);
+  const [contactPendingIds, setContactPendingIds] = useState<Set<string>>(new Set()); const contactPendingIdsRef = useRef(new Set<string>()); const [deactivating, setDeactivating] = useState<{ id: string; label: string } | null>(null); const [contactActionPending, setContactActionPending] = useState(false);
   useEffect(() => setSearch(searchQuery), [searchQuery]);
   useEffect(() => { if (params.get('action') === 'new-contact') { setDrawerCompany(null); setDrawerOpen(true); } }, [params]);
   useEffect(() => { const timer = window.setTimeout(() => { if (search === searchQuery) return; setParams((current) => { const next = new URLSearchParams(current); if (search.trim()) next.set('search', search.trim()); else next.delete('search'); next.set('page', '1'); return next; }); }, 300); return () => window.clearTimeout(timer); }, [search, searchQuery, setParams]);
@@ -43,6 +46,34 @@ export function ContactsPage() {
   function methodAdded(contactId: string, method: AddedContactMethod) { const companyId = detail?.company.id; setDetail((current) => current ? { ...current, contacts: current.contacts.map((contact) => contact.id === contactId ? { ...contact, methods: [...contact.methods, { id: method.id, type: method.type, value: method.value, isPrimary: false }] } : contact) } : current); setFeedback('Medio de contacto agregado.'); if (companyId) void refreshDetail(companyId).catch(() => undefined); }
   function methodEdited(contactId: string, edited: EditedContactMethod) { const companyId = detail?.company.id; setDetail((current) => current ? { ...current, contacts: current.contacts.map((contact) => { if (contact.id !== contactId) return contact; const existing = [...contact.methods, ...contact.inactiveMethods].find((method) => method.id === edited.id); if (!existing) return contact; const updatedMethod = { ...existing, type: edited.type, value: edited.value }; const place = (methods: DirectoryContactMethod[], target: boolean) => target ? (methods.some((method) => method.id === edited.id) ? methods.map((method) => method.id === edited.id ? updatedMethod : method) : [...methods, updatedMethod]) : methods.filter((method) => method.id !== edited.id); return { ...contact, methods: place(contact.methods, edited.status === 'ACTIVO'), inactiveMethods: place(contact.inactiveMethods, edited.status === 'INACTIVO') }; }) } : current); setFeedback('Medio de contacto actualizado.'); if (companyId) void refreshDetail(companyId).catch(() => undefined); }
   async function changeMethod(id: string, action: 'deactivate' | 'reactivate'): Promise<boolean> { if (pendingIdsRef.current.has(id) || !selectedId) return false; const companyId = selectedId; pendingIdsRef.current.add(id); setPendingIds(new Set(pendingIdsRef.current)); try { if (action === 'deactivate') await deactivateContactMethod(id); else await reactivateContactMethod(id); await refreshDetail(companyId); setFeedback(action === 'deactivate' ? 'Medio de contacto desactivado.' : 'Medio de contacto reactivado.'); return true; } catch { setFeedback(action === 'deactivate' ? 'No fue posible desactivar el medio de contacto.' : 'No fue posible reactivar el medio de contacto.'); return false; } finally { pendingIdsRef.current.delete(id); setPendingIds(new Set(pendingIdsRef.current)); } }
+  async function changeContactLifecycle(contactId: string, action: 'deactivate' | 'reactivate'): Promise<boolean> {
+    if (contactPendingIdsRef.current.has(contactId)) return false;
+    const companyId = selectedId;
+    contactPendingIdsRef.current.add(contactId); setContactPendingIds(new Set(contactPendingIdsRef.current));
+    try {
+      if (action === 'deactivate') await deactivateContact(contactId); else await reactivateContact(contactId);
+      if (companyId) await refreshDetail(companyId).catch(() => undefined);
+      setListRetry((value) => value + 1);
+      setEditContact((current) => current?.id === contactId ? null : current);
+      setMethodForm((current) => current && current.contactId === contactId ? null : current);
+      setFeedback(action === 'deactivate' ? 'Contacto desactivado.' : 'Contacto reactivado.');
+      return true;
+    } catch {
+      if (companyId) void refreshDetail(companyId).catch(() => undefined);
+      setFeedback(action === 'deactivate' ? 'No fue posible desactivar el contacto.' : 'No fue posible reactivar el contacto.');
+      return false;
+    } finally {
+      contactPendingIdsRef.current.delete(contactId); setContactPendingIds(new Set(contactPendingIdsRef.current));
+    }
+  }
+  async function confirmDeactivate() {
+    const target = deactivating;
+    if (!target || contactActionPending) return;
+    setContactActionPending(true);
+    try { if (await changeContactLifecycle(target.id, 'deactivate')) setDeactivating(null); }
+    finally { setContactActionPending(false); }
+  }
+  async function reactivateContactById(contactId: string): Promise<void> { await changeContactLifecycle(contactId, 'reactivate'); }
   return <>
     <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Contactos' }]} />
     <PageHeader title="Directorio de contactos" description="Consulta rápidamente las empresas y sus contactos."><Button variant="contained" onClick={openGlobalDrawer}>Agregar contacto</Button></PageHeader>
@@ -64,12 +95,12 @@ export function ContactsPage() {
             <Button variant="contained" onClick={openContextualDrawer}>Agregar contacto</Button>
           </Stack>
           <Typography sx={{ mt: 2, fontWeight: 700 }}>{detail.contacts.length} {detail.contacts.length === 1 ? 'contacto' : 'contactos'}</Typography>
-          {detail.contacts.length === 0 ? <Typography color="text.secondary" sx={{ mt: 4 }}>No hay contactos registrados para esta empresa.</Typography> : <Stack spacing={2} sx={{ mt: 3 }}>
+          {detail.contacts.length === 0 ? <Typography color="text.secondary" sx={{ mt: 4 }}>{detail.inactiveContacts.length > 0 ? 'No hay contactos activos.' : 'No hay contactos registrados para esta empresa.'}</Typography> : <Stack spacing={2} sx={{ mt: 3 }}>
             {detail.contacts.map((contact) => {
               const editingMethodId = methodForm?.mode === 'edit' && methodForm.contactId === contact.id ? methodForm.methodId : null;
               const editingFormId = methodForm?.mode === 'edit' && methodForm.contactId === contact.id ? methodForm.formId : null;
               return <Box key={contact.id} sx={{ borderLeft: 3, borderColor: 'primary.main', pl: 2 }}>
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}><Typography fontWeight={700}>{contactTitle(contact)}</Typography><ContactActionsMenu label={contactTitle(contact)} onEdit={() => setEditContact(contact)} /></Stack>
+                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={1}><Typography fontWeight={700}>{contactTitle(contact)}</Typography><ContactActionsMenu label={contactTitle(contact)} onEdit={() => setEditContact(contact)} onDeactivate={() => setDeactivating({ id: contact.id, label: contactTitle(contact) })} /></Stack>
                 {contact.name && contact.area && <Typography color="text.secondary">{contact.area}</Typography>}
                 {!contact.name && contact.contactType === 'BUZON_GENERICO' && <Typography color="text.secondary">Buzón general</Typography>}
                 {contact.position && <Typography color="text.secondary">{contact.position}</Typography>}
@@ -82,11 +113,13 @@ export function ContactsPage() {
               </Box>;
             })}
           </Stack>}
+          <InactiveContactsSection contacts={detail.inactiveContacts} pendingIds={contactPendingIds} onReactivate={reactivateContactById} />
         </>}
       </Paper>
     </Box>
     <ContactDrawer company={drawerCompany} open={drawerOpen} onClose={closeDrawer} onCreated={created} />
     <ContactEditDrawer company={detail?.company ?? null} contact={editContact} onClose={() => setEditContact(null)} onUpdated={updated} />
+    <DeactivateContactDialog open={Boolean(deactivating)} label={deactivating?.label ?? ''} companyName={detail?.company.commercialName ?? ''} submitting={contactActionPending} onCancel={() => setDeactivating(null)} onConfirm={() => void confirmDeactivate()} />
     <Snackbar open={Boolean(feedback)} autoHideDuration={4000} onClose={() => setFeedback(null)} message={feedback} />
   </>;
 }

@@ -2,19 +2,19 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createContact, updateContact } from '../services/contacts';
+import { createContact, deactivateContact, reactivateContact, updateContact } from '../services/contacts';
 import { addContactMethod, deactivateContactMethod, editContactMethod, reactivateContactMethod } from '../services/contactMethods';
 import { searchCompanies } from '../services/companies';
-import { getContactDirectoryCompany, listContactDirectoryCompanies, type DirectoryContactMethod } from '../services/contactDirectory';
+import { getContactDirectoryCompany, listContactDirectoryCompanies, type DirectoryContact, type DirectoryContactMethod } from '../services/contactDirectory';
 import { ContactsPage } from './ContactsPage';
 
 vi.mock('../services/contactDirectory', () => ({ listContactDirectoryCompanies: vi.fn(), getContactDirectoryCompany: vi.fn() }));
-vi.mock('../services/contacts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/contacts')>()), createContact: vi.fn(), updateContact: vi.fn() }));
+vi.mock('../services/contacts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/contacts')>()), createContact: vi.fn(), updateContact: vi.fn(), deactivateContact: vi.fn(), reactivateContact: vi.fn() }));
 vi.mock('../services/contactMethods', () => ({ addContactMethod: vi.fn(), deactivateContactMethod: vi.fn(), editContactMethod: vi.fn(), reactivateContactMethod: vi.fn() }));
 vi.mock('../services/companies', () => ({ searchCompanies: vi.fn() }));
-const listMock = vi.mocked(listContactDirectoryCompanies); const detailMock = vi.mocked(getContactDirectoryCompany); const createMock = vi.mocked(createContact); const updateMock = vi.mocked(updateContact); const addMethodMock = vi.mocked(addContactMethod); const editMethodMock = vi.mocked(editContactMethod); const deactivateMock = vi.mocked(deactivateContactMethod); const reactivateMock = vi.mocked(reactivateContactMethod); const companySearchMock = vi.mocked(searchCompanies);
+const listMock = vi.mocked(listContactDirectoryCompanies); const detailMock = vi.mocked(getContactDirectoryCompany); const createMock = vi.mocked(createContact); const updateMock = vi.mocked(updateContact); const addMethodMock = vi.mocked(addContactMethod); const editMethodMock = vi.mocked(editContactMethod); const deactivateMock = vi.mocked(deactivateContactMethod); const reactivateMock = vi.mocked(reactivateContactMethod); const companySearchMock = vi.mocked(searchCompanies); const deactivateContactMock = vi.mocked(deactivateContact); const reactivateContactMock = vi.mocked(reactivateContact);
 const company = { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const, contactCount: 0 };
-const detail = { company: { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const }, contacts: [] };
+const detail = { company: { id: '1', commercialName: 'ALMEX', companyType: 'FLETE' as const }, contacts: [] as DirectoryContact[], inactiveContacts: [] as DirectoryContact[] };
 const lookup = { id: '31', commercialName: 'SILYM', companyType: 'SERVICIO' as const, legalName: 'RUBEN MARQUEZ CORTES', rfc: 'SIM010101AAA', matchedAlias: 'SOLUCIONES INTEGRALES' };
 function Location() { return <output data-testid="location">{useLocation().search}</output>; }
 function renderPage(path = '/contacts?company=1&search=almex&page=2&pageSize=25') { return render(<MemoryRouter initialEntries={[path]}><Routes><Route path="/contacts" element={<><ContactsPage /><Location /></>} /></Routes></MemoryRouter>); }
@@ -25,8 +25,12 @@ async function selectMethodType(drawer: HTMLElement, index: number, label: strin
 const activeMethod = { id: '9007199254740993', type: 'CORREO' as const, value: 'activo@example.test', isPrimary: true };
 const inactiveMethod = { id: '9007199254740994', type: 'OTRO' as const, value: 'anterior@example.test', isPrimary: false };
 const inactivePhoneMethod = { id: '9007199254740995', type: 'TELEFONO' as const, value: '+52 449 555 0101', isPrimary: false };
-function contactDetail(methods: DirectoryContactMethod[] = [activeMethod], inactiveMethods: DirectoryContactMethod[] = [inactiveMethod]) { return { company: detail.company, contacts: [{ id: '20', name: 'Contacto Sintético', contactType: 'PERSONA' as const, area: 'Compras', position: null, notes: 'Nota inicial', isPrimary: false, methods, inactiveMethods }] }; }
-async function lifecyclePage(initial = contactDetail()) { listMock.mockResolvedValue({ data: [{ ...company, contactCount: 1 }], meta: { page: 2, pageSize: 25, total: 1, totalPages: 1 } }); detailMock.mockResolvedValue(initial); renderPage(); await screen.findByText('Contacto Sintético'); }
+function contactDetail(methods: DirectoryContactMethod[] = [activeMethod], inactiveMethods: DirectoryContactMethod[] = [inactiveMethod], inactiveContacts: DirectoryContact[] = []): Awaited<ReturnType<typeof getContactDirectoryCompany>> { return { company: detail.company, contacts: [{ id: '20', name: 'Contacto Sintético', contactType: 'PERSONA' as const, area: 'Compras', position: null, notes: 'Nota inicial', isPrimary: false, methods, inactiveMethods }], inactiveContacts }; }
+function inactiveContactFixture(methods: DirectoryContactMethod[] = [activeMethod], inactiveMethods: DirectoryContactMethod[] = [inactivePhoneMethod]): DirectoryContact { return { id: '20', name: 'Contacto Sintético', contactType: 'PERSONA' as const, area: 'Compras', position: null, notes: 'Nota inicial', isPrimary: false, methods, inactiveMethods }; }
+const listMeta = { page: 2, pageSize: 25, total: 1, totalPages: 1 };
+async function lifecyclePage(initial = contactDetail()) { listMock.mockResolvedValue({ data: [{ ...company, contactCount: initial.contacts.length }], meta: listMeta }); detailMock.mockResolvedValue(initial); renderPage(); await screen.findAllByText('Contacto Sintético'); }
+async function openContactMenu() { fireEvent.click(screen.getByRole('button', { name: 'Acciones del contacto Contacto Sintético' })); return screen.findByRole('menuitem', { name: 'Desactivar contacto' }); }
+async function deactivateViaMenu() { fireEvent.click(await openContactMenu()); return within(await screen.findByRole('dialog', { name: 'Desactivar contacto' })).getByRole('button', { name: 'Desactivar' }); }
 
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
 
@@ -178,7 +182,7 @@ describe('ContactsPage contact method creation', () => {
   });
 
   it('keeps only one form open and resets the first contact when another opens', async () => {
-    const first = contactDetail().contacts[0]!; const second = { ...first, id: '21', name: 'Segundo Contacto' }; await lifecyclePage({ company: detail.company, contacts: [first, second] }); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); const firstForm = screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' }); fireEvent.change(within(firstForm).getByRole('textbox', { name: 'Valor' }), { target: { value: 'unsaved@example.test' } }); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Segundo Contacto' }));
+    const first = contactDetail().contacts[0]!; const second = { ...first, id: '21', name: 'Segundo Contacto' }; await lifecyclePage({ company: detail.company, contacts: [first, second], inactiveContacts: [] }); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); const firstForm = screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' }); fireEvent.change(within(firstForm).getByRole('textbox', { name: 'Valor' }), { target: { value: 'unsaved@example.test' } }); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Segundo Contacto' }));
     expect(screen.queryByRole('form', { name: 'Agregar medio para Contacto Sintético' })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })).toBeInTheDocument(); const secondForm = screen.getByRole('form', { name: 'Agregar medio para Segundo Contacto' }); expect(within(secondForm).getByRole('textbox', { name: 'Valor' })).toHaveValue(''); expect(screen.getAllByRole('form').filter((form) => form.getAttribute('aria-label')?.startsWith('Agregar medio para'))).toHaveLength(1);
   });
 
@@ -194,9 +198,10 @@ describe('ContactsPage contact method creation', () => {
 });
 
 describe('ContactsPage contact editing', () => {
-  it('shows a distinct contact menu containing only Editar contacto', async () => {
+  it('shows a distinct contact menu with Editar contacto and Desactivar contacto', async () => {
     await lifecyclePage(contactDetail([activeMethod], [])); expect(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'Acciones del contacto Contacto Sintético' }));
-    expect(await screen.findByRole('menuitem', { name: 'Editar contacto' })).toBeInTheDocument(); expect(screen.queryByText('Desactivar contacto')).not.toBeInTheDocument(); expect(screen.queryByText('Eliminar contacto')).not.toBeInTheDocument(); expect(screen.queryByText('Cambiar empresa')).not.toBeInTheDocument(); expect(screen.queryByText('Cambiar tipo')).not.toBeInTheDocument();
+    const edit = await screen.findByRole('menuitem', { name: 'Editar contacto' }); const deactivate = screen.getByRole('menuitem', { name: 'Desactivar contacto' }); expect(edit.compareDocumentPosition(deactivate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Eliminar')).not.toBeInTheDocument(); expect(screen.queryByText('Eliminar contacto')).not.toBeInTheDocument(); expect(screen.queryByText('Cambiar empresa')).not.toBeInTheDocument(); expect(screen.queryByText('Cambiar tipo')).not.toBeInTheDocument();
   });
 
   it('opens from the contact menu, refreshes on success, and preserves URL state', async () => {
@@ -206,5 +211,114 @@ describe('ContactsPage contact editing', () => {
     const drawer = await screen.findByRole('dialog'); const form = within(drawer); fireEvent.change(form.getByRole('textbox', { name: 'Nombre' }), { target: { value: 'Contacto Actualizado' } }); fireEvent.change(form.getByRole('textbox', { name: 'Área' }), { target: { value: 'Compras y Abastecimiento' } }); fireEvent.change(form.getByRole('textbox', { name: 'Cargo' }), { target: { value: '' } }); fireEvent.change(form.getByRole('textbox', { name: 'Observaciones' }), { target: { value: 'Nota actualizada' } }); fireEvent.click(form.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(updateMock).toHaveBeenCalledWith('20', { name: 'Contacto Actualizado', area: 'Compras y Abastecimiento', notes: 'Nota actualizada' }));
     expect(await screen.findByText('Contacto actualizado correctamente.')).toBeInTheDocument(); await waitFor(() => expect(screen.queryByText('Editar contacto')).not.toBeInTheDocument()); expect(screen.getByText('Contacto Actualizado')).toBeInTheDocument(); expect(screen.getByText('Compras y Abastecimiento')).toBeInTheDocument(); await waitFor(() => expect(detailMock).toHaveBeenCalledTimes(2)); expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
+  });
+});
+
+describe('ContactsPage contact lifecycle', () => {
+  it('opens a restrained confirmation and Cancelar leaves the contact active without requests', async () => {
+    await lifecyclePage(contactDetail([activeMethod], []));
+    fireEvent.click(await openContactMenu());
+    const dialog = await screen.findByRole('dialog', { name: 'Desactivar contacto' });
+    expect(within(dialog).getByText('Contacto Sintético dejará de aparecer entre los contactos activos de ALMEX. Sus medios de contacto se conservarán y podrás reactivar el contacto posteriormente.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeInTheDocument(); expect(within(dialog).getByRole('button', { name: 'Desactivar' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Desactivar contacto' })).not.toBeInTheDocument());
+    expect(deactivateContactMock).not.toHaveBeenCalled(); expect(screen.getByText('Contacto Sintético')).toBeInTheDocument(); expect(screen.getByText('1 contacto')).toBeInTheDocument();
+  });
+
+  it('deactivates once, moves the contact to the collapsed inactive section, refreshes counts, and preserves URL state', async () => {
+    deactivateContactMock.mockResolvedValue({} as never);
+    const refreshed = { company: detail.company, contacts: [] as DirectoryContact[], inactiveContacts: [inactiveContactFixture([activeMethod], [inactiveMethod])] };
+    await lifecyclePage(contactDetail([activeMethod], [inactiveMethod]));
+    detailMock.mockResolvedValue(refreshed); listMock.mockResolvedValue({ data: [{ ...company, contactCount: 0 }], meta: listMeta });
+    const submit = await deactivateViaMenu();
+    fireEvent.click(submit); fireEvent.click(submit);
+    expect(deactivateContactMock).toHaveBeenCalledTimes(1); expect(deactivateContactMock).toHaveBeenCalledWith('20');
+    expect(await screen.findByText('Contacto desactivado.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Desactivar contacto' })).not.toBeInTheDocument());
+    expect(screen.getByText('No hay contactos activos.')).toBeInTheDocument(); expect(screen.getAllByRole('button', { name: 'Agregar contacto' })).toHaveLength(2);
+    const toggle = screen.getByRole('button', { name: 'Contactos inactivos (1)' }); expect(toggle).toHaveAttribute('aria-expanded', 'false'); expect(screen.getByText(activeMethod.value)).not.toBeVisible();
+    fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(activeMethod.value)).toBeVisible(); expect(screen.getByRole('button', { name: 'Medios inactivos (1)' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Agregar medio para Contacto Sintético' })).not.toBeInTheDocument();
+    await waitFor(() => expect(listMock.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
+  });
+
+  it('shows a safe error, keeps the page usable, and does not get stuck when deactivation fails', async () => {
+    deactivateContactMock.mockRejectedValue(new Error('SQLSTATE internals'));
+    await lifecyclePage(contactDetail([activeMethod], []));
+    const submit = await deactivateViaMenu(); fireEvent.click(submit);
+    expect(await screen.findByText('No fue posible desactivar el contacto.')).toBeInTheDocument();
+    expect(screen.queryByText(/SQLSTATE/)).not.toBeInTheDocument(); expect(screen.queryByText(/internals/)).not.toBeInTheDocument();
+    expect(submit).toBeEnabled(); expect(screen.getByText('Contacto Sintético')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Desactivar contacto' })).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Desactivar contacto' })).not.toBeInTheDocument());
+    expect(deactivateContactMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the inactive contacts section when empty', async () => {
+    await lifecyclePage(contactDetail([activeMethod], []));
+    expect(screen.queryByRole('button', { name: /Contactos inactivos/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the populated inactive section collapsed with the correct count and expands it', async () => {
+    const secondInactive = { ...inactiveContactFixture(), id: '21' };
+    await lifecyclePage({ company: detail.company, contacts: [], inactiveContacts: [inactiveContactFixture(), secondInactive] });
+    const toggle = screen.getByRole('button', { name: 'Contactos inactivos (2)' }); expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    screen.getAllByText('Contacto Sintético').forEach((title) => expect(title).not.toBeVisible());
+    fireEvent.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    screen.getAllByText('Contacto Sintético').forEach((title) => expect(title).toBeVisible());
+  });
+
+  it('offers only Reactivar contacto for an inactive contact and renders its methods read-only', async () => {
+    reactivateContactMock.mockResolvedValue({} as never);
+    const whatsappActive = { id: '9007199254740996', type: 'WHATSAPP' as const, value: '+52 449 555 0103', isPrimary: false };
+    await lifecyclePage({ company: detail.company, contacts: [], inactiveContacts: [inactiveContactFixture([activeMethod, whatsappActive], [inactivePhoneMethod])] });
+    fireEvent.click(screen.getByRole('button', { name: 'Contactos inactivos (1)' }));
+    expect(screen.getByText('Compras')).toBeVisible();
+    expect(screen.getByText(activeMethod.value)).toBeVisible(); expect(screen.getByText(whatsappActive.value)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Medios inactivos (1)' })); expect(screen.getByText(inactivePhoneMethod.value)).toBeVisible();
+    expect(screen.queryByRole('button', { name: /^Acciones para/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Agregar medio para Contacto Sintético' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Acciones del contacto Contacto Sintético' }));
+    const items = await screen.findAllByRole('menuitem'); expect(items).toHaveLength(1); expect(items[0]).toHaveTextContent('Reactivar contacto');
+    expect(screen.queryByRole('menuitem', { name: 'Editar contacto' })).not.toBeInTheDocument(); expect(screen.queryByRole('menuitem', { name: 'Desactivar contacto' })).not.toBeInTheDocument();
+    fireEvent.keyDown(items[0]!, { key: 'Escape' });
+    expect(deactivateContactMock).not.toHaveBeenCalled(); expect(reactivateContactMock).not.toHaveBeenCalled(); expect(deactivateMock).not.toHaveBeenCalled(); expect(reactivateMock).not.toHaveBeenCalled();
+  });
+
+  it('reactivates immediately without confirmation, restores the active card, refreshes counts, and preserves URL state', async () => {
+    reactivateContactMock.mockResolvedValue({} as never);
+    await lifecyclePage({ company: detail.company, contacts: [], inactiveContacts: [inactiveContactFixture([activeMethod], [inactiveMethod])] });
+    const refreshed = contactDetail([activeMethod], [inactiveMethod]);
+    listMock.mockResolvedValue({ data: [{ ...company, contactCount: 1 }], meta: listMeta }); detailMock.mockResolvedValue(refreshed);
+    fireEvent.click(screen.getByRole('button', { name: 'Contactos inactivos (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Acciones del contacto Contacto Sintético' }));
+    const reactivateItem = await screen.findByRole('menuitem', { name: 'Reactivar contacto' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(reactivateItem);
+    expect(reactivateContactMock).toHaveBeenCalledWith('20');
+    expect(await screen.findByText('Contacto reactivado.')).toBeInTheDocument();
+    expect(await screen.findByText('1 contacto')).toBeInTheDocument();
+    expect(screen.getByText(activeMethod.value)).toBeVisible();
+    expect(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Acciones del contacto Contacto Sintético` })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Contactos inactivos/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(detailMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
+  });
+
+  it('shows a safe error and keeps the inactive section usable when reactivation fails', async () => {
+    reactivateContactMock.mockRejectedValue(new Error('backend internals'));
+    await lifecyclePage({ company: detail.company, contacts: [], inactiveContacts: [inactiveContactFixture()] });
+    fireEvent.click(screen.getByRole('button', { name: 'Contactos inactivos (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Acciones del contacto Contacto Sintético' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reactivar contacto' }));
+    expect(await screen.findByText('No fue posible reactivar el contacto.')).toBeInTheDocument();
+    expect(screen.queryByText(/internals/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Contactos inactivos (1)' })).toBeInTheDocument();
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
   });
 });
