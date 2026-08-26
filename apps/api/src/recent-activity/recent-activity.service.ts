@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ListRecentActivityDto } from './dto/list-recent-activity.dto';
+import { RecentActivityCategoryFilter, type ListRecentActivityDto } from './dto/list-recent-activity.dto';
 import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
 import { RecentActivityRepository, type RecentActivitySource } from './recent-activity.repository';
 
@@ -91,12 +91,18 @@ export class RecentActivityService {
   ) {}
 
   async list(input: ListRecentActivityDto): Promise<RecentActivityResponse> {
+    if (input.category === RecentActivityCategoryFilter.CLIENT) return { data: [] };
+
+    const needsAudit = input.category !== RecentActivityCategoryFilter.AUTOMATION;
+    const needsPayments = input.category === undefined || input.category === RecentActivityCategoryFilter.AUTOMATION;
+    const auditCategory = input.category === RecentActivityCategoryFilter.PROVIDER || input.category === RecentActivityCategoryFilter.CONTACT ? input.category : undefined;
     const [source, paymentRows] = await Promise.all([
-      this.repository.findRecent(input.limit),
-      this.paymentNotifications.findRecent(input.limit)
+      needsAudit ? (auditCategory ? this.repository.findRecent(input.limit, auditCategory) : this.repository.findRecent(input.limit)) : null,
+      needsPayments ? this.paymentNotifications.findRecent(input.limit) : []
     ]);
-    const data = [...this.auditActivities(source), ...paymentRows.map((row) => this.paymentNotification(row))]
+    const data = [...(source ? this.auditActivities(source) : []), ...paymentRows.map((row) => this.paymentNotification(row))]
       .filter((item): item is RecentActivityItem => item !== null)
+      .filter((item) => input.category === undefined || item.category === input.category)
       .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
       .slice(0, input.limit);
     return { data };

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { RecentActivityCategoryFilter } from '../src/recent-activity/dto/list-recent-activity.dto';
 import { RecentActivityService } from '../src/recent-activity/recent-activity.service';
 
 const at = '2026-08-25T10:00:00.000Z';
@@ -113,6 +114,59 @@ describe('RecentActivityService', () => {
     expect(Object.keys(result.data[0]!)).toEqual(['type', 'category', 'title', 'entity', 'context', 'occurredAt']);
     expect(result.data[0]?.occurredAt).toBe(at);
     expect(JSON.stringify(result)).not.toMatch(/request_id|schema_name|before_data|after_data|operation/);
+  });
+
+  it('filters provider activity before the final limit and skips the payment source', async () => {
+    const rows = [
+      row('new-contact', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'new@test.mx' }, null, '2026-08-25T12:00:00Z'),
+      row('new-provider', 'empresas', 'UPDATE', { empresa_id: 1, nombre_comercial: 'Nuevo' }, { empresa_id: 1, nombre_comercial: 'Anterior' }, '2026-08-25T11:00:00Z'),
+      row('old-provider', 'empresas', 'UPDATE', { empresa_id: 2, nombre_comercial: 'Antiguo' }, { empresa_id: 2, nombre_comercial: 'Original' }, '2026-08-25T09:00:00Z')
+    ];
+    const { service, findRecent, findPaymentNotifications } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [['1', 'Nuevo'], ['2', 'Antiguo']], [payment({ occurred_at: '2026-08-25T13:00:00Z' })]);
+
+    const result = await service.list({ limit: 2, category: RecentActivityCategoryFilter.PROVIDER });
+
+    expect(result.data.map((item) => item.entity)).toEqual(['Nuevo', 'Antiguo']);
+    expect(result.data.every((item) => item.category === 'PROVIDER')).toBe(true);
+    expect(findRecent).toHaveBeenCalledWith(2, 'PROVIDER');
+    expect(findPaymentNotifications).not.toHaveBeenCalled();
+  });
+
+  it('returns only contact activity and skips the payment source', async () => {
+    const rows = [
+      row('provider', 'empresas', 'UPDATE', { empresa_id: 1, nombre_comercial: 'Nuevo' }, { empresa_id: 1, nombre_comercial: 'Anterior' }),
+      row('contact', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'contact@test.mx' })
+    ];
+    const { service, findRecent, findPaymentNotifications } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [['1', 'Nuevo']], [payment()]);
+
+    const result = await service.list({ limit: 6, category: RecentActivityCategoryFilter.CONTACT });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.category).toBe('CONTACT');
+    expect(findRecent).toHaveBeenCalledWith(6, 'CONTACT');
+    expect(findPaymentNotifications).not.toHaveBeenCalled();
+  });
+
+  it('returns only automation activity and skips the audit source', async () => {
+    const { service, findRecent, findPaymentNotifications } = setup([row('contact', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'contact@test.mx' })], [], [], [
+      payment({ occurred_at: '2026-08-25T11:00:00Z' }),
+      payment({ execution_state: 'ERROR', result_count: 0, ready_count: 0, occurred_at: '2026-08-25T12:00:00Z' })
+    ]);
+
+    const result = await service.list({ limit: 1, category: RecentActivityCategoryFilter.AUTOMATION });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ category: 'AUTOMATION', type: 'AUTOMATION_FAILED' });
+    expect(findRecent).not.toHaveBeenCalled();
+    expect(findPaymentNotifications).toHaveBeenCalledWith(1);
+  });
+
+  it('returns an empty client feed without querying unsupported sources', async () => {
+    const { service, findRecent, findPaymentNotifications } = setup([], [], [], [payment()]);
+
+    await expect(service.list({ limit: 6, category: RecentActivityCategoryFilter.CLIENT })).resolves.toEqual({ data: [] });
+    expect(findRecent).not.toHaveBeenCalled();
+    expect(findPaymentNotifications).not.toHaveBeenCalled();
   });
 
   it.each([

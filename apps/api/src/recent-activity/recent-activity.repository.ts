@@ -33,6 +33,8 @@ export interface RecentActivitySource {
   companies: Map<string, string>;
 }
 
+export type AuditActivityCategory = 'PROVIDER' | 'CONTACT';
+
 function snapshotId(snapshot: Snapshot, key: string): string | null {
   const value = snapshot?.[key];
   return typeof value === 'string' || typeof value === 'number' ? String(value) : null;
@@ -42,7 +44,13 @@ function snapshotId(snapshot: Snapshot, key: string): string | null {
 export class RecentActivityRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async findRecent(limit: number): Promise<RecentActivitySource> {
+  async findRecent(limit: number, category?: AuditActivityCategory): Promise<RecentActivitySource> {
+    const categoryTables = category === 'PROVIDER'
+      ? ['empresas', 'empresa_roles', 'empresas_fiscales']
+      : category === 'CONTACT' ? ['contactos', 'medios_contacto'] : null;
+    const categoryCondition = categoryTables
+      ? "HAVING bool_or(schema_name = 'core' AND table_name = ANY($2::text[]))"
+      : '';
     const rows = await this.database.query<AuditRow>(`
       WITH normalized AS (
         SELECT
@@ -61,6 +69,7 @@ export class RecentActivityRepository {
         SELECT request_id, max(occurred_at) AS request_occurred_at
         FROM normalized
         GROUP BY request_id
+        ${categoryCondition}
         ORDER BY request_occurred_at DESC, request_id DESC
         LIMIT $1
       )
@@ -69,7 +78,7 @@ export class RecentActivityRepository {
       FROM recent_requests
       JOIN normalized USING (request_id)
       ORDER BY recent_requests.request_occurred_at DESC, request_id DESC,
-        normalized.occurred_at, normalized.audit_id`, [limit * 5]);
+        normalized.occurred_at, normalized.audit_id`, categoryTables ? [limit * 5, categoryTables] : [limit * 5]);
 
     const contactIds = new Set<string>();
     const companyIds = new Set<string>();

@@ -12,6 +12,15 @@ describe('listRecentActivity', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/recent-activity?limit=6');
   });
 
+  it('adds an optional business category to the existing endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await listRecentActivity(6, 'AUTOMATION');
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/recent-activity?limit=6&category=AUTOMATION');
+  });
+
   it('uses a safe error for failed or malformed responses', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 500 })));
     await expect(listRecentActivity()).rejects.toThrow('RECENT_ACTIVITY_UNAVAILABLE');

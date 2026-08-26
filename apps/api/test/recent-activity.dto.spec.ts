@@ -17,4 +17,12 @@ describe('ListRecentActivityDto', () => {
   it.each([{ limit: '0' }, { limit: '21' }, { limit: '1.5' }, { limit: 'invalid' }])('rejects invalid limit %#', async (input) => {
     expect((await query(input)).errors).toBeGreaterThan(0);
   });
+
+  it.each(['PROVIDER', 'CONTACT', 'AUTOMATION', 'CLIENT'])('accepts category %s', async (category) => {
+    expect(await query({ category })).toMatchObject({ dto: { limit: 6, category }, errors: 0 });
+  });
+
+  it.each(['', 'provider', 'UNKNOWN'])('rejects invalid category %j', async (category) => {
+    expect((await query({ category })).errors).toBeGreaterThan(0);
+  });
 });

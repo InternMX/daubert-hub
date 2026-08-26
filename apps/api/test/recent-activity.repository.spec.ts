@@ -34,6 +34,18 @@ describe('RecentActivityRepository', () => {
     expect(query.mock.calls[1]?.[0]).not.toContain('estatus');
     expect(query.mock.calls[2]?.[0]).not.toContain('estatus');
   });
+
+  it.each([
+    ['PROVIDER', ['empresas', 'empresa_roles', 'empresas_fiscales']],
+    ['CONTACT', ['contactos', 'medios_contacto']]
+  ] as const)('bounds %s request groups after source-category selection', async (category, tables) => {
+    const query = vi.fn().mockResolvedValue([]);
+    const repository = new RecentActivityRepository({ query } as never);
+
+    await repository.findRecent(6, category);
+
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("HAVING bool_or(schema_name = 'core' AND table_name = ANY($2::text[]))"), [30, tables]);
+  });
 });
 
 describe('PaymentNotificationActivityRepository', () => {

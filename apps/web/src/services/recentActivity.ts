@@ -25,9 +25,11 @@ function isRecentActivityItem(value: unknown): value is RecentActivityItem {
     && typeof item.occurredAt === 'string' && Number.isFinite(new Date(item.occurredAt).getTime());
 }
 
-export async function listRecentActivity(limit = 6): Promise<RecentActivityItem[]> {
+export async function listRecentActivity(limit = 6, category?: RecentActivityCategory): Promise<RecentActivityItem[]> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (category) query.set('category', category);
   let response: Response;
-  try { response = await fetch(`${apiBaseUrl}/recent-activity?${new URLSearchParams({ limit: String(limit) })}`); }
+  try { response = await fetch(`${apiBaseUrl}/recent-activity?${query}`); }
   catch { throw new Error('RECENT_ACTIVITY_UNAVAILABLE'); }
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok || typeof body !== 'object' || body === null || !('data' in body) || !Array.isArray(body.data) || !body.data.every(isRecentActivityItem)) throw new Error('RECENT_ACTIVITY_UNAVAILABLE');

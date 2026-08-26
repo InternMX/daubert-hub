@@ -326,6 +326,27 @@ async function run() {
     assert(indices.every((index, position) => index >= 0 && (position === 0 || index > indices[position - 1])), 'Synthetic activity is not in descending business-request order.');
     assert(items.every((item, index) => index === 0 || new Date(items[index - 1].occurredAt).getTime() >= new Date(item.occurredAt).getTime()), 'Recent activity timestamps are not descending.');
 
+    const providerFeed = await apiRequest('/recent-activity?limit=2&category=PROVIDER');
+    assert(providerFeed.response.status === 200 && providerFeed.body.data.length === 2, 'Provider activity filter did not return the newest two matching events.');
+    assert(providerFeed.body.data.every((item) => item.category === 'PROVIDER'), 'Provider activity filter returned another category.');
+    assert(providerFeed.body.data.map((item) => item.entity).join(',') === `${names.providerUpdated},${names.providerOriginal}`, 'Provider activity filter was applied after the final limit or ordered incorrectly.');
+
+    const contactFeed = await apiRequest('/recent-activity?limit=2&category=CONTACT');
+    assert(contactFeed.response.status === 200 && contactFeed.body.data.length === 2, 'Contact activity filter did not return the newest two matching events.');
+    assert(contactFeed.body.data.every((item) => item.category === 'CONTACT'), 'Contact activity filter returned another category.');
+    assert(contactFeed.body.data[0].type === 'CONTACT_METHOD_REACTIVATED' && contactFeed.body.data[1].type === 'CONTACT_METHOD_DEACTIVATED', 'Contact activity filter returned the wrong matching order.');
+
+    const automationFeed = await apiRequest('/recent-activity?limit=2&category=AUTOMATION');
+    const newestPaymentTimes = paymentFixtures.map((fixture) => fixture.occurredAt).sort((left, right) => new Date(right).getTime() - new Date(left).getTime()).slice(0, 2);
+    assert(automationFeed.response.status === 200 && automationFeed.body.data.length === 2, 'Automation activity filter did not return the newest two matching events.');
+    assert(automationFeed.body.data.every((item) => item.category === 'AUTOMATION'), 'Automation activity filter returned another category.');
+    assert(automationFeed.body.data.map((item) => item.occurredAt).join(',') === newestPaymentTimes.join(','), 'Automation activity filter was applied after the final limit or ordered incorrectly.');
+
+    const clientFeed = await apiRequest('/recent-activity?limit=6&category=CLIENT');
+    assert(clientFeed.response.status === 200 && Array.isArray(clientFeed.body.data) && clientFeed.body.data.length === 0, 'Unsupported client activity did not return an empty feed.');
+    const invalidCategory = await apiRequest('/recent-activity?limit=6&category=UNKNOWN');
+    assert(invalidCategory.response.status === 400, 'Invalid recent activity category was not rejected.');
+
     const endpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [actionOrder]);
     assert(endpointAudit.rows.length === 8, 'Not all eight endpoint request IDs reached the audit log.');
     console.log('Recent activity integration checks passed, including synthetic FAILED and PARTIAL ERROR payment executions.');
