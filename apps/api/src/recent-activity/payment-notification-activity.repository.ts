@@ -28,10 +28,10 @@ export class PaymentNotificationActivityRepository {
         count(*) FILTER (WHERE resultado.estado = 'OMITIDO')::int AS omitted_count
       FROM core.correos_notificacion_pago correo
       LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
-      WHERE correo.estado = 'PROCESADO'
+      WHERE correo.estado IN ('PROCESADO', 'ERROR')
         AND correo.fecha_procesado IS NOT NULL
       GROUP BY correo.correo_id, correo.estado, correo.fecha_procesado
-      HAVING count(resultado.correo_id) > 0
+      HAVING correo.estado = 'ERROR' OR count(resultado.correo_id) > 0
       ORDER BY correo.fecha_procesado DESC, correo.correo_id DESC
       LIMIT $1`, [limit * 5]);
   }

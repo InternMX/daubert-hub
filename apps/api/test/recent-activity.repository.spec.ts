@@ -47,9 +47,11 @@ describe('PaymentNotificationActivityRepository', () => {
     const sql = query.mock.calls[0]?.[0] as string;
     expect(sql).toContain('FROM core.correos_notificacion_pago correo');
     expect(sql).toContain('LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)');
-    expect(sql).toContain("correo.estado = 'PROCESADO'");
+    expect(sql).toContain("correo.estado IN ('PROCESADO', 'ERROR')");
     expect(sql).toContain('correo.fecha_procesado AS occurred_at');
-    expect(sql).toContain('HAVING count(resultado.correo_id) > 0');
+    expect(sql).toContain('correo.fecha_procesado IS NOT NULL');
+    expect(sql).toContain("HAVING correo.estado = 'ERROR' OR count(resultado.correo_id) > 0");
+    expect(sql).toContain('ORDER BY correo.fecha_procesado DESC, correo.correo_id DESC');
     expect(sql).toContain('LIMIT $1');
     expect(sql).not.toContain("correo.estado = 'PENDIENTE'");
     expect(sql).not.toMatch(/outlook|remitente|asunto|destinatario|detalle_error|fecha_resumen_enviado/i);

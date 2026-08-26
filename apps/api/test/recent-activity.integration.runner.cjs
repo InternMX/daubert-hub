@@ -71,21 +71,22 @@ function one(items, type, entity) {
   return matches[0];
 }
 
-async function cleanup(pool, names, paymentFixture) {
+async function cleanup(pool, names, paymentFixtures) {
   let cleanupError;
   try {
     await transaction(pool, 'DAUBERT_HUB_TEST_CLEANUP', cleanupRequestId, async (client) => {
-      if (paymentFixture) {
+      if (paymentFixtures.length) {
+        const correoIds = paymentFixtures.map((fixture) => fixture.correoId);
         await client.query(`
           DELETE FROM core.resultados_notificacion_pago resultado
-          WHERE resultado.correo_id = $1
+          WHERE resultado.correo_id = ANY($1::bigint[])
             AND EXISTS (
               SELECT 1 FROM core.correos_notificacion_pago correo
-              WHERE correo.correo_id = resultado.correo_id AND correo.outlook_message_id = $2
-            )`, [paymentFixture.correoId, names.paymentMessageId]);
+              WHERE correo.correo_id = resultado.correo_id AND correo.outlook_message_id = ANY($2::text[])
+            )`, [correoIds, names.paymentMessageIds]);
         await client.query(
-          'DELETE FROM core.correos_notificacion_pago WHERE correo_id = $1 AND outlook_message_id = $2',
-          [paymentFixture.correoId, names.paymentMessageId]
+          'DELETE FROM core.correos_notificacion_pago WHERE correo_id = ANY($1::bigint[]) AND outlook_message_id = ANY($2::text[])',
+          [correoIds, names.paymentMessageIds]
         );
       }
       const companies = await client.query(
@@ -114,9 +115,9 @@ async function cleanup(pool, names, paymentFixture) {
     const auditLeftovers = await pool.query('SELECT count(*)::int AS count FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
     const paymentLeftovers = await pool.query(`
       SELECT
-        (SELECT count(*) FROM core.correos_notificacion_pago WHERE outlook_message_id = $1) AS correo_count,
-        (SELECT count(*) FROM core.resultados_notificacion_pago WHERE correo_id = $2) AS result_count`,
-      [names.paymentMessageId, paymentFixture?.correoId ?? -1]
+        (SELECT count(*) FROM core.correos_notificacion_pago WHERE outlook_message_id = ANY($1::text[])) AS correo_count,
+        (SELECT count(*) FROM core.resultados_notificacion_pago WHERE correo_id = ANY($2::bigint[])) AS result_count`,
+      [names.paymentMessageIds, paymentFixtures.length ? paymentFixtures.map((fixture) => fixture.correoId) : [-1]]
     );
     const paymentExample = await pool.query(`
       SELECT count(resultado.correo_id)::int AS result_count,
@@ -129,7 +130,7 @@ async function cleanup(pool, names, paymentFixture) {
       GROUP BY correo.correo_id`);
     assert(Number(coreLeftovers.rows[0].count) === 0, 'Recent activity cleanup left core marker fixtures.');
     assert(auditLeftovers.rows[0].count === 0, 'Recent activity cleanup left correlated audit rows.');
-    assert(Number(paymentLeftovers.rows[0].correo_count) === 0 && Number(paymentLeftovers.rows[0].result_count) === 0, 'Recent activity cleanup left the synthetic payment fixture.');
+    assert(Number(paymentLeftovers.rows[0].correo_count) === 0 && Number(paymentLeftovers.rows[0].result_count) === 0, 'Recent activity cleanup left synthetic payment fixtures.');
     assert(paymentExample.rows.length === 1 && paymentExample.rows[0].result_count === 5 && paymentExample.rows[0].ready_count === 4 && paymentExample.rows[0].manual_count === 1 && paymentExample.rows[0].error_count === 0, 'Cleanup changed the existing correo 32 example.');
   } catch (error) {
     cleanupError ??= error;
@@ -142,7 +143,7 @@ async function run() {
   const pool = new Pool({ connectionString: guarded.connectionString });
   let api;
   let databaseVerified = false;
-  let paymentFixture;
+  let paymentFixtures = [];
   const names = {
     setupCompany: `${marker}_DELETE_COMPANY`,
     deleteContact: `${marker}_DELETE_CONTACT`,
@@ -155,7 +156,11 @@ async function run() {
     initialPhone: `+52 449 ${String(Date.now()).slice(-7)}`,
     methodOriginal: `standalone.${markerLower}@example.test`,
     methodUpdated: `standalone.updated.${markerLower}@example.test`,
-    paymentMessageId: `SYNTHETIC_PAYMENT_${marker}`
+    paymentMessageIds: [
+      `SYNTHETIC_PAYMENT_PROCESSED_${marker}`,
+      `SYNTHETIC_PAYMENT_FAILED_${marker}`,
+      `SYNTHETIC_PAYMENT_PARTIAL_ERROR_${marker}`
+    ]
   };
 
   try {
@@ -205,31 +210,51 @@ async function run() {
     });
     await waitForApi();
 
-    paymentFixture = await transaction(pool, 'DAUBERT_HUB_TEST', paymentRequestId, async (client) => {
+    paymentFixtures = await transaction(pool, 'DAUBERT_HUB_TEST', paymentRequestId, async (client) => {
       const companies = await client.query('SELECT empresa_id::text AS id FROM core.empresas ORDER BY empresa_id LIMIT 5');
       assert(companies.rows.length === 5, 'Synthetic payment fixture requires five existing test companies.');
-      const correo = await client.query(`
-        INSERT INTO core.correos_notificacion_pago (outlook_message_id, estado, fecha_procesado)
-        VALUES ($1, 'PROCESADO', clock_timestamp())
-        RETURNING correo_id::text AS id, fecha_procesado`, [names.paymentMessageId]);
+
+      const insertCorreo = async (messageId, state) => {
+        const correo = await client.query(`
+          INSERT INTO core.correos_notificacion_pago (outlook_message_id, estado, fecha_procesado)
+          VALUES ($1, $2, clock_timestamp())
+          RETURNING correo_id::text AS id, fecha_procesado`, [messageId, state]);
+        return { correoId: correo.rows[0].id, occurredAt: new Date(correo.rows[0].fecha_procesado).toISOString() };
+      };
+
+      const processed = await insertCorreo(names.paymentMessageIds[0], 'PROCESADO');
       const states = ['LISTO', 'LISTO', 'LISTO', 'LISTO', 'MANUAL'];
       for (const [index, company] of companies.rows.entries()) {
         await client.query(
           'INSERT INTO core.resultados_notificacion_pago (correo_id, empresa_id, estado) VALUES ($1, $2, $3)',
-          [correo.rows[0].id, company.id, states[index]]
+          [processed.correoId, company.id, states[index]]
         );
       }
-      return { correoId: correo.rows[0].id, occurredAt: new Date(correo.rows[0].fecha_procesado).toISOString() };
+
+      const failed = await insertCorreo(names.paymentMessageIds[1], 'ERROR');
+      const partialError = await insertCorreo(names.paymentMessageIds[2], 'ERROR');
+      await client.query(`
+        INSERT INTO core.resultados_notificacion_pago (correo_id, empresa_id, estado)
+        VALUES ($1, $2, 'LISTO'), ($1, $3, 'ERROR')`, [partialError.correoId, companies.rows[0].id, companies.rows[1].id]);
+      return [processed, failed, partialError];
     });
 
     const paymentFeed = await apiRequest('/recent-activity?limit=20');
     assert(paymentFeed.response.status === 200, 'Could not load payment notification activity.');
-    const paymentActivity = paymentFeed.body.data.filter((item) => item.occurredAt === paymentFixture.occurredAt && item.type === 'AUTOMATION_PARTIAL' && item.entity === 'Notificaciones de pago');
-    assert(paymentActivity.length === 1, 'Expected the synthetic 4 LISTO + 1 MANUAL execution to classify as one PARTIAL activity.');
-    assert(paymentActivity[0].category === 'AUTOMATION' && paymentActivity[0].title === 'Automatización con incidencias' && paymentActivity[0].context === '4 listos · 1 manual', 'Payment notification activity has incorrect business fields.');
-    assert(paymentActivity[0].occurredAt === paymentFixture.occurredAt, 'Payment notification activity does not use the synthetic fecha_procesado.');
-    assert(Object.keys(paymentActivity[0]).sort().join(',') === 'category,context,entity,occurredAt,title,type', 'Payment notification activity exposed unsupported fields.');
-    assert(!/correo_id|outlook|remitente|destinatario|detalle_error/i.test(JSON.stringify(paymentActivity[0])), 'Payment notification activity exposed sensitive notification data.');
+    const paymentEvents = [
+      { fixture: paymentFixtures[0], type: 'AUTOMATION_PARTIAL', title: 'Automatización con incidencias', context: '4 listos · 1 manual' },
+      { fixture: paymentFixtures[1], type: 'AUTOMATION_FAILED', title: 'Automatización con error', context: 'No fue posible completar la automatización' },
+      { fixture: paymentFixtures[2], type: 'AUTOMATION_PARTIAL', title: 'Automatización con incidencias', context: '1 listo · 1 con error' }
+    ].map((expected) => {
+      const matches = paymentFeed.body.data.filter((item) => item.occurredAt === expected.fixture.occurredAt && item.type === expected.type && item.entity === 'Notificaciones de pago');
+      assert(matches.length === 1, `Expected exactly one synthetic ${expected.type} payment activity.`);
+      const activity = matches[0];
+      assert(activity.category === 'AUTOMATION' && activity.title === expected.title && activity.context === expected.context, `${expected.type} payment activity has incorrect business fields.`);
+      assert(activity.occurredAt === expected.fixture.occurredAt, `${expected.type} payment activity does not use fecha_procesado.`);
+      assert(Object.keys(activity).sort().join(',') === 'category,context,entity,occurredAt,title,type', `${expected.type} payment activity exposed unsupported fields.`);
+      return activity;
+    });
+    assert(!/correo_id|outlook|remitente|destinatario|detalle_error/i.test(JSON.stringify(paymentEvents)), 'Payment notification activity exposed sensitive notification data.');
 
     const actionOrder = [];
     const providerCreateId = nextRequestId('provider-create'); actionOrder.push(providerCreateId);
@@ -303,11 +328,11 @@ async function run() {
 
     const endpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [actionOrder]);
     assert(endpointAudit.rows.length === 8, 'Not all eight endpoint request IDs reached the audit log.');
-    console.log('Recent activity integration checks passed, including a synthetic PARTIAL payment execution (4 listos · 1 manual).');
+    console.log('Recent activity integration checks passed, including synthetic FAILED and PARTIAL ERROR payment executions.');
   } finally {
     try {
       if (databaseVerified) {
-        await cleanup(pool, names, paymentFixture);
+        await cleanup(pool, names, paymentFixtures);
         console.log('Recent activity integration cleanup verified.');
       }
     } finally {
