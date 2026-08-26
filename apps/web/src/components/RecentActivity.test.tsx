@@ -9,7 +9,7 @@ const listMock = vi.mocked(listRecentActivity);
 const now = new Date('2026-08-26T02:00:00.000Z'); // 25 Aug, 20:00 in Mexico City.
 
 function item(index: number, occurredAt = '2026-08-25T19:42:00.000Z'): RecentActivityItem {
-  return { type: 'CONTACT_METHOD_DEACTIVATED', title: index === 0 ? 'Medio de contacto desactivado' : 'Proveedor actualizado', entity: index === 0 ? 'correo@empresa.com' : `Proveedor ${index}`, context: index === 0 ? 'ADHECINTAS' : null, occurredAt };
+  return { type: 'CONTACT_METHOD_DEACTIVATED', category: index === 0 ? 'CONTACT' : 'PROVIDER', title: index === 0 ? 'Medio de contacto desactivado' : 'Proveedor actualizado', entity: index === 0 ? 'correo@empresa.com' : `Proveedor ${index}`, context: index === 0 ? 'ADHECINTAS' : null, occurredAt };
 }
 
 afterEach(() => vi.clearAllMocks());
@@ -29,6 +29,19 @@ describe('RecentActivity', () => {
     expect(formatActivityTimestamp('2026-08-25T19:42:00.000Z', now)).toBe('Hoy, 13:42');
     expect(formatActivityTimestamp('2026-08-24T22:17:00.000Z', now)).toBe('Ayer, 16:17');
     expect(formatActivityTimestamp('2026-08-23T15:12:00.000Z', now)).toBe('23 ago, 09:12');
+  });
+
+  it.each([
+    ['AUTOMATION_COMPLETED', 'Automatización completada'],
+    ['AUTOMATION_PARTIAL', 'Automatización con incidencias'],
+    ['AUTOMATION_FAILED', 'Automatización con error']
+  ] as const)('renders %s with entity, context, and the existing timestamp format', async (type, title) => {
+    listMock.mockResolvedValue([{ type, category: 'AUTOMATION', title, entity: 'Notificaciones de pago', context: '4 listos · 1 manual', occurredAt: '2026-08-19T19:31:49.919Z' }]);
+    render(<RecentActivity />);
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    expect(screen.getByText('Notificaciones de pago')).toBeInTheDocument();
+    expect(screen.getByText('4 listos · 1 manual')).toBeInTheDocument();
+    expect(screen.getByText('19 ago, 13:31')).toBeInTheDocument();
   });
 
   it('shows the existing empty state', async () => {

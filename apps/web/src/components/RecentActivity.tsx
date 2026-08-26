@@ -11,7 +11,8 @@ export function RecentActivity() {
   if (items.length === 0) return <Typography color="text.secondary" sx={{ mt: 1 }}>No hay actividad reciente para mostrar.</Typography>;
   return <Stack divider={<Divider flexItem />} sx={{ mt: 1.5 }}>{items.map((item, index) => <Box key={`${item.type}-${item.occurredAt}-${index}`} sx={{ py: 1.5 }}>
     <Typography fontWeight={700}>{item.title}</Typography>
-    <Typography color="text.secondary">{item.entity}{item.context ? ` · ${item.context}` : ''}</Typography>
+    <Typography color="text.secondary">{item.entity}{item.category !== 'AUTOMATION' && item.context ? ` · ${item.context}` : ''}</Typography>
+    {item.category === 'AUTOMATION' && item.context ? <Typography variant="body2" color="text.secondary">{item.context}</Typography> : null}
     <Typography variant="body2" color="text.secondary">{formatActivityTimestamp(item.occurredAt)}</Typography>
   </Box>)}</Stack>;
 }

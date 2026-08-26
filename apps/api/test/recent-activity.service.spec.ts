@@ -7,9 +7,14 @@ function row(requestId: string, table: string, operation: string, after: Record<
   return { request_id: requestId, schema_name: 'core', table_name: table, operation, before_data: before, after_data: after, occurred_at: occurredAt };
 }
 
-function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = []) {
+function payment(overrides: Partial<{ execution_state: 'PROCESADO' | 'ERROR'; occurred_at: string; result_count: number; ready_count: number; manual_count: number; error_count: number; omitted_count: number }> = {}) {
+  return { execution_state: 'PROCESADO' as const, occurred_at: at, result_count: 1, ready_count: 1, manual_count: 0, error_count: 0, omitted_count: 0, ...overrides };
+}
+
+function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = []) {
   const findRecent = vi.fn().mockResolvedValue({ rows, contacts: new Map(contacts), companies: new Map(companies) });
-  return { service: new RecentActivityService({ findRecent } as never), findRecent };
+  const findPaymentNotifications = vi.fn().mockResolvedValue(payments);
+  return { service: new RecentActivityService({ findRecent } as never, { findRecent: findPaymentNotifications } as never), findRecent, findPaymentNotifications };
 }
 
 describe('RecentActivityService', () => {
@@ -19,7 +24,7 @@ describe('RecentActivityService', () => {
       row('create', 'empresa_roles', 'INSERT', { empresa_id: 1, rol: 'PROVEEDOR' }),
       ...(withFiscal ? [row('create', 'empresas_fiscales', 'INSERT', { empresa_id: 1, razon_social: 'Acme SA' })] : [])
     ];
-    await expect(setup(rows).service.list({ limit: 6 })).resolves.toEqual({ data: [{ type: 'PROVIDER_CREATED', title: 'Proveedor creado', entity: 'Acme', context: null, occurredAt: at }] });
+    await expect(setup(rows).service.list({ limit: 6 })).resolves.toEqual({ data: [{ type: 'PROVIDER_CREATED', category: 'PROVIDER', title: 'Proveedor creado', entity: 'Acme', context: null, occurredAt: at }] });
   });
 
   it('groups requests and collapses corresponding provider update rows', async () => {
@@ -30,12 +35,12 @@ describe('RecentActivityService', () => {
       row('update', 'empresas_fiscales', 'UPDATE', { empresa_id: '1', rfc: 'NEW' }, { empresa_id: '1', rfc: 'OLD' })
     ];
     const result = await setup(rows).service.list({ limit: 6 });
-    expect(result.data).toEqual([{ type: 'PROVIDER_UPDATED', title: 'Proveedor actualizado', entity: 'Acme Final', context: null, occurredAt: '2026-08-25T10:00:01.000Z' }]);
+    expect(result.data).toEqual([{ type: 'PROVIDER_UPDATED', category: 'PROVIDER', title: 'Proveedor actualizado', entity: 'Acme Final', context: null, occurredAt: '2026-08-25T10:00:01.000Z' }]);
   });
 
   it('classifies a fiscal-only provider edit through the current company label', async () => {
     const fiscal = row('fiscal-update', 'empresas_fiscales', 'UPDATE', { empresa_id: '1', razon_social: 'Acme Nueva', rfc: 'NEW' }, { empresa_id: '1', razon_social: 'Acme', rfc: 'OLD' });
-    await expect(setup([fiscal], [], [['1', 'Acme Comercial']]).service.list({ limit: 6 })).resolves.toEqual({ data: [{ type: 'PROVIDER_UPDATED', title: 'Proveedor actualizado', entity: 'Acme Comercial', context: null, occurredAt: at }] });
+    await expect(setup([fiscal], [], [['1', 'Acme Comercial']]).service.list({ limit: 6 })).resolves.toEqual({ data: [{ type: 'PROVIDER_UPDATED', category: 'PROVIDER', title: 'Proveedor actualizado', entity: 'Acme Comercial', context: null, occurredAt: at }] });
   });
 
   it('does not relabel provider lifecycle changes as provider updates', async () => {
@@ -50,7 +55,7 @@ describe('RecentActivityService', () => {
       row('contact', 'medios_contacto', 'INSERT', { medio_id: 9, contacto_id: 7, valor: '4490000000' })
     ];
     const result = await setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Current Ana', area: null }]], [['1', 'Acme']]).service.list({ limit: 6 });
-    expect(result.data).toEqual([{ type: 'CONTACT_CREATED', title: 'Contacto creado', entity: 'Snapshot Ana', context: 'Acme', occurredAt: at }]);
+    expect(result.data).toEqual([{ type: 'CONTACT_CREATED', category: 'CONTACT', title: 'Contacto creado', entity: 'Snapshot Ana', context: 'Acme', occurredAt: at }]);
   });
 
   it('accepts only a standalone meaningful contact update and ignores updated_at', async () => {
@@ -61,7 +66,7 @@ describe('RecentActivityService', () => {
 
   it('keeps a labeled contact update when current context is unavailable', async () => {
     const update = row('contact-update', 'contactos', 'UPDATE', { nombre: 'Ana Nueva' }, { nombre: 'Ana' });
-    await expect(setup([update]).service.list({ limit: 6 })).resolves.toEqual({ data: [{ type: 'CONTACT_UPDATED', title: 'Contacto actualizado', entity: 'Ana Nueva', context: null, occurredAt: at }] });
+    await expect(setup([update]).service.list({ limit: 6 })).resolves.toEqual({ data: [{ type: 'CONTACT_UPDATED', category: 'CONTACT', title: 'Contacto actualizado', entity: 'Ana Nueva', context: null, occurredAt: at }] });
   });
 
   it('classifies a standalone method insert and value or type edits', async () => {
@@ -100,12 +105,70 @@ describe('RecentActivityService', () => {
       row('one', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'one@test.mx' }),
       row('two', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'two@test.mx' })
     ];
-    const { service, findRecent } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]]);
+    const { service, findRecent, findPaymentNotifications } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]]);
     const result = await service.list({ limit: 1 });
     expect(findRecent).toHaveBeenCalledWith(1);
+    expect(findPaymentNotifications).toHaveBeenCalledWith(1);
     expect(result.data).toHaveLength(1);
-    expect(Object.keys(result.data[0]!)).toEqual(['type', 'title', 'entity', 'context', 'occurredAt']);
+    expect(Object.keys(result.data[0]!)).toEqual(['type', 'category', 'title', 'entity', 'context', 'occurredAt']);
     expect(result.data[0]?.occurredAt).toBe(at);
     expect(JSON.stringify(result)).not.toMatch(/request_id|schema_name|before_data|after_data|operation/);
+  });
+
+  it.each([
+    [payment({ result_count: 5, ready_count: 4, manual_count: 1 }), 'AUTOMATION_PARTIAL', '4 listos · 1 manual'],
+    [payment({ result_count: 2, ready_count: 2 }), 'AUTOMATION_COMPLETED', '2 listos'],
+    [payment({ result_count: 3, ready_count: 2, omitted_count: 1 }), 'AUTOMATION_COMPLETED', '2 listos · 1 omitido'],
+    [payment({ result_count: 1, ready_count: 0, omitted_count: 1 }), 'AUTOMATION_COMPLETED', '1 omitido'],
+    [payment({ result_count: 13, ready_count: 12, error_count: 1 }), 'AUTOMATION_PARTIAL', '12 listos · 1 con error'],
+    [payment({ execution_state: 'ERROR', result_count: 2, ready_count: 1, error_count: 1 }), 'AUTOMATION_PARTIAL', '1 listo · 1 con error'],
+    [payment({ execution_state: 'ERROR', result_count: 1, ready_count: 0, error_count: 1 }), 'AUTOMATION_FAILED', '1 con error'],
+    [payment({ execution_state: 'ERROR', result_count: 0, ready_count: 0 }), 'AUTOMATION_FAILED', 'No fue posible completar la automatización']
+  ])('maps payment execution %# to its business event', async (source, type, context) => {
+    const result = await setup([], [], [], [source]).service.list({ limit: 6 });
+    expect(result.data).toEqual([{
+      type,
+      category: 'AUTOMATION',
+      title: type === 'AUTOMATION_COMPLETED' ? 'Automatización completada' : type === 'AUTOMATION_PARTIAL' ? 'Automatización con incidencias' : 'Automatización con error',
+      entity: 'Notificaciones de pago',
+      context,
+      occurredAt: at
+    }]);
+  });
+
+  it('omits a processed execution without result rows and all zero-count context pieces', async () => {
+    const result = await setup([], [], [], [
+      payment({ result_count: 0, ready_count: 0 }),
+      payment({ result_count: 2, ready_count: 1, manual_count: 1 })
+    ]).service.list({ limit: 6 });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.context).toBe('1 listo · 1 manual');
+  });
+
+  it('omits pending executions and formats every plural count without zero pieces', async () => {
+    const result = await setup([], [], [], [
+      payment({ execution_state: 'PENDIENTE' as never }),
+      payment({ result_count: 8, ready_count: 2, manual_count: 2, error_count: 2, omitted_count: 2 })
+    ]).service.list({ limit: 6 });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]?.context).toBe('2 listos · 2 manuales · 2 con error · 2 omitidos');
+  });
+
+  it('merges audit and automation events, globally sorts them, then applies the final limit', async () => {
+    const result = await setup([
+      row('older-audit', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'old@test.mx' }, null, '2026-08-25T08:00:00Z'),
+      row('newer-audit', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'new@test.mx' }, null, '2026-08-25T12:00:00Z')
+    ], [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [], [
+      payment({ occurred_at: '2026-08-25T11:00:00Z' })
+    ]).service.list({ limit: 2 });
+
+    expect(result.data.map((item) => item.type)).toEqual(['CONTACT_METHOD_ADDED', 'AUTOMATION_COMPLETED']);
+    expect(result.data.map((item) => item.occurredAt)).toEqual(['2026-08-25T12:00:00.000Z', '2026-08-25T11:00:00.000Z']);
+  });
+
+  it('exposes no notification identifiers or sensitive source fields', async () => {
+    const result = await setup([], [], [], [payment({ result_count: 5, ready_count: 4, manual_count: 1 })]).service.list({ limit: 6 });
+    expect(Object.keys(result.data[0]!)).toEqual(['type', 'category', 'title', 'entity', 'context', 'occurredAt']);
+    expect(JSON.stringify(result)).not.toMatch(/correo_id|outlook|recipient|destinatario|detalle_error|pago_id/i);
   });
 });

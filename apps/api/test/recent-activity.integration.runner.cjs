@@ -130,6 +130,22 @@ async function run() {
     assert(currentDatabase === 'daubert_hub_test', `Active session database mismatch: ${currentDatabase}`);
     databaseVerified = true;
 
+    const paymentExample = await pool.query(`
+      SELECT
+        correo.estado,
+        correo.fecha_procesado,
+        count(resultado.correo_id)::int AS result_count,
+        count(*) FILTER (WHERE resultado.estado = 'LISTO')::int AS ready_count,
+        count(*) FILTER (WHERE resultado.estado = 'MANUAL')::int AS manual_count,
+        count(*) FILTER (WHERE resultado.estado = 'ERROR')::int AS error_count
+      FROM core.correos_notificacion_pago correo
+      LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
+      WHERE correo.correo_id = 32
+      GROUP BY correo.correo_id, correo.estado, correo.fecha_procesado`);
+    assert(paymentExample.rows.length === 1, 'Expected the existing payment notification example.');
+    assert(paymentExample.rows[0].estado === 'PROCESADO' && paymentExample.rows[0].fecha_procesado, 'Payment notification example lacks its supported terminal state or timestamp.');
+    assert(paymentExample.rows[0].result_count === 5 && paymentExample.rows[0].ready_count === 4 && paymentExample.rows[0].manual_count === 1 && paymentExample.rows[0].error_count === 0, 'Existing payment notification example is not 4 LISTO + 1 MANUAL.');
+
     const deletedMethodId = await transaction(pool, 'DAUBERT_HUB_TEST', setupRequestId, async (client) => {
       const company = await client.query("INSERT INTO core.empresas (tipo_empresa, nombre_comercial) VALUES ('OTRO', $1) RETURNING empresa_id::text AS id", [names.setupCompany]);
       const contact = await client.query("INSERT INTO core.contactos (empresa_id, tipo_contacto, nombre, estatus) VALUES ($1, 'PERSONA', $2, 'ACTIVO') RETURNING contacto_id::text AS id", [company.rows[0].id, names.deleteContact]);
@@ -155,6 +171,15 @@ async function run() {
       stdio: 'ignore'
     });
     await waitForApi();
+
+    const paymentFeed = await apiRequest('/recent-activity?limit=20');
+    assert(paymentFeed.response.status === 200, 'Could not load payment notification activity.');
+    const paymentActivity = paymentFeed.body.data.filter((item) => item.type === 'AUTOMATION_PARTIAL' && item.entity === 'Notificaciones de pago');
+    assert(paymentActivity.length === 1, 'Expected the existing 4 LISTO + 1 MANUAL execution to classify as one PARTIAL activity.');
+    assert(paymentActivity[0].category === 'AUTOMATION' && paymentActivity[0].context === '4 listos · 1 manual', 'Payment notification activity has incorrect category or business context.');
+    assert(paymentActivity[0].occurredAt === new Date(paymentExample.rows[0].fecha_procesado).toISOString(), 'Payment notification activity does not use fecha_procesado.');
+    assert(Object.keys(paymentActivity[0]).sort().join(',') === 'category,context,entity,occurredAt,title,type', 'Payment notification activity exposed unsupported fields.');
+    assert(!/correo_id|outlook|remitente|destinatario|detalle_error/i.test(JSON.stringify(paymentActivity[0])), 'Payment notification activity exposed sensitive notification data.');
 
     const actionOrder = [];
     const providerCreateId = nextRequestId('provider-create'); actionOrder.push(providerCreateId);
@@ -198,7 +223,7 @@ async function run() {
     const feed = await apiRequest('/recent-activity?limit=20');
     assert(feed.response.status === 200 && Object.keys(feed.body).join(',') === 'data' && Array.isArray(feed.body.data), 'Recent activity response contract is invalid.');
     const items = feed.body.data;
-    const expectedKeys = 'context,entity,occurredAt,title,type';
+    const expectedKeys = 'category,context,entity,occurredAt,title,type';
     assert(items.every((item) => Object.keys(item).sort().join(',') === expectedKeys), 'Recent activity exposed request, audit, raw JSON, user, or other internal fields.');
     const forbidden = /^(request_?id|schema|table|operation|raw|before|after|user|usuario)$/i;
     assert(items.every((item) => Object.keys(item).every((key) => !forbidden.test(key))), 'Recent activity JSON exposed an internal audit or user field.');
@@ -215,6 +240,8 @@ async function run() {
     ];
     assert(expected.slice(0, 6).every((item) => item.context === names.providerUpdated), 'Contact activity did not include the correct company context.');
     assert(expected.slice(6).every((item) => item.context === null), 'Provider activity unexpectedly included company context.');
+    assert(expected.slice(0, 6).every((item) => item.category === 'CONTACT'), 'Contact activity has an incorrect category.');
+    assert(expected.slice(6).every((item) => item.category === 'PROVIDER'), 'Provider activity has an incorrect category.');
     assert(items.filter((item) => item.entity.includes(marker) || item.context?.includes(marker)).length === 8, 'Expected one visible event for each of the eight synthetic endpoint requests.');
     assert(items.filter((item) => item.type === 'CONTACT_CREATED' && item.entity === names.contactOriginal).length === 1, 'Initial methods did not collapse into one CONTACT_CREATED event.');
     assert(!items.some((item) => item.type === 'CONTACT_METHOD_ADDED' && [names.initialEmail, names.initialPhone].includes(item.entity)), 'Initial contact methods leaked as standalone added events.');
@@ -226,7 +253,7 @@ async function run() {
 
     const endpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [actionOrder]);
     assert(endpointAudit.rows.length === 8, 'Not all eight endpoint request IDs reached the audit log.');
-    console.log('Recent activity integration checks passed.');
+    console.log('Recent activity integration checks passed, including correo 32 as PARTIAL (4 listos · 1 manual).');
   } finally {
     try {
       if (databaseVerified) {

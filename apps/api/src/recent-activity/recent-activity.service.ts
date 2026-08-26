@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import type { ListRecentActivityDto } from './dto/list-recent-activity.dto';
+import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
 import { RecentActivityRepository, type RecentActivitySource } from './recent-activity.repository';
 
 type Snapshot = Record<string, unknown> | null;
-type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED';
+type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED';
+export type ActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 export interface RecentActivityItem {
   type: ActivityType;
+  category: ActivityCategory;
   title: string;
   entity: string;
   context: string | null;
@@ -35,7 +38,24 @@ const titles: Record<ActivityType, string> = {
   CONTACT_METHOD_ADDED: 'Medio de contacto agregado',
   CONTACT_METHOD_UPDATED: 'Medio de contacto actualizado',
   CONTACT_METHOD_DEACTIVATED: 'Medio de contacto desactivado',
-  CONTACT_METHOD_REACTIVATED: 'Medio de contacto reactivado'
+  CONTACT_METHOD_REACTIVATED: 'Medio de contacto reactivado',
+  AUTOMATION_COMPLETED: 'Automatización completada',
+  AUTOMATION_PARTIAL: 'Automatización con incidencias',
+  AUTOMATION_FAILED: 'Automatización con error'
+};
+
+const categories: Record<ActivityType, ActivityCategory> = {
+  PROVIDER_CREATED: 'PROVIDER',
+  PROVIDER_UPDATED: 'PROVIDER',
+  CONTACT_CREATED: 'CONTACT',
+  CONTACT_UPDATED: 'CONTACT',
+  CONTACT_METHOD_ADDED: 'CONTACT',
+  CONTACT_METHOD_UPDATED: 'CONTACT',
+  CONTACT_METHOD_DEACTIVATED: 'CONTACT',
+  CONTACT_METHOD_REACTIVATED: 'CONTACT',
+  AUTOMATION_COMPLETED: 'AUTOMATION',
+  AUTOMATION_PARTIAL: 'AUTOMATION',
+  AUTOMATION_FAILED: 'AUTOMATION'
 };
 
 const providerRoles = new Set(['PROVEEDOR', 'SERVICIO', 'FLETE']);
@@ -65,10 +85,24 @@ function changedFields(before: Snapshot, after: Snapshot): Set<string> {
 
 @Injectable()
 export class RecentActivityService {
-  constructor(private readonly repository: RecentActivityRepository) {}
+  constructor(
+    private readonly repository: RecentActivityRepository,
+    private readonly paymentNotifications: PaymentNotificationActivityRepository
+  ) {}
 
   async list(input: ListRecentActivityDto): Promise<RecentActivityResponse> {
-    const source = await this.repository.findRecent(input.limit);
+    const [source, paymentRows] = await Promise.all([
+      this.repository.findRecent(input.limit),
+      this.paymentNotifications.findRecent(input.limit)
+    ]);
+    const data = [...this.auditActivities(source), ...paymentRows.map((row) => this.paymentNotification(row))]
+      .filter((item): item is RecentActivityItem => item !== null)
+      .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
+      .slice(0, input.limit);
+    return { data };
+  }
+
+  private auditActivities(source: RecentActivitySource): RecentActivityItem[] {
     const groups = new Map<string, SourceRow[]>();
     for (const row of source.rows) groups.set(row.request_id, [...(groups.get(row.request_id) ?? []), row]);
 
@@ -76,9 +110,38 @@ export class RecentActivityService {
     for (const rows of groups.values()) {
       const activity = this.classify(rows, source);
       if (activity) data.push(activity);
-      if (data.length === input.limit) break;
     }
-    return { data };
+    return data;
+  }
+
+  private paymentNotification(row: PaymentNotificationActivityRow): RecentActivityItem | null {
+    const occurredAt = new Date(row.occurred_at);
+    if (!Number.isFinite(occurredAt.getTime()) || row.result_count < 0) return null;
+
+    const usefulCount = row.ready_count + row.manual_count + row.omitted_count;
+    let type: ActivityType;
+    if (row.execution_state === 'PROCESADO') {
+      if (row.result_count === 0) return null;
+      type = row.manual_count > 0 || row.error_count > 0 ? 'AUTOMATION_PARTIAL' : 'AUTOMATION_COMPLETED';
+    } else if (row.execution_state === 'ERROR') {
+      type = usefulCount > 0 ? 'AUTOMATION_PARTIAL' : 'AUTOMATION_FAILED';
+    } else return null;
+
+    return this.item(type, 'Notificaciones de pago', this.paymentContext(row), occurredAt.toISOString());
+  }
+
+  private paymentContext(row: PaymentNotificationActivityRow): string {
+    const parts = [
+      this.countLabel(row.ready_count, 'listo', 'listos'),
+      this.countLabel(row.manual_count, 'manual', 'manuales'),
+      this.countLabel(row.error_count, 'con error', 'con error'),
+      this.countLabel(row.omitted_count, 'omitido', 'omitidos')
+    ].filter((part): part is string => part !== null);
+    return parts.join(' · ') || 'No fue posible completar la automatización';
+  }
+
+  private countLabel(count: number, singular: string, plural: string): string | null {
+    return count > 0 ? `${count} ${count === 1 ? singular : plural}` : null;
   }
 
   private classify(rows: SourceRow[], source: RecentActivitySource): RecentActivityItem | null {
@@ -185,6 +248,6 @@ export class RecentActivityService {
   }
 
   private item(type: ActivityType, entity: string | null, context: string | null, occurredAt: string): RecentActivityItem | null {
-    return entity ? { type, title: titles[type], entity, context, occurredAt } : null;
+    return entity ? { type, category: categories[type], title: titles[type], entity, context, occurredAt } : null;
   }
 }

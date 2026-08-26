@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PaymentNotificationActivityRepository } from '../src/recent-activity/payment-notification-activity.repository';
 import { RecentActivityRepository } from '../src/recent-activity/recent-activity.repository';
 
 describe('RecentActivityRepository', () => {
@@ -32,5 +33,26 @@ describe('RecentActivityRepository', () => {
     expect(result.companies.get('8')).toBe('Acme');
     expect(query.mock.calls[1]?.[0]).not.toContain('estatus');
     expect(query.mock.calls[2]?.[0]).not.toContain('estatus');
+  });
+});
+
+describe('PaymentNotificationActivityRepository', () => {
+  it('uses a bounded aggregate query and returns only business classification fields', async () => {
+    const rows = [{ execution_state: 'PROCESADO', occurred_at: '2026-08-25T10:00:00.000Z', result_count: 5, ready_count: 4, manual_count: 1, error_count: 0, omitted_count: 0 }];
+    const query = vi.fn().mockResolvedValue(rows);
+    const repository = new PaymentNotificationActivityRepository({ query } as never);
+
+    await expect(repository.findRecent(6)).resolves.toEqual(rows);
+    expect(query).toHaveBeenCalledWith(expect.any(String), [30]);
+    const sql = query.mock.calls[0]?.[0] as string;
+    expect(sql).toContain('FROM core.correos_notificacion_pago correo');
+    expect(sql).toContain('LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)');
+    expect(sql).toContain("correo.estado = 'PROCESADO'");
+    expect(sql).toContain('correo.fecha_procesado AS occurred_at');
+    expect(sql).toContain('HAVING count(resultado.correo_id) > 0');
+    expect(sql).toContain('LIMIT $1');
+    expect(sql).not.toContain("correo.estado = 'PENDIENTE'");
+    expect(sql).not.toMatch(/outlook|remitente|asunto|destinatario|detalle_error|fecha_resumen_enviado/i);
+    expect(Object.keys(rows[0]!)).toEqual(['execution_state', 'occurred_at', 'result_count', 'ready_count', 'manual_count', 'error_count', 'omitted_count']);
   });
 });

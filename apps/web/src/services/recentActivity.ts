@@ -1,21 +1,25 @@
 import { apiBaseUrl } from './api';
 
-export type RecentActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED';
+export type RecentActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED';
+export type RecentActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 export interface RecentActivityItem {
   type: RecentActivityType;
+  category: RecentActivityCategory;
   title: string;
   entity: string;
   context: string | null;
   occurredAt: string;
 }
 
-const activityTypes = new Set<RecentActivityType>(['PROVIDER_CREATED', 'PROVIDER_UPDATED', 'CONTACT_CREATED', 'CONTACT_UPDATED', 'CONTACT_METHOD_ADDED', 'CONTACT_METHOD_UPDATED', 'CONTACT_METHOD_DEACTIVATED', 'CONTACT_METHOD_REACTIVATED']);
+const activityTypes = new Set<RecentActivityType>(['PROVIDER_CREATED', 'PROVIDER_UPDATED', 'CONTACT_CREATED', 'CONTACT_UPDATED', 'CONTACT_METHOD_ADDED', 'CONTACT_METHOD_UPDATED', 'CONTACT_METHOD_DEACTIVATED', 'CONTACT_METHOD_REACTIVATED', 'AUTOMATION_COMPLETED', 'AUTOMATION_PARTIAL', 'AUTOMATION_FAILED']);
+const activityCategories = new Set<RecentActivityCategory>(['PROVIDER', 'CONTACT', 'AUTOMATION', 'CLIENT']);
 
 function isRecentActivityItem(value: unknown): value is RecentActivityItem {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
   return typeof item.type === 'string' && activityTypes.has(item.type as RecentActivityType)
+    && typeof item.category === 'string' && activityCategories.has(item.category as RecentActivityCategory)
     && typeof item.title === 'string' && typeof item.entity === 'string'
     && (item.context === null || typeof item.context === 'string')
     && typeof item.occurredAt === 'string' && Number.isFinite(new Date(item.occurredAt).getTime());
