@@ -8,6 +8,8 @@ import { ProviderDetailPage } from './providers/ProviderDetailPage';
 import { EditProviderPage } from './providers/EditProviderPage';
 import { ProvidersPage } from './providers/ProvidersPage';
 import { ContactsPage } from './contacts/ContactsPage';
+import { AutomationsPage } from './automations/AutomationsPage';
+import { AudiRemissionsPage } from './automations/AudiRemissionsPage';
 
 function HomePage() {
   return (
@@ -38,6 +40,8 @@ export function App() {
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
         <Route path="/providers/:id" element={<ProviderDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
+        <Route path="/automations" element={<AutomationsPage />} />
+        <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

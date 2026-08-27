@@ -3,6 +3,7 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
+import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Box, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -20,6 +21,8 @@ const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIcon
   { to: '/providers', label: 'Proveedores', end: false, icon: BusinessRoundedIcon },
   { to: '/contacts', label: 'Contactos', end: false, icon: ContactsRoundedIcon }
 ];
+
+const automationNavigation = { to: '/automations', label: 'Automatizaciones', end: false, icon: SettingsSuggestRoundedIcon };
 
 function storedPreference(): boolean | undefined {
   try {
@@ -88,11 +91,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Box>
           ))}
         </List>
-        {!collapsed && <Stack sx={{ mt: 'auto' }}>
+        <Stack sx={{ mt: 'auto' }}>
           <Divider sx={{ borderColor: appTokens.navigationDivider, mb: 2 }} />
-          <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1 }}>Administración</Typography>
-          <Typography variant="body2" color={appTokens.navigationText} sx={{ px: 1, mt: 0.75 }}>Próximamente</Typography>
-        </Stack>}
+          {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Administración</Typography>}
+          <NavigationItem {...automationNavigation} collapsed={collapsed} />
+        </Stack>
       </Box>
       <Box component="main" sx={{ minWidth: 0, px: { xs: 3, sm: 4, lg: 6 }, py: { xs: 4, md: 5 } }}>
         <Box sx={{ maxWidth: 1400, mx: 'auto' }}>{children}</Box>

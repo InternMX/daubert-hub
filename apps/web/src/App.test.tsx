@@ -15,7 +15,7 @@ function renderApp(path = '/') {
 
 describe('application navigation', () => {
   beforeEach(() => activityMock.mockResolvedValue([]));
-  it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/contacts', 'Directorio de contactos']])('renders %s', (path, title) => {
+  it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/contacts', 'Directorio de contactos'], ['/automations', 'Automatizaciones']])('renders %s', (path, title) => {
     renderApp(path);
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
   });
@@ -34,6 +34,8 @@ describe('application navigation', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Proveedores' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Contactos' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Directorio de contactos' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Automatizaciones' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Automatizaciones' })).toBeInTheDocument();
     await user.click(within(screen.getByLabelText('Navegación principal')).getByRole('link', { name: 'Inicio' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument();
   });
