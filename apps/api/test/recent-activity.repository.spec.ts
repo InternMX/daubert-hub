@@ -36,7 +36,7 @@ describe('RecentActivityRepository', () => {
   });
 
   it.each([
-    ['PROVIDER', ['empresas', 'empresa_roles', 'empresas_fiscales']],
+    ['PROVIDER', ['empresas', 'empresa_roles', 'empresas_fiscales', 'alias_empresa']],
     ['CONTACT', ['contactos', 'medios_contacto']]
   ] as const)('bounds %s request groups after source-category selection', async (category, tables) => {
     const query = vi.fn().mockResolvedValue([]);

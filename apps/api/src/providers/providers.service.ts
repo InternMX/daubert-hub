@@ -41,6 +41,8 @@ export interface GetProviderResponse {
     roles: string[];
     status: string;
     notes: string | null;
+    aliases: string[];
+    otherAliases: Array<{ alias: string; type: string }>;
     fiscal: { id: string; legalName: string; rfc: string } | null;
   };
 }
@@ -74,8 +76,9 @@ export class ProvidersService {
 
   async update(id: number, input: UpdateProviderDto, requestId: string): Promise<GetProviderResponse> {
     this.validateFiscalFormat(input);
+    const normalizedInput = this.normalizeAliases(input);
     try {
-      const provider = await this.repository.update(id, input, requestId);
+      const provider = await this.repository.update(id, normalizedInput, requestId);
       if (!provider) throw new NotFoundException('Proveedor no encontrado.');
       return this.mapGetResponse(provider);
     } catch (error) {
@@ -123,6 +126,9 @@ export class ProvidersService {
     if ((error as { code?: string }).code === 'PROVIDER_STATUS_NOT_MANAGEABLE') {
       throw new ConflictException({ code: 'PROVIDER_STATUS_NOT_MANAGEABLE', message: 'El estado actual del proveedor no puede administrarse desde este flujo.' });
     }
+    if ((error as { code?: string }).code === 'ALIAS_ALREADY_ASSOCIATED') {
+      throw new ConflictException({ code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' });
+    }
     if (databaseError.code !== '23505') return;
     if (databaseError.constraint === 'uq_empresas_nombre_comercial') {
       throw new ConflictException({ code: 'PROVIDER_NAME_ALREADY_EXISTS', message: 'Ya existe un proveedor o empresa con ese nombre comercial.' });
@@ -130,6 +136,19 @@ export class ProvidersService {
     if (databaseError.constraint === 'uq_empresas_fiscales_rfc') {
       throw new ConflictException({ code: 'RFC_ALREADY_EXISTS', message: 'Ya existe una empresa registrada con ese RFC.' });
     }
+    if (databaseError.constraint === 'uq_alias_empresa_activo') {
+      throw new ConflictException({ code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' });
+    }
+  }
+
+  private normalizeAliases(input: UpdateProviderDto): UpdateProviderDto {
+    if (input.aliases === undefined) return input;
+    const aliases = input.aliases.map((alias) => alias.trim());
+    if (aliases.some((alias) => !alias)) throw new BadRequestException('Los alias no pueden estar vacíos.');
+    if (new Set(aliases.map((alias) => alias.toLowerCase())).size !== aliases.length) {
+      throw new BadRequestException('Los alias no pueden estar duplicados.');
+    }
+    return { ...input, aliases };
   }
 
   private validateFiscalFormat(input: UpdateProviderDto): void {
@@ -186,6 +205,8 @@ export class ProvidersService {
         roles: provider.roles,
         status: provider.status,
         notes: provider.notes,
+        aliases: provider.aliases,
+        otherAliases: provider.other_aliases,
         fiscal: provider.fiscal_id && provider.legal_name && provider.rfc
           ? { id: provider.fiscal_id, legalName: provider.legal_name, rfc: provider.rfc }
           : null

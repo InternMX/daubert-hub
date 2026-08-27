@@ -9,7 +9,7 @@ vi.mock('../services/providers', async (importOriginal) => ({ ...(await importOr
 
 const getProviderMock = vi.mocked(getProvider);
 const updateProviderMock = vi.mocked(updateProvider);
-const provider = { id: '121', commercialName: 'Acme', providerType: 'SERVICIO' as const, roles: ['SERVICIO'], status: 'ACTIVO', notes: null, fiscal: { id: '122', legalName: 'Acme SA', rfc: 'ACM010101AA1' } };
+const provider = { id: '121', commercialName: 'Acme', providerType: 'SERVICIO' as const, roles: ['SERVICIO'], status: 'ACTIVO', notes: null, aliases: ['BMASC', 'B+ASC'], otherAliases: [{ alias: 'TRES GUERRAS', type: 'NOMBRE_ARCHIVO' as const }, { alias: 'TRANSPORTES TRESGUERRAS', type: 'NOMBRE_CARPETA' as const }], fiscal: { id: '122', legalName: 'Acme SA', rfc: 'ACM010101AA1' } };
 
 function renderPage() {
   return render(<MemoryRouter initialEntries={[{ pathname: '/providers/121/edit', state: { directoryPath: '/providers?search=Acme&page=2' } }]}><Routes><Route path="/providers/:id/edit" element={<EditProviderPage />} /><Route path="/providers/:id" element={<div>Detalle</div>} /></Routes></MemoryRouter>);
@@ -27,6 +27,12 @@ describe('EditProviderPage', () => {
     expect(screen.getByText('Editar')).toHaveAttribute('aria-current', 'page');
     expect(getProviderMock).toHaveBeenCalledTimes(1);
     expect(screen.getByDisplayValue('ACM010101AA1')).toBeInTheDocument();
+    expect(screen.getByText('BMASC')).toBeInTheDocument();
+    expect(screen.getByText('B+ASC')).toBeInTheDocument();
+    expect(screen.getByText('TRES GUERRAS · Nombre de archivo')).toBeInTheDocument();
+    expect(screen.getByText('TRANSPORTES TRESGUERRAS · Nombre de carpeta')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Eliminar alias TRES GUERRAS')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Los alias no distinguen entre mayúsculas y minúsculas.');
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
   });
 
@@ -45,5 +51,26 @@ describe('EditProviderPage', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
     await waitFor(() => expect(updateProviderMock).toHaveBeenCalledWith('121', expect.objectContaining({ fiscal: expect.objectContaining({ rfc: 'NEW010101AA1', changeMode: 'CORRECTION' }) })));
     expect(await screen.findByText('Detalle')).toBeInTheDocument();
+  });
+
+  it('keeps alias changes local and submits the final set', async () => {
+    getProviderMock.mockResolvedValue(provider);
+    updateProviderMock.mockResolvedValue({ provider, requestId: 'update-aliases' });
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('BMASC');
+    await user.click(screen.getByLabelText('Eliminar alias B+ASC'));
+    await user.type(screen.getByPlaceholderText('Escribe un alias y presiona Enter...'), ' B ASC {Enter}');
+    expect(updateProviderMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(updateProviderMock).toHaveBeenCalledWith('121', expect.objectContaining({ aliases: ['BMASC', 'B ASC'] })));
+    expect(updateProviderMock.mock.calls[0]?.[1]).not.toHaveProperty('otherAliases');
+  });
+
+  it('does not show an empty other-alias subsection', async () => {
+    getProviderMock.mockResolvedValue({ ...provider, otherAliases: [] });
+    renderPage();
+    await screen.findByDisplayValue('Acme');
+    expect(screen.queryByText('Otros alias registrados')).not.toBeInTheDocument();
   });
 });

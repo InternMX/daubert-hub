@@ -151,7 +151,7 @@ export class RecentActivityService {
   }
 
   private classify(rows: SourceRow[], source: RecentActivitySource): RecentActivityItem | null {
-    if (rows.length === 0 || rows.some((row) => row.schema_name !== 'core' || typeof row.operation !== 'string' || !['INSERT', 'UPDATE'].includes(row.operation.toUpperCase()))) return null;
+    if (rows.length === 0 || rows.some((row) => row.schema_name !== 'core' || typeof row.operation !== 'string' || !['INSERT', 'UPDATE', 'DELETE'].includes(row.operation.toUpperCase()))) return null;
     const timestamp = Math.max(...rows.map((row) => new Date(row.occurred_at).getTime()));
     if (!Number.isFinite(timestamp)) return null;
     const occurredAt = new Date(timestamp).toISOString();
@@ -176,16 +176,18 @@ export class RecentActivityService {
   private providerUpdate(rows: SourceRow[], source: RecentActivitySource, occurredAt: string): RecentActivityItem | null {
     const companies = rows.filter((row) => row.table_name === 'empresas' && row.operation.toUpperCase() === 'UPDATE');
     const fiscals = rows.filter((row) => row.table_name === 'empresas_fiscales' && ['INSERT', 'UPDATE'].includes(row.operation.toUpperCase()));
-    if (companies.length === 0 && fiscals.length === 0) return null;
+    const aliases = rows.filter((row) => row.table_name === 'alias_empresa' && ['INSERT', 'UPDATE', 'DELETE'].includes(row.operation.toUpperCase()));
+    if (companies.length === 0 && fiscals.length === 0 && aliases.length === 0) return null;
     const allowed = rows.every((row) => (row.table_name === 'empresas' && row.operation.toUpperCase() === 'UPDATE')
       || (row.table_name === 'empresa_roles' && row.operation.toUpperCase() === 'UPDATE')
-      || (row.table_name === 'empresas_fiscales' && ['INSERT', 'UPDATE'].includes(row.operation.toUpperCase())));
+      || (row.table_name === 'empresas_fiscales' && ['INSERT', 'UPDATE'].includes(row.operation.toUpperCase()))
+      || (row.table_name === 'alias_empresa' && ['INSERT', 'UPDATE', 'DELETE'].includes(row.operation.toUpperCase())));
     if (!allowed) return null;
     if (companies.some((row) => [...changedFields(row.before_data, row.after_data)].some((field) => !ignoredTimestampFields.has(field) && !providerBusinessFields.has(field)))) return null;
     const roleRows = rows.filter((row) => row.table_name === 'empresa_roles');
     if (companies.length === 0 && roleRows.length > 0) return null;
     if (roleRows.some((row) => [...changedFields(row.before_data, row.after_data)].some((field) => !ignoredTimestampFields.has(field) && field !== 'rol'))) return null;
-    const first = companies[0] ?? fiscals[0]!;
+    const first = companies[0] ?? fiscals[0] ?? aliases[0]!;
     const companyId = id(first.after_data, 'empresa_id') ?? id(first.before_data, 'empresa_id');
     if (!companyId || rows.some((row) => (id(row.after_data, 'empresa_id') ?? id(row.before_data, 'empresa_id')) !== companyId)) return null;
     if (roleRows.some((row) => !providerRoles.has(text(row.after_data, 'rol') ?? text(row.before_data, 'rol') ?? ''))) return null;

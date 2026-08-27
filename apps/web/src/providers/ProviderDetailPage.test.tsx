@@ -20,7 +20,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('ProviderDetailPage', () => {
   it('shows read-only provider data, Spanish roles, notes fallback, and no fiscal state', async () => {
-    getProviderMock.mockResolvedValue({ id: '121', commercialName: 'Transportes Acme', providerType: 'FLETE', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, fiscal: null });
+    getProviderMock.mockResolvedValue({ id: '121', commercialName: 'Transportes Acme', providerType: 'FLETE', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, aliases: [], otherAliases: [], fiscal: null });
     renderPage();
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Transportes Acme' })).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('ProviderDetailPage', () => {
   });
 
   it('shows fiscal data and returns to the filtered directory path', async () => {
-    getProviderMock.mockResolvedValue({ id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: 'Pago a 30 días.', fiscal: { id: 'f1', legalName: 'Acme SA de CV', rfc: 'ACM010101AA1' } });
+    getProviderMock.mockResolvedValue({ id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: 'Pago a 30 días.', aliases: [], otherAliases: [], fiscal: { id: 'f1', legalName: 'Acme SA de CV', rfc: 'ACM010101AA1' } });
     const user = userEvent.setup();
     renderPage('/providers/121', { directoryPath: '/providers?search=Acme&page=2' });
 
@@ -55,7 +55,7 @@ describe('ProviderDetailPage', () => {
   });
 
   it('retries a generic error without exposing error details', async () => {
-    getProviderMock.mockRejectedValueOnce(new ProviderApiError(500, undefined, 'request-500')).mockResolvedValueOnce({ id: '121', commercialName: 'Acme', providerType: 'SERVICIO', roles: ['SERVICIO'], status: 'ACTIVO', notes: null, fiscal: null });
+    getProviderMock.mockRejectedValueOnce(new ProviderApiError(500, undefined, 'request-500')).mockResolvedValueOnce({ id: '121', commercialName: 'Acme', providerType: 'SERVICIO', roles: ['SERVICIO'], status: 'ACTIVO', notes: null, aliases: [], otherAliases: [], fiscal: null });
     const user = userEvent.setup();
     renderPage();
 

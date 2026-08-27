@@ -23,13 +23,18 @@ export interface ListedProvider extends CreatedProvider { matchedAlias?: string 
 
 export interface ProviderDetail extends CreatedProvider {
   roles: string[];
+  aliases: string[];
+  otherAliases: Array<{ alias: string; type: OtherCompanyAliasType }>;
 }
+
+export type OtherCompanyAliasType = 'ABREVIATURA' | 'RAZON_SOCIAL' | 'RAZON_SOCIAL_HISTORICA' | 'NOMBRE_ARCHIVO' | 'NOMBRE_CARPETA' | 'OTRO';
 
 export type FiscalChangeMode = 'CORRECTION' | 'NEW_IDENTITY';
 export interface UpdateProviderInput {
   commercialName: string;
   providerType: ProviderType;
   notes: string | null;
+  aliases: string[];
   fiscal: { legalName: string; rfc: string; changeMode?: FiscalChangeMode; effectiveStartDate?: string };
 }
 

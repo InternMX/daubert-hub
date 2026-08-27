@@ -52,7 +52,7 @@ describe('listProviders', () => {
 
 describe('provider lifecycle', () => {
   it('posts lifecycle actions and returns the updated provider', async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: { id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: null, fiscal: null } }), { status: 200, headers: { 'x-request-id': 'request-6' } })));
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: { id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: null, aliases: [], otherAliases: [], fiscal: null } }), { status: 200, headers: { 'x-request-id': 'request-6' } })));
     vi.stubGlobal('fetch', fetchMock);
     await expect(deactivateProvider('121')).resolves.toMatchObject({ provider: { status: 'INACTIVO' }, requestId: 'request-6' });
     await reactivateProvider('121');
@@ -63,11 +63,11 @@ describe('provider lifecycle', () => {
 
 describe('getProvider', () => {
   it('gets provider detail and preserves the request ID on errors', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, fiscal: null } }), { status: 200 }))
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, aliases: ['BMASC'], otherAliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }], fiscal: null } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: 'PROVIDER_NOT_FOUND' }), { status: 404, headers: { 'x-request-id': 'request-5' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getProvider('121')).resolves.toMatchObject({ id: '121', roles: ['PROVEEDOR', 'FLETE'] });
+    await expect(getProvider('121')).resolves.toMatchObject({ id: '121', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], otherAliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }] });
     expect(fetchMock.mock.calls[0]).toEqual(['/api/providers/121']);
     await expect(getProvider('404')).rejects.toMatchObject({ status: 404, code: 'PROVIDER_NOT_FOUND', requestId: 'request-5' });
   });

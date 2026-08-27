@@ -64,11 +64,11 @@ Provider inclusion is based on an active provider role, not on a negative compan
 
 ## Provider detail
 
-`GET /api/providers/:id` returns one provider profile when the company has an active provider role. It returns `404` for missing companies and companies that are not providers, and `400` for malformed or non-positive IDs. The response includes the compatible singular `providerType`, all active roles in deterministic order, and only the current fiscal identity.
+`GET /api/providers/:id` returns one provider profile when the company has an active provider role. It returns `404` for missing companies and companies that are not providers, and `400` for malformed or non-positive IDs. The response includes the compatible singular `providerType`, all active roles in deterministic order, active alternate commercial names in `aliases`, other active typed aliases in the read-only `otherAliases` collection, and only the current fiscal identity.
 
 ## Edit provider
 
-`PATCH /api/providers/:id` updates only provider-owned `commercialName`, `providerType`, `notes`, and `fiscal` fields, returning the same representation as the detail endpoint. `providerType` accepts `PROVEEDOR`, `SERVICIO`, or `FLETE`; for a single provider role it atomically updates both `core.empresas.tipo_empresa` and `core.empresa_roles`. A multi-role provider may be edited, but its type cannot be changed through this endpoint.
+`PATCH /api/providers/:id` updates provider fields and the company-owned final `aliases` set, returning the same representation as the detail endpoint. Alias reconciliation owns only active `NOMBRE_COMERCIAL_ALTERNATIVO` rows and leaves file, folder, and legal-name alias types untouched. Company and alias changes use one transaction; an alias already active for another company returns `409 ALIAS_ALREADY_ASSOCIATED`. `providerType` accepts `PROVEEDOR`, `SERVICIO`, or `FLETE`; for a single provider role it atomically updates both `core.empresas.tipo_empresa` and `core.empresa_roles`. A multi-role provider may be edited, but its type cannot be changed through this endpoint.
 
 Fiscal input is `{ legalName, rfc, changeMode?, effectiveStartDate? }`. A provider without fiscal data can receive a complete identity. With an existing RFC, changing only the legal name updates the current row. A changed RFC requires `changeMode: "CORRECTION"` to correct the current row in place, or `changeMode: "NEW_IDENTITY"` plus `effectiveStartDate` (`YYYY-MM-DD`) to close the prior current identity and create a new current identity while retaining history. Clearing an existing fiscal identity is rejected. Duplicate commercial names return `409 PROVIDER_NAME_ALREADY_EXISTS`; duplicate RFCs return `409 RFC_ALREADY_EXISTS`.
 

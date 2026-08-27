@@ -48,10 +48,10 @@ describe('ProvidersService', () => {
   });
 
   it('maps provider detail with deterministic active roles and current fiscal data', async () => {
-    const findById = vi.fn().mockResolvedValue({ id: '9007199254740993', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, fiscal_id: '9007199254740994', legal_name: 'Acme SA', rfc: 'ABC123456XYZ' });
+    const findById = vi.fn().mockResolvedValue({ id: '9007199254740993', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], other_aliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }], status: 'ACTIVO', notes: null, fiscal_id: '9007199254740994', legal_name: 'Acme SA', rfc: 'ABC123456XYZ' });
     const service = new ProvidersService({ findById } as never);
     await expect(service.get(121)).resolves.toEqual({
-      data: { id: '9007199254740993', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, fiscal: { id: '9007199254740994', legalName: 'Acme SA', rfc: 'ABC123456XYZ' } }
+      data: { id: '9007199254740993', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, aliases: ['BMASC'], otherAliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }], fiscal: { id: '9007199254740994', legalName: 'Acme SA', rfc: 'ABC123456XYZ' } }
     });
     expect(findById).toHaveBeenCalledWith(121);
   });
@@ -62,7 +62,7 @@ describe('ProvidersService', () => {
   });
 
   it('updates through the repository and returns the detail representation', async () => {
-    const update = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme updated', provider_type: 'FLETE', roles: ['FLETE'], status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
+    const update = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme updated', provider_type: 'FLETE', roles: ['FLETE'], aliases: ['BMASC'], other_aliases: [], status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
     const service = new ProvidersService({ update } as never);
     const updateInput: UpdateProviderDto = { commercialName: 'Acme updated', providerType: ProviderType.Freight, notes: null, fiscal: { legalName: '', rfc: '' } };
     await expect(service.update(121, updateInput, 'request-update')).resolves.toMatchObject({ data: { commercialName: 'Acme updated', providerType: 'FLETE' } });
@@ -72,6 +72,19 @@ describe('ProvidersService', () => {
   it('requires an effective date for a new fiscal identity', async () => {
     const service = new ProvidersService({ update: vi.fn() } as never);
     await expect(service.update(121, { fiscal: { legalName: 'Acme SA', rfc: 'ACM010101AA1', changeMode: FiscalChangeMode.NewIdentity } }, 'request-update')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('trims aliases and rejects case-insensitive duplicates', async () => {
+    const update = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR'], aliases: ['BMASC'], other_aliases: [], status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
+    const service = new ProvidersService({ update } as never);
+    await service.update(121, { aliases: [' BMASC '] }, 'request-update');
+    expect(update).toHaveBeenCalledWith(121, { aliases: ['BMASC'] }, 'request-update');
+    await expect(service.update(121, { aliases: ['Daubert', 'daubert'] }, 'request-update')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('maps the active alias uniqueness constraint to a safe conflict', async () => {
+    const service = new ProvidersService({ update: vi.fn().mockRejectedValue({ code: '23505', constraint: 'uq_alias_empresa_activo' }) } as never);
+    await expect(service.update(121, { aliases: ['TAKEN'] }, 'request-update')).rejects.toMatchObject({ status: 409, response: { code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' } });
   });
 
   it('changes only the provider lifecycle status through the repository', async () => {

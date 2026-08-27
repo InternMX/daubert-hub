@@ -66,18 +66,55 @@ describe('ProvidersRepository', () => {
   });
 
   it('finds one active provider with current fiscal data and all active provider roles', async () => {
-    const query = vi.fn().mockResolvedValue([{ id: '9007199254740993', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, fiscal_id: '9007199254740994', legal_name: 'Acme SA', rfc: 'ABC123456XYZ' }]);
+    const query = vi.fn().mockResolvedValue([{ id: '9007199254740993', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], other_aliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }], status: 'ACTIVO', notes: null, fiscal_id: '9007199254740994', legal_name: 'Acme SA', rfc: 'ABC123456XYZ' }]);
     const repository = new ProvidersRepository({ query } as never);
-    await expect(repository.findById(121)).resolves.toMatchObject({ id: '9007199254740993', roles: ['PROVEEDOR', 'FLETE'] });
+    await expect(repository.findById(121)).resolves.toMatchObject({ id: '9007199254740993', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], other_aliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }] });
     expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE company.empresa_id = $1'), [121]);
     expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')");
     expect(query.mock.calls[0]?.[0]).toContain('array_agg(role.rol ORDER BY CASE role.rol');
+    expect(query.mock.calls[0]?.[0]).toContain("alias.tipo_alias = 'NOMBRE_COMERCIAL_ALTERNATIVO'");
+    expect(query.mock.calls[0]?.[0]).toContain("alias.tipo_alias <> 'NOMBRE_COMERCIAL_ALTERNATIVO'");
+    expect(query.mock.calls[0]?.[0]).toContain("alias.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain('ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC');
   });
 
   it('returns null when no active provider role matches the company', async () => {
     const repository = new ProvidersRepository({ query: vi.fn().mockResolvedValue([]) } as never);
     await expect(repository.findById(121)).resolves.toBeNull();
+  });
+
+  it('reconciles aliases inside the provider update transaction', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', observaciones: null, estatus: 'ACTIVO' }] })
+      .mockResolvedValueOnce({ rows: [{ rol: 'PROVEEDOR' }] }).mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ alias_id: '1', alias: 'BMASC' }, { alias_id: '2', alias: 'B ASC' }] })
+      .mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    const findById = vi.fn().mockResolvedValue([{ id: '121', commercial_name: 'Acme updated', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR'], aliases: ['B+ASC', 'BMASC'], other_aliases: [], status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null }]);
+    const client = { query, release: vi.fn() };
+    const repository = new ProvidersRepository({ connect: vi.fn().mockResolvedValue(client), query: findById } as never);
+
+    await repository.update(121, { commercialName: 'Acme updated', aliases: ['BMASC', 'B+ASC'] }, 'request-alias');
+
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM core.alias_empresa'), [121, ['2']]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO core.alias_empresa'), [121, 'B+ASC']);
+    expect(query).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('rolls back the company update when an alias belongs to another company', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', observaciones: null, estatus: 'ACTIVO' }] })
+      .mockResolvedValueOnce({ rows: [{ rol: 'PROVEEDOR' }] }).mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ exists: 1 }] })
+      .mockResolvedValueOnce(undefined);
+    const client = { query, release: vi.fn() };
+    const repository = new ProvidersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+    await expect(repository.update(121, { commercialName: 'Must roll back', aliases: ['TAKEN'] }, 'request-alias')).rejects.toMatchObject({ code: 'ALIAS_ALREADY_ASSOCIATED' });
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+    expect(query).not.toHaveBeenCalledWith('COMMIT');
   });
 });

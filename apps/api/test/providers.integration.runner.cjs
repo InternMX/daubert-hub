@@ -200,6 +200,16 @@ async function run() {
     await queryWithAuditContext(pool, aliasRequestId,
       'INSERT INTO core.alias_empresa (empresa_id, alias, alias_normalizado, tipo_alias, estatus) VALUES ($1, $2, $2, $3, $4), ($1, $5, $5, $3, $4), ($1, $6, $6, $3, $4), ($7, $8, $8, $3, $4), ($9, $10, $10, $3, $4)',
       [noFiscal.body.data.id, exactAlias, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'ACTIVO', `${sharedAlias}_ONE`, `${sharedAlias}_THREE`, withFiscal.body.data.id, `${sharedAlias}_TWO`, clientCompany.rows[0].empresa_id, `${marker}_CLIENT_ONLY_ALIAS`]);
+    await queryWithAuditContext(pool, aliasRequestId,
+      "INSERT INTO core.alias_empresa (empresa_id, alias, alias_normalizado, tipo_alias, estatus) VALUES ($1, $2, $2, 'NOMBRE_ARCHIVO', 'ACTIVO'), ($1, $3, $3, 'NOMBRE_CARPETA', 'INACTIVO')",
+      [withFiscal.body.data.id, `${marker}_FILE_ALIAS`, `${marker}_INACTIVE_FOLDER_ALIAS`]);
+    const aliasDetail = await getProvider(noFiscal.body.data.id);
+    assert(aliasDetail.response.status === 200 && aliasDetail.body.data.aliases.join(',') === [exactAlias, `${sharedAlias}_ONE`, `${sharedAlias}_THREE`].join(','), 'Provider detail did not load active alternate commercial names.');
+    assert(aliasDetail.body.data.otherAliases.length === 0, 'Provider detail returned unrelated other aliases.');
+    const otherAliasDetail = await getProvider(withFiscal.body.data.id);
+    assert(otherAliasDetail.response.status === 200 && otherAliasDetail.body.data.otherAliases.length === 1, 'Provider detail did not return active other alias types.');
+    assert(otherAliasDetail.body.data.otherAliases[0].alias === `${marker}_FILE_ALIAS` && otherAliasDetail.body.data.otherAliases[0].type === 'NOMBRE_ARCHIVO', 'Provider detail returned an incorrect typed other alias.');
+    assert(!otherAliasDetail.body.data.aliases.includes(`${marker}_FILE_ALIAS`) && !JSON.stringify(otherAliasDetail.body.data).includes(`${marker}_INACTIVE_FOLDER_ALIAS`), 'Provider detail mixed read-only or inactive aliases into editable aliases.');
     for (const id of [clientCompany.rows[0].empresa_id, otherCompany.rows[0].empresa_id, '999999999999999']) {
       const nonProviderDetail = await getProvider(id);
       assert(nonProviderDetail.response.status === 404, `Non-provider detail ${id} did not return 404.`);
@@ -328,17 +338,36 @@ async function run() {
     const editRequestId = `provider-edit-${randomUUID()}`;
     requestIds.add(editRequestId);
     const editedName = `${marker}_WITH_FISCAL_EDITED`;
-    const edited = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: '  corrected note  ', fiscal: { legalName: 'Corrected Legal Name', rfc: fiscalRfc } }, editRequestId);
+    const newAlias = `${marker}_NEW_ALIAS`;
+    const edited = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: '  corrected note  ', aliases: [`${sharedAlias}_TWO`, `  ${newAlias}  `], fiscal: { legalName: 'Corrected Legal Name', rfc: fiscalRfc } }, editRequestId);
     assert(edited.response.status === 200, `Provider edit failed: ${JSON.stringify(edited.body)}`);
     assert(edited.body.data.commercialName === editedName && edited.body.data.providerType === 'FLETE' && edited.body.data.notes === 'corrected note', 'Provider edit response is incorrect.');
+    assert(edited.body.data.aliases.join(',') === [`${sharedAlias}_TWO`, newAlias].join(','), 'Provider edit did not trim, add, or preserve aliases.');
+    assert(edited.body.data.otherAliases.length === 1 && edited.body.data.otherAliases[0].alias === `${marker}_FILE_ALIAS`, 'Provider edit did not preserve read-only aliases in its response.');
     const editState = await pool.query('SELECT e.tipo_empresa, r.rol, f.razon_social, f.rfc FROM core.empresas e JOIN core.empresa_roles r ON r.empresa_id = e.empresa_id JOIN core.empresas_fiscales f ON f.empresa_id = e.empresa_id AND f.es_vigente = TRUE WHERE e.empresa_id = $1', [withFiscal.body.data.id]);
     assert(editState.rows.length === 1 && editState.rows[0].tipo_empresa === 'FLETE' && editState.rows[0].rol === 'FLETE' && editState.rows[0].razon_social === 'Corrected Legal Name', 'Provider type or fiscal correction was not synchronized.');
+    const preservedFileAlias = await pool.query("SELECT count(*)::int AS count FROM core.alias_empresa WHERE empresa_id = $1 AND alias = $2 AND tipo_alias = 'NOMBRE_ARCHIVO'", [withFiscal.body.data.id, `${marker}_FILE_ALIAS`]);
+    assert(preservedFileAlias.rows[0].count === 1, 'Alternate-name reconciliation modified another alias type.');
+
+    const duplicateAliases = await patchProvider(noFiscal.body.data.id, { aliases: [`${marker}_DUPLICATE`, `${marker.toLowerCase()}_duplicate`] }, `provider-alias-duplicate-${randomUUID()}`);
+    assert(duplicateAliases.response.status === 400, 'Case-insensitive aliases in the same payload were accepted.');
+    const emptyAlias = await patchProvider(noFiscal.body.data.id, { aliases: ['   '] }, `provider-alias-empty-${randomUUID()}`);
+    assert(emptyAlias.response.status === 400, 'An empty trimmed alias was accepted.');
+    const aliasConflictRequestId = `provider-alias-conflict-${randomUUID()}`;
+    requestIds.add(aliasConflictRequestId);
+    const rollbackCommercialName = `${marker}_ALIAS_ROLLBACK`;
+    const aliasConflict = await patchProvider(noFiscal.body.data.id, { commercialName: rollbackCommercialName, aliases: [exactAlias, `${sharedAlias.toLowerCase()}_two`] }, aliasConflictRequestId);
+    assert(aliasConflict.response.status === 409 && aliasConflict.body.code === 'ALIAS_ALREADY_ASSOCIATED' && aliasConflict.body.message === 'Este alias ya está asociado a otra empresa.', 'Alias ownership conflict did not return the expected response.');
+    const aliasRollback = await pool.query('SELECT nombre_comercial FROM core.empresas WHERE empresa_id = $1', [noFiscal.body.data.id]);
+    assert(aliasRollback.rows[0].nombre_comercial === `${marker}_NO_FISCAL`, 'Alias conflict did not roll back the company update.');
 
     const correctionRequestId = `provider-rfc-correction-${randomUUID()}`;
     requestIds.add(correctionRequestId);
     const correctedRfc = `CRR${String(Date.now()).slice(-6)}XYZ`;
-    const correction = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: 'corrected note', fiscal: { legalName: 'Corrected Legal Name', rfc: correctedRfc, changeMode: 'CORRECTION' } }, correctionRequestId);
+    const correction = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: 'corrected note', aliases: [newAlias], fiscal: { legalName: 'Corrected Legal Name', rfc: correctedRfc, changeMode: 'CORRECTION' } }, correctionRequestId);
     assert(correction.response.status === 200 && correction.body.data.fiscal.rfc === correctedRfc, 'RFC correction failed.');
+    assert(correction.body.data.aliases.join(',') === newAlias, 'Provider edit did not remove an alias or preserve the unchanged alias.');
+    assert(correction.body.data.otherAliases.length === 1 && correction.body.data.otherAliases[0].alias === `${marker}_FILE_ALIAS`, 'Editable alias reconciliation altered read-only aliases.');
     const correctionCount = await pool.query('SELECT count(*)::int AS count FROM core.empresas_fiscales WHERE empresa_id = $1', [withFiscal.body.data.id]);
     assert(correctionCount.rows[0].count === 2, 'RFC correction created a historical identity.');
 
@@ -351,6 +380,8 @@ async function run() {
     assert(identities.rows.filter((row) => row.es_vigente).length === 1 && identities.rows.some((row) => row.rfc === correctedRfc && !row.es_vigente && row.fecha_fin === '2026-08-21') && identities.rows.some((row) => row.rfc === newRfc && row.es_vigente && row.fecha_inicio === '2026-08-21'), 'Fiscal history transition was not preserved.');
     const editAuditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', identityRequestId]);
     assert(editAuditRows.rows.some((row) => row.table_name === 'empresas_fiscales') && editAuditRows.rows.every((row) => row.origin === 'DAUBERT_HUB'), 'Fiscal edit audit context is inconsistent.');
+    const aliasAuditRows = await pool.query(`SELECT ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [editRequestId, correctionRequestId]]);
+    assert(aliasAuditRows.rows.some((row) => row.table_name === 'alias_empresa') && aliasAuditRows.rows.every((row) => row.origin === 'DAUBERT_HUB'), 'Alias edits did not preserve the provider audit context.');
     console.log('Provider integration checks passed.');
   } catch (error) {
     throw error;

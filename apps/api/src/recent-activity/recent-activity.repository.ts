@@ -46,7 +46,7 @@ export class RecentActivityRepository {
 
   async findRecent(limit: number, category?: AuditActivityCategory): Promise<RecentActivitySource> {
     const categoryTables = category === 'PROVIDER'
-      ? ['empresas', 'empresa_roles', 'empresas_fiscales']
+      ? ['empresas', 'empresa_roles', 'empresas_fiscales', 'alias_empresa']
       : category === 'CONTACT' ? ['contactos', 'medios_contacto'] : null;
     const categoryCondition = categoryTables
       ? "HAVING bool_or(schema_name = 'core' AND table_name = ANY($2::text[]))"

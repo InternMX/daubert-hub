@@ -92,12 +92,17 @@ describe('RecentActivityService', () => {
 
   it.each([
     { rows: [row('delete', 'contactos', 'DELETE', null, { contacto_id: 7, nombre: 'Ana' })] },
-    { rows: [row('unknown', 'alias_empresa', 'INSERT', { empresa_id: 1, alias: 'X' })] },
     { rows: [row('status', 'contactos', 'UPDATE', { contacto_id: 7, nombre: 'Ana', estatus: 'INACTIVO' }, { contacto_id: 7, nombre: 'Ana', estatus: 'ACTIVO' })] },
     { rows: [row('unsupported-transition', 'medios_contacto', 'UPDATE', { contacto_id: 7, valor: 'x', estatus: 'BLOQUEADO' }, { contacto_id: 7, valor: 'x', estatus: 'ACTIVO' })] },
     { rows: [row('missing-label', 'medios_contacto', 'INSERT', { contacto_id: 7 })] }
   ])('omits unsupported or incomplete activity %#', async ({ rows }) => {
     await expect(setup(rows).service.list({ limit: 6 })).resolves.toEqual({ data: [] });
+  });
+
+  it('classifies an alias-only company edit as a provider update', async () => {
+    const alias = row('alias', 'alias_empresa', 'INSERT', { empresa_id: 1, alias: 'BMASC' });
+    const result = await setup([alias], [], [['1', 'Acme']]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ type: 'PROVIDER_UPDATED', entity: 'Acme' });
   });
 
   it('skips unsupported groups, enforces the requested output limit, and leaks no audit internals', async () => {
