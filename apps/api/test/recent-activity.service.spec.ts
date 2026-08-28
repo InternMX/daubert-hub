@@ -12,10 +12,15 @@ function payment(overrides: Partial<{ execution_state: 'PROCESADO' | 'ERROR'; oc
   return { execution_state: 'PROCESADO' as const, occurred_at: at, result_count: 1, ready_count: 1, manual_count: 0, error_count: 0, omitted_count: 0, ...overrides };
 }
 
-function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = []) {
+function audi(overrides: Partial<{ execution_id: string; automation_name: string; execution_state: 'COMPLETADA' | 'ERROR' | 'CANCELADA' | 'PROCESANDO'; run_name: string | null; occurred_at: string; error_node: string | null; error_message: string | null; generated_count: number; minimum_folio: string | null; maximum_folio: string | null }> = {}) {
+  return { execution_id: '1', automation_name: 'Remisiones Audi', execution_state: 'COMPLETADA' as const, run_name: null, occurred_at: at, error_node: null, error_message: null, generated_count: 1, minimum_folio: '969', maximum_folio: '969', ...overrides };
+}
+
+function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = [], audiRows: ReturnType<typeof audi>[] = []) {
   const findRecent = vi.fn().mockResolvedValue({ rows, contacts: new Map(contacts), companies: new Map(companies) });
   const findPaymentNotifications = vi.fn().mockResolvedValue(payments);
-  return { service: new RecentActivityService({ findRecent } as never, { findRecent: findPaymentNotifications } as never), findRecent, findPaymentNotifications };
+  const findAudi = vi.fn().mockResolvedValue(audiRows);
+  return { service: new RecentActivityService({ findRecent } as never, { findRecent: findPaymentNotifications } as never, { findRecent: findAudi } as never), findRecent, findPaymentNotifications, findAudi };
 }
 
 describe('RecentActivityService', () => {
@@ -111,10 +116,11 @@ describe('RecentActivityService', () => {
       row('one', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'one@test.mx' }),
       row('two', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'two@test.mx' })
     ];
-    const { service, findRecent, findPaymentNotifications } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]]);
+    const { service, findRecent, findPaymentNotifications, findAudi } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]]);
     const result = await service.list({ limit: 1 });
     expect(findRecent).toHaveBeenCalledWith(1);
     expect(findPaymentNotifications).toHaveBeenCalledWith(1);
+    expect(findAudi).toHaveBeenCalledWith(1);
     expect(result.data).toHaveLength(1);
     expect(Object.keys(result.data[0]!)).toEqual(['type', 'category', 'title', 'entity', 'context', 'occurredAt']);
     expect(result.data[0]?.occurredAt).toBe(at);
@@ -127,7 +133,7 @@ describe('RecentActivityService', () => {
       row('new-provider', 'empresas', 'UPDATE', { empresa_id: 1, nombre_comercial: 'Nuevo' }, { empresa_id: 1, nombre_comercial: 'Anterior' }, '2026-08-25T11:00:00Z'),
       row('old-provider', 'empresas', 'UPDATE', { empresa_id: 2, nombre_comercial: 'Antiguo' }, { empresa_id: 2, nombre_comercial: 'Original' }, '2026-08-25T09:00:00Z')
     ];
-    const { service, findRecent, findPaymentNotifications } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [['1', 'Nuevo'], ['2', 'Antiguo']], [payment({ occurred_at: '2026-08-25T13:00:00Z' })]);
+    const { service, findRecent, findPaymentNotifications, findAudi } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [['1', 'Nuevo'], ['2', 'Antiguo']], [payment({ occurred_at: '2026-08-25T13:00:00Z' })], [audi()]);
 
     const result = await service.list({ limit: 2, category: RecentActivityCategoryFilter.PROVIDER });
 
@@ -135,6 +141,7 @@ describe('RecentActivityService', () => {
     expect(result.data.every((item) => item.category === 'PROVIDER')).toBe(true);
     expect(findRecent).toHaveBeenCalledWith(2, 'PROVIDER');
     expect(findPaymentNotifications).not.toHaveBeenCalled();
+    expect(findAudi).not.toHaveBeenCalled();
   });
 
   it('returns only contact activity and skips the payment source', async () => {
@@ -142,7 +149,7 @@ describe('RecentActivityService', () => {
       row('provider', 'empresas', 'UPDATE', { empresa_id: 1, nombre_comercial: 'Nuevo' }, { empresa_id: 1, nombre_comercial: 'Anterior' }),
       row('contact', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'contact@test.mx' })
     ];
-    const { service, findRecent, findPaymentNotifications } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [['1', 'Nuevo']], [payment()]);
+    const { service, findRecent, findPaymentNotifications, findAudi } = setup(rows, [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [['1', 'Nuevo']], [payment()], [audi()]);
 
     const result = await service.list({ limit: 6, category: RecentActivityCategoryFilter.CONTACT });
 
@@ -150,13 +157,14 @@ describe('RecentActivityService', () => {
     expect(result.data[0]?.category).toBe('CONTACT');
     expect(findRecent).toHaveBeenCalledWith(6, 'CONTACT');
     expect(findPaymentNotifications).not.toHaveBeenCalled();
+    expect(findAudi).not.toHaveBeenCalled();
   });
 
   it('returns only automation activity and skips the audit source', async () => {
-    const { service, findRecent, findPaymentNotifications } = setup([row('contact', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'contact@test.mx' })], [], [], [
+    const { service, findRecent, findPaymentNotifications, findAudi } = setup([row('contact', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'contact@test.mx' })], [], [], [
       payment({ occurred_at: '2026-08-25T11:00:00Z' }),
       payment({ execution_state: 'ERROR', result_count: 0, ready_count: 0, occurred_at: '2026-08-25T12:00:00Z' })
-    ]);
+    ], [audi({ occurred_at: '2026-08-25T10:00:00Z' })]);
 
     const result = await service.list({ limit: 1, category: RecentActivityCategoryFilter.AUTOMATION });
 
@@ -164,14 +172,16 @@ describe('RecentActivityService', () => {
     expect(result.data[0]).toMatchObject({ category: 'AUTOMATION', type: 'AUTOMATION_FAILED' });
     expect(findRecent).not.toHaveBeenCalled();
     expect(findPaymentNotifications).toHaveBeenCalledWith(1);
+    expect(findAudi).toHaveBeenCalledWith(1);
   });
 
   it('returns an empty client feed without querying unsupported sources', async () => {
-    const { service, findRecent, findPaymentNotifications } = setup([], [], [], [payment()]);
+    const { service, findRecent, findPaymentNotifications, findAudi } = setup([], [], [], [payment()], [audi()]);
 
     await expect(service.list({ limit: 6, category: RecentActivityCategoryFilter.CLIENT })).resolves.toEqual({ data: [] });
     expect(findRecent).not.toHaveBeenCalled();
     expect(findPaymentNotifications).not.toHaveBeenCalled();
+    expect(findAudi).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -213,16 +223,55 @@ describe('RecentActivityService', () => {
     expect(result.data[0]?.context).toBe('2 listos · 2 manuales · 2 con error · 2 omitidos');
   });
 
-  it('merges audit and automation events, globally sorts them, then applies the final limit', async () => {
+  it('maps one generated Audi remission without exposing execution metadata', async () => {
+    const result = await setup([], [], [], [], [audi({ run_name: 'internal-run', error_node: 'Node 1', error_message: 'raw failure' })]).service.list({ limit: 6 });
+
+    expect(result.data).toEqual([{
+      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Remisión 969 generada',
+      entity: 'Remisiones Audi', context: null, occurredAt: at
+    }]);
+    expect(JSON.stringify(result)).not.toMatch(/internal-run|Node 1|raw failure|execution_id/i);
+  });
+
+  it.each([
+    [970, 974, 'Folios 970–974'],
+    [970, 980, null]
+  ] as const)('maps multiple Audi remissions and includes only a contiguous range %#', async (minimum, maximum, context) => {
+    const result = await setup([], [], [], [], [audi({ generated_count: 5, minimum_folio: String(minimum), maximum_folio: String(maximum) })]).service.list({ limit: 6 });
+
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '5 remisiones generadas', entity: 'Remisiones Audi', context });
+  });
+
+  it('maps a completed Audi execution without generated remissions', async () => {
+    const result = await setup([], [], [], [], [audi({ generated_count: 0, minimum_folio: null, maximum_folio: null })]).service.list({ limit: 6 });
+
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: 'Ejecución completada sin remisiones generadas', context: null });
+  });
+
+  it.each([
+    ['ERROR', 'AUTOMATION_FAILED', 'Generación de remisiones con error', 'No fue posible completar la automatización'],
+    ['CANCELADA', 'AUTOMATION_CANCELLED', 'Generación de remisiones cancelada', null]
+  ] as const)('maps Audi state %s to its terminal activity', async (executionState, type, title, context) => {
+    const result = await setup([], [], [], [], [audi({ execution_state: executionState, generated_count: 0, minimum_folio: null, maximum_folio: null })]).service.list({ limit: 6 });
+
+    expect(result.data[0]).toMatchObject({ type, category: 'AUTOMATION', title, entity: 'Remisiones Audi', context });
+  });
+
+  it('does not represent a processing Audi execution', async () => {
+    const result = await setup([], [], [], [], [audi({ execution_state: 'PROCESANDO' })]).service.list({ limit: 6 });
+    expect(result.data).toEqual([]);
+  });
+
+  it('merges audit, payment, and Audi events, globally sorts them, then applies the final limit', async () => {
     const result = await setup([
       row('older-audit', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'old@test.mx' }, null, '2026-08-25T08:00:00Z'),
       row('newer-audit', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'new@test.mx' }, null, '2026-08-25T12:00:00Z')
     ], [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]], [], [
       payment({ occurred_at: '2026-08-25T11:00:00Z' })
-    ]).service.list({ limit: 2 });
+    ], [audi({ occurred_at: '2026-08-25T11:30:00Z' })]).service.list({ limit: 3 });
 
-    expect(result.data.map((item) => item.type)).toEqual(['CONTACT_METHOD_ADDED', 'AUTOMATION_COMPLETED']);
-    expect(result.data.map((item) => item.occurredAt)).toEqual(['2026-08-25T12:00:00.000Z', '2026-08-25T11:00:00.000Z']);
+    expect(result.data.map((item) => item.entity)).toEqual(['new@test.mx', 'Remisiones Audi', 'Notificaciones de pago']);
+    expect(result.data.map((item) => item.occurredAt)).toEqual(['2026-08-25T12:00:00.000Z', '2026-08-25T11:30:00.000Z', '2026-08-25T11:00:00.000Z']);
   });
 
   it('exposes no notification identifiers or sensitive source fields', async () => {

@@ -118,6 +118,23 @@ describe('RecentActivity', () => {
     expect(screen.getByText('19 ago, 13:31')).toBeInTheDocument();
   });
 
+  it('renders completed, failed, and cancelled Audi items with the existing automation presentation', async () => {
+    listMock.mockResolvedValue([
+      { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '5 remisiones generadas', entity: 'Remisiones Audi', context: 'Folios 969–973', occurredAt: '2026-08-25T19:42:00.000Z' },
+      { type: 'AUTOMATION_FAILED', category: 'AUTOMATION', title: 'Generación de remisiones con error', entity: 'Remisiones Audi', context: 'No fue posible completar la automatización', occurredAt: '2026-08-25T18:42:00.000Z' },
+      { type: 'AUTOMATION_CANCELLED', category: 'AUTOMATION', title: 'Generación de remisiones cancelada', entity: 'Remisiones Audi', context: null, occurredAt: '2026-08-25T17:42:00.000Z' }
+    ]);
+
+    renderActivity('/?activityCategory=AUTOMATION');
+
+    expect(await screen.findByText('5 remisiones generadas')).toBeInTheDocument();
+    expect(screen.getByText('Folios 969–973')).toBeInTheDocument();
+    expect(screen.getByText('Generación de remisiones con error')).toBeInTheDocument();
+    expect(screen.getByText('No fue posible completar la automatización')).toBeInTheDocument();
+    expect(screen.getByText('Generación de remisiones cancelada')).toBeInTheDocument();
+    expect(screen.getAllByText('Remisiones Audi')).toHaveLength(3);
+  });
+
   it('keeps the compact controls visible while loading', () => {
     listMock.mockReturnValue(new Promise(() => {}));
     renderActivity();

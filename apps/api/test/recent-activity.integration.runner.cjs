@@ -336,11 +336,14 @@ async function run() {
     assert(contactFeed.body.data.every((item) => item.category === 'CONTACT'), 'Contact activity filter returned another category.');
     assert(contactFeed.body.data[0].type === 'CONTACT_METHOD_REACTIVATED' && contactFeed.body.data[1].type === 'CONTACT_METHOD_DEACTIVATED', 'Contact activity filter returned the wrong matching order.');
 
-    const automationFeed = await apiRequest('/recent-activity?limit=2&category=AUTOMATION');
-    const newestPaymentTimes = paymentFixtures.map((fixture) => fixture.occurredAt).sort((left, right) => new Date(right).getTime() - new Date(left).getTime()).slice(0, 2);
-    assert(automationFeed.response.status === 200 && automationFeed.body.data.length === 2, 'Automation activity filter did not return the newest two matching events.');
+    const automationFeed = await apiRequest('/recent-activity?limit=20&category=AUTOMATION');
+    assert(automationFeed.response.status === 200 && automationFeed.body.data.length >= paymentEvents.length && automationFeed.body.data.length <= 20, 'Automation activity filter did not return a bounded feed containing the synthetic payment events.');
     assert(automationFeed.body.data.every((item) => item.category === 'AUTOMATION'), 'Automation activity filter returned another category.');
-    assert(automationFeed.body.data.map((item) => item.occurredAt).join(',') === newestPaymentTimes.join(','), 'Automation activity filter was applied after the final limit or ordered incorrectly.');
+    assert(automationFeed.body.data.every((item, index) => index === 0 || new Date(automationFeed.body.data[index - 1].occurredAt).getTime() >= new Date(item.occurredAt).getTime()), 'Automation activity filter is not globally ordered by timestamp.');
+    for (const expected of paymentEvents) {
+      const matches = automationFeed.body.data.filter((item) => item.type === expected.type && item.entity === expected.entity && item.occurredAt === expected.occurredAt);
+      assert(matches.length === 1, `Automation activity filter did not preserve synthetic payment event ${expected.type} at ${expected.occurredAt}.`);
+    }
 
     const clientFeed = await apiRequest('/recent-activity?limit=6&category=CLIENT');
     assert(clientFeed.response.status === 200 && Array.isArray(clientFeed.body.data) && clientFeed.body.data.length === 0, 'Unsupported client activity did not return an empty feed.');

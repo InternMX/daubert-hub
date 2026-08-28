@@ -39,4 +39,11 @@ describe('listRecentActivity', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ ...automation, category: 'UNKNOWN' }] }), { status: 200 })));
     await expect(listRecentActivity()).rejects.toThrow('RECENT_ACTIVITY_UNAVAILABLE');
   });
+
+  it('accepts cancelled Remisiones Audi activity', async () => {
+    const cancelled = { type: 'AUTOMATION_CANCELLED', category: 'AUTOMATION', title: 'Generación de remisiones cancelada', entity: 'Remisiones Audi', context: null, occurredAt: '2026-08-28T19:31:49.919Z' };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [cancelled] }), { status: 200 })));
+
+    await expect(listRecentActivity()).resolves.toEqual([cancelled]);
+  });
 });

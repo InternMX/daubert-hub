@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { RecentActivityCategoryFilter, type ListRecentActivityDto } from './dto/list-recent-activity.dto';
 import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
 import { RecentActivityRepository, type RecentActivitySource } from './recent-activity.repository';
+import { RemisionesAudiActivityRepository, type RemisionesAudiActivityRow } from './remisiones-audi-activity.repository';
 
 type Snapshot = Record<string, unknown> | null;
-type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED';
+type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED';
 export type ActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 export interface RecentActivityItem {
@@ -41,7 +42,8 @@ const titles: Record<ActivityType, string> = {
   CONTACT_METHOD_REACTIVATED: 'Medio de contacto reactivado',
   AUTOMATION_COMPLETED: 'Automatización completada',
   AUTOMATION_PARTIAL: 'Automatización con incidencias',
-  AUTOMATION_FAILED: 'Automatización con error'
+  AUTOMATION_FAILED: 'Automatización con error',
+  AUTOMATION_CANCELLED: 'Automatización cancelada'
 };
 
 const categories: Record<ActivityType, ActivityCategory> = {
@@ -55,7 +57,8 @@ const categories: Record<ActivityType, ActivityCategory> = {
   CONTACT_METHOD_REACTIVATED: 'CONTACT',
   AUTOMATION_COMPLETED: 'AUTOMATION',
   AUTOMATION_PARTIAL: 'AUTOMATION',
-  AUTOMATION_FAILED: 'AUTOMATION'
+  AUTOMATION_FAILED: 'AUTOMATION',
+  AUTOMATION_CANCELLED: 'AUTOMATION'
 };
 
 const providerRoles = new Set(['PROVEEDOR', 'SERVICIO', 'FLETE']);
@@ -87,20 +90,22 @@ function changedFields(before: Snapshot, after: Snapshot): Set<string> {
 export class RecentActivityService {
   constructor(
     private readonly repository: RecentActivityRepository,
-    private readonly paymentNotifications: PaymentNotificationActivityRepository
+    private readonly paymentNotifications: PaymentNotificationActivityRepository,
+    private readonly remisionesAudi: RemisionesAudiActivityRepository
   ) {}
 
   async list(input: ListRecentActivityDto): Promise<RecentActivityResponse> {
     if (input.category === RecentActivityCategoryFilter.CLIENT) return { data: [] };
 
     const needsAudit = input.category !== RecentActivityCategoryFilter.AUTOMATION;
-    const needsPayments = input.category === undefined || input.category === RecentActivityCategoryFilter.AUTOMATION;
+    const needsAutomation = input.category === undefined || input.category === RecentActivityCategoryFilter.AUTOMATION;
     const auditCategory = input.category === RecentActivityCategoryFilter.PROVIDER || input.category === RecentActivityCategoryFilter.CONTACT ? input.category : undefined;
-    const [source, paymentRows] = await Promise.all([
+    const [source, paymentRows, audiRows] = await Promise.all([
       needsAudit ? (auditCategory ? this.repository.findRecent(input.limit, auditCategory) : this.repository.findRecent(input.limit)) : null,
-      needsPayments ? this.paymentNotifications.findRecent(input.limit) : []
+      needsAutomation ? this.paymentNotifications.findRecent(input.limit) : [],
+      needsAutomation ? this.remisionesAudi.findRecent(input.limit) : []
     ]);
-    const data = [...(source ? this.auditActivities(source) : []), ...paymentRows.map((row) => this.paymentNotification(row))]
+    const data = [...(source ? this.auditActivities(source) : []), ...paymentRows.map((row) => this.paymentNotification(row)), ...audiRows.map((row) => this.audiActivity(row))]
       .filter((item): item is RecentActivityItem => item !== null)
       .filter((item) => input.category === undefined || item.category === input.category)
       .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
@@ -134,6 +139,49 @@ export class RecentActivityService {
     } else return null;
 
     return this.item(type, 'Notificaciones de pago', this.paymentContext(row), occurredAt.toISOString());
+  }
+
+  private audiActivity(row: RemisionesAudiActivityRow): RecentActivityItem | null {
+    const occurredAt = new Date(row.occurred_at);
+    const entity = row.automation_name?.trim();
+    if (!entity || !Number.isFinite(occurredAt.getTime()) || !Number.isInteger(row.generated_count) || row.generated_count < 0) return null;
+
+    if (row.execution_state === 'ERROR') {
+      return { type: 'AUTOMATION_FAILED', category: 'AUTOMATION', title: 'Generación de remisiones con error', entity, context: 'No fue posible completar la automatización', occurredAt: occurredAt.toISOString() };
+    }
+    if (row.execution_state === 'CANCELADA') {
+      return { type: 'AUTOMATION_CANCELLED', category: 'AUTOMATION', title: 'Generación de remisiones cancelada', entity, context: null, occurredAt: occurredAt.toISOString() };
+    }
+    if (row.execution_state !== 'COMPLETADA') return null;
+
+    if (row.generated_count === 0) {
+      return { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Ejecución completada sin remisiones generadas', entity, context: null, occurredAt: occurredAt.toISOString() };
+    }
+    const minimum = this.positiveBigInt(row.minimum_folio);
+    const maximum = this.positiveBigInt(row.maximum_folio);
+    if (row.generated_count === 1) {
+      const title = minimum !== null && minimum === maximum ? `Remisión ${minimum} generada` : '1 remisión generada';
+      return { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title, entity, context: null, occurredAt: occurredAt.toISOString() };
+    }
+    const contiguous = minimum !== null && maximum !== null && maximum >= minimum && BigInt(row.generated_count) === maximum - minimum + 1n;
+    return {
+      type: 'AUTOMATION_COMPLETED',
+      category: 'AUTOMATION',
+      title: `${row.generated_count} remisiones generadas`,
+      entity,
+      context: contiguous ? `Folios ${minimum}–${maximum}` : null,
+      occurredAt: occurredAt.toISOString()
+    };
+  }
+
+  private positiveBigInt(value: string | null): bigint | null {
+    if (!value) return null;
+    try {
+      const parsed = BigInt(value);
+      return parsed > 0n ? parsed : null;
+    } catch {
+      return null;
+    }
   }
 
   private paymentContext(row: PaymentNotificationActivityRow): string {

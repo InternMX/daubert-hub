@@ -4,10 +4,11 @@ import { PaymentNotificationActivityRepository } from './payment-notification-ac
 import { RecentActivityController } from './recent-activity.controller';
 import { RecentActivityRepository } from './recent-activity.repository';
 import { RecentActivityService } from './recent-activity.service';
+import { RemisionesAudiActivityRepository } from './remisiones-audi-activity.repository';
 
 @Module({
   imports: [DatabaseModule],
   controllers: [RecentActivityController],
-  providers: [RecentActivityRepository, PaymentNotificationActivityRepository, RecentActivityService]
+  providers: [RecentActivityRepository, PaymentNotificationActivityRepository, RemisionesAudiActivityRepository, RecentActivityService]
 })
 export class RecentActivityModule {}
