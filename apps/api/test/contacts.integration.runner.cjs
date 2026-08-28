@@ -136,9 +136,11 @@ async function run() {
   const { url, databaseName } = parseTestDatabaseUrl(process.env.TEST_DATABASE_URL);
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   let api;
+  let databaseVerified = false;
   try {
     const currentDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
     assert(currentDatabase === 'daubert_hub_test', `Active session database mismatch: ${currentDatabase}`);
+    databaseVerified = true;
     console.log(`Contact integration database verified: ${databaseName}`);
 
     const auditColumns = new Set((await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'audit' AND table_name = 'cambios'")).rows.map((row) => row.column_name));
@@ -639,16 +641,18 @@ async function run() {
     console.log('Contact integration checks passed.');
   } finally {
     try {
-      if (companyIds.size > 0) {
-        const ids = [...companyIds];
-        await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [ids]);
-        await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [ids]);
-        await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [ids]);
+      if (databaseVerified) {
+        if (companyIds.size > 0) {
+          const ids = [...companyIds];
+          await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [ids]);
+          await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [ids]);
+          await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [ids]);
+        }
+        await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
+        const leftovers = await pool.query("SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE 'HUB_TEST_CONTACT_%'");
+        assert(leftovers.rows[0].count === 0, 'Contact integration cleanup left company fixtures.');
+        console.log('Contact integration cleanup verified: no synthetic fixtures remain.');
       }
-      await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
-      const leftovers = await pool.query("SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE 'HUB_TEST_CONTACT_%'");
-      assert(leftovers.rows[0].count === 0, 'Contact integration cleanup left company fixtures.');
-      console.log('Contact integration cleanup verified: no synthetic fixtures remain.');
     } finally {
       if (api && !api.killed) {
         api.kill();

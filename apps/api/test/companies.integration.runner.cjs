@@ -31,9 +31,10 @@ async function waitForApi() {
 async function search(value) { const response = await fetch(`http://127.0.0.1:${port}/api/companies/search?search=${encodeURIComponent(value)}`); return { response, body: await response.json() }; }
 
 async function run() {
-  const url = testUrl(); const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL }); let api;
+  const url = testUrl(); const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL }); let api; let databaseVerified = false;
   try {
     assert((await pool.query('SELECT current_database() AS name')).rows[0].name === 'daubert_hub_test', 'Active session database mismatch.');
+    databaseVerified = true;
     const active = await company(pool, 'ACTIVE');
     await query(pool, 'INSERT INTO core.empresas_fiscales (empresa_id, razon_social, rfc, es_vigente) VALUES ($1, $2, $3, TRUE)', [active, `${marker} LEGAL`, `${marker.slice(-8)}RFC`]);
     await query(pool, "INSERT INTO core.alias_empresa (empresa_id, alias, alias_normalizado, tipo_alias, estatus) VALUES ($1, $2, $2, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'ACTIVO'), ($1, $3, $3, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'ACTIVO'), ($1, $4, $4, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'ACTIVO'), ($1, $5, $5, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'INACTIVO')", [active, `${marker}_ALIAS`, `${marker}_ALIAS_EXTENDED`, `X_${marker}_ALIAS`, `${marker}_INACTIVE_ALIAS`]);
@@ -58,7 +59,7 @@ async function run() {
     assert(typeof alias.body.data.find((row) => row.id === active).id === 'string', 'Company lookup did not preserve BIGINT IDs as strings.');
     console.log('Company lookup integration checks passed.');
   } finally {
-    try { if (ids.size) { const client = await pool.connect(); try { await client.query('BEGIN'); await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']); await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]); await client.query('DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [[...ids]]); await client.query('DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } } } finally { if (api && !api.killed) { api.kill(); await once(api, 'exit'); } await pool.end(); }
+    try { if (databaseVerified && ids.size) { const client = await pool.connect(); try { await client.query('BEGIN'); await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']); await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]); await client.query('DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [[...ids]]); await client.query('DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } } } finally { if (api && !api.killed) { api.kill(); await once(api, 'exit'); } await pool.end(); }
   }
 }
 run().catch((error) => { console.error(error.message); process.exitCode = 1; });

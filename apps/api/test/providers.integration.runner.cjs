@@ -104,9 +104,11 @@ async function run() {
   const { url, databaseName } = parseTestDatabaseUrl(process.env.TEST_DATABASE_URL);
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   let api;
+  let databaseVerified = false;
   try {
     const currentDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
     assert(currentDatabase === 'daubert_hub_test', `Active session database mismatch: ${currentDatabase}`);
+    databaseVerified = true;
     console.log(`Integration database verified: ${databaseName}`);
 
     const auditColumns = new Set((await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'audit' AND table_name = 'cambios'")).rows.map((row) => row.column_name));
@@ -387,27 +389,29 @@ async function run() {
     throw error;
   } finally {
     try {
-      if (createdIds.size > 0) {
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']);
-          await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]);
-          await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
-          await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
-          await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
-          await client.query('COMMIT');
-        } catch (cleanupError) {
-          await client.query('ROLLBACK');
-          throw cleanupError;
-        } finally {
-          client.release();
+      if (databaseVerified) {
+        if (createdIds.size > 0) {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']);
+            await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]);
+            await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
+            await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
+            await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
+            await client.query('COMMIT');
+          } catch (cleanupError) {
+            await client.query('ROLLBACK');
+            throw cleanupError;
+          } finally {
+            client.release();
+          }
         }
+        await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
+        const leftovers = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE $1', ['HUB_TEST_PROVIDER_%']);
+        assert(leftovers.rows[0].count === 0, 'Integration test cleanup left provider records.');
+        console.log('Integration cleanup verified: no HUB_TEST_PROVIDER records remain.');
       }
-      await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
-      const leftovers = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE $1', ['HUB_TEST_PROVIDER_%']);
-      assert(leftovers.rows[0].count === 0, 'Integration test cleanup left provider records.');
-      console.log('Integration cleanup verified: no HUB_TEST_PROVIDER records remain.');
     } finally {
       if (api && !api.killed) {
         api.kill();

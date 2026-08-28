@@ -62,8 +62,10 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   let api;
   let seriesId;
+  let databaseVerified = false;
   try {
     assert((await pool.query('SELECT current_database() AS name')).rows[0].name === 'daubert_hub_test', 'Active session database mismatch.');
+    databaseVerified = true;
     await transaction(pool, 'INSERT INTO ops.automatizaciones (codigo, nombre, descripcion, estatus) VALUES ($1, $2, $3, $4)', [automationCode, 'Temporary automation', 'Integration test only', 'ACTIVA']);
     const series = await transaction(pool, 'INSERT INTO operacion.series_documentales (codigo, nombre, siguiente_folio, estatus) VALUES ($1, $2, $3, $4) RETURNING serie_id::text', [seriesCode, 'Temporary series', 500, 'ACTIVA']);
     seriesId = series.rows[0].serie_id;
@@ -118,12 +120,17 @@ async function run() {
     assert(chain.rows[1].siguiente_folio_anterior === chain.rows[0].siguiente_folio_nuevo, 'Concurrent history did not form an atomic previous-value chain.');
     console.log('Automation integration checks passed.');
   } finally {
-    if (api && api.exitCode === null && !api.killed) { api.kill(); await once(api, 'exit'); }
     try {
-      if (seriesId) await transaction(pool, 'DELETE FROM operacion.ajustes_series WHERE serie_id = $1', [seriesId]);
-      await transaction(pool, 'DELETE FROM operacion.series_documentales WHERE codigo = $1', [seriesCode]);
-      await transaction(pool, 'DELETE FROM ops.automatizaciones WHERE codigo = $1', [automationCode]);
-    } finally { await pool.end(); }
+      if (api && api.exitCode === null && !api.killed) { api.kill(); await once(api, 'exit'); }
+    } finally {
+      try {
+        if (databaseVerified) {
+          if (seriesId) await transaction(pool, 'DELETE FROM operacion.ajustes_series WHERE serie_id = $1', [seriesId]);
+          await transaction(pool, 'DELETE FROM operacion.series_documentales WHERE codigo = $1', [seriesCode]);
+          await transaction(pool, 'DELETE FROM ops.automatizaciones WHERE codigo = $1', [automationCode]);
+        }
+      } finally { await pool.end(); }
+    }
   }
 }
 
