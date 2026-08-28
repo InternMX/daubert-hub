@@ -4,7 +4,7 @@
   "private": true,
   "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev": "npm-run-all --parallel --race --print-label dev:api dev:web",
     "dev:api": "npm run dev --workspace=@daubert/api",
     "dev:web": "npm run dev --workspace=@daubert/web",
     "build": "npm run build --workspace=@daubert/api && npm run build --workspace=@daubert/web",
