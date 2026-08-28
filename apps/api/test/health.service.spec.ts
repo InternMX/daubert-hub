@@ -1,11 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HealthService } from '../src/health/health.service';
 
 describe('HealthService', () => {
-  it('only reports a connected database after the adapter confirms it', async () => {
-    const connected = new HealthService({ checkConnection: () => Promise.resolve(true) } as never);
-    const unavailable = new HealthService({ checkConnection: () => Promise.resolve(false) } as never);
-    await expect(connected.getHealth()).resolves.toEqual({ status: 'ok', database: 'connected' });
-    await expect(unavailable.getHealth()).resolves.toEqual({ status: 'ok', database: 'unavailable' });
+  it.each([
+    ['daubert_global', 'PRODUCTION'],
+    ['daubert_hub_test', 'TEST'],
+    ['another_database', 'UNKNOWN']
+  ] as const)('maps the live %s database to %s', async (databaseName, environment) => {
+    const query = vi.fn().mockResolvedValue([{ database_name: databaseName }]);
+    const health = new HealthService({ query } as never);
+
+    await expect(health.getHealth()).resolves.toEqual({
+      status: 'ok',
+      database: 'connected',
+      environment
+    });
+    expect(query).toHaveBeenCalledWith('SELECT current_database() AS database_name');
+  });
+
+  it('preserves unavailable health behavior when the live database query fails', async () => {
+    const health = new HealthService({ query: vi.fn().mockRejectedValue(new Error('unavailable')) } as never);
+
+    await expect(health.getHealth()).resolves.toEqual({ status: 'ok', database: 'unavailable' });
   });
 });

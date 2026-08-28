@@ -4,11 +4,12 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
-import { Box, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
+import { Box, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
+import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
 import { appTokens } from '../theme';
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
@@ -23,6 +24,12 @@ const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIcon
 ];
 
 const automationNavigation = { to: '/automations', label: 'Automatizaciones', end: false, icon: SettingsSuggestRoundedIcon };
+
+const environmentPresentation: Record<RuntimeEnvironment, { label: string; compactLabel: string; color: 'error' | 'info' | 'warning'; variant: 'filled' | 'outlined'; title: string }> = {
+  PRODUCTION: { label: 'PRODUCCIÓN', compactLabel: 'PROD', color: 'error', variant: 'filled', title: 'Daubert Hub · PROD' },
+  TEST: { label: 'PRUEBAS', compactLabel: 'TEST', color: 'info', variant: 'outlined', title: 'Daubert Hub · TEST' },
+  UNKNOWN: { label: 'ENTORNO DESCONOCIDO', compactLabel: '?', color: 'warning', variant: 'outlined', title: 'Daubert Hub · UNKNOWN' }
+};
 
 function storedPreference(): boolean | undefined {
   try {
@@ -54,11 +61,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   const initialPreference = storedPreference();
   const [hasExplicitPreference, setHasExplicitPreference] = useState(initialPreference !== undefined);
   const [collapsed, setCollapsed] = useState(initialPreference ?? !wideViewport);
+  const [runtimeEnvironment, setRuntimeEnvironment] = useState<RuntimeEnvironment | null>(null);
   const sidebarWidth = collapsed ? collapsedWidth : expandedWidth;
 
   useEffect(() => {
     if (!hasExplicitPreference) setCollapsed(!wideViewport);
   }, [hasExplicitPreference, wideViewport]);
+
+  useEffect(() => {
+    let active = true;
+    getRuntimeEnvironment()
+      .then((environment) => { if (active) setRuntimeEnvironment(environment); })
+      .catch(() => { if (active) setRuntimeEnvironment('UNKNOWN'); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (runtimeEnvironment) document.title = environmentPresentation[runtimeEnvironment].title;
+  }, [runtimeEnvironment]);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -77,12 +97,24 @@ export function AppShell({ children }: { children: ReactNode }) {
             </IconButton>
           </Tooltip>
         </Box>
-        {!collapsed && <Box sx={{ px: 1, mb: 5, maxWidth: 190 }}>
+        {!collapsed && <Box sx={{ px: 1, mb: 1, maxWidth: 190 }}>
           <Box sx={{ bgcolor: 'common.white', p: 1.25, borderRadius: 0.5 }}>
             <Box component="img" src={logoUrl} alt="Daubert Cromwell" sx={{ display: 'block', width: '100%', height: 'auto' }} />
           </Box>
           <Typography variant="overline" sx={{ display: 'block', color: appTokens.navigationText, mt: 1.5 }}>Hub de operaciones</Typography>
         </Box>}
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 5, px: collapsed ? 0 : 1 }}>
+          <Tooltip title={collapsed ? `Entorno: ${runtimeEnvironment ? environmentPresentation[runtimeEnvironment].label : 'Cargando'}` : ''} placement="right">
+            <Chip
+              aria-label={`Entorno: ${runtimeEnvironment ? environmentPresentation[runtimeEnvironment].label : 'Cargando'}`}
+              label={runtimeEnvironment ? (collapsed ? environmentPresentation[runtimeEnvironment].compactLabel : environmentPresentation[runtimeEnvironment].label) : (collapsed ? '…' : 'CARGANDO…')}
+              size="small"
+              color={runtimeEnvironment ? environmentPresentation[runtimeEnvironment].color : 'default'}
+              variant={runtimeEnvironment ? environmentPresentation[runtimeEnvironment].variant : 'outlined'}
+              sx={{ maxWidth: '100%', fontWeight: 800, letterSpacing: '0.06em', fontSize: '0.625rem' }}
+            />
+          </Tooltip>
+        </Box>
         <List disablePadding>
           {navigation.map((item, index) => (
             <Box key={item.to}>

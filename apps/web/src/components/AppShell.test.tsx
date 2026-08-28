@@ -2,7 +2,10 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
 import { AppShell } from './AppShell';
+
+vi.mock('../services/health', () => ({ getRuntimeEnvironment: vi.fn() }));
 
 function mockWideViewport(initiallyWide: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -28,15 +31,71 @@ function renderShell(path = '/') {
     <Route path="/" element={<div>Inicio page</div>} />
     <Route path="/providers" element={<div>Providers page</div>} />
     <Route path="/contacts" element={<div>Contacts page</div>} />
+    <Route path="/automations" element={<div>Automations page</div>} />
   </Routes></AppShell></MemoryRouter>);
 }
 
 function shell() { return screen.getByTestId('app-shell'); }
 
-beforeEach(() => localStorage.clear());
-afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
+beforeEach(() => {
+  localStorage.clear();
+  document.title = 'Daubert Hub';
+  vi.mocked(getRuntimeEnvironment).mockReset();
+  vi.mocked(getRuntimeEnvironment).mockImplementation(() => new Promise<never>(() => undefined));
+});
+afterEach(() => { localStorage.clear(); document.title = 'Daubert Hub'; vi.unstubAllGlobals(); });
 
 describe('AppShell sidebar', () => {
+  it('uses a neutral loading indicator without assuming an environment', () => {
+    mockWideViewport(true);
+
+    renderShell();
+
+    expect(screen.getByText('CARGANDO…')).toBeInTheDocument();
+    expect(screen.queryByText('PRUEBAS')).not.toBeInTheDocument();
+    expect(screen.queryByText('PRODUCCIÓN')).not.toBeInTheDocument();
+    expect(document.title).toBe('Daubert Hub');
+  });
+
+  it.each([
+    ['PRODUCTION', 'PRODUCCIÓN', 'Daubert Hub · PROD'],
+    ['TEST', 'PRUEBAS', 'Daubert Hub · TEST'],
+    ['UNKNOWN', 'ENTORNO DESCONOCIDO', 'Daubert Hub · UNKNOWN']
+  ] as const)('renders the %s environment and updates the browser title', async (environment, label, title) => {
+    mockWideViewport(true);
+    vi.mocked(getRuntimeEnvironment).mockResolvedValue(environment as RuntimeEnvironment);
+
+    renderShell();
+
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(document.title).toBe(title);
+  });
+
+  it('shows an unknown environment without claiming test or production when the request fails', async () => {
+    mockWideViewport(true);
+    vi.mocked(getRuntimeEnvironment).mockRejectedValue(new Error('unavailable'));
+
+    renderShell();
+
+    expect(await screen.findByText('ENTORNO DESCONOCIDO')).toBeInTheDocument();
+    expect(screen.queryByText('PRUEBAS')).not.toBeInTheDocument();
+    expect(screen.queryByText('PRODUCCIÓN')).not.toBeInTheDocument();
+    expect(document.title).toBe('Daubert Hub · UNKNOWN');
+  });
+
+  it('keeps the environment visible while navigating the application', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    vi.mocked(getRuntimeEnvironment).mockResolvedValue('TEST');
+    renderShell();
+    await screen.findByText('PRUEBAS');
+
+    for (const destination of ['Proveedores', 'Contactos', 'Automatizaciones']) {
+      await user.click(screen.getByRole('link', { name: destination }));
+      expect(screen.getByText('PRUEBAS')).toBeInTheDocument();
+    }
+  });
+
   it('defaults to expanded on a wide viewport and renders complete branding and labels', () => {
     mockWideViewport(true);
     renderShell();
