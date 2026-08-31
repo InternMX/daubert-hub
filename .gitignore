@@ -5,6 +5,8 @@ coverage/
 .env
 .env.*
 !.env.example
+deploy/pilot.test.env
+deploy/pilot.prod.env
 .vite/
 *.tsbuildinfo
 tmp/
