@@ -20,7 +20,7 @@ describe('AddContactMethodForm', () => {
     expect(within(form).getByRole('combobox', { name: 'Tipo' })).toHaveTextContent('Correo');
     expect(within(form).getByPlaceholderText('correo@empresa.com')).toBeInTheDocument();
     fireEvent.mouseDown(within(form).getByRole('combobox', { name: 'Tipo' }));
-    expect(await screen.findByRole('option', { name: 'Correo' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'Teléfono' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'WhatsApp' })).toBeInTheDocument(); expect(screen.queryByRole('option', { name: 'OTRO' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Correo' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'Teléfono' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'WhatsApp' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'Portal / página web' })).toBeInTheDocument(); expect(screen.queryByRole('option', { name: 'OTRO' })).not.toBeInTheDocument();
   });
 
   it('cancel closes, clears unsaved state, and sends no POST', () => {
@@ -40,10 +40,17 @@ describe('AddContactMethodForm', () => {
 
   it.each([
     ['Teléfono', 'TELEFONO', '+52 (449) 123-4567 ext. 204'],
-    ['WhatsApp', 'WHATSAPP', '+52 449 123 4567']
+    ['WhatsApp', 'WHATSAPP', '+52 449 123 4567'],
+    ['Portal / página web', 'WEB', 'https://portal.example.test:8443/login?company=31']
   ] as const)('accepts a valid %s', async (label, type, value) => {
-    addMock.mockResolvedValue({ ...created, type, value }); const { form, onAdded } = renderForm(); await selectType(form, label); fireEvent.change(within(form).getByRole('textbox', { name: 'Valor' }), { target: { value: ` ${value} ` } }); fireEvent.click(within(form).getByRole('button', { name: 'Agregar' }));
+    addMock.mockResolvedValue({ ...created, type, value }); const { form, onAdded } = renderForm(); await selectType(form, label); fireEvent.change(within(form).getByRole('textbox', { name: type === 'WEB' ? 'URL' : 'Valor' }), { target: { value: ` ${value} ` } }); fireEvent.click(within(form).getByRole('button', { name: 'Agregar' }));
     await waitFor(() => expect(addMock).toHaveBeenCalledWith(contact.id, { type, value })); expect(onAdded).toHaveBeenCalledWith(contact.id, expect.objectContaining({ type, value }));
+  });
+
+  it('uses URL wording and rejects unsafe WEB schemes', async () => {
+    const { form } = renderForm(); await selectType(form, 'Portal / página web'); const input = within(form).getByRole('textbox', { name: 'URL' });
+    expect(input).toHaveAttribute('placeholder', 'https://portal.empresa.com'); expect(input).toHaveAttribute('type', 'url'); fireEvent.change(input, { target: { value: 'javascript:alert(1)' } }); fireEvent.click(within(form).getByRole('button', { name: 'Agregar' }));
+    expect(await within(form).findByText('Ingresa una URL válida.')).toBeInTheDocument(); expect(addMock).not.toHaveBeenCalled();
   });
 
   it('clears stale value when the type changes', async () => {

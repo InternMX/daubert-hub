@@ -9,10 +9,15 @@ async function validatePayload(payload: object): Promise<{ dto: AddContactMethod
 }
 
 describe('AddContactMethodDto', () => {
-  it.each(['CORREO', 'TELEFONO', 'WHATSAPP'])('trims and accepts %s', async (type) => {
-    const result = await validatePayload({ type, value: '  method value  ' });
+  it.each([
+    ['CORREO', 'method@example.test'],
+    ['TELEFONO', '+52 449 555 0101'],
+    ['WHATSAPP', '+52 449 555 0102'],
+    ['WEB', 'https://portal.example.test/login']
+  ])('trims and accepts %s', async (type, value) => {
+    const result = await validatePayload({ type, value: `  ${value}  ` });
     expect(result.errors).toBe(0);
-    expect(result.dto.value).toBe('method value');
+    expect(result.dto.value).toBe(value);
   });
 
   it.each(['OTRO', 'SMS'])('rejects unsupported type %s', async (type) => {

@@ -1,7 +1,7 @@
 import { apiBaseUrl } from './api';
 
 export type CreateContactType = 'PERSONA' | 'AREA' | 'BUZON_GENERICO';
-export type CreateContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP';
+export type CreateContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'WEB';
 
 export interface CreateContactInput {
   companyId: string;

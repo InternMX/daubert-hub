@@ -2,7 +2,7 @@ import { apiBaseUrl } from './api';
 import { ProviderApiError } from './providers';
 
 export type CompanyType = 'PROVEEDOR' | 'SERVICIO' | 'FLETE' | 'CLIENTE' | 'OTRO';
-export type ContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'OTRO';
+export type ContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'WEB' | 'OTRO';
 export type DirectoryContactType = 'PERSONA' | 'AREA' | 'BUZON_GENERICO';
 export interface DirectoryCompany { id: string; commercialName: string; companyType: CompanyType; contactCount: number; matchedAlias?: string | null; }
 export interface DirectoryContactMethod { id: string; type: ContactMethodType; value: string; isPrimary: boolean; }

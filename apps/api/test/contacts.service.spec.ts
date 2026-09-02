@@ -39,6 +39,7 @@ describe('ContactsService', () => {
     ['multiple emails', [email, { type: ContactMethodType.Email, value: 'compras@example.test' }]],
     ['multiple phones', [{ type: ContactMethodType.Phone, value: '+52 449 123 4567' }, { type: ContactMethodType.Phone, value: '449 987 6543 ext. 204' }]],
     ['WhatsApp', [{ type: ContactMethodType.WhatsApp, value: '+52 449 555 5555' }]],
+    ['website', [{ type: ContactMethodType.Web, value: 'https://portal.example.test:8443/login?from=hub' }]],
     ['mixed methods', [email, { type: ContactMethodType.Phone, value: '+52 449 123 4567' }, { type: ContactMethodType.WhatsApp, value: '+52 449 555 5555' }]]
   ])('accepts %s', async (_scenario, methods) => {
     const input = { ...baseInput, methods } as CreateContactDto;
@@ -50,6 +51,11 @@ describe('ContactsService', () => {
     const service = new ContactsService({ create: vi.fn() } as never);
     await expect(service.create({ ...baseInput, methods: [email, { type: ContactMethodType.Email, value: 'MARIA@EXAMPLE.TEST' }] }, 'request-1')).rejects.toMatchObject({ status: 400 });
     await expect(service.create({ ...baseInput, methods: [{ type: ContactMethodType.Email, value: 'not-an-email' }] }, 'request-1')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it.each(['portal.example.test', 'ftp://portal.example.test', 'https://portal.example.test/bad path'])('rejects invalid WEB URL %s', async (value) => {
+    const service = new ContactsService({ create: vi.fn() } as never);
+    await expect(service.create({ ...baseInput, methods: [{ type: ContactMethodType.Web, value }] }, 'request-1')).rejects.toMatchObject({ status: 400 });
   });
 
   it.each([

@@ -10,7 +10,8 @@ export enum ContactType {
 export enum ContactMethodType {
   Email = 'CORREO',
   Phone = 'TELEFONO',
-  WhatsApp = 'WHATSAPP'
+  WhatsApp = 'WHATSAPP',
+  Web = 'WEB'
 }
 
 const trim = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() : value;

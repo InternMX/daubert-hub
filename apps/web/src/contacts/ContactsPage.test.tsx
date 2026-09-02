@@ -39,7 +39,7 @@ describe('ContactsPage global creation', () => {
     listMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } }); renderPage('/contacts');
     expect(await screen.findByRole('button', { name: 'Agregar contacto' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    const drawer = await globalDrawer(); expect(within(drawer).getByRole('combobox', { name: 'Empresa' })).toBeInTheDocument(); expect(within(drawer).queryByText('ALMEX')).not.toBeInTheDocument();
+    const drawer = await globalDrawer(); expect(within(drawer).getByRole('combobox', { name: 'Empresa' })).toBeInTheDocument(); expect(within(drawer).queryByText('ALMEX')).not.toBeInTheDocument(); await selectMethodType(drawer, 0, 'Portal / página web'); expect(within(drawer).getByRole('textbox', { name: 'URL' })).toHaveAttribute('placeholder', 'https://portal.empresa.com');
   });
 
   it('opens the global drawer from the action URL and Cancelar clears only the action parameter', async () => {
@@ -189,10 +189,11 @@ describe('ContactsPage contact method creation', () => {
   it.each([
     ['CORREO', 'Correo', 'second@example.test'],
     ['TELEFONO', 'Teléfono', '+52 449 555 0301'],
-    ['WHATSAPP', 'WhatsApp', '+52 449 555 0302']
+    ['WHATSAPP', 'WhatsApp', '+52 449 555 0302'],
+    ['WEB', 'Portal / página web', 'https://portal.example.test/login']
   ] as const)('adds a second %s, refreshes detail, and preserves URL state', async (type, label, value) => {
     const first = { id: `first-${type}`, type, value: `first-${type}`, isPrimary: false }; const added = { id: `added-${type}`, type, value, status: 'ACTIVO' as const }; const initial = contactDetail([first], [inactiveMethod]); const refreshed = contactDetail([first, { ...added, isPrimary: false }], [inactiveMethod]);
-    addMethodMock.mockResolvedValue(added); await lifecyclePage(initial); detailMock.mockResolvedValue(refreshed); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); const form = screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' }); if (type !== 'CORREO') await selectMethodType(form, 0, label); fireEvent.change(within(form).getByRole('textbox', { name: 'Valor' }), { target: { value: ` ${value} ` } }); fireEvent.click(within(form).getByRole('button', { name: 'Agregar' }));
+    addMethodMock.mockResolvedValue(added); await lifecyclePage(initial); detailMock.mockResolvedValue(refreshed); fireEvent.click(screen.getByRole('button', { name: 'Agregar medio para Contacto Sintético' })); const form = screen.getByRole('form', { name: 'Agregar medio para Contacto Sintético' }); if (type !== 'CORREO') await selectMethodType(form, 0, label); fireEvent.change(within(form).getByRole('textbox', { name: type === 'WEB' ? 'URL' : 'Valor' }), { target: { value: ` ${value} ` } }); fireEvent.click(within(form).getByRole('button', { name: 'Agregar' }));
     await waitFor(() => expect(addMethodMock).toHaveBeenCalledWith('20', { type, value })); expect(await screen.findByText('Medio de contacto agregado.')).toBeInTheDocument(); expect(screen.queryByRole('form', { name: 'Agregar medio para Contacto Sintético' })).not.toBeInTheDocument(); expect(screen.getByText(value)).toBeInTheDocument(); expect(screen.getByRole('button', { name: `Acciones para ${label}: ${value}` })).toBeInTheDocument(); await waitFor(() => expect(detailMock).toHaveBeenCalledTimes(2)); expect(screen.getByRole('button', { name: 'Medios inactivos (1)' })).toBeInTheDocument(); expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
   });
 });

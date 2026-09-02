@@ -90,9 +90,17 @@ describe('RecentActivityService', () => {
     ['ACTIVO', 'INACTIVO', 'CONTACT_METHOD_DEACTIVATED'],
     ['INACTIVO', 'ACTIVO', 'CONTACT_METHOD_REACTIVATED']
   ])('classifies lifecycle transition %s to %s with precedence', async (beforeStatus, afterStatus, expected) => {
-    const change = row('lifecycle', 'medios_contacto', 'UPDATE', { contacto_id: 7, valor: 'new@test.mx', estatus: afterStatus }, { contacto_id: 7, valor: 'old@test.mx', estatus: beforeStatus });
+    const change = row('lifecycle', 'medios_contacto', 'UPDATE', { contacto_id: 7, valor: 'https://portal.example.test', tipo_medio: 'WEB', estatus: afterStatus }, { contacto_id: 7, valor: 'https://portal.example.test', tipo_medio: 'WEB', estatus: beforeStatus });
     const result = await setup([change], [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]]).service.list({ limit: 6 });
     expect(result.data[0]?.type).toBe(expected);
+  });
+
+  it('classifies WEB additions and edits through generic contact-method activity', async () => {
+    const contacts: Parameters<typeof setup>[1] = [['7', { id: '7', company_id: '1', contact_type: 'PERSONA', name: 'Ana', area: null }]];
+    const added = await setup([row('web-add', 'medios_contacto', 'INSERT', { contacto_id: 7, valor: 'https://portal.example.test', tipo_medio: 'WEB' })], contacts).service.list({ limit: 6 });
+    const edited = await setup([row('web-edit', 'medios_contacto', 'UPDATE', { contacto_id: 7, valor: 'https://portal.example.test/new', tipo_medio: 'WEB', estatus: 'ACTIVO' }, { contacto_id: 7, valor: 'https://portal.example.test', tipo_medio: 'WEB', estatus: 'ACTIVO' })], contacts).service.list({ limit: 6 });
+    expect(added.data[0]).toMatchObject({ type: 'CONTACT_METHOD_ADDED', entity: 'https://portal.example.test' });
+    expect(edited.data[0]).toMatchObject({ type: 'CONTACT_METHOD_UPDATED', entity: 'https://portal.example.test/new' });
   });
 
   it.each([

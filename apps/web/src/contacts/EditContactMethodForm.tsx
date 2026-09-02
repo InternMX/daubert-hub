@@ -4,7 +4,7 @@ import type { FormEvent } from 'react';
 import type { DirectoryContactMethod } from '../services/contactDirectory';
 import { ContactApiError } from '../services/contacts';
 import { editContactMethod, type AddContactMethodType, type EditedContactMethod, type EditContactMethodInput } from '../services/contactMethods';
-import { contactMethodValidationError, methodPlaceholder, methodTypes } from './contactMethodForm';
+import { contactMethodValidationError, methodPlaceholder, methodTypes, methodValueLabel } from './contactMethodForm';
 
 export type EditableDirectoryContactMethod = DirectoryContactMethod & { type: AddContactMethodType };
 
@@ -37,7 +37,7 @@ export function EditContactMethodForm({ method, onClose, onEdited }: { method: E
     {submitError && <Alert severity="error" sx={{ mb: 1.25 }}>{submitError}</Alert>}
     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ sm: 'flex-start' }}>
       <FormControl size="small" disabled={submitting} sx={{ width: { xs: '100%', sm: 150 }, flexShrink: 0 }}><InputLabel id={`edit-method-type-${method.id}`}>Tipo</InputLabel><Select labelId={`edit-method-type-${method.id}`} label="Tipo" value={type} onChange={(event) => changeType(event.target.value as AddContactMethodType)}>{methodTypes.map((methodType) => <MenuItem key={methodType.value} value={methodType.value}>{methodType.label}</MenuItem>)}</Select></FormControl>
-      <TextField label="Valor" value={value} placeholder={methodPlaceholder(type)} onChange={(event) => { setValue(event.target.value); setValueError(null); setSubmitError(null); }} error={Boolean(valueError)} helperText={valueError} disabled={submitting} size="small" autoFocus fullWidth />
+      <TextField label={methodValueLabel(type)} type={type === 'WEB' ? 'url' : 'text'} value={value} placeholder={methodPlaceholder(type)} onChange={(event) => { setValue(event.target.value); setValueError(null); setSubmitError(null); }} error={Boolean(valueError)} helperText={valueError} disabled={submitting} size="small" autoFocus fullWidth />
     </Stack>
     <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 1 }}><Button type="button" size="small" onClick={close} disabled={submitting}>Cancelar</Button><Button type="submit" size="small" variant="contained" disabled={submitting || !dirty} startIcon={submitting ? <CircularProgress size={14} color="inherit" /> : undefined}>Guardar</Button></Stack>
   </Box>;

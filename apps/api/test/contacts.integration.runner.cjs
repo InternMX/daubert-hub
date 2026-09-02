@@ -196,10 +196,12 @@ async function run() {
     assert(methodsBeforeAdds.rows.length === 3 && methodsBeforeAdds.rows.filter((method) => method.estatus === 'ACTIVO').length === 2 && methodsBeforeAdds.rows.filter((method) => method.estatus === 'INACTIVO').length === 1, 'Add-method fixture does not have two active methods and one inactive method.');
 
     const addedEmail = `second.${marker.toLowerCase()}@example.test`;
+    const addedWebUrl = `https://portal.example.test/${marker.toLowerCase()}`;
     const additions = [
       { requestId: `method-add-email-${randomUUID()}`, payload: { type: 'CORREO', value: addedEmail } },
       { requestId: `method-add-phone-${randomUUID()}`, payload: { type: 'TELEFONO', value: '449 123 4567 ext. 204' } },
-      { requestId: `method-add-whatsapp-${randomUUID()}`, payload: { type: 'WHATSAPP', value: '+52 449 555 0202' } }
+      { requestId: `method-add-whatsapp-${randomUUID()}`, payload: { type: 'WHATSAPP', value: '+52 449 555 0202' } },
+      { requestId: `method-add-web-${randomUUID()}`, payload: { type: 'WEB', value: addedWebUrl } }
     ];
     const addedMethodIds = [];
     for (const addition of additions) {
@@ -214,8 +216,10 @@ async function run() {
 
     const methodsAfterAdds = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [addMethodContactId]);
     const persistedAdditions = methodsAfterAdds.rows.filter((method) => addedMethodIds.includes(method.medio_id));
-    assert(methodsAfterAdds.rows.length === 6 && persistedAdditions.length === 3, 'Method creation did not add exactly three rows.');
+    assert(methodsAfterAdds.rows.length === 7 && persistedAdditions.length === 4, 'Method creation did not add exactly four rows.');
     assert(persistedAdditions.every((method) => method.estatus === 'ACTIVO' && method.es_principal === false && method.recibe_notificacion_pago === false && method.tipo_destinatario_pago === null), 'New methods did not persist explicit active/non-primary/non-payment values.');
+    const addedWebMethod = persistedAdditions.find((method) => method.tipo_medio === 'WEB');
+    assert(addedWebMethod && addedWebMethod.valor === addedWebUrl, 'WEB method did not persist its exact URL.');
     const originalMethodsAfterAdds = methodsAfterAdds.rows.filter((method) => !addedMethodIds.includes(method.medio_id));
     assert(JSON.stringify(originalMethodsAfterAdds) === JSON.stringify(methodsBeforeAdds.rows), 'Method creation changed an existing active or inactive method.');
     const contactAfterMethodAdds = (await pool.query('SELECT contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [addMethodContactId])).rows[0];
@@ -225,8 +229,8 @@ async function run() {
 
     const directoryAfterAdds = await getContactDirectory(activeCompanyId);
     const addedDirectoryContact = directoryAfterAdds.body.data.contacts.find((contact) => contact.id === addMethodContactId);
-    assert(directoryAfterAdds.response.status === 200 && addedDirectoryContact && addedDirectoryContact.methods.length === 5 && addedDirectoryContact.inactiveMethods.length === 1, 'Directory did not return all active additions while preserving inactiveMethods.');
-    assert(addedDirectoryContact.methods.filter((method) => method.type === 'CORREO').length === 2 && addedDirectoryContact.methods.filter((method) => method.type === 'TELEFONO').length === 2 && addedDirectoryContact.methods.filter((method) => method.type === 'WHATSAPP').length === 1, 'Directory collapsed multiple same-type or mixed methods.');
+    assert(directoryAfterAdds.response.status === 200 && addedDirectoryContact && addedDirectoryContact.methods.length === 6 && addedDirectoryContact.inactiveMethods.length === 1, 'Directory did not return all active additions while preserving inactiveMethods.');
+    assert(addedDirectoryContact.methods.filter((method) => method.type === 'CORREO').length === 2 && addedDirectoryContact.methods.filter((method) => method.type === 'TELEFONO').length === 2 && addedDirectoryContact.methods.filter((method) => method.type === 'WHATSAPP').length === 1 && addedDirectoryContact.methods.filter((method) => method.type === 'WEB' && method.value === addedWebUrl).length === 1, 'Directory collapsed existing method types or failed to return the exact WEB URL.');
     assert(addedDirectoryContact.inactiveMethods[0].id === originalInactiveMethodId, 'Directory changed the original inactive method.');
 
     for (const addition of additions) {
@@ -234,12 +238,29 @@ async function run() {
       assert(methodAudit.rows.length === 1 && methodAudit.rows[0].schema_name === 'core' && methodAudit.rows[0].table_name === 'medios_contacto' && String(methodAudit.rows[0].operation).toUpperCase().includes('INSERT') && methodAudit.rows[0].origin === 'DAUBERT_HUB' && methodAudit.rows[0].request_id === addition.requestId, `Method ${addition.payload.type} audit event is inconsistent.`);
     }
 
+    const editedWebUrl = `${addedWebUrl}/edited`;
+    const webEditRequestId = `method-edit-web-${randomUUID()}`;
+    requestIds.add(webEditRequestId);
+    const editedWeb = await patchContactMethod(addedWebMethod.medio_id, { value: editedWebUrl }, webEditRequestId);
+    assert(editedWeb.response.status === 200 && JSON.stringify(editedWeb.body) === JSON.stringify({ data: { id: addedWebMethod.medio_id, type: 'WEB', value: editedWebUrl, status: 'ACTIVO' } }), `WEB method edit did not return the exact updated URL: ${JSON.stringify(editedWeb.body)}`);
+    const persistedEditedWeb = (await pool.query('SELECT tipo_medio, valor, estatus FROM core.medios_contacto WHERE medio_id = $1', [addedWebMethod.medio_id])).rows[0];
+    assert(persistedEditedWeb && persistedEditedWeb.tipo_medio === 'WEB' && persistedEditedWeb.valor === editedWebUrl && persistedEditedWeb.estatus === 'ACTIVO', 'WEB method edit did not persist the exact updated URL.');
+
+    const webDeactivateRequestId = `method-deactivate-web-${randomUUID()}`;
+    requestIds.add(webDeactivateRequestId);
+    const deactivatedWeb = await changeMethodStatus(addedWebMethod.medio_id, 'deactivate', webDeactivateRequestId);
+    assert(deactivatedWeb.response.status === 200 && deactivatedWeb.body.data.type === 'WEB' && deactivatedWeb.body.data.value === editedWebUrl && deactivatedWeb.body.data.status === 'INACTIVO', `WEB method deactivation failed: ${JSON.stringify(deactivatedWeb.body)}`);
+    const webReactivateRequestId = `method-reactivate-web-${randomUUID()}`;
+    requestIds.add(webReactivateRequestId);
+    const reactivatedWeb = await changeMethodStatus(addedWebMethod.medio_id, 'reactivate', webReactivateRequestId);
+    assert(reactivatedWeb.response.status === 200 && reactivatedWeb.body.data.type === 'WEB' && reactivatedWeb.body.data.value === editedWebUrl && reactivatedWeb.body.data.status === 'ACTIVO', `WEB method reactivation failed: ${JSON.stringify(reactivatedWeb.body)}`);
+
     for (const [payload, label] of [[{ type: 'CORREO', value: addedEmail }, 'exact email'], [{ type: 'CORREO', value: addedEmail.toUpperCase() }, 'case-insensitive email'], [{ type: 'TELEFONO', value: '449 123 4567 ext. 204' }, 'exact phone']]) {
       const duplicate = await addContactMethod(addMethodContactId, payload, `method-add-duplicate-${randomUUID()}`);
       assert(duplicate.response.status === 409 && duplicate.body.code === 'CONTACT_METHOD_DUPLICATE', `${label} duplicate was not rejected safely.`);
     }
     const countAfterDuplicates = await pool.query('SELECT count(*)::int AS count FROM core.medios_contacto WHERE contacto_id = $1', [addMethodContactId]);
-    assert(countAfterDuplicates.rows[0].count === 6, 'Duplicate method rejection inserted an extra row.');
+    assert(countAfterDuplicates.rows[0].count === 7, 'Duplicate method rejection inserted an extra row.');
 
     const crossContactCreateRequestId = `method-add-cross-contact-fixture-${randomUUID()}`;
     requestIds.add(crossContactCreateRequestId);
@@ -649,9 +670,10 @@ async function run() {
           await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [ids]);
         }
         await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
-        const leftovers = await pool.query("SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE 'HUB_TEST_CONTACT_%'");
-        assert(leftovers.rows[0].count === 0, 'Contact integration cleanup left company fixtures.');
-        console.log('Contact integration cleanup verified: no synthetic fixtures remain.');
+        const leftovers = await pool.query("SELECT (SELECT count(*)::int FROM core.empresas WHERE nombre_comercial LIKE 'HUB_TEST_CONTACT_%') AS company_count, (SELECT count(*)::int FROM core.medios_contacto WHERE tipo_medio = 'WEB' AND lower(valor) LIKE 'https://portal.example.test/hub_test_contact_%') AS web_count");
+        assert(leftovers.rows[0].company_count === 0, 'Contact integration cleanup left company fixtures.');
+        assert(leftovers.rows[0].web_count === 0, 'Contact integration cleanup left synthetic WEB fixtures.');
+        console.log('Contact integration cleanup verified: no synthetic company or WEB fixtures remain.');
       }
     } finally {
       if (api && !api.killed) {

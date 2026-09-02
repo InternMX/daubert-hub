@@ -8,7 +8,8 @@ describe('ContactMethodsService', () => {
   it.each([
     [ContactMethodType.Email, 'second@example.test'],
     [ContactMethodType.Phone, '+52 449 222 2222'],
-    [ContactMethodType.WhatsApp, '449 123 4567 ext. 204']
+    [ContactMethodType.WhatsApp, '449 123 4567 ext. 204'],
+    [ContactMethodType.Web, 'https://portal.example.test:8443/access?company=31#login']
   ] as const)('adds %s and returns only safe creation fields', async (type, value) => {
     const add = vi.fn().mockResolvedValue({ ...method, id: '205', type, value, status: 'ACTIVO' });
     const service = new ContactMethodsService({ add } as never);
@@ -25,7 +26,9 @@ describe('ContactMethodsService', () => {
     [{ type: ContactMethodType.Email, value: 'not-an-email' }, 'no es válido'],
     [{ type: ContactMethodType.Email, value: `${'a'.repeat(310)}@example.test` }, 'longitud máxima'],
     [{ type: ContactMethodType.Phone, value: 'call me' }, 'no es válido'],
-    [{ type: ContactMethodType.WhatsApp, value: '1'.repeat(101) }, 'longitud máxima']
+    [{ type: ContactMethodType.WhatsApp, value: '1'.repeat(101) }, 'longitud máxima'],
+    [{ type: ContactMethodType.Web, value: 'portal.example.test' }, 'URL'],
+    [{ type: ContactMethodType.Web, value: 'javascript:alert(1)' }, 'URL']
   ] as const)('rejects invalid method value %#', async (input, message) => {
     const add = vi.fn();
     const service = new ContactMethodsService({ add } as never);
@@ -52,6 +55,7 @@ describe('ContactMethodsService', () => {
     [ContactMethodType.Email, 'corrected@example.test', 'ACTIVO'],
     [ContactMethodType.Phone, '+52 449 555 0200 ext. 4', 'ACTIVO'],
     [ContactMethodType.WhatsApp, '449 555 0201', 'ACTIVO'],
+    [ContactMethodType.Web, 'https://portal.example.test/new-path', 'ACTIVO'],
     [ContactMethodType.Phone, '449 555 0202', 'INACTIVO']
   ] as const)('edits %s in place and returns only safe fields', async (type, value, status) => {
     const edit = vi.fn().mockResolvedValue({ ...method, id: '205', type, value, status });

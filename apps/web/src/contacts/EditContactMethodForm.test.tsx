@@ -19,7 +19,13 @@ describe('EditContactMethodForm', () => {
     expect(within(form).getByRole('textbox', { name: 'Valor' })).toHaveValue(emailMethod.value);
     expect(within(form).getByRole('button', { name: 'Guardar' })).toBeDisabled();
     fireEvent.mouseDown(within(form).getByRole('combobox', { name: 'Tipo' }));
-    expect(await screen.findByRole('option', { name: 'Correo' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'Teléfono' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'WhatsApp' })).toBeInTheDocument(); expect(screen.queryByRole('option', { name: /Otro/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Correo' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'Teléfono' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'WhatsApp' })).toBeInTheDocument(); expect(screen.getByRole('option', { name: 'Portal / página web' })).toBeInTheDocument(); expect(screen.queryByRole('option', { name: /Otro/i })).not.toBeInTheDocument();
+  });
+
+  it('preloads and preserves an existing WEB URL while editing', async () => {
+    const method = { ...emailMethod, type: 'WEB' as const, value: 'https://portal.example.test/login?company=31' }; editMock.mockResolvedValue({ id: method.id, type: 'WEB', value: `${method.value}#access`, status: 'ACTIVO' }); const { form } = renderForm(method);
+    expect(within(form).getByRole('combobox', { name: 'Tipo' })).toHaveTextContent('Portal / página web'); const input = within(form).getByRole('textbox', { name: 'URL' }); expect(input).toHaveValue(method.value); fireEvent.change(input, { target: { value: `${method.value}#access` } }); fireEvent.click(within(form).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(editMock).toHaveBeenCalledWith(method.id, { value: `${method.value}#access` }));
   });
 
   it.each([

@@ -2,7 +2,7 @@ import { apiBaseUrl } from './api';
 import type { ContactMethodType } from './contactDirectory';
 import { ContactApiError } from './contacts';
 
-export type AddContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP';
+export type AddContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'WEB';
 export interface AddContactMethodInput { type: AddContactMethodType; value: string; }
 export interface AddedContactMethod { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO'; }
 export interface EditContactMethodInput { type?: AddContactMethodType; value?: string; }

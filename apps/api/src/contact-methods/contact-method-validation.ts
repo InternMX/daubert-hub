@@ -18,4 +18,16 @@ export function validateContactMethod(type: string, value: string): void {
   if ((type === ContactMethodType.Phone || type === ContactMethodType.WhatsApp) && !/^(?=.*\d)[+\d\s().-]+(?:\s*(?:ext\.?|x)\s*\d+)?$/i.test(value)) {
     throw new BadRequestException('El número de contacto no es válido.');
   }
+  if (type === ContactMethodType.Web && !isWebUrl(value)) {
+    throw new BadRequestException('La URL del portal o página web no es válida.');
+  }
+}
+
+export function isWebUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !/\s/.test(value);
+  } catch {
+    return false;
+  }
 }

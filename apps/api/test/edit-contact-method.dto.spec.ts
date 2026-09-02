@@ -9,7 +9,7 @@ async function validatePayload(payload: object): Promise<{ dto: EditContactMetho
 }
 
 describe('EditContactMethodDto', () => {
-  it.each([{ value: '  corrected@example.test  ' }, { type: 'TELEFONO' }, { type: 'WHATSAPP', value: '  +52 449 555 0200  ' }])('accepts and trims partial payload %#', async (payload) => {
+  it.each([{ value: '  corrected@example.test  ' }, { type: 'TELEFONO' }, { type: 'WHATSAPP', value: '  +52 449 555 0200  ' }, { type: 'WEB', value: '  https://portal.example.test  ' }])('accepts and trims partial payload %#', async (payload) => {
     const result = await validatePayload(payload);
     expect(result.errors).toBe(0);
     if (typeof payload.value === 'string') expect(result.dto.value).toBe(payload.value.trim());

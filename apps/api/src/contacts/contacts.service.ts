@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ContactMethodType, ContactType, type CreateContactDto } from './dto/create-contact.dto';
 import type { UpdateContactDto } from './dto/update-contact.dto';
 import { ContactsRepository, type ContactRow, type CreatedContactRecord } from './contacts.repository';
+import { isWebUrl } from '../contact-methods/contact-method-validation';
 
 interface ContactData {
     id: string;
@@ -77,6 +78,9 @@ export class ContactsService {
       }
       if ((method.type === ContactMethodType.Phone || method.type === ContactMethodType.WhatsApp) && method.value.length > 100) {
         throw new BadRequestException('El número de contacto excede la longitud máxima permitida.');
+      }
+      if (method.type === ContactMethodType.Web && !isWebUrl(method.value)) {
+        throw new BadRequestException('La URL del portal o página web no es válida.');
       }
       const value = method.type === ContactMethodType.Email ? method.value.toLowerCase() : method.value;
       const key = `${method.type}\u0000${value}`;
