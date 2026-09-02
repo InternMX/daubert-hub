@@ -4,13 +4,19 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProviderApiError, getProvider } from '../services/providers';
 import { ProviderDetailPage } from './ProviderDetailPage';
+import { listCompanyAddresses } from '../services/companyAddresses';
 
 vi.mock('../services/providers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/providers')>()),
   getProvider: vi.fn()
 }));
+vi.mock('../services/companyAddresses', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/companyAddresses')>()),
+  listCompanyAddresses: vi.fn()
+}));
 
 const getProviderMock = vi.mocked(getProvider);
+const listCompanyAddressesMock = vi.mocked(listCompanyAddresses);
 
 function renderPage(path = '/providers/121', state?: { directoryPath: string }) {
   return render(<MemoryRouter initialEntries={[{ pathname: path, state }]}><Routes><Route path="/providers/:id" element={<ProviderDetailPage />} /><Route path="/providers" element={<div>Directorio de proveedores</div>} /></Routes></MemoryRouter>);
@@ -20,6 +26,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('ProviderDetailPage', () => {
   it('shows read-only provider data, Spanish roles, notes fallback, and no fiscal state', async () => {
+    listCompanyAddressesMock.mockResolvedValue([]);
     getProviderMock.mockResolvedValue({ id: '121', commercialName: 'Transportes Acme', providerType: 'FLETE', roles: ['PROVEEDOR', 'FLETE'], status: 'ACTIVO', notes: null, aliases: [], otherAliases: [], fiscal: null });
     renderPage();
 
@@ -32,9 +39,15 @@ describe('ProviderDetailPage', () => {
     expect(screen.getByText('Proveedor')).toBeInTheDocument();
     expect(screen.getByText('Sin notas registradas.')).toBeInTheDocument();
     expect(screen.getByText('No hay datos fiscales registrados.')).toBeInTheDocument();
+    expect(await screen.findByText('No hay direcciones registradas para esta empresa.')).toBeInTheDocument();
+    expect(listCompanyAddressesMock).toHaveBeenCalledWith('121');
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    expect(headings.indexOf('Direcciones')).toBeGreaterThan(headings.indexOf('Información general'));
+    expect(headings.indexOf('Direcciones')).toBeLessThan(headings.indexOf('Datos fiscales'));
   });
 
   it('shows fiscal data and returns to the filtered directory path', async () => {
+    listCompanyAddressesMock.mockResolvedValue([]);
     getProviderMock.mockResolvedValue({ id: '121', commercialName: 'Acme', providerType: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: 'Pago a 30 días.', aliases: [], otherAliases: [], fiscal: { id: 'f1', legalName: 'Acme SA de CV', rfc: 'ACM010101AA1' } });
     const user = userEvent.setup();
     renderPage('/providers/121', { directoryPath: '/providers?search=Acme&page=2' });
@@ -55,6 +68,7 @@ describe('ProviderDetailPage', () => {
   });
 
   it('retries a generic error without exposing error details', async () => {
+    listCompanyAddressesMock.mockResolvedValue([]);
     getProviderMock.mockRejectedValueOnce(new ProviderApiError(500, undefined, 'request-500')).mockResolvedValueOnce({ id: '121', commercialName: 'Acme', providerType: 'SERVICIO', roles: ['SERVICIO'], status: 'ACTIVO', notes: null, aliases: [], otherAliases: [], fiscal: null });
     const user = userEvent.setup();
     renderPage();

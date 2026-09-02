@@ -2,78 +2,101 @@
 
 Workspace for the Daubert Hub API and web application.
 
-## Local development
+## Project Purpose
 
-From `C:\Users\06\Documents\Daubert\daubert-hub`:
+Generic company-address management that can be reused by Providers and Clients,
+built on a shared company model rather than separate physical tables. The database
+already contains `core.direcciones` with address storage, audit triggers, and
+active/inactive lifecycle; the API and UI now expose a generic CRUD surface.
 
-1. Copy `apps/api/.env.example` to `apps/api/.env` and set non-production PostgreSQL credentials.
-2. Run `npm install`.
+## Current Architecture
+
+- **Frontend:** React 19 + TypeScript + Vite
+- **Backend:** NestJS 11 + TypeScript REST API
+- **Database:** PostgreSQL (persistent, outside Docker in the pilot architecture)
+- **Automation:** n8n (external to Docker, orchestration-only)
+- **Monorepo:** npm workspaces (`apps/api`, `apps/web`)
+
+## Runtime Environment Indicator
+
+Development runs with `npm run dev`, which concurrently starts the API (`nest
+start --watch`) and the Vite frontend (`vite`). The API listens on port 3000
+(default) and the frontend on port 5173 (default). Vite proxies `/api/*` to the
+API during development, making browser-origin same-origin and avoiding CORS.
+
+## TEST vs PRODUCTION Database Separation
+
+Database integration tests require `TEST_DATABASE_URL` whose decoded pathname is
+exactly `daubert_hub_test`. The test guard refuses every other target before
+fixture mutation or cleanup. Production access uses `daubert_global` and is
+never connected from the test runner. No shared database between environments.
+
+## npm Workspaces Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start API + frontend concurrently |
+| `npm run build` | Build API and frontend |
+| `npm run typecheck` | Run TypeScript checks both workspaces |
+| `npm run lint` | ESLint both workspaces |
+| `npm run test` | Vitest unit tests both workspaces |
+| `npm run test:integration` | Run all integration runners (requires `TEST_DATABASE_URL`) |
+| `npm run validate` | Run typecheck + lint + test + test:integration + build |
+
+## Local Development
+
+1. `npm install`
+2. Copy `apps/api/.env.example` to `apps/api/.env` (set non-production PostgreSQL
+   credentials; do not commit secrets).
 3. Run `npm run dev`.
+4. The API health check is `GET /api/health`.
+5. Vite proxies `/api/*` to the NestJS backend; override the API base in
+   `apps/web/.env` if needed (`VITE_API_BASE_URL=/api`).
 
-The API is exposed under `/api`; its health check is `GET /api/health`.
+## Project Modules & Features
 
-## Development routing
+- **Home / Recent Activity** – filtered activity stream; address mutations are
+  intentionally separate request/transaction groups so they do not interfere with
+  classification of existing activities.
+- **Providers** – role-specific facade over `core.empresas`; `CLIENTE`,
+  `PROVEEDOR`, `SERVICIO`, `FLETE`.
+- **Contacts** – contact management with methods; methods lifecycle (`POST
+  /api/contacts/:id/methods`, `PATCH /api/contact-methods/:id`).
+- **Company Aliases** – editable commercial aliases under `companies/`; reusable
+  `CompanyAliasesField` component.
+- **Company Addresses** – generic CRUD via `core.direcciones` owned through
+  `empresa_id`. Six address types: `FISCAL`, `COMERCIAL`, `OPERATIVA`,
+  `ENTREGA`, `FACTURACION`, `OTRA`; `ACTIVA`/`INACTIVA` status; principal
+  uniqueness per company+type; transactional demotion; fiscal-owned rows are
+  excluded from reads and mutations.
+- **Automation Administration / Audi Folios** – series and adjustments managed
+  through the automations module.
 
-The Vite application runs on `http://localhost:5173` and uses `/api` as its default API base. During development, Vite proxies `/api/*` to NestJS at `http://localhost:3000`. This makes browser requests same-origin from the frontend's perspective and avoids local CORS requirements.
+**Clients are planned next but are NOT implemented yet.** The same
+`CompanyAddressesSection` component will be reused from the provider detail page
+once client detail pages are built.
 
-Production follows the same intent: one public origin served by a reverse proxy, with `/` routed to frontend assets and `/api/*` routed to NestJS. Frontend overrides belong in `apps/web/.env`; the normal value is `VITE_API_BASE_URL=/api`. API/database settings belong in `apps/api/.env`.
+## Docker Pilot Deployment
 
-## Create provider
+A `docker compose` pilot stacks the API, frontend, and a test Postgres container.
+Operational commands (docker start/stop, volume management, network config) are
+documented in `deploy/README.md`; this README does not duplicate that guide.
+PostgreSQL and n8n currently remain outside Docker in the pilot architecture.
 
-`POST /api/providers` creates one provider in a single PostgreSQL transaction. It accepts `commercialName`, `providerType` (`PROVEEDOR`, `SERVICIO`, or `FLETE`), optional `fiscal` (`legalName` and 12/13 character RFC), and optional `notes`.
+## Database Migrations
 
-```json
-{
-  "commercialName": "NOVAPAK",
-  "providerType": "PROVEEDOR",
-  "fiscal": {
-    "legalName": "NOVAPAK S.A. DE C.V.",
-    "rfc": "ABC123456XYZ"
-  },
-  "notes": null
-}
-```
+Structural schema changes and permission grants are stored externally (in
+`/mnt/c/Users/06/Documents/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES`) and are
+not part of the Git repository. No migrations are run by `npm run dev` or
+`npm run build`.
 
-Successful requests return `201 Created` with `data.id` and, when provided, `data.fiscal.id` represented as strings. The response also returns the generated or accepted `x-request-id` header.
+## Basic Testing / Validation Commands
 
-Commercial and legal names are trimmed; RFC is trimmed and stored uppercase. A fiscal object must contain both values. Duplicate commercial names return `409 PROVIDER_NAME_ALREADY_EXISTS`; duplicate RFC values return `409 RFC_ALREADY_EXISTS`. The response returns bigint identifiers as strings and includes an `x-request-id` header.
+- `npm run typecheck` – TypeScript across workspaces
+- `npm run lint` – ESLint across workspaces
+- `npm run test` – Vitest unit tests
+- `npm run test:integration` – Integration runners (requires `TEST_DATABASE_URL`)
+- `npm run validate` – Full safe suite (typecheck + lint + test + test:integration + build)
 
-The transaction writes `core.empresas`, its matching `core.empresa_roles` row, and optionally `core.empresas_fiscales`. It sets audit origin `DAUBERT_HUB` and the request ID for database triggers. It does not create Dropbox folders, invoke n8n, send notifications, or create contacts.
-
-## List providers
-
-`GET /api/providers` returns a paginated provider directory. It accepts optional `search`, `providerType`, `page`, `pageSize`, `sortBy`, and `sortOrder` query parameters. `providerType` is limited to `PROVEEDOR`, `SERVICIO`, and `FLETE`; `page` defaults to `1`, `pageSize` defaults to `25`, and the maximum page size is `100`. `sortBy` accepts `commercialName`, `providerType`, or `legalName`; `sortOrder` accepts `asc` or `desc`. The default is commercial-name ascending.
-
-Provider inclusion is based on an active provider role, not on a negative company-type filter. Search is case-insensitive across commercial name and current fiscal legal name/RFC. The response is ordered by commercial name and returns bigint identifiers as strings.
-
-```json
-{
-  "data": [
-    {
-      "id": "90",
-      "commercialName": "Example Provider",
-      "providerType": "SERVICIO",
-      "status": "ACTIVO",
-      "notes": null,
-      "fiscal": { "id": "91", "legalName": "EXAMPLE PROVIDER SA DE CV", "rfc": "ABC123456XYZ" }
-    }
-  ],
-  "meta": { "page": 1, "pageSize": 25, "total": 119, "totalPages": 5 }
-}
-```
-
-## Provider detail
-
-`GET /api/providers/:id` returns one provider profile when the company has an active provider role. It returns `404` for missing companies and companies that are not providers, and `400` for malformed or non-positive IDs. The response includes the compatible singular `providerType`, all active roles in deterministic order, active alternate commercial names in `aliases`, other active typed aliases in the read-only `otherAliases` collection, and only the current fiscal identity.
-
-## Edit provider
-
-`PATCH /api/providers/:id` updates provider fields and the company-owned final `aliases` set, returning the same representation as the detail endpoint. Alias reconciliation owns only active `NOMBRE_COMERCIAL_ALTERNATIVO` rows and leaves file, folder, and legal-name alias types untouched. Company and alias changes use one transaction; an alias already active for another company returns `409 ALIAS_ALREADY_ASSOCIATED`. `providerType` accepts `PROVEEDOR`, `SERVICIO`, or `FLETE`; for a single provider role it atomically updates both `core.empresas.tipo_empresa` and `core.empresa_roles`. A multi-role provider may be edited, but its type cannot be changed through this endpoint.
-
-Fiscal input is `{ legalName, rfc, changeMode?, effectiveStartDate? }`. A provider without fiscal data can receive a complete identity. With an existing RFC, changing only the legal name updates the current row. A changed RFC requires `changeMode: "CORRECTION"` to correct the current row in place, or `changeMode: "NEW_IDENTITY"` plus `effectiveStartDate` (`YYYY-MM-DD`) to close the prior current identity and create a new current identity while retaining history. Clearing an existing fiscal identity is rejected. Duplicate commercial names return `409 PROVIDER_NAME_ALREADY_EXISTS`; duplicate RFCs return `409 RFC_ALREADY_EXISTS`.
-
-## Safe testing
-
-Automated unit tests never connect to `daubert_global`. Database integration tests require `TEST_DATABASE_URL` whose parsed database name is exactly `daubert_hub_test`; the test guard refuses every other target before mutations occur. `docker compose up postgres-test` provides an isolated local database on port 5433.
-
-Run the complete safe suite with `npm run validate`.
+No passwords, connection secrets, or local credentials are included in this
+file.

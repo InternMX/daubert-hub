@@ -5,6 +5,7 @@ import { EmptyState } from '../components/EmptyState';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { CompanyStatusChip } from '../components/CompanyStatusChip';
+import { CompanyAddressesSection } from '../companies/CompanyAddressesSection';
 import { deactivateProvider, getProvider, ProviderApiError, reactivateProvider, type ProviderDetail, type ProviderType } from '../services/providers';
 
 const providerTypeLabels: Record<ProviderType, string> = {
@@ -90,6 +91,7 @@ export function ProviderDetailPage() {
           {!(provider.roles.length === 1 && provider.roles[0] === provider.providerType) && <Box sx={{ mt: 3 }}><Typography variant="overline" color="text.secondary">Roles</Typography><Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 0.5 }}>{provider.roles.map((role) => <Chip key={role} label={roleLabels[role] ?? role} size="small" variant="outlined" />)}</Stack></Box>}
           <Box sx={{ mt: 3 }}><Typography variant="overline" color="text.secondary">Notas internas</Typography><Typography>{provider.notes?.trim() || 'Sin notas registradas.'}</Typography></Box>
         </Paper>
+        <CompanyAddressesSection companyId={provider.id} />
         <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
           <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Datos fiscales</Typography>
           {provider.fiscal ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 2, sm: 6 }} sx={{ mt: 2 }}><DetailField label="Razón social" value={provider.fiscal.legalName} /><DetailField label="RFC" value={provider.fiscal.rfc} /></Stack> : <Typography color="text.secondary" sx={{ mt: 1 }}>No hay datos fiscales registrados.</Typography>}
