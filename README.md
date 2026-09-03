@@ -24,6 +24,11 @@ start --watch`) and the Vite frontend (`vite`). The API listens on port 3000
 (default) and the frontend on port 5173 (default). Vite proxies `/api/*` to the
 API during development, making browser-origin same-origin and avoiding CORS.
 
+`npm run dev` only ever develops against `daubert_hub_test` — see below. A
+correctly started dev API always reports `GET /api/health` as
+`"environment":"TEST"`; anything else means development is not connected to
+the intended database and should not be trusted.
+
 ## TEST vs PRODUCTION Database Separation
 
 Database integration tests require `TEST_DATABASE_URL` whose decoded pathname is
@@ -31,25 +36,44 @@ exactly `daubert_hub_test`. The test guard refuses every other target before
 fixture mutation or cleanup. Production access uses `daubert_global` and is
 never connected from the test runner. No shared database between environments.
 
+`npm run dev` uses the same rule. It is resolved and enforced by
+`scripts/dev-test-only.cjs` *before* any dev process starts: `TEST_DATABASE_URL`
+must be set (or present in `apps/api/.env`) and must decode to exactly
+`daubert_hub_test`, or `npm run dev` exits immediately with a non-zero code and
+never starts the API or web dev servers. The ordinary `DB_HOST`/`DB_PORT`/
+`DB_NAME`/`DB_USER`/`DB_PASSWORD` values in `apps/api/.env` are **not** used to
+decide the development database — they may legitimately point elsewhere (e.g.
+at `daubert_global`, as `.env` also carries Docker-adjacent values), and the
+launcher derives and overrides them from the validated `TEST_DATABASE_URL`
+instead. The API additionally re-verifies the *live* `current_database()`
+right after connecting and refuses to start serving traffic if it does not
+match — a masked/incorrect URL cannot silently succeed.
+
 ## npm Workspaces Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start API + frontend concurrently |
+| `npm run dev` | Start API + frontend concurrently, against `daubert_hub_test` only |
+| `npm run dev:test` | Explicit alias for `npm run dev` |
 | `npm run build` | Build API and frontend |
 | `npm run typecheck` | Run TypeScript checks both workspaces |
 | `npm run lint` | ESLint both workspaces |
 | `npm run test` | Vitest unit tests both workspaces |
 | `npm run test:integration` | Run all integration runners (requires `TEST_DATABASE_URL`) |
+| `npm run test:dev-guard` | Unit tests for the `npm run dev` TEST-only launcher |
 | `npm run validate` | Run typecheck + lint + test + test:integration + build |
 
 ## Local Development
 
 1. `npm install`
-2. Copy `apps/api/.env.example` to `apps/api/.env` (set non-production PostgreSQL
-   credentials; do not commit secrets).
-3. Run `npm run dev`.
-4. The API health check is `GET /api/health`.
+2. Copy `apps/api/.env.example` to `apps/api/.env`. The `DB_*` values there are
+   not used by `npm run dev`; make sure `TEST_DATABASE_URL` is also set (in
+   `apps/api/.env` or your shell) and points at `daubert_hub_test` — do not use
+   production credentials.
+3. Run `npm run dev`. It refuses to start unless `TEST_DATABASE_URL` resolves
+   to `daubert_hub_test`.
+4. The API health check is `GET /api/health` — a healthy dev run always shows
+   `"environment":"TEST"`.
 5. Vite proxies `/api/*` to the NestJS backend; override the API base in
    `apps/web/.env` if needed (`VITE_API_BASE_URL=/api`).
 

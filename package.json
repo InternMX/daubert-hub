@@ -4,9 +4,11 @@
   "private": true,
   "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "npm-run-all --parallel --race --print-label dev:api dev:web",
+    "dev": "node scripts/dev-test-only.cjs",
+    "dev:test": "node scripts/dev-test-only.cjs",
     "dev:api": "npm run dev --workspace=@daubert/api",
     "dev:web": "npm run dev --workspace=@daubert/web",
+    "test:dev-guard": "node --test scripts/*.test.cjs",
     "build": "npm run build --workspace=@daubert/api && npm run build --workspace=@daubert/web",
     "lint": "npm run lint --workspace=@daubert/api && npm run lint --workspace=@daubert/web",
     "typecheck": "npm run typecheck --workspace=@daubert/api && npm run typecheck --workspace=@daubert/web",
