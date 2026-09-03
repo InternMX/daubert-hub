@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Length, Matches, ValidateNested } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() : value;
 const normalizeNotes = ({ value }: { value: unknown }): unknown => {
@@ -16,6 +16,7 @@ export class CreateClientFiscalDto {
   @Transform(({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim().toUpperCase() : value)
   @IsString()
   @Length(12, 13)
+  @Matches(/^\S{12,13}$/, { message: 'El RFC debe tener 12 o 13 caracteres y no contener espacios.' })
   rfc!: string;
 }
 

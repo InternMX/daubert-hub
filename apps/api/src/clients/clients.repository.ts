@@ -102,10 +102,14 @@ export class ClientsRepository {
         const roles = await this.lockRoles(client, byName.empresa_id);
         if (roles.some((role) => role.rol === 'CLIENTE' && role.estatus === 'ACTIVO')) this.fail('CLIENT_ALREADY_ACTIVE');
         const fiscal = await this.lockCurrentFiscal(client, byName.empresa_id);
-        if (input.fiscal && fiscal?.rfc !== input.fiscal.rfc) this.fail('CLIENT_NAME_RFC_CONFLICT');
+        if (input.fiscal && fiscal && this.normalizeRfc(fiscal.rfc) !== input.fiscal.rfc) this.fail('CLIENT_NAME_RFC_CONFLICT');
         if (byName.estatus === 'BLOQUEADO') this.fail('CLIENT_STATUS_NOT_MANAGEABLE');
         if (byName.estatus !== 'ACTIVO') await client.query("UPDATE core.empresas SET estatus = 'ACTIVO' WHERE empresa_id = $1", [byName.empresa_id]);
         await this.activateRole(client, byName.empresa_id);
+        if (input.fiscal && !fiscal) {
+          await client.query(`INSERT INTO core.empresas_fiscales (empresa_id, razon_social, rfc, es_vigente)
+            VALUES ($1, $2, $3, TRUE)`, [byName.empresa_id, input.fiscal.legalName, input.fiscal.rfc]);
+        }
         return (await this.findById(client, byName.empresa_id))!;
       }
 
@@ -211,13 +215,16 @@ export class ClientsRepository {
     if (!fiscal) return;
     const legalName = fiscal.legalName?.trim() ?? '';
     const rfc = fiscal.rfc?.trim() ?? '';
+    // Defence in depth: the service already enforces this pairing (Providers-compatible contract).
+    // Refuse a half-pair here too rather than silently coercing the missing side to ''.
+    if (Boolean(legalName) !== Boolean(rfc)) this.fail('FISCAL_INCOMPLETE');
     if (!current) {
       if (!legalName && !rfc) return;
       await client.query('INSERT INTO core.empresas_fiscales (empresa_id, razon_social, rfc, es_vigente) VALUES ($1, $2, $3, TRUE)', [id, legalName, rfc]);
       return;
     }
     if (!legalName && !rfc) this.fail('FISCAL_REMOVAL_NOT_ALLOWED');
-    if (rfc === current.rfc) {
+    if (this.normalizeRfc(rfc) === this.normalizeRfc(current.rfc)) {
       if (legalName !== current.razon_social) await client.query('UPDATE core.empresas_fiscales SET razon_social = $1 WHERE empresa_fiscal_id = $2', [legalName, current.empresa_fiscal_id]);
       return;
     }
@@ -228,6 +235,10 @@ export class ClientsRepository {
     }
     await client.query('UPDATE core.empresas_fiscales SET es_vigente = FALSE, fecha_fin = $1 WHERE empresa_fiscal_id = $2', [fiscal.effectiveStartDate, current.empresa_fiscal_id]);
     await client.query('INSERT INTO core.empresas_fiscales (empresa_id, razon_social, rfc, es_vigente, fecha_inicio) VALUES ($1, $2, $3, TRUE, $4)', [id, legalName, rfc, fiscal.effectiveStartDate]);
+  }
+
+  private normalizeRfc(value: string): string {
+    return value.trim().toUpperCase();
   }
 
   private async transaction<T>(requestId: string, identity: AuditIdentity, work: (client: PoolClient) => Promise<T>): Promise<T> {

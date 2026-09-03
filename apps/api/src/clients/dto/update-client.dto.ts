@@ -3,6 +3,7 @@ import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, ValidateNested 
 import { FiscalChangeMode } from '../../providers/dto/update-provider.dto';
 
 const trim = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() : value;
+const normalizeNotes = ({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() || null : value;
 
 export class UpdateClientFiscalDto {
   @Transform(trim)
@@ -25,7 +26,7 @@ export class UpdateClientFiscalDto {
 }
 
 export class UpdateClientDto {
-  @Transform(({ value }: { value: unknown }): unknown => typeof value === 'string' ? value.trim() || null : value)
+  @Transform(trim)
   @IsOptional()
   @IsString()
   @IsNotEmpty()
@@ -36,7 +37,7 @@ export class UpdateClientDto {
   @Type(() => UpdateClientFiscalDto)
   fiscal?: UpdateClientFiscalDto;
 
-  @Transform(trim)
+  @Transform(normalizeNotes)
   @IsOptional()
   @IsString()
   notes?: string | null;

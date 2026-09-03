@@ -87,6 +87,9 @@ export class ClientsService {
     if (!fiscal) return;
     const hasLegalName = Boolean(fiscal.legalName?.trim());
     const hasRfc = Boolean(fiscal.rfc?.trim());
+    if (fiscal.legalName === undefined && fiscal.rfc === undefined) {
+      throw new BadRequestException({ code: 'FISCAL_CHANGE_WITHOUT_DATA', message: 'Envía la razón social y el RFC para modificar la identidad fiscal.' });
+    }
     if (hasLegalName !== hasRfc) throw new BadRequestException('Para registrar datos fiscales, completa la razón social y el RFC.');
     if (hasRfc && !/^\S{12,13}$/.test(fiscal.rfc!)) throw new BadRequestException('El RFC debe tener 12 o 13 caracteres y no contener espacios.');
     if (fiscal.changeMode === FiscalChangeMode.NewIdentity && !fiscal.effectiveStartDate) throw new BadRequestException('Indica la fecha desde la que la nueva identidad fiscal está vigente.');
@@ -105,6 +108,7 @@ export class ClientsService {
     };
     if (code && conflicts[code]) throw new ConflictException({ code, message: conflicts[code] });
     if (code === 'FISCAL_REMOVAL_NOT_ALLOWED') throw new BadRequestException({ code, message: 'No es posible eliminar la información fiscal desde esta edición.' });
+    if (code === 'FISCAL_INCOMPLETE') throw new BadRequestException({ code, message: 'Para registrar datos fiscales, completa la razón social y el RFC.' });
     if (code === 'FISCAL_CHANGE_MODE_REQUIRED') throw new BadRequestException({ code, message: 'Indica si el cambio de RFC es una corrección o una nueva identidad fiscal.' });
     if (code === '23505' && constraint === 'uq_empresas_nombre_comercial') throw new ConflictException({ code: 'CLIENT_NAME_CONFLICT', message: 'Ya existe una empresa con ese nombre comercial.' });
     if (code === '23505' && constraint === 'uq_empresas_fiscales_rfc') throw new ConflictException({ code: 'CLIENT_RFC_CONFLICT', message: 'Ya existe una empresa con ese RFC.' });

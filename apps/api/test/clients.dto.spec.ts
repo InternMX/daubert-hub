@@ -33,4 +33,18 @@ describe('Client DTOs', () => {
     expect(await validateStrict({ status: 'INACTIVO' }, UpdateClientDto)).not.toHaveLength(0);
     expect(await validateStrict({ fiscal: { changeMode: 'GUESS' } }, UpdateClientDto)).not.toHaveLength(0);
   });
+
+  it('rejects a whitespace-only commercialName on update instead of turning it into NULL (B5)', async () => {
+    expect(await validateStrict({ commercialName: '   ' }, UpdateClientDto)).not.toHaveLength(0);
+  });
+
+  it('normalizes blank notes to null on update, matching create (B6)', async () => {
+    const input = plainToInstance(UpdateClientDto, { notes: '   ' });
+    expect(await validate(input)).toHaveLength(0);
+    expect(input.notes).toBeNull();
+  });
+
+  it('rejects a create RFC that contains internal whitespace despite matching length (B7)', async () => {
+    expect(await validateStrict({ commercialName: 'Acme', fiscal: { legalName: 'Acme SA', rfc: 'ACM 0101 AA1' } }, CreateClientDto)).not.toHaveLength(0);
+  });
 });

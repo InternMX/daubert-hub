@@ -53,6 +53,28 @@ describe('ClientsService', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('keeps the paired fiscal contract identical to Providers: rfc alone is rejected', async () => {
+    const update = vi.fn();
+    const service = new ClientsService({ update } as never);
+    await expect(service.update('1', { fiscal: { rfc: 'ACM010101AA1' } }, 'request-1', identity)).rejects.toMatchObject({ status: 400 });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fiscal changeMode with no legalName/rfc data before repository access', async () => {
+    const update = vi.fn();
+    const service = new ClientsService({ update } as never);
+    await expect(service.update('1', { fiscal: { changeMode: 'CORRECTION' as never } }, 'request-1', identity)).rejects.toMatchObject({ status: 400, response: { code: 'FISCAL_CHANGE_WITHOUT_DATA' } });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['FISCAL_INCOMPLETE'],
+    ['FISCAL_REMOVAL_NOT_ALLOWED']
+  ])('maps repository fiscal error %s to a safe 400', async (repositoryCode) => {
+    const service = new ClientsService({ update: vi.fn().mockRejectedValue({ code: repositoryCode }) } as never);
+    await expect(service.update('1', { notes: 'x' }, 'request-1', identity)).rejects.toMatchObject({ status: 400, response: { code: repositoryCode } });
+  });
+
   it('updates and maps current fiscal data', async () => {
     const updated = { ...row, fiscal_id: '9007199254740994', legal_name: 'Acme SA', rfc: 'ACM010101AA1' };
     const update = vi.fn().mockResolvedValue(updated);

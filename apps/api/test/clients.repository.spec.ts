@@ -89,6 +89,36 @@ describe('ClientsRepository', () => {
     expect(query.mock.calls.some((call) => String(call[0]).startsWith('UPDATE core.empresas_fiscales'))).toBe(false);
   });
 
+  it('inserts a first fiscal identity when reusing a company that currently has none (B2)', async () => {
+    const company = { empresa_id: detail.id, tipo_empresa: 'SERVICIO', nombre_comercial: 'Acme', estatus: 'ACTIVO', observaciones: null };
+    const { repository, query } = harness((sql) => {
+      if (sql.includes('WHERE lower(btrim(nombre_comercial))')) return result([company]);
+      if (sql.includes('JOIN core.empresas_fiscales')) return result();
+      if (sql.startsWith('SELECT rol, estatus')) return result([{ rol: 'SERVICIO', estatus: 'ACTIVO' }]);
+      if (sql.includes('SELECT company.empresa_id::text AS id')) return result([{ ...detail, company_type: 'SERVICIO', fiscal_id: '9', legal_name: 'Acme SA', rfc: 'ACM010101AA1', roles: ['SERVICIO', 'CLIENTE'] }]);
+      if (sql.includes('FROM core.empresas_fiscales WHERE')) return result();
+      return result();
+    });
+    const created = await repository.create({ commercialName: 'Acme', fiscal: { legalName: 'Acme SA', rfc: 'ACM010101AA1' } }, 'request-8', identity);
+    expect(created.id).toBe(detail.id);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO core.empresas_fiscales'), [detail.id, 'Acme SA', 'ACM010101AA1']);
+    expect(query.mock.calls.some((call) => String(call[0]).startsWith('INSERT INTO core.empresas ('))).toBe(false);
+  });
+
+  it('treats a lower-case stored RFC as matching on create reuse (B1)', async () => {
+    const company = { empresa_id: detail.id, tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', estatus: 'ACTIVO', observaciones: null };
+    const { repository, query } = harness((sql) => {
+      if (sql.includes('WHERE lower(btrim(nombre_comercial))')) return result([company]);
+      if (sql.includes('JOIN core.empresas_fiscales')) return result([company]);
+      if (sql.startsWith('SELECT rol, estatus')) return result([{ rol: 'PROVEEDOR', estatus: 'ACTIVO' }]);
+      if (sql.includes('SELECT company.empresa_id::text AS id')) return result([{ ...detail, company_type: 'PROVEEDOR', fiscal_id: '2', legal_name: 'Acme SA', rfc: 'acm010101aa1', roles: ['PROVEEDOR', 'CLIENTE'] }]);
+      if (sql.includes('FROM core.empresas_fiscales WHERE')) return result([{ empresa_fiscal_id: '2', razon_social: 'Acme SA', rfc: 'acm010101aa1' }]);
+      return result();
+    });
+    await expect(repository.create({ commercialName: 'Acme', fiscal: { legalName: 'Acme SA', rfc: 'ACM010101AA1' } }, 'request-9', identity)).resolves.toMatchObject({ id: detail.id });
+    expect(query.mock.calls.some((call) => String(call[0]).startsWith('INSERT INTO core.empresas_fiscales'))).toBe(false);
+  });
+
   it.each([
     ['active CLIENTE', { roles: [{ rol: 'CLIENTE', estatus: 'ACTIVO' }], fiscal: null }, 'CLIENT_ALREADY_ACTIVE'],
     ['conflicting RFC', { roles: [{ rol: 'PROVEEDOR', estatus: 'ACTIVO' }], fiscal: { empresa_fiscal_id: '2', razon_social: 'Acme SA', rfc: 'OLD010101AA1' } }, 'CLIENT_NAME_RFC_CONFLICT']
@@ -152,5 +182,31 @@ describe('ClientsRepository', () => {
     expect(query).toHaveBeenCalledWith(expect.stringContaining('SET es_vigente = FALSE, fecha_fin = $1'), ['2026-09-03', '2']);
     expect(query).toHaveBeenCalledWith(expect.stringContaining('es_vigente, fecha_inicio'), [detail.id, 'New SA', 'NEW010101AA1', '2026-09-03']);
     expect(query).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('treats a lower-case stored RFC as unchanged on PATCH and only renames the fiscal identity (B4)', async () => {
+    const { repository, query } = harness((sql) => {
+      if (sql.includes('FROM core.empresas WHERE empresa_id')) return result([{ empresa_id: detail.id, estatus: 'ACTIVO' }]);
+      if (sql.startsWith('SELECT rol, estatus')) return result([{ rol: 'CLIENTE', estatus: 'ACTIVO' }]);
+      if (sql.includes('FROM core.empresas_fiscales WHERE')) return result([{ empresa_fiscal_id: '2', razon_social: 'Old SA', rfc: 'acm010101aa1' }]);
+      if (sql.includes('SELECT company.empresa_id::text AS id')) return result([{ ...detail, fiscal_id: '2', legal_name: 'New SA', rfc: 'acm010101aa1' }]);
+      return result();
+    });
+    await repository.update(detail.id, { fiscal: { legalName: 'New SA', rfc: 'ACM010101AA1' } }, 'request-10', identity);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('UPDATE core.empresas_fiscales SET razon_social'), ['New SA', '2']);
+    expect(query.mock.calls.some((call) => String(call[0]).startsWith('INSERT INTO core.empresas_fiscales'))).toBe(false);
+    expect(query).toHaveBeenCalledWith('COMMIT');
+  });
+
+  it('refuses a half-pair fiscal PATCH at the repository layer as defence in depth (FISCAL_INCOMPLETE)', async () => {
+    const { repository, query } = harness((sql) => {
+      if (sql.includes('FROM core.empresas WHERE empresa_id')) return result([{ empresa_id: detail.id, estatus: 'ACTIVO' }]);
+      if (sql.startsWith('SELECT rol, estatus')) return result([{ rol: 'CLIENTE', estatus: 'ACTIVO' }]);
+      if (sql.includes('FROM core.empresas_fiscales WHERE')) return result([{ empresa_fiscal_id: '2', razon_social: 'Old SA', rfc: 'OLD010101AA1' }]);
+      return result();
+    });
+    await expect(repository.update(detail.id, { fiscal: { legalName: 'Only Name' } } as never, 'request-11', identity)).rejects.toMatchObject({ code: 'FISCAL_INCOMPLETE' });
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+    expect(query.mock.calls.some((call) => /^(INSERT|UPDATE|DELETE) /.test(String(call[0])))).toBe(false);
   });
 });

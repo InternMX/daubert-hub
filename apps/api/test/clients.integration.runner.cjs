@@ -1,7 +1,27 @@
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
+const fs = require('node:fs');
+const path = require('node:path');
 const { Pool } = require('pg');
+
+// Local dev convenience: apps/api/.env carries TEST_DATABASE_URL for the spawned Nest process
+// (loaded there via ConfigModule), but this runner never gets it unless the shell exports it
+// first. Fall back to reading the same .env file here, without overriding anything the caller
+// (CI, a real export) already set.
+if (!process.env.TEST_DATABASE_URL) {
+  const envPath = path.join(__dirname, '..', '.env');
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const separator = trimmed.indexOf('=');
+      if (separator === -1) continue;
+      const key = trimmed.slice(0, separator).trim();
+      if (process.env[key] === undefined) process.env[key] = trimmed.slice(separator + 1).trim();
+    }
+  }
+}
 
 const port = 3108;
 const marker = `HUB_TEST_CLIENT_${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -150,6 +170,22 @@ async function run() {
     const omitted = await create({ commercialName: omitFiscal.name });
     assert(omitted.response.status === 201 && omitted.body.data.id === omitFiscal.id && omitted.body.data.fiscal.rfc === omitFiscal.rfc, 'Omitted fiscal did not preserve an existing current identity.');
 
+    // B1: reuse must compare RFCs case-insensitively — a company whose current fiscal RFC happens
+    // to be stored lower-case must still be recognized as the same identity, not rejected.
+    const createLowerRfc = nextRfc('CRL').toLowerCase();
+    const createLowerCompany = await fixtureCompany(pool, 'CREATE_LOWER_RFC', { fiscal: createLowerRfc, roles: ['PROVEEDOR'] });
+    const createLowerReuse = await create({ commercialName: createLowerCompany.name, fiscal: { legalName: `${createLowerCompany.name} SA`, rfc: createLowerRfc } });
+    assert(createLowerReuse.response.status === 201 && createLowerReuse.body.data.id === createLowerCompany.id, `Case-insensitive RFC reuse failed: ${JSON.stringify(createLowerReuse.body)}`);
+
+    // B2: reuse into a company with NO current fiscal identity must attach the supplied one
+    // (the RFC lookup already proved no other company owns it) instead of forcing POST-then-PATCH.
+    const noFiscalReuseCompany = await fixtureCompany(pool, 'NO_FISCAL_REUSE', { roles: ['SERVICIO'] });
+    const attachRfc = nextRfc('ATF');
+    const attachFiscalReuse = await create({ commercialName: noFiscalReuseCompany.name, fiscal: { legalName: `${noFiscalReuseCompany.name} SA`, rfc: attachRfc } });
+    assert(attachFiscalReuse.response.status === 201 && attachFiscalReuse.body.data.id === noFiscalReuseCompany.id && attachFiscalReuse.body.data.fiscal?.rfc === attachRfc, `Reuse into a fiscal-less company should attach the new identity: ${JSON.stringify(attachFiscalReuse.body)}`);
+    const attachFiscalRows = await pool.query('SELECT count(*)::int AS count FROM core.empresas_fiscales WHERE empresa_id = $1', [noFiscalReuseCompany.id]);
+    assert(attachFiscalRows.rows[0].count === 1, 'Reuse into a fiscal-less company inserted more than one fiscal row.');
+
     const caseD = await fixtureCompany(pool, 'CASE_D', { fiscal: nextRfc('CFD'), roles: ['FLETE'] });
     const beforeD = await pool.query('SELECT count(*)::int AS roles FROM core.empresa_roles WHERE empresa_id = $1', [caseD.id]);
     const conflictD = await create({ commercialName: caseD.name, fiscal: { legalName: 'Conflict SA', rfc: nextRfc('DFR') } });
@@ -196,6 +232,36 @@ async function run() {
     const identities = await pool.query('SELECT rfc, es_vigente, fecha_inicio::text, fecha_fin::text FROM core.empresas_fiscales WHERE empresa_id = $1 ORDER BY empresa_fiscal_id', [noFiscal.body.data.id]);
     assert(identities.rows.filter((row) => row.es_vigente).length === 1 && identities.rows.some((row) => row.rfc === correctedRfc && !row.es_vigente && row.fecha_fin === '2026-09-03'), 'Fiscal history/current semantics are incorrect.');
 
+    // Paired fiscal contract (kept identical to Providers): legalName and rfc must arrive together.
+    const fiscalSnapshotBefore = await pool.query('SELECT empresa_fiscal_id, razon_social, rfc, es_vigente FROM core.empresas_fiscales WHERE empresa_id = $1 ORDER BY empresa_fiscal_id', [noFiscal.body.data.id]);
+    assert((await patch(noFiscal.body.data.id, { fiscal: { legalName: 'Only Legal Name SA' } })).response.status === 400, 'PATCH with legalName only was accepted.');
+    assert((await patch(noFiscal.body.data.id, { fiscal: { rfc: nextRfc('ONL') } })).response.status === 400, 'PATCH with rfc only was accepted.');
+    const changeModeOnly = await patch(noFiscal.body.data.id, { fiscal: { changeMode: 'CORRECTION' } });
+    assert(changeModeOnly.response.status === 400 && changeModeOnly.body.code === 'FISCAL_CHANGE_WITHOUT_DATA', `changeMode without fiscal data was accepted: ${JSON.stringify(changeModeOnly.body)}`);
+    const removalAttempt = await patch(noFiscal.body.data.id, { fiscal: { legalName: '', rfc: '' } });
+    assert(removalAttempt.response.status === 400 && removalAttempt.body.code === 'FISCAL_REMOVAL_NOT_ALLOWED', `Fiscal removal via blank pair was accepted: ${JSON.stringify(removalAttempt.body)}`);
+    const missingChangeMode = await patch(noFiscal.body.data.id, { fiscal: { legalName: 'Missing Mode SA', rfc: nextRfc('MCM') } });
+    assert(missingChangeMode.response.status === 400 && missingChangeMode.body.code === 'FISCAL_CHANGE_MODE_REQUIRED', `RFC change without changeMode was accepted: ${JSON.stringify(missingChangeMode.body)}`);
+    const whitespaceCommercialName = await patch(noFiscal.body.data.id, { commercialName: '   ' });
+    assert(whitespaceCommercialName.response.status === 400, `Whitespace-only commercialName should be rejected (B5), got ${whitespaceCommercialName.response.status}: ${JSON.stringify(whitespaceCommercialName.body)}`);
+    const fiscalSnapshotAfter = await pool.query('SELECT empresa_fiscal_id, razon_social, rfc, es_vigente FROM core.empresas_fiscales WHERE empresa_id = $1 ORDER BY empresa_fiscal_id', [noFiscal.body.data.id]);
+    assert(JSON.stringify(fiscalSnapshotBefore.rows) === JSON.stringify(fiscalSnapshotAfter.rows), 'Rejected fiscal PATCH payloads mutated fiscal history.');
+    assert((await pool.query('SELECT nombre_comercial FROM core.empresas WHERE empresa_id = $1', [noFiscal.body.data.id])).rows[0].nombre_comercial === updatedName, 'A rejected PATCH mutated the company name.');
+
+    // PATCH must be atomic: a colliding RFC must roll back the commercialName change from the same payload.
+    const rollbackAttemptName = `${marker}_CASE_A_ROLLBACK_ATTEMPT`;
+    const patchRollback = await patch(noFiscal.body.data.id, { commercialName: rollbackAttemptName, fiscal: { legalName: 'Rollback Attempt SA', rfc: caseE.rfc, changeMode: 'CORRECTION' } });
+    assert(patchRollback.response.status === 409, `PATCH with a colliding RFC should conflict, got ${patchRollback.response.status}: ${JSON.stringify(patchRollback.body)}`);
+    assert((await pool.query('SELECT nombre_comercial FROM core.empresas WHERE empresa_id = $1', [noFiscal.body.data.id])).rows[0].nombre_comercial === updatedName, 'PATCH did not roll back commercialName when the fiscal write failed.');
+
+    // B4: PATCH must compare the current RFC case-insensitively — a company whose stored RFC is
+    // lower-case must not be forced through a changeMode just to fix an unrelated razon social typo.
+    const lowerRfc = nextRfc('CFL').toLowerCase();
+    const lowerCaseCompany = await fixtureCompany(pool, 'LOWER_RFC', { fiscal: lowerRfc, roles: ['CLIENTE'] });
+    const lowerCaseRename = await patch(lowerCaseCompany.id, { fiscal: { legalName: 'Lower Case Renamed SA', rfc: lowerRfc.toUpperCase() } });
+    assert(lowerCaseRename.response.status === 200 && lowerCaseRename.body.data.fiscal.legalName === 'Lower Case Renamed SA', `Case-insensitive RFC match on PATCH failed: ${JSON.stringify(lowerCaseRename.body)}`);
+    assert((await pool.query('SELECT count(*)::int AS count FROM core.empresas_fiscales WHERE empresa_id = $1', [lowerCaseCompany.id])).rows[0].count === 1, 'Case-insensitive RFC match on PATCH created a spurious history row.');
+
     const multiDeactivate = await lifecycle(caseCCompany.id, 'deactivate');
     assert(multiDeactivate.response.status === 200, 'Multi-role Client deactivation failed.');
     const multiState = (await pool.query("SELECT e.estatus, r.rol, r.estatus AS role_status FROM core.empresas e JOIN core.empresa_roles r ON r.empresa_id = e.empresa_id WHERE e.empresa_id = $1 ORDER BY r.rol", [caseCCompany.id])).rows;
@@ -217,6 +283,18 @@ async function run() {
 
     const list = await request(`/clients?search=${encodeURIComponent(marker)}&page=1&pageSize=100`);
     assert(list.response.status === 200 && Array.isArray(list.body.data) && list.body.data.every((item) => typeof item.id === 'string'), 'Client list contract or BIGINT serialization is incorrect.');
+
+    // request-id / error contract: x-request-id is echoed on both success and error responses,
+    // and error bodies never leak SQL/internal details.
+    assert(list.response.headers.get('x-request-id') === list.requestId, 'x-request-id was not echoed back on a successful response.');
+    const missingId = '424242424242424242';
+    assert((await pool.query('SELECT 1 FROM core.empresas WHERE empresa_id = $1', [missingId])).rows.length === 0, 'Chosen not-found fixture ID unexpectedly exists.');
+    const notFoundRequest = `client-notfound-${randomUUID()}`;
+    const notFoundResponse = await request(`/clients/${missingId}`, 'GET', undefined, notFoundRequest);
+    assert(notFoundResponse.response.status === 404, 'Unknown but well-formed BIGINT id did not return 404.');
+    assert(notFoundResponse.response.headers.get('x-request-id') === notFoundRequest, 'x-request-id was not echoed back on a 404 response.');
+    const errorBodyKeys = Object.keys(notFoundResponse.body).sort();
+    assert(errorBodyKeys.every((key) => ['statusCode', 'message', 'code'].includes(key)) && notFoundResponse.body.statusCode === 404 && !JSON.stringify(notFoundResponse.body).toLowerCase().includes('select '), `Error contract leaked internal details: ${JSON.stringify(notFoundResponse.body)}`);
 
     const auditColumns = new Set((await pool.query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'audit' AND table_name = 'cambios'")).rows.map((row) => row.column_name));
     const origin = ['origin', 'origen'].find((column) => auditColumns.has(column));
