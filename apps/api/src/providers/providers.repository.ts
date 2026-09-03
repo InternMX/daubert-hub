@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import { replaceCompanyAliases } from '../companies/company-aliases.repository';
 import type { CreateProviderDto } from './dto/create-provider.dto';
 import { FiscalChangeMode, type UpdateProviderDto } from './dto/update-provider.dto';
 import { ProviderSortBy, ProviderStatusFilter, SortOrder, type ListProvidersDto } from './dto/list-providers.dto';
@@ -45,11 +46,6 @@ export interface FoundProviderRecord extends ListedProviderRow {
   roles: string[];
   aliases: string[];
   other_aliases: Array<{ alias: string; type: string }>;
-}
-
-interface AliasRow extends QueryResultRow {
-  alias_id: string;
-  alias: string;
 }
 
 interface LockedProviderRow extends QueryResultRow {
@@ -261,7 +257,7 @@ export class ProvidersRepository {
         await client.query(`UPDATE core.empresas SET ${sets.join(', ')} WHERE empresa_id = $${values.length}`, values);
       }
       await this.updateFiscal(client, id, fiscal, input);
-      if (input.aliases !== undefined) await this.updateAliases(client, id, input.aliases);
+      if (input.aliases !== undefined) await replaceCompanyAliases(client, id, input.aliases);
       await client.query('COMMIT');
       return this.findById(id);
     } catch (error) {
@@ -337,43 +333,6 @@ export class ProvidersRepository {
     }
     await client.query('UPDATE core.empresas_fiscales SET es_vigente = FALSE, fecha_fin = $1 WHERE empresa_fiscal_id = $2', [fiscal.effectiveStartDate, current.empresa_fiscal_id]);
     await client.query('INSERT INTO core.empresas_fiscales (empresa_id, razon_social, rfc, es_vigente, fecha_inicio) VALUES ($1, $2, $3, TRUE, $4)', [id, legalName, rfc, fiscal.effectiveStartDate]);
-  }
-
-  private async updateAliases(client: PoolClient, id: number, aliases: string[]): Promise<void> {
-    const current = await client.query<AliasRow>(`
-      SELECT alias_id::text, alias
-      FROM core.alias_empresa
-      WHERE empresa_id = $1
-        AND tipo_alias = 'NOMBRE_COMERCIAL_ALTERNATIVO'
-        AND estatus = 'ACTIVO'
-      ORDER BY alias_id
-      FOR UPDATE`, [id]);
-    const received = new Map(aliases.map((alias) => [alias.toLowerCase(), alias]));
-    const currentByNormalized = new Map(current.rows.map((row) => [row.alias.trim().toLowerCase(), row]));
-    const removedIds = current.rows
-      .filter((row) => !received.has(row.alias.trim().toLowerCase()))
-      .map((row) => row.alias_id);
-    const additions = [...received]
-      .filter(([normalized]) => !currentByNormalized.has(normalized))
-      .map(([, alias]) => alias);
-
-    if (additions.length > 0) {
-      const conflict = await client.query(`
-        SELECT 1
-        FROM core.alias_empresa
-        WHERE empresa_id <> $1
-          AND estatus = 'ACTIVO'
-          AND lower(btrim(alias_normalizado)) = ANY($2::text[])
-        LIMIT 1`, [id, additions.map((alias) => alias.toLowerCase())]);
-      if (conflict.rows.length > 0) throw Object.assign(new Error('ALIAS_ALREADY_ASSOCIATED'), { code: 'ALIAS_ALREADY_ASSOCIATED' });
-    }
-    if (removedIds.length > 0) {
-      await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = $1 AND alias_id = ANY($2::bigint[])', [id, removedIds]);
-    }
-    for (const alias of additions) {
-      await client.query(`INSERT INTO core.alias_empresa (empresa_id, alias, alias_normalizado, tipo_alias, estatus)
-        VALUES ($1, $2, $2, 'NOMBRE_COMERCIAL_ALTERNATIVO', 'ACTIVO')`, [id, alias]);
-    }
   }
 
   private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {

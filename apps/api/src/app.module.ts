@@ -13,6 +13,7 @@ import { ClientsModule } from './clients/clients.module';
 import { RecentActivityModule } from './recent-activity/recent-activity.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AddressesModule } from './addresses/addresses.module';
+import { AliasesModule } from './aliases/aliases.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AddressesModule } from './addresses/addresses.module';
     RecentActivityModule,
     AutomationsModule,
     AddressesModule,
+    AliasesModule,
     ClientsModule
   ]
 })

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { normalizeAliasList } from '../companies/company-aliases.repository';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import type { ListProvidersDto } from './dto/list-providers.dto';
 import { FiscalChangeMode, type UpdateProviderDto } from './dto/update-provider.dto';
@@ -143,12 +144,14 @@ export class ProvidersService {
 
   private normalizeAliases(input: UpdateProviderDto): UpdateProviderDto {
     if (input.aliases === undefined) return input;
-    const aliases = input.aliases.map((alias) => alias.trim());
-    if (aliases.some((alias) => !alias)) throw new BadRequestException('Los alias no pueden estar vacíos.');
-    if (new Set(aliases.map((alias) => alias.toLowerCase())).size !== aliases.length) {
-      throw new BadRequestException('Los alias no pueden estar duplicados.');
+    try {
+      return { ...input, aliases: normalizeAliasList(input.aliases) };
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'ALIASES_EMPTY') throw new BadRequestException('Los alias no pueden estar vacíos.');
+      if (code === 'ALIASES_DUPLICATE') throw new BadRequestException('Los alias no pueden estar duplicados.');
+      throw error;
     }
-    return { ...input, aliases };
   }
 
   private validateFiscalFormat(input: UpdateProviderDto): void {
