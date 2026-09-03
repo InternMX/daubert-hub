@@ -15,7 +15,7 @@ function renderApp(path = '/') {
 
 describe('application navigation', () => {
   beforeEach(() => activityMock.mockResolvedValue([]));
-  it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/contacts', 'Directorio de contactos'], ['/automations', 'Automatizaciones']])('renders %s', (path, title) => {
+  it.each([['/', 'Inicio'], ['/providers', 'Proveedores'], ['/clients', 'Clientes'], ['/contacts', 'Directorio de contactos'], ['/automations', 'Automatizaciones']])('renders %s', (path, title) => {
     renderApp(path);
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
   });
@@ -32,6 +32,8 @@ describe('application navigation', () => {
     renderApp();
     await user.click(screen.getByRole('link', { name: 'Proveedores' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Proveedores' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Clientes' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Clientes' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Contactos' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Directorio de contactos' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Automatizaciones' }));

@@ -30,6 +30,7 @@ function renderShell(path = '/') {
   return render(<MemoryRouter initialEntries={[path]}><AppShell><Routes>
     <Route path="/" element={<div>Inicio page</div>} />
     <Route path="/providers" element={<div>Providers page</div>} />
+    <Route path="/clients" element={<div>Clients page</div>} />
     <Route path="/contacts" element={<div>Contacts page</div>} />
     <Route path="/automations" element={<div>Automations page</div>} />
   </Routes></AppShell></MemoryRouter>);
@@ -90,7 +91,7 @@ describe('AppShell sidebar', () => {
     renderShell();
     await screen.findByText('PRUEBAS');
 
-    for (const destination of ['Proveedores', 'Contactos', 'Automatizaciones']) {
+    for (const destination of ['Proveedores', 'Clientes', 'Contactos', 'Automatizaciones']) {
       await user.click(screen.getByRole('link', { name: destination }));
       expect(screen.getByText('PRUEBAS')).toBeInTheDocument();
     }
@@ -103,9 +104,10 @@ describe('AppShell sidebar', () => {
     expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'false');
     expect(screen.getByRole('img', { name: 'Daubert Cromwell' })).toBeInTheDocument();
     expect(screen.getByText('Hub de operaciones')).toBeInTheDocument();
-    expect(screen.getByText('Directorio')).toBeInTheDocument();
+    expect(screen.getByText('Empresas')).toBeInTheDocument();
     expect(screen.getByText('Inicio')).toBeInTheDocument();
     expect(screen.getByText('Proveedores')).toBeInTheDocument();
+    expect(screen.getByText('Clientes')).toBeInTheDocument();
     expect(screen.getByText('Contactos')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Contraer menú' })).toHaveAttribute('aria-expanded', 'true');
   });
@@ -122,10 +124,12 @@ describe('AppShell sidebar', () => {
 
     expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'true');
     expect(screen.queryByText('Proveedores')).not.toBeInTheDocument();
-    expect(screen.queryByText('Directorio')).not.toBeInTheDocument();
+    expect(screen.queryByText('Clientes')).not.toBeInTheDocument();
+    expect(screen.queryByText('Empresas')).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Daubert Cromwell' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Inicio' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Proveedores' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Contactos' })).toBeInTheDocument();
     await user.hover(screen.getByRole('link', { name: 'Proveedores' }));
     expect(await screen.findByRole('tooltip', { name: 'Proveedores' })).toBeInTheDocument();
@@ -207,5 +211,18 @@ describe('AppShell sidebar', () => {
     expect(screen.getByText('Contacts page')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Contactos' })).toHaveAttribute('aria-current', 'page');
     expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'true');
+  });
+
+  it('navigates to Clients under the Empresas section without disturbing Providers navigation', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/providers');
+    expect(screen.getByRole('link', { name: 'Proveedores' })).toHaveAttribute('aria-current', 'page');
+
+    await user.click(screen.getByRole('link', { name: 'Clientes' }));
+
+    expect(screen.getByText('Clients page')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Clientes' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Proveedores' })).not.toHaveAttribute('aria-current', 'page');
   });
 });

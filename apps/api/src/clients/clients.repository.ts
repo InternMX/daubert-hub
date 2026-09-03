@@ -16,6 +16,7 @@ export interface ClientRow extends QueryResultRow {
   commercial_name: string;
   company_type: string;
   status: string;
+  client_status: string;
   notes: string | null;
   fiscal_id: string | null;
   legal_name: string | null;
@@ -52,12 +53,17 @@ interface RoleRow extends QueryResultRow {
 }
 
 const clientSelect = `company.empresa_id::text AS id, company.nombre_comercial AS commercial_name,
-  company.tipo_empresa AS company_type, company.estatus AS status, company.observaciones AS notes,
+  company.tipo_empresa AS company_type, company.estatus AS status, cliente_role.estatus AS client_status,
+  company.observaciones AS notes,
   fiscal.empresa_fiscal_id::text AS fiscal_id, fiscal.razon_social AS legal_name, fiscal.rfc,
   fiscal.fecha_inicio::text AS fiscal_start_date, fiscal.fecha_fin::text AS fiscal_end_date,
   COALESCE(roles.roles, ARRAY[]::text[]) AS roles`;
 
-const clientJoins = `LEFT JOIN LATERAL (
+// A company IS a Client if it has a CLIENTE role row at all, regardless of that role's own
+// estatus — this INNER JOIN is the sole "is this a Client" gate for list/detail. It intentionally
+// does not filter by role estatus or company estatus so a deactivated CLIENTE stays discoverable.
+const clientJoins = `JOIN core.empresa_roles cliente_role ON cliente_role.empresa_id = company.empresa_id AND cliente_role.rol = 'CLIENTE'
+  LEFT JOIN LATERAL (
     SELECT empresa_fiscal_id, razon_social, rfc, fecha_inicio, fecha_fin
     FROM core.empresas_fiscales WHERE empresa_id = company.empresa_id AND es_vigente = TRUE
     ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC LIMIT 1
@@ -73,9 +79,7 @@ export class ClientsRepository {
 
   async list(input: ListClientsDto): Promise<ListedClientsRecord> {
     const filter = `FROM core.empresas company ${clientJoins}
-      WHERE company.estatus = 'ACTIVO'
-        AND 'CLIENTE' = ANY(roles.roles)
-        AND ($1::text IS NULL OR lower(btrim(company.nombre_comercial)) LIKE '%' || lower($1) || '%'
+      WHERE ($1::text IS NULL OR lower(btrim(company.nombre_comercial)) LIKE '%' || lower($1) || '%'
           OR lower(btrim(fiscal.razon_social)) LIKE '%' || lower($1) || '%'
           OR lower(btrim(fiscal.rfc)) LIKE '%' || lower($1) || '%')`;
     const [count] = await this.database.query<{ total: string }>(`SELECT count(*)::int AS total ${filter}`, [input.search ?? null]);
@@ -86,9 +90,9 @@ export class ClientsRepository {
     return { total: Number(count?.total ?? 0), clients };
   }
 
-  async findActiveById(id: string): Promise<ClientRow | null> {
+  async findClientById(id: string): Promise<ClientRow | null> {
     const rows = await this.database.query<ClientRow>(`SELECT ${clientSelect} FROM core.empresas company ${clientJoins}
-      WHERE company.empresa_id = $1 AND company.estatus = 'ACTIVO' AND 'CLIENTE' = ANY(roles.roles)`, [id]);
+      WHERE company.empresa_id = $1`, [id]);
     return rows[0] ?? null;
   }
 

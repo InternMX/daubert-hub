@@ -3,7 +3,7 @@ import { ClientsRepository, type ClientRow } from '../src/clients/clients.reposi
 
 const identity = { userId: null, userEmail: null };
 const detail: ClientRow = {
-  id: '9007199254740993', commercial_name: 'Acme', company_type: 'CLIENTE', status: 'ACTIVO', notes: null,
+  id: '9007199254740993', commercial_name: 'Acme', company_type: 'CLIENTE', status: 'ACTIVO', client_status: 'ACTIVO', notes: null,
   fiscal_id: null, legal_name: null, rfc: null, fiscal_start_date: null, fiscal_end_date: null, roles: ['CLIENTE']
 };
 
@@ -16,14 +16,31 @@ function harness(handler: (sql: string, values?: unknown[]) => unknown) {
 function result(rows: unknown[] = []) { return { rows }; }
 
 describe('ClientsRepository', () => {
-  it('lists only active companies with active CLIENTE roles and current fiscal data', async () => {
+  it('lists any company with a CLIENTE role regardless of role or company status, with current fiscal data', async () => {
     const query = vi.fn().mockResolvedValueOnce([{ total: '1' }]).mockResolvedValueOnce([detail]);
     const repository = new ClientsRepository({ query } as never);
     await expect(repository.list({ page: 1, pageSize: 25, sortOrder: 'asc' } as never)).resolves.toEqual({ total: 1, clients: [detail] });
-    expect(query.mock.calls[0]?.[0]).toContain("company.estatus = 'ACTIVO'");
-    expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
-    expect(query.mock.calls[0]?.[0]).toContain("'CLIENTE' = ANY(roles.roles)");
+    expect(query.mock.calls[0]?.[0]).toContain("cliente_role.rol = 'CLIENTE'");
+    expect(query.mock.calls[0]?.[0]).not.toContain("company.estatus = 'ACTIVO'");
+    expect(query.mock.calls[0]?.[0]).not.toContain("'CLIENTE' = ANY(roles.roles)");
     expect(query.mock.calls[0]?.[0]).toContain('es_vigente = TRUE');
+    expect(query.mock.calls[1]?.[0]).toContain('cliente_role.estatus AS client_status');
+  });
+
+  it('findClientById returns an inactive-CLIENTE row without requiring an active role or company', async () => {
+    const inactiveClient: ClientRow = { ...detail, status: 'INACTIVO', client_status: 'INACTIVO', roles: [] };
+    const query = vi.fn().mockResolvedValueOnce([inactiveClient]);
+    const repository = new ClientsRepository({ query } as never);
+    await expect(repository.findClientById(detail.id)).resolves.toEqual(inactiveClient);
+    expect(query.mock.calls[0]?.[0]).toContain("cliente_role.rol = 'CLIENTE'");
+    expect(query.mock.calls[0]?.[0]).not.toContain("company.estatus = 'ACTIVO'");
+    expect(query.mock.calls[0]?.[0]).not.toContain("'CLIENTE' = ANY(roles.roles)");
+  });
+
+  it('findClientById returns null for a company with no CLIENTE role at all', async () => {
+    const query = vi.fn().mockResolvedValueOnce([]);
+    const repository = new ClientsRepository({ query } as never);
+    await expect(repository.findClientById('999')).resolves.toBeNull();
   });
 
   it('creates company, CLIENTE role, and fiscal in one audited transaction', async () => {

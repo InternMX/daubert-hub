@@ -2,6 +2,7 @@ import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
+import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Box, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
@@ -20,6 +21,7 @@ const collapsedWidth = 72;
 const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIconComponent }> = [
   { to: '/', label: 'Inicio', end: true, icon: HomeRoundedIcon },
   { to: '/providers', label: 'Proveedores', end: false, icon: BusinessRoundedIcon },
+  { to: '/clients', label: 'Clientes', end: false, icon: GroupsRoundedIcon },
   { to: '/contacts', label: 'Contactos', end: false, icon: ContactsRoundedIcon }
 ];
 
@@ -118,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <List disablePadding>
           {navigation.map((item, index) => (
             <Box key={item.to}>
-              {index === 1 && !collapsed && <Box sx={{ px: 2, pt: 3, pb: 1 }}><Typography variant="overline" color={appTokens.navigationMuted}>Directorio</Typography></Box>}
+              {index === 1 && !collapsed && <Box sx={{ px: 2, pt: 3, pb: 1 }}><Typography variant="overline" color={appTokens.navigationMuted}>Empresas</Typography></Box>}
               <NavigationItem {...item} collapsed={collapsed} />
             </Box>
           ))}

@@ -13,6 +13,7 @@ export interface ClientResponse {
     commercialName: string;
     companyType: string;
     status: string;
+    clientStatus: string;
     notes: string | null;
     roles: string[];
     fiscal: { id: string; legalName: string; rfc: string; startDate: string | null; endDate: string | null } | null;
@@ -32,7 +33,7 @@ export class ClientsService {
   }
 
   async detail(id: string): Promise<ClientResponse> {
-    const client = await this.repository.findActiveById(id);
+    const client = await this.repository.findClientById(id);
     if (!client) throw new NotFoundException('Cliente no encontrado.');
     return { data: this.map(client) };
   }
@@ -120,6 +121,7 @@ export class ClientsService {
       commercialName: client.commercial_name,
       companyType: client.company_type,
       status: client.status,
+      clientStatus: client.client_status,
       notes: client.notes,
       roles: client.roles,
       fiscal: client.fiscal_id && client.legal_name && client.rfc ? {

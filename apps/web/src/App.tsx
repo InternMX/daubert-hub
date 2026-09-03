@@ -7,6 +7,10 @@ import { NewProviderPage } from './providers/NewProviderPage';
 import { ProviderDetailPage } from './providers/ProviderDetailPage';
 import { EditProviderPage } from './providers/EditProviderPage';
 import { ProvidersPage } from './providers/ProvidersPage';
+import { NewClientPage } from './clients/NewClientPage';
+import { ClientDetailPage } from './clients/ClientDetailPage';
+import { EditClientPage } from './clients/EditClientPage';
+import { ClientsPage } from './clients/ClientsPage';
 import { ContactsPage } from './contacts/ContactsPage';
 import { AutomationsPage } from './automations/AutomationsPage';
 import { AudiRemissionsPage } from './automations/AudiRemissionsPage';
@@ -39,6 +43,10 @@ export function App() {
         <Route path="/providers/new" element={<NewProviderPage />} />
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
         <Route path="/providers/:id" element={<ProviderDetailPage />} />
+        <Route path="/clients" element={<ClientsPage />} />
+        <Route path="/clients/new" element={<NewClientPage />} />
+        <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
+        <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />

@@ -262,18 +262,36 @@ async function run() {
     assert(lowerCaseRename.response.status === 200 && lowerCaseRename.body.data.fiscal.legalName === 'Lower Case Renamed SA', `Case-insensitive RFC match on PATCH failed: ${JSON.stringify(lowerCaseRename.body)}`);
     assert((await pool.query('SELECT count(*)::int AS count FROM core.empresas_fiscales WHERE empresa_id = $1', [lowerCaseCompany.id])).rows[0].count === 1, 'Case-insensitive RFC match on PATCH created a spurious history row.');
 
+    // Lifecycle discoverability: deactivating CLIENTE must NOT make the client vanish from
+    // GET /clients/:id — that would make Reactivar unreachable after a browser refresh.
+    // company ACTIVO, CLIENTE INACTIVO, PROVEEDOR ACTIVO -> status=ACTIVO, clientStatus=INACTIVO.
     const multiDeactivate = await lifecycle(caseCCompany.id, 'deactivate');
     assert(multiDeactivate.response.status === 200, 'Multi-role Client deactivation failed.');
+    assert(multiDeactivate.body.data.status === 'ACTIVO' && multiDeactivate.body.data.clientStatus === 'INACTIVO', `Multi-role deactivate response did not separate status from clientStatus: ${JSON.stringify(multiDeactivate.body)}`);
     const multiState = (await pool.query("SELECT e.estatus, r.rol, r.estatus AS role_status FROM core.empresas e JOIN core.empresa_roles r ON r.empresa_id = e.empresa_id WHERE e.empresa_id = $1 ORDER BY r.rol", [caseCCompany.id])).rows;
     assert(multiState.every((row) => row.estatus === 'ACTIVO') && multiState.some((row) => row.rol === 'CLIENTE' && row.role_status === 'INACTIVO') && multiState.some((row) => row.rol === 'PROVEEDOR' && row.role_status === 'ACTIVO'), 'Multi-role deactivation changed company or unrelated role state.');
-    assert((await request(`/clients/${caseCCompany.id}`)).response.status === 404, 'Inactive CLIENTE remained visible in detail.');
-    assert((await lifecycle(caseCCompany.id, 'reactivate')).response.status === 200, 'Multi-role Client reactivation failed.');
 
+    // Simulate "deactivate, then refresh the browser": a fresh GET must still succeed.
+    const multiDetailAfterDeactivate = await request(`/clients/${caseCCompany.id}`);
+    assert(multiDetailAfterDeactivate.response.status === 200, `Inactive CLIENTE must remain discoverable in detail after a refresh: ${JSON.stringify(multiDetailAfterDeactivate.body)}`);
+    assert(multiDetailAfterDeactivate.body.data.status === 'ACTIVO' && multiDetailAfterDeactivate.body.data.clientStatus === 'INACTIVO', `Fresh GET after deactivate did not expose clientStatus correctly: ${JSON.stringify(multiDetailAfterDeactivate.body)}`);
+    assert((await lifecycle(caseCCompany.id, 'reactivate')).response.status === 200, 'Multi-role Client reactivation after a fresh GET failed.');
+    const multiDetailAfterReactivate = await request(`/clients/${caseCCompany.id}`);
+    assert(multiDetailAfterReactivate.body.data.clientStatus === 'ACTIVO', 'Reactivation did not restore clientStatus to ACTIVO.');
+
+    // Final-role deactivate: company itself becomes INACTIVO too, but detail must still be
+    // reachable (not 404) so Reactivar remains available after a refresh.
     const finalDeactivate = await lifecycle(withFiscal.body.data.id, 'deactivate');
-    assert(finalDeactivate.response.status === 200 && finalDeactivate.body.data.status === 'INACTIVO', 'Final-role deactivation did not inactivate the company.');
-    assert((await request(`/clients/${withFiscal.body.data.id}`)).response.status === 404, 'Inactive company remained visible as an active Client.');
+    assert(finalDeactivate.response.status === 200 && finalDeactivate.body.data.status === 'INACTIVO' && finalDeactivate.body.data.clientStatus === 'INACTIVO', `Final-role deactivation did not report status and clientStatus as INACTIVO: ${JSON.stringify(finalDeactivate.body)}`);
+    const finalDetailAfterDeactivate = await request(`/clients/${withFiscal.body.data.id}`);
+    assert(finalDetailAfterDeactivate.response.status === 200, `Final-role deactivated client must remain accessible for Reactivar after a refresh: ${JSON.stringify(finalDetailAfterDeactivate.body)}`);
+    assert(finalDetailAfterDeactivate.body.data.status === 'INACTIVO' && finalDetailAfterDeactivate.body.data.clientStatus === 'INACTIVO', 'Fresh GET after final-role deactivate lost status/clientStatus.');
     const finalReactivate = await lifecycle(withFiscal.body.data.id, 'reactivate');
-    assert(finalReactivate.response.status === 200 && finalReactivate.body.data.status === 'ACTIVO', 'Final-role reactivation did not restore company and role.');
+    assert(finalReactivate.response.status === 200 && finalReactivate.body.data.status === 'ACTIVO' && finalReactivate.body.data.clientStatus === 'ACTIVO', 'Final-role reactivation did not restore company and CLIENTE role.');
+
+    // A company that never had a CLIENTE role must still 404 from Client detail.
+    const noClientRole = await request(`/clients/${caseE.id}`);
+    assert(noClientRole.response.status === 404, `A company with no CLIENTE role must 404 from Client detail: ${JSON.stringify(noClientRole.body)}`);
 
     let bigintId = '9007199254740993';
     while ((await pool.query('SELECT 1 FROM core.empresas WHERE empresa_id = $1', [bigintId])).rows.length) bigintId = (BigInt(bigintId) + 1n).toString();
@@ -281,8 +299,22 @@ async function run() {
     const bigintDetail = await request(`/clients/${bigint.id}`);
     assert(bigintDetail.response.status === 200 && bigintDetail.body.data.id === bigintId && typeof bigintDetail.body.data.id === 'string', 'BIGINT ID lost precision.');
 
+    // A BIGINT client with an inactive CLIENTE role and an inactive company (final-role case,
+    // built directly as a fixture) must also be discoverable in both detail and list.
+    const inactiveClientFixture = await fixtureCompany(pool, 'INACTIVE_DISCOVERABLE', { status: 'INACTIVO', roles: [{ name: 'CLIENTE', status: 'INACTIVO' }] });
+    const inactiveFixtureDetail = await request(`/clients/${inactiveClientFixture.id}`);
+    assert(inactiveFixtureDetail.response.status === 200 && inactiveFixtureDetail.body.data.status === 'INACTIVO' && inactiveFixtureDetail.body.data.clientStatus === 'INACTIVO', `An independently-built inactive Client must still be discoverable: ${JSON.stringify(inactiveFixtureDetail.body)}`);
+
     const list = await request(`/clients?search=${encodeURIComponent(marker)}&page=1&pageSize=100`);
     assert(list.response.status === 200 && Array.isArray(list.body.data) && list.body.data.every((item) => typeof item.id === 'string'), 'Client list contract or BIGINT serialization is incorrect.');
+    assert(list.body.data.every((item) => 'clientStatus' in item), 'List rows are missing the clientStatus field.');
+    const listedIds = new Set(list.body.data.map((item) => item.id));
+    assert(listedIds.has(caseCCompany.id), 'An active Client (multi-role) must remain in the list.');
+    assert(listedIds.has(withFiscal.body.data.id), 'A reactivated Client must remain in the list.');
+    assert(listedIds.has(inactiveClientFixture.id), 'An inactive Client must still be discoverable in the list, not merely in detail.');
+    assert(!listedIds.has(caseE.id), 'A company with no CLIENTE role must not appear in the Client list.');
+    const inactiveListRow = list.body.data.find((item) => item.id === inactiveClientFixture.id);
+    assert(inactiveListRow.status === 'INACTIVO' && inactiveListRow.clientStatus === 'INACTIVO', 'The list status column must reflect clientStatus for the CLIENTE lifecycle, not be inferred separately.');
 
     // request-id / error contract: x-request-id is echoed on both success and error responses,
     // and error bodies never leak SQL/internal details.

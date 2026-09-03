@@ -4,23 +4,29 @@ import type { ClientRow } from '../src/clients/clients.repository';
 
 const identity = { userId: null, userEmail: null };
 const row: ClientRow = {
-  id: '9007199254740993', commercial_name: 'Acme', company_type: 'PROVEEDOR', status: 'ACTIVO', notes: null,
+  id: '9007199254740993', commercial_name: 'Acme', company_type: 'PROVEEDOR', status: 'ACTIVO', client_status: 'ACTIVO', notes: null,
   fiscal_id: null, legal_name: null, rfc: null, fiscal_start_date: null, fiscal_end_date: null,
   roles: ['PROVEEDOR', 'CLIENTE']
 };
 
 describe('ClientsService', () => {
   it('maps list/detail and preserves BIGINT IDs as strings', async () => {
-    const repository = { list: vi.fn().mockResolvedValue({ total: 1, clients: [row] }), findActiveById: vi.fn().mockResolvedValue(row) };
+    const repository = { list: vi.fn().mockResolvedValue({ total: 1, clients: [row] }), findClientById: vi.fn().mockResolvedValue(row) };
     const service = new ClientsService(repository as never);
     const listInput = { page: 1, pageSize: 25, sortOrder: 'asc' } as never;
     await expect(service.list(listInput)).resolves.toMatchObject({ data: [{ id: row.id, roles: ['PROVEEDOR', 'CLIENTE'], fiscal: null }], meta: { total: 1 } });
     await expect(service.detail(row.id)).resolves.toMatchObject({ data: { id: row.id } });
   });
 
-  it('returns 404 for a missing, inactive-role, or inactive-company client', async () => {
-    const service = new ClientsService({ findActiveById: vi.fn().mockResolvedValue(null) } as never);
+  it('returns 404 only for a company with no CLIENTE role at all', async () => {
+    const service = new ClientsService({ findClientById: vi.fn().mockResolvedValue(null) } as never);
     await expect(service.detail('1')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('exposes clientStatus distinctly from the company status for a multi-role company', async () => {
+    const multiRole: ClientRow = { ...row, status: 'ACTIVO', client_status: 'INACTIVO', roles: ['PROVEEDOR'] };
+    const service = new ClientsService({ findClientById: vi.fn().mockResolvedValue(multiRole) } as never);
+    await expect(service.detail(row.id)).resolves.toMatchObject({ data: { status: 'ACTIVO', clientStatus: 'INACTIVO' } });
   });
 
   it.each([
