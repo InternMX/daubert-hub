@@ -9,6 +9,7 @@ import { ContactDirectoryModule } from './contact-directory/contact-directory.mo
 import { ContactsModule } from './contacts/contacts.module';
 import { CompaniesModule } from './companies/companies.module';
 import { ContactMethodsModule } from './contact-methods/contact-methods.module';
+import { ClientsModule } from './clients/clients.module';
 import { RecentActivityModule } from './recent-activity/recent-activity.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AddressesModule } from './addresses/addresses.module';
@@ -25,7 +26,8 @@ import { AddressesModule } from './addresses/addresses.module';
     ContactMethodsModule,
     RecentActivityModule,
     AutomationsModule,
-    AddressesModule
+    AddressesModule,
+    ClientsModule
   ]
 })
 export class AppModule implements NestModule {
