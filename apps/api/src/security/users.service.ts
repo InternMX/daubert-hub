@@ -93,4 +93,11 @@ export class UsersService {
     const row = await this.repository.updatePassword(userId, passwordHash, mustChangePassword, context);
     return row ? toSafeUser(row) : null;
   }
+
+  // Called once login has already succeeded, so the returned safe user
+  // reflects the fresh last_login_at value.
+  async recordSuccessfulLogin(userId: string, context: AuditContext): Promise<SafeUser | null> {
+    const row = await this.repository.touchLastLogin(userId, context);
+    return row ? toSafeUser(row) : null;
+  }
 }

@@ -119,6 +119,33 @@ export class UsersRepository {
     }
   }
 
+  // Updates only last_login_at (the sanitized security.users trigger
+  // excludes it, along with updated_at, from its "did anything meaningfully
+  // change" comparison, so a successful login alone produces no
+  // audit.cambios row — see the Phase 3 migration notes).
+  async touchLastLogin(userId: string, context: AuditContext): Promise<UserRow | null> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      await this.setAuditContext(client, context);
+      const result = await client.query<RawUserRow>(
+        `UPDATE security.users SET last_login_at = now() WHERE user_id = $1 RETURNING ${userColumns}`,
+        [userId]
+      );
+      await client.query('COMMIT');
+      return result.rows[0] ? mapRow(result.rows[0]) : null;
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Preserve the original database error.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async setAuditContext(client: PoolClient, context: AuditContext): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", [context.origin]);
     await client.query("SELECT set_config('app.request_id', $1, true)", [context.requestId]);

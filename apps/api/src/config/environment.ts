@@ -7,6 +7,12 @@ export interface EnvironmentConfig {
     user: string;
     password: string;
   };
+  auth: {
+    // Explicit, validated configuration rather than inferring from
+    // request headers (X-Forwarded-Proto etc, which a caller can spoof).
+    // false for local HTTP dev/TEST; true once deployed behind HTTPS.
+    cookieSecure: boolean;
+  };
 }
 
 function required(value: string | undefined, name: string): string {
@@ -25,6 +31,13 @@ function port(value: string | undefined, name: string, fallback?: number): numbe
   return parsed;
 }
 
+function booleanFlag(value: string | undefined, name: string, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`Environment variable ${name} must be exactly "true" or "false"`);
+}
+
 export function validateEnvironment(env: Record<string, string | undefined>): EnvironmentConfig {
   return {
     apiPort: port(env.API_PORT, 'API_PORT', 3000),
@@ -34,6 +47,9 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
       name: required(env.DB_NAME, 'DB_NAME'),
       user: required(env.DB_USER, 'DB_USER'),
       password: required(env.DB_PASSWORD, 'DB_PASSWORD')
+    },
+    auth: {
+      cookieSecure: booleanFlag(env.AUTH_COOKIE_SECURE, 'AUTH_COOKIE_SECURE', false)
     }
   };
 }
