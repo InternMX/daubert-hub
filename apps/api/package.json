@@ -6,19 +6,22 @@
     "dev": "nest start --watch",
     "start": "node dist/src/main.js",
     "build": "nest build",
-    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
+    "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "test:integration:addresses": "npm run build && node test/addresses.integration.runner.cjs",
     "test:integration:clients": "npm run build && node test/clients.integration.runner.cjs",
     "test:integration:aliases": "npm run build && node test/aliases.integration.runner.cjs",
-    "test:integration": "npm run build && node test/providers.integration.runner.cjs && node test/contacts.integration.runner.cjs && node test/companies.integration.runner.cjs && node test/recent-activity.integration.runner.cjs && node test/automations.integration.runner.cjs && node test/addresses.integration.runner.cjs && node test/clients.integration.runner.cjs && node test/aliases.integration.runner.cjs"
+    "test:integration:security-phase2": "npm run build && node test/security-phase2.integration.runner.cjs",
+    "test:integration": "npm run build && node test/providers.integration.runner.cjs && node test/contacts.integration.runner.cjs && node test/companies.integration.runner.cjs && node test/recent-activity.integration.runner.cjs && node test/automations.integration.runner.cjs && node test/addresses.integration.runner.cjs && node test/clients.integration.runner.cjs && node test/aliases.integration.runner.cjs && node test/security-phase2.integration.runner.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.6",
     "@nestjs/platform-express": "^11.1.6",
+    "argon2": "^0.45.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "pg": "^8.16.3",
@@ -28,16 +31,16 @@
   "devDependencies": {
     "@nestjs/cli": "^11.0.10",
     "@nestjs/testing": "^11.1.6",
-    "@types/node": "^24.3.0",
     "@types/express": "^5.0.3",
+    "@types/node": "^24.3.0",
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.34.0",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.41.0",
     "supertest": "^7.1.4",
     "ts-node": "^10.9.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.41.0",
     "vitest": "^3.2.4"
   }
 }

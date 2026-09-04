@@ -14,6 +14,7 @@ import { RecentActivityModule } from './recent-activity/recent-activity.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { AliasesModule } from './aliases/aliases.module';
+import { SecurityModule } from './security/security.module';
 
 @Module({
   imports: [
@@ -29,7 +30,8 @@ import { AliasesModule } from './aliases/aliases.module';
     AutomationsModule,
     AddressesModule,
     AliasesModule,
-    ClientsModule
+    ClientsModule,
+    SecurityModule
   ]
 })
 export class AppModule implements NestModule {
