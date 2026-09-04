@@ -5,7 +5,7 @@ import { RecentActivityRepository, type RecentActivitySource } from './recent-ac
 import { RemisionesAudiActivityRepository, type RemisionesAudiActivityRow } from './remisiones-audi-activity.repository';
 
 type Snapshot = Record<string, unknown> | null;
-type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED';
+type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED';
 export type ActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 export interface RecentActivityItem {
@@ -34,6 +34,10 @@ interface SourceRow {
 const titles: Record<ActivityType, string> = {
   PROVIDER_CREATED: 'Proveedor creado',
   PROVIDER_UPDATED: 'Proveedor actualizado',
+  CLIENT_CREATED: 'Cliente creado',
+  CLIENT_UPDATED: 'Cliente actualizado',
+  CLIENT_DEACTIVATED: 'Cliente desactivado',
+  CLIENT_REACTIVATED: 'Cliente reactivado',
   CONTACT_CREATED: 'Contacto creado',
   CONTACT_UPDATED: 'Contacto actualizado',
   CONTACT_METHOD_ADDED: 'Medio de contacto agregado',
@@ -49,6 +53,10 @@ const titles: Record<ActivityType, string> = {
 const categories: Record<ActivityType, ActivityCategory> = {
   PROVIDER_CREATED: 'PROVIDER',
   PROVIDER_UPDATED: 'PROVIDER',
+  CLIENT_CREATED: 'CLIENT',
+  CLIENT_UPDATED: 'CLIENT',
+  CLIENT_DEACTIVATED: 'CLIENT',
+  CLIENT_REACTIVATED: 'CLIENT',
   CONTACT_CREATED: 'CONTACT',
   CONTACT_UPDATED: 'CONTACT',
   CONTACT_METHOD_ADDED: 'CONTACT',
@@ -63,6 +71,9 @@ const categories: Record<ActivityType, ActivityCategory> = {
 
 const providerRoles = new Set(['PROVEEDOR', 'SERVICIO', 'FLETE']);
 const providerBusinessFields = new Set(['tipo_empresa', 'nombre_comercial', 'observaciones']);
+// Unlike Providers, the Clients mutation workflow never writes tipo_empresa (there is no
+// Client "type" to change), so it is intentionally excluded here.
+const clientBusinessFields = new Set(['nombre_comercial', 'observaciones']);
 const contactBusinessFields = new Set(['nombre', 'area', 'cargo', 'observaciones']);
 const ignoredTimestampFields = new Set(['updated_at']);
 
@@ -95,11 +106,9 @@ export class RecentActivityService {
   ) {}
 
   async list(input: ListRecentActivityDto): Promise<RecentActivityResponse> {
-    if (input.category === RecentActivityCategoryFilter.CLIENT) return { data: [] };
-
     const needsAudit = input.category !== RecentActivityCategoryFilter.AUTOMATION;
     const needsAutomation = input.category === undefined || input.category === RecentActivityCategoryFilter.AUTOMATION;
-    const auditCategory = input.category === RecentActivityCategoryFilter.PROVIDER || input.category === RecentActivityCategoryFilter.CONTACT ? input.category : undefined;
+    const auditCategory = input.category === RecentActivityCategoryFilter.PROVIDER || input.category === RecentActivityCategoryFilter.CONTACT || input.category === RecentActivityCategoryFilter.CLIENT ? input.category : undefined;
     const [source, paymentRows, audiRows] = await Promise.all([
       needsAudit ? (auditCategory ? this.repository.findRecent(input.limit, auditCategory) : this.repository.findRecent(input.limit)) : null,
       needsAutomation ? this.paymentNotifications.findRecent(input.limit) : [],
@@ -203,11 +212,116 @@ export class RecentActivityService {
     const timestamp = Math.max(...rows.map((row) => new Date(row.occurred_at).getTime()));
     if (!Number.isFinite(timestamp)) return null;
     const occurredAt = new Date(timestamp).toISOString();
-    return this.providerCreate(rows, source, occurredAt)
+    return this.clientCreate(rows, source, occurredAt)
+      ?? this.clientReactivate(rows, source, occurredAt)
+      ?? this.clientDeactivate(rows, source, occurredAt)
+      ?? this.clientUpdate(rows, source, occurredAt)
+      ?? this.providerCreate(rows, source, occurredAt)
       ?? this.providerUpdate(rows, source, occurredAt)
       ?? this.contactCreate(rows, source, occurredAt)
       ?? this.contactUpdate(rows, source, occurredAt)
       ?? this.methodChange(rows, source, occurredAt);
+  }
+
+  // A company acquires the CLIENTE role for the first time: either a brand-new company (INSERT
+  // empresas + INSERT empresa_roles), or an existing company (any current role, or none) gaining
+  // its first CLIENTE membership (plain INSERT empresa_roles, no empresas row at all) — optionally
+  // reactivating a previously non-ACTIVO company as a side effect, and optionally seeding fiscal
+  // data. This is unambiguous: it only fires on a plain INSERT of the CLIENTE role row itself.
+  private clientCreate(rows: SourceRow[], source: RecentActivitySource, occurredAt: string): RecentActivityItem | null {
+    const roleInserts = rows.filter((row) => row.table_name === 'empresa_roles' && row.operation.toUpperCase() === 'INSERT' && text(row.after_data, 'rol') === 'CLIENTE');
+    if (roleInserts.length !== 1) return null;
+    const roleRow = roleInserts[0]!;
+    const companyId = id(roleRow.after_data, 'empresa_id');
+    if (!companyId) return null;
+    const others = rows.filter((row) => row !== roleRow);
+    const companyRows = others.filter((row) => row.table_name === 'empresas');
+    const fiscalRows = others.filter((row) => row.table_name === 'empresas_fiscales' && row.operation.toUpperCase() === 'INSERT');
+    if (companyRows.length + fiscalRows.length !== others.length || companyRows.length > 1) return null;
+    let insertedName: string | null = null;
+    if (companyRows.length === 1) {
+      const companyRow = companyRows[0]!;
+      const operation = companyRow.operation.toUpperCase();
+      if (operation === 'INSERT') {
+        if (id(companyRow.after_data, 'empresa_id') !== companyId) return null;
+        insertedName = text(companyRow.after_data, 'nombre_comercial');
+      } else if (operation === 'UPDATE') {
+        if ((id(companyRow.after_data, 'empresa_id') ?? id(companyRow.before_data, 'empresa_id')) !== companyId) return null;
+        const meaningful = [...changedFields(companyRow.before_data, companyRow.after_data)].filter((field) => !ignoredTimestampFields.has(field));
+        if (meaningful.length !== 1 || meaningful[0] !== 'estatus' || text(companyRow.after_data, 'estatus') !== 'ACTIVO') return null;
+      } else return null;
+    }
+    if (fiscalRows.some((row) => id(row.after_data, 'empresa_id') !== companyId)) return null;
+    const entity = insertedName ?? source.companies.get(companyId) ?? null;
+    return this.item('CLIENT_CREATED', entity, null, occurredAt);
+  }
+
+  // An existing CLIENTE role flips INACTIVO -> ACTIVO. This is unambiguous: it only fires on an
+  // UPDATE of a role row that was already CLIENTE and stays CLIENTE, distinguishing it from the
+  // plain INSERT above via the actual before/after values rather than which endpoint was called.
+  private clientReactivate(rows: SourceRow[], source: RecentActivitySource, occurredAt: string): RecentActivityItem | null {
+    return this.clientRoleTransition(rows, source, occurredAt, 'INACTIVO', 'ACTIVO', 'CLIENT_REACTIVATED', true);
+  }
+
+  // An existing CLIENTE role flips ACTIVO -> INACTIVO. The same request may also flip
+  // empresas.estatus to INACTIVO when CLIENTE was the company's last active role; that is folded
+  // into this same single activity rather than a second one.
+  private clientDeactivate(rows: SourceRow[], source: RecentActivitySource, occurredAt: string): RecentActivityItem | null {
+    return this.clientRoleTransition(rows, source, occurredAt, 'ACTIVO', 'INACTIVO', 'CLIENT_DEACTIVATED', false);
+  }
+
+  private clientRoleTransition(rows: SourceRow[], source: RecentActivitySource, occurredAt: string, from: string, to: string, type: 'CLIENT_REACTIVATED' | 'CLIENT_DEACTIVATED', allowFiscal: boolean): RecentActivityItem | null {
+    const roleRows = rows.filter((row) => row.table_name === 'empresa_roles');
+    if (roleRows.length !== 1) return null;
+    const roleRow = roleRows[0]!;
+    if (roleRow.operation.toUpperCase() !== 'UPDATE') return null;
+    if (text(roleRow.before_data, 'rol') !== 'CLIENTE' || text(roleRow.after_data, 'rol') !== 'CLIENTE') return null;
+    if (text(roleRow.before_data, 'estatus') !== from || text(roleRow.after_data, 'estatus') !== to) return null;
+    if ([...changedFields(roleRow.before_data, roleRow.after_data)].some((field) => !ignoredTimestampFields.has(field) && field !== 'estatus')) return null;
+    const companyId = id(roleRow.after_data, 'empresa_id') ?? id(roleRow.before_data, 'empresa_id');
+    if (!companyId) return null;
+    const others = rows.filter((row) => row !== roleRow);
+    const companyRows = others.filter((row) => row.table_name === 'empresas');
+    const fiscalRows = allowFiscal ? others.filter((row) => row.table_name === 'empresas_fiscales' && row.operation.toUpperCase() === 'INSERT') : [];
+    if (companyRows.length + fiscalRows.length !== others.length || companyRows.length > 1) return null;
+    if (companyRows.length === 1) {
+      const companyRow = companyRows[0]!;
+      if (companyRow.operation.toUpperCase() !== 'UPDATE') return null;
+      if ((id(companyRow.after_data, 'empresa_id') ?? id(companyRow.before_data, 'empresa_id')) !== companyId) return null;
+      const meaningful = [...changedFields(companyRow.before_data, companyRow.after_data)].filter((field) => !ignoredTimestampFields.has(field));
+      if (meaningful.length !== 1 || meaningful[0] !== 'estatus' || text(companyRow.after_data, 'estatus') !== to) return null;
+    }
+    if (fiscalRows.some((row) => id(row.after_data, 'empresa_id') !== companyId)) return null;
+    const entity = source.companies.get(companyId) ?? null;
+    return this.item(type, entity, null, occurredAt);
+  }
+
+  // A PATCH to the company's own record and/or its fiscal identity, with no role change at all.
+  // These audit rows (empresas.nombre_comercial/observaciones, empresas_fiscales insert/update)
+  // are byte-identical to a Provider company-info PATCH — audit.cambios carries no per-request
+  // marker naming the workflow that produced them. The only available signal is which roles the
+  // company currently holds: a CLIENTE-only company can only have reached this shape through the
+  // Clients PATCH (the Providers PATCH 404s without an active provider role, and vice versa), so
+  // that is used as the disambiguator. A company that currently holds an active CLIENTE role
+  // *and* an active provider role is genuinely ambiguous — this deliberately shows neither
+  // CLIENT_UPDATED nor PROVIDER_UPDATED for that shared case rather than guess.
+  private clientUpdate(rows: SourceRow[], source: RecentActivitySource, occurredAt: string): RecentActivityItem | null {
+    const companies = rows.filter((row) => row.table_name === 'empresas' && row.operation.toUpperCase() === 'UPDATE');
+    const fiscals = rows.filter((row) => row.table_name === 'empresas_fiscales' && ['INSERT', 'UPDATE'].includes(row.operation.toUpperCase()));
+    if (companies.length === 0 && fiscals.length === 0) return null;
+    const allowed = rows.every((row) => (row.table_name === 'empresas' && row.operation.toUpperCase() === 'UPDATE')
+      || (row.table_name === 'empresas_fiscales' && ['INSERT', 'UPDATE'].includes(row.operation.toUpperCase())));
+    if (!allowed) return null;
+    if (companies.some((row) => [...changedFields(row.before_data, row.after_data)].some((field) => !ignoredTimestampFields.has(field) && !clientBusinessFields.has(field)))) return null;
+    const first = companies[0] ?? fiscals[0]!;
+    const companyId = id(first.after_data, 'empresa_id') ?? id(first.before_data, 'empresa_id');
+    if (!companyId || rows.some((row) => (id(row.after_data, 'empresa_id') ?? id(row.before_data, 'empresa_id')) !== companyId)) return null;
+    const roles = source.companyRoles?.get(companyId);
+    if (!roles || !roles.has('CLIENTE') || [...roles].some((role) => providerRoles.has(role))) return null;
+    const entity = companies.map((row) => text(row.after_data, 'nombre_comercial')).filter((name): name is string => Boolean(name)).at(-1)
+      ?? companies.map((row) => text(row.before_data, 'nombre_comercial')).filter((name): name is string => Boolean(name)).at(-1)
+      ?? source.companies.get(companyId) ?? null;
+    return this.item('CLIENT_UPDATED', entity, null, occurredAt);
   }
 
   private providerCreate(rows: SourceRow[], source: RecentActivitySource, occurredAt: string): RecentActivityItem | null {
@@ -239,6 +353,15 @@ export class RecentActivityService {
     const companyId = id(first.after_data, 'empresa_id') ?? id(first.before_data, 'empresa_id');
     if (!companyId || rows.some((row) => (id(row.after_data, 'empresa_id') ?? id(row.before_data, 'empresa_id')) !== companyId)) return null;
     if (roleRows.some((row) => !providerRoles.has(text(row.after_data, 'rol') ?? text(row.before_data, 'rol') ?? ''))) return null;
+    // Mirror of the clientUpdate() disambiguator: a role row already proves this is a Provider
+    // mutation, but a plain company/fiscal-only change (no role row) has the exact same shape as
+    // a Client PATCH. Only trust it as Provider activity when the company currently holds an
+    // active provider role and no active CLIENTE role; stay silent (as before, when role data is
+    // unavailable) rather than guess for a genuinely shared, multi-role company.
+    if (roleRows.length === 0) {
+      const roles = source.companyRoles?.get(companyId);
+      if (roles && (![...roles].some((role) => providerRoles.has(role)) || roles.has('CLIENTE'))) return null;
+    }
     const entity = companies.map((row) => text(row.after_data, 'nombre_comercial')).filter((name): name is string => Boolean(name)).at(-1)
       ?? companies.map((row) => text(row.before_data, 'nombre_comercial')).filter((name): name is string => Boolean(name)).at(-1)
       ?? source.companies.get(companyId) ?? null;

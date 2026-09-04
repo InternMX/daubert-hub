@@ -16,8 +16,8 @@ function audi(overrides: Partial<{ execution_id: string; automation_name: string
   return { execution_id: '1', automation_name: 'Remisiones Audi', execution_state: 'COMPLETADA' as const, run_name: null, occurred_at: at, error_node: null, error_message: null, generated_count: 1, minimum_folio: '969', maximum_folio: '969', ...overrides };
 }
 
-function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = [], audiRows: ReturnType<typeof audi>[] = []) {
-  const findRecent = vi.fn().mockResolvedValue({ rows, contacts: new Map(contacts), companies: new Map(companies) });
+function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = [], audiRows: ReturnType<typeof audi>[] = [], companyRoles: Array<[string, string[]]> = []) {
+  const findRecent = vi.fn().mockResolvedValue({ rows, contacts: new Map(contacts), companies: new Map(companies), companyRoles: new Map(companyRoles.map(([companyId, roles]) => [companyId, new Set(roles)])) });
   const findPaymentNotifications = vi.fn().mockResolvedValue(payments);
   const findAudi = vi.fn().mockResolvedValue(audiRows);
   return { service: new RecentActivityService({ findRecent } as never, { findRecent: findPaymentNotifications } as never, { findRecent: findAudi } as never), findRecent, findPaymentNotifications, findAudi };
@@ -183,13 +183,115 @@ describe('RecentActivityService', () => {
     expect(findAudi).toHaveBeenCalledWith(1);
   });
 
-  it('returns an empty client feed without querying unsupported sources', async () => {
-    const { service, findRecent, findPaymentNotifications, findAudi } = setup([], [], [], [payment()], [audi()]);
+  it('returns only client activity, scoped to CLIENT tables, and skips non-audit sources', async () => {
+    const rows = [
+      row('client-create', 'empresa_roles', 'INSERT', { empresa_id: 1, rol: 'CLIENTE' }),
+      row('provider-update', 'empresas', 'UPDATE', { empresa_id: 2, nombre_comercial: 'Nuevo' }, { empresa_id: 2, nombre_comercial: 'Antiguo' })
+    ];
+    const { service, findRecent, findPaymentNotifications, findAudi } = setup(rows, [], [['1', 'Acme'], ['2', 'Otra']], [payment()], [audi()], [['2', ['PROVEEDOR']]]);
 
-    await expect(service.list({ limit: 6, category: RecentActivityCategoryFilter.CLIENT })).resolves.toEqual({ data: [] });
-    expect(findRecent).not.toHaveBeenCalled();
+    const result = await service.list({ limit: 6, category: RecentActivityCategoryFilter.CLIENT });
+
+    expect(result.data).toEqual([{ type: 'CLIENT_CREATED', category: 'CLIENT', title: 'Cliente creado', entity: 'Acme', context: null, occurredAt: at }]);
+    expect(findRecent).toHaveBeenCalledWith(6, 'CLIENT');
     expect(findPaymentNotifications).not.toHaveBeenCalled();
     expect(findAudi).not.toHaveBeenCalled();
+  });
+
+  describe('client activity', () => {
+    it('collapses a brand-new company acquiring the CLIENTE role, with fiscal', async () => {
+      const rows = [
+        row('create', 'empresas', 'INSERT', { empresa_id: 1, nombre_comercial: 'Acme' }),
+        row('create', 'empresa_roles', 'INSERT', { empresa_id: 1, rol: 'CLIENTE' }),
+        row('create', 'empresas_fiscales', 'INSERT', { empresa_id: 1, razon_social: 'Acme SA' })
+      ];
+      const result = await setup(rows).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_CREATED', category: 'CLIENT', title: 'Cliente creado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('classifies an existing PROVEEDOR company gaining its first CLIENTE role as CLIENT_CREATED, not CLIENT_UPDATED', async () => {
+      const rows = [row('gain-client', 'empresa_roles', 'INSERT', { empresa_id: 1, rol: 'CLIENTE' })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['PROVEEDOR', 'CLIENTE']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_CREATED', category: 'CLIENT', title: 'Cliente creado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('classifies an existing inactive CLIENTE role turning active as CLIENT_REACTIVATED, never CLIENT_CREATED', async () => {
+      const rows = [row('reactivate', 'empresa_roles', 'UPDATE', { empresa_id: 1, rol: 'CLIENTE', estatus: 'ACTIVO' }, { empresa_id: 1, rol: 'CLIENTE', estatus: 'INACTIVO' })];
+      const result = await setup(rows, [], [['1', 'Acme']]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_REACTIVATED', category: 'CLIENT', title: 'Cliente reactivado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('classifies an active CLIENTE role turning inactive as CLIENT_DEACTIVATED', async () => {
+      const rows = [row('deactivate', 'empresa_roles', 'UPDATE', { empresa_id: 1, rol: 'CLIENTE', estatus: 'INACTIVO' }, { empresa_id: 1, rol: 'CLIENTE', estatus: 'ACTIVO' })];
+      const result = await setup(rows, [], [['1', 'Acme']]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_DEACTIVATED', category: 'CLIENT', title: 'Cliente desactivado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('collapses a final-role deactivate (role + company status) into exactly one CLIENT_DEACTIVATED', async () => {
+      const rows = [
+        row('deactivate', 'empresa_roles', 'UPDATE', { empresa_id: 1, rol: 'CLIENTE', estatus: 'INACTIVO' }, { empresa_id: 1, rol: 'CLIENTE', estatus: 'ACTIVO' }),
+        row('deactivate', 'empresas', 'UPDATE', { empresa_id: 1, estatus: 'INACTIVO' }, { empresa_id: 1, estatus: 'ACTIVO' })
+      ];
+      const result = await setup(rows, [], [['1', 'Acme']]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_DEACTIVATED', category: 'CLIENT', title: 'Cliente desactivado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('collapses a multi-role deactivate (company stays active) into exactly one CLIENT_DEACTIVATED', async () => {
+      const rows = [row('deactivate', 'empresa_roles', 'UPDATE', { empresa_id: 1, rol: 'CLIENTE', estatus: 'INACTIVO' }, { empresa_id: 1, rol: 'CLIENTE', estatus: 'ACTIVO' })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['PROVEEDOR']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_DEACTIVATED', category: 'CLIENT', title: 'Cliente desactivado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('collapses a company-data PATCH into one CLIENT_UPDATED for a CLIENTE-only company', async () => {
+      const rows = [row('update', 'empresas', 'UPDATE', { empresa_id: '1', nombre_comercial: 'Acme Final', observaciones: 'Nueva' }, { empresa_id: '1', nombre_comercial: 'Acme', observaciones: null })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['CLIENTE']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_UPDATED', category: 'CLIENT', title: 'Cliente actualizado', entity: 'Acme Final', context: null, occurredAt: at }]);
+    });
+
+    it('collapses a fiscal PATCH producing multiple audit rows (NEW_IDENTITY) into one CLIENT_UPDATED', async () => {
+      const rows = [
+        row('fiscal-update', 'empresas_fiscales', 'UPDATE', { empresa_id: '1', razon_social: 'Acme', rfc: 'OLD', es_vigente: false, fecha_fin: '2026-01-01' }, { empresa_id: '1', razon_social: 'Acme', rfc: 'OLD', es_vigente: true, fecha_fin: null }),
+        row('fiscal-update', 'empresas_fiscales', 'INSERT', { empresa_id: '1', razon_social: 'Acme', rfc: 'NEW', es_vigente: true })
+      ];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['CLIENTE']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'CLIENT_UPDATED', category: 'CLIENT', title: 'Cliente actualizado', entity: 'Acme', context: null, occurredAt: at }]);
+    });
+
+    it('does not classify a company-data PATCH as Client activity when role membership is unknown', async () => {
+      const rows = [row('update', 'empresas', 'UPDATE', { empresa_id: '1', nombre_comercial: 'Acme Final' }, { empresa_id: '1', nombre_comercial: 'Acme' })];
+      const result = await setup(rows, [], [['1', 'Acme']]).service.list({ limit: 6 });
+      expect(result.data.some((item) => item.category === 'CLIENT')).toBe(false);
+    });
+
+    it('shows neither CLIENT_UPDATED nor PROVIDER_UPDATED for a genuinely multi-role company update (documented ambiguity)', async () => {
+      const rows = [row('update', 'empresas', 'UPDATE', { empresa_id: '1', nombre_comercial: 'Acme Final' }, { empresa_id: '1', nombre_comercial: 'Acme' })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['CLIENTE', 'PROVEEDOR']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([]);
+    });
+
+    it('does not generate Client activity for an address mutation', async () => {
+      const rows = [row('address', 'direcciones', 'INSERT', { empresa_id: 1, calle: 'Calle 1' })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['CLIENTE']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([]);
+    });
+
+    it('does not generate Client activity for an alias mutation', async () => {
+      const rows = [row('alias', 'alias_empresa', 'INSERT', { empresa_id: 1, alias: 'BMASC' })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['CLIENTE']]]).service.list({ limit: 6 });
+      expect(result.data.some((item) => item.category === 'CLIENT')).toBe(false);
+    });
+
+    it('leaves Provider activity for genuine provider-only companies unchanged', async () => {
+      const rows = [row('update', 'empresas', 'UPDATE', { empresa_id: '1', nombre_comercial: 'Acme Final' }, { empresa_id: '1', nombre_comercial: 'Acme' })];
+      const result = await setup(rows, [], [['1', 'Acme']], [], [], [['1', ['PROVEEDOR']]]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'PROVIDER_UPDATED', category: 'PROVIDER', title: 'Proveedor actualizado', entity: 'Acme Final', context: null, occurredAt: at }]);
+    });
+
+    it('leaves legacy Provider classification unchanged when role membership is unknown (no companyRoles data)', async () => {
+      const rows = [row('update', 'empresas', 'UPDATE', { empresa_id: '1', nombre_comercial: 'Acme Final' }, { empresa_id: '1', nombre_comercial: 'Acme' })];
+      const result = await setup(rows, [], [['1', 'Acme']]).service.list({ limit: 6 });
+      expect(result.data).toEqual([{ type: 'PROVIDER_UPDATED', category: 'PROVIDER', title: 'Proveedor actualizado', entity: 'Acme Final', context: null, occurredAt: at }]);
+    });
   });
 
   it.each([

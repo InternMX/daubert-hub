@@ -7,7 +7,7 @@ describe('RecentActivityRepository', () => {
     const query = vi.fn().mockResolvedValue([]);
     const repository = new RecentActivityRepository({ query } as never);
 
-    await expect(repository.findRecent(6)).resolves.toEqual({ rows: [], contacts: new Map(), companies: new Map() });
+    await expect(repository.findRecent(6)).resolves.toEqual({ rows: [], contacts: new Map(), companies: new Map(), companyRoles: new Map() });
 
     expect(query).toHaveBeenCalledOnce();
     expect(query).toHaveBeenCalledWith(expect.stringContaining("FROM audit.cambios change"), [30]);
@@ -24,20 +24,24 @@ describe('RecentActivityRepository', () => {
     const query = vi.fn()
       .mockResolvedValueOnce([{ request_id: 'r1', schema_name: 'core', table_name: 'medios_contacto', operation: 'INSERT', before_data: null, after_data: { contacto_id: 7, valor: 'a@test.mx' }, occurred_at: '2026-08-25T10:00:00Z' }])
       .mockResolvedValueOnce([{ id: '7', company_id: '8', contact_type: 'PERSONA', name: 'Ana', area: 'Compras' }])
-      .mockResolvedValueOnce([{ id: '8', name: 'Acme' }]);
+      .mockResolvedValueOnce([{ id: '8', name: 'Acme' }])
+      .mockResolvedValueOnce([{ empresa_id: '8', rol: 'CLIENTE' }]);
     const repository = new RecentActivityRepository({ query } as never);
 
     const result = await repository.findRecent(1);
 
     expect(result.contacts.get('7')?.name).toBe('Ana');
     expect(result.companies.get('8')).toBe('Acme');
+    expect(result.companyRoles.get('8')).toEqual(new Set(['CLIENTE']));
     expect(query.mock.calls[1]?.[0]).not.toContain('estatus');
     expect(query.mock.calls[2]?.[0]).not.toContain('estatus');
+    expect(query.mock.calls[3]?.[0]).toContain("estatus = 'ACTIVO'");
   });
 
   it.each([
     ['PROVIDER', ['empresas', 'empresa_roles', 'empresas_fiscales', 'alias_empresa']],
-    ['CONTACT', ['contactos', 'medios_contacto']]
+    ['CONTACT', ['contactos', 'medios_contacto']],
+    ['CLIENT', ['empresas', 'empresa_roles', 'empresas_fiscales']]
   ] as const)('bounds %s request groups after source-category selection', async (category, tables) => {
     const query = vi.fn().mockResolvedValue([]);
     const repository = new RecentActivityRepository({ query } as never);

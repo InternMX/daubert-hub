@@ -4,11 +4,12 @@ import { useSearchParams } from 'react-router-dom';
 import { listRecentActivity, type RecentActivityCategory, type RecentActivityItem } from '../services/recentActivity';
 import { formatActivityTimestamp } from './activityTimestamp';
 
-type VisibleCategory = Exclude<RecentActivityCategory, 'CLIENT'>;
+type VisibleCategory = RecentActivityCategory;
 
 const filters: Array<{ label: string; category?: VisibleCategory }> = [
   { label: 'Todos' },
   { label: 'Proveedores', category: 'PROVIDER' },
+  { label: 'Clientes', category: 'CLIENT' },
   { label: 'Contactos', category: 'CONTACT' },
   { label: 'Automatizaciones', category: 'AUTOMATION' }
 ];
@@ -16,6 +17,7 @@ const filters: Array<{ label: string; category?: VisibleCategory }> = [
 const emptyMessages: Record<VisibleCategory | 'ALL', string> = {
   ALL: 'No hay actividad reciente.',
   PROVIDER: 'No hay actividad reciente de proveedores.',
+  CLIENT: 'No hay actividad reciente de clientes.',
   CONTACT: 'No hay actividad reciente de contactos.',
   AUTOMATION: 'No hay actividad reciente de automatizaciones.'
 };
@@ -23,7 +25,7 @@ const emptyMessages: Record<VisibleCategory | 'ALL', string> = {
 export function RecentActivity() {
   const [searchParams, setSearchParams] = useSearchParams();
   const categoryParam = searchParams.get('activityCategory');
-  const category: VisibleCategory | undefined = categoryParam === 'PROVIDER' || categoryParam === 'CONTACT' || categoryParam === 'AUTOMATION' ? categoryParam : undefined;
+  const category: VisibleCategory | undefined = categoryParam === 'PROVIDER' || categoryParam === 'CLIENT' || categoryParam === 'CONTACT' || categoryParam === 'AUTOMATION' ? categoryParam : undefined;
   const [items, setItems] = useState<RecentActivityItem[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(false);
   useEffect(() => { let active = true; setLoading(true); setError(false); listRecentActivity(6, category).then((result) => { if (active) setItems(result); }).catch(() => { if (active) setError(true); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [category]);
 

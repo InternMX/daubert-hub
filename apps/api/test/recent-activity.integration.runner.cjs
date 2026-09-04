@@ -14,6 +14,12 @@ const requestIds = new Set([setupRequestId, deleteRequestId, paymentRequestId, c
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
 
+let rfcSequence = 0;
+function nextRfc(prefix = 'CLI') {
+  rfcSequence += 1;
+  return `${prefix}${String(Date.now() + rfcSequence).slice(-6)}ABC`;
+}
+
 function guardedDatabaseUrl(value) {
   if (!value) throw new Error('TEST_DATABASE_URL must be set for database integration tests.');
   let url;
@@ -91,12 +97,18 @@ async function cleanup(pool, names, paymentFixtures) {
       }
       const companies = await client.query(
         'SELECT empresa_id::text AS id FROM core.empresas WHERE nombre_comercial = ANY($1::text[])',
-        [[names.setupCompany, names.providerOriginal, names.providerUpdated]]
+        [[
+          names.setupCompany, names.providerOriginal, names.providerUpdated,
+          names.clientNew, names.clientFromProvider, names.clientForUpdate, names.clientUpdatedName,
+          names.clientForFiscal, names.clientFinalRole, names.clientForAddress, names.clientForAlias
+        ]]
       );
       const companyIds = companies.rows.map((row) => row.id);
       if (companyIds.length) {
         await client.query('DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [companyIds]);
         await client.query('DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
+        await client.query('DELETE FROM core.direcciones WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
+        await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
         await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
         await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
         await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
@@ -156,6 +168,14 @@ async function run() {
     initialPhone: `+52 449 ${String(Date.now()).slice(-7)}`,
     methodOriginal: `standalone.${markerLower}@example.test`,
     methodUpdated: `standalone.updated.${markerLower}@example.test`,
+    clientNew: `${marker}_CLIENT_NEW`,
+    clientFromProvider: `${marker}_CLIENT_FROM_PROVIDER`,
+    clientForUpdate: `${marker}_CLIENT_FOR_UPDATE`,
+    clientUpdatedName: `${marker}_CLIENT_UPDATED_NAME`,
+    clientForFiscal: `${marker}_CLIENT_FOR_FISCAL`,
+    clientFinalRole: `${marker}_CLIENT_FINAL_ROLE`,
+    clientForAddress: `${marker}_CLIENT_FOR_ADDRESS`,
+    clientForAlias: `${marker}_CLIENT_FOR_ALIAS`,
     paymentMessageIds: [
       `SYNTHETIC_PAYMENT_PROCESSED_${marker}`,
       `SYNTHETIC_PAYMENT_FAILED_${marker}`,
@@ -256,6 +276,97 @@ async function run() {
     });
     assert(!/correo_id|outlook|remitente|destinatario|detalle_error/i.test(JSON.stringify(paymentEvents)), 'Payment notification activity exposed sensitive notification data.');
 
+    // --- Client Recent Activity scenarios (A-J) ---
+    // Run before the Provider/Contact block below so its own Provider fixture (scenario B) is
+    // older than names.providerOriginal/providerUpdated and does not disturb their "newest two"
+    // PROVIDER-category assertions further down.
+    const clientActionOrder = [];
+
+    // A: brand-new company + CLIENTE role -> exactly one CLIENT_CREATED
+    const clientCreateId = nextRequestId('client-create'); clientActionOrder.push(clientCreateId);
+    const clientNew = await apiRequest('/clients', 'POST', { commercialName: names.clientNew }, clientCreateId);
+    assert(clientNew.response.status === 201, `Client create failed with ${clientNew.response.status}.`);
+
+    // B: existing Provider gains CLIENTE -> exactly one CLIENT_CREATED, Provider role untouched
+    const clientFromProviderCreateId = nextRequestId('client-from-provider-create'); clientActionOrder.push(clientFromProviderCreateId);
+    const providerForClient = await apiRequest('/providers', 'POST', { commercialName: names.clientFromProvider, providerType: 'PROVEEDOR' }, clientFromProviderCreateId);
+    assert(providerForClient.response.status === 201, `Provider fixture for Client gain failed with ${providerForClient.response.status}.`);
+    const clientFromProviderId = providerForClient.body.data.id;
+
+    const clientGainId = nextRequestId('client-gain'); clientActionOrder.push(clientGainId);
+    const clientGain = await apiRequest('/clients', 'POST', { commercialName: names.clientFromProvider }, clientGainId);
+    assert(clientGain.response.status === 201 && clientGain.body.data.id === clientFromProviderId, `Existing Provider did not gain CLIENTE on the same company: ${JSON.stringify(clientGain.body)}`);
+    const clientFromProviderRoles = await pool.query('SELECT rol, estatus FROM core.empresa_roles WHERE empresa_id = $1 ORDER BY rol', [clientFromProviderId]);
+    assert(clientFromProviderRoles.rows.some((row) => row.rol === 'PROVEEDOR' && row.estatus === 'ACTIVO'), 'Existing PROVEEDOR role was disturbed when gaining CLIENTE.');
+    assert(clientFromProviderRoles.rows.some((row) => row.rol === 'CLIENTE' && row.estatus === 'ACTIVO'), 'CLIENTE role was not added.');
+
+    // C: update Client general data -> exactly one CLIENT_UPDATED
+    const clientForUpdateCreateId = nextRequestId('client-for-update-create'); clientActionOrder.push(clientForUpdateCreateId);
+    const clientForUpdate = await apiRequest('/clients', 'POST', { commercialName: names.clientForUpdate }, clientForUpdateCreateId);
+    assert(clientForUpdate.response.status === 201, 'Client-for-update fixture create failed.');
+    const clientForUpdateId = clientForUpdate.body.data.id;
+    const clientUpdateId = nextRequestId('client-update'); clientActionOrder.push(clientUpdateId);
+    const clientUpdated = await apiRequest(`/clients/${clientForUpdateId}`, 'PATCH', { commercialName: names.clientUpdatedName, notes: 'Nota de prueba' }, clientUpdateId);
+    assert(clientUpdated.response.status === 200 && clientUpdated.body.data.commercialName === names.clientUpdatedName, 'Client update failed.');
+
+    // D: fiscal update / NEW_IDENTITY -> exactly one CLIENT_UPDATED despite multiple audit rows
+    const clientForFiscalRfc = nextRfc('CFF');
+    const clientForFiscalCreateId = nextRequestId('client-for-fiscal-create'); clientActionOrder.push(clientForFiscalCreateId);
+    const clientForFiscal = await apiRequest('/clients', 'POST', { commercialName: names.clientForFiscal, fiscal: { legalName: `${names.clientForFiscal} SA`, rfc: clientForFiscalRfc } }, clientForFiscalCreateId);
+    assert(clientForFiscal.response.status === 201, 'Client-for-fiscal fixture create failed.');
+    const clientForFiscalId = clientForFiscal.body.data.id;
+    const clientNewIdentityRfc = nextRfc('CNI');
+    const clientFiscalUpdateId = nextRequestId('client-fiscal-update'); clientActionOrder.push(clientFiscalUpdateId);
+    const clientFiscalUpdated = await apiRequest(`/clients/${clientForFiscalId}`, 'PATCH', { fiscal: { legalName: 'Nueva Identidad SA', rfc: clientNewIdentityRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-09-10' } }, clientFiscalUpdateId);
+    assert(clientFiscalUpdated.response.status === 200 && clientFiscalUpdated.body.data.fiscal.rfc === clientNewIdentityRfc, 'Client fiscal NEW_IDENTITY update failed.');
+    const clientFiscalAudit = await pool.query("SELECT tabla, operacion FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = $1", [clientFiscalUpdateId]);
+    assert(clientFiscalAudit.rows.length >= 2, 'Fiscal NEW_IDENTITY update did not produce multiple audit rows as expected.');
+
+    // E/F: deactivate then reactivate a multi-role Client (company stays ACTIVO throughout)
+    const clientDeactivateMultiId = nextRequestId('client-deactivate-multi'); clientActionOrder.push(clientDeactivateMultiId);
+    const clientDeactivatedMulti = await apiRequest(`/clients/${clientFromProviderId}/deactivate`, 'POST', undefined, clientDeactivateMultiId);
+    assert(clientDeactivatedMulti.response.status === 200 && clientDeactivatedMulti.body.data.clientStatus === 'INACTIVO', 'Multi-role Client deactivate failed.');
+    const multiRoleCompanyAfterDeactivate = await pool.query('SELECT estatus FROM core.empresas WHERE empresa_id = $1', [clientFromProviderId]);
+    assert(multiRoleCompanyAfterDeactivate.rows[0].estatus === 'ACTIVO', 'Multi-role Client deactivate incorrectly deactivated the company.');
+
+    const clientReactivateMultiId = nextRequestId('client-reactivate-multi'); clientActionOrder.push(clientReactivateMultiId);
+    const clientReactivatedMulti = await apiRequest(`/clients/${clientFromProviderId}/reactivate`, 'POST', undefined, clientReactivateMultiId);
+    assert(clientReactivatedMulti.response.status === 200 && clientReactivatedMulti.body.data.clientStatus === 'ACTIVO', 'Multi-role Client reactivate failed.');
+
+    // G: deactivate a final-role Client (company status also flips) -> exactly one CLIENT_DEACTIVATED
+    const clientFinalRoleCreateId = nextRequestId('client-final-role-create'); clientActionOrder.push(clientFinalRoleCreateId);
+    const clientFinalRole = await apiRequest('/clients', 'POST', { commercialName: names.clientFinalRole }, clientFinalRoleCreateId);
+    assert(clientFinalRole.response.status === 201, 'Client-final-role fixture create failed.');
+    const clientFinalRoleId = clientFinalRole.body.data.id;
+    const clientFinalDeactivateId = nextRequestId('client-final-deactivate'); clientActionOrder.push(clientFinalDeactivateId);
+    const clientFinalDeactivated = await apiRequest(`/clients/${clientFinalRoleId}/deactivate`, 'POST', undefined, clientFinalDeactivateId);
+    assert(clientFinalDeactivated.response.status === 200, 'Final-role Client deactivate failed.');
+    const finalRoleCompanyAfterDeactivate = await pool.query('SELECT estatus FROM core.empresas WHERE empresa_id = $1', [clientFinalRoleId]);
+    assert(finalRoleCompanyAfterDeactivate.rows[0].estatus === 'INACTIVO', 'Final-role Client deactivate did not also deactivate the company.');
+    const clientFinalDeactivateAudit = await pool.query("SELECT tabla, operacion FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = $1", [clientFinalDeactivateId]);
+    assert(clientFinalDeactivateAudit.rows.length === 2, 'Final-role Client deactivate did not produce both the role and company audit rows.');
+
+    // H: change a Client's company address through the generic address API -> no CLIENT activity
+    const clientForAddressCreateId = nextRequestId('client-for-address-create'); clientActionOrder.push(clientForAddressCreateId);
+    const clientForAddress = await apiRequest('/clients', 'POST', { commercialName: names.clientForAddress }, clientForAddressCreateId);
+    assert(clientForAddress.response.status === 201, 'Client-for-address fixture create failed.');
+    const clientForAddressId = clientForAddress.body.data.id;
+    const clientAddressId = nextRequestId('client-address'); clientActionOrder.push(clientAddressId);
+    const clientAddress = await apiRequest(`/companies/${clientForAddressId}/addresses`, 'POST', { tipoDireccion: 'OPERATIVA', calle: `${marker} Calle` }, clientAddressId);
+    assert(clientAddress.response.status === 201, 'Client address create failed.');
+
+    // I: change a Client's aliases through the generic company alias API -> no CLIENT activity
+    const clientForAliasCreateId = nextRequestId('client-for-alias-create'); clientActionOrder.push(clientForAliasCreateId);
+    const clientForAlias = await apiRequest('/clients', 'POST', { commercialName: names.clientForAlias }, clientForAliasCreateId);
+    assert(clientForAlias.response.status === 201, 'Client-for-alias fixture create failed.');
+    const clientForAliasId = clientForAlias.body.data.id;
+    const clientAliasId = nextRequestId('client-alias'); clientActionOrder.push(clientAliasId);
+    const clientAlias = await apiRequest(`/companies/${clientForAliasId}/aliases`, 'PATCH', { aliases: [`${marker}_ALIAS`] }, clientAliasId);
+    assert(clientAlias.response.status === 200, 'Client alias update failed.');
+
+    const clientEndpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [clientActionOrder]);
+    assert(clientEndpointAudit.rows.length === clientActionOrder.length, `Not all Client scenario request IDs reached the audit log (expected ${clientActionOrder.length}, got ${clientEndpointAudit.rows.length}).`);
+
     const actionOrder = [];
     const providerCreateId = nextRequestId('provider-create'); actionOrder.push(providerCreateId);
     const provider = await apiRequest('/providers', 'POST', { commercialName: names.providerOriginal, providerType: 'PROVEEDOR' }, providerCreateId);
@@ -317,7 +428,11 @@ async function run() {
     assert(expected.slice(6).every((item) => item.context === null), 'Provider activity unexpectedly included company context.');
     assert(expected.slice(0, 6).every((item) => item.category === 'CONTACT'), 'Contact activity has an incorrect category.');
     assert(expected.slice(6).every((item) => item.category === 'PROVIDER'), 'Provider activity has an incorrect category.');
-    assert(items.filter((item) => item.entity.includes(marker) || item.context?.includes(marker)).length === 8, 'Expected one visible event for each of the eight synthetic endpoint requests.');
+    // Scoped to the original Provider/Contact fixture names specifically (not a bare marker
+    // substring match) because the Client scenarios below also create a marker-tagged Provider
+    // fixture (names.clientFromProvider) to exercise "existing Provider gains CLIENTE".
+    const providerContactNames = new Set([names.providerOriginal, names.providerUpdated, names.contactOriginal, names.contactUpdated, names.methodOriginal, names.methodUpdated]);
+    assert(items.filter((item) => (item.category === 'PROVIDER' || item.category === 'CONTACT') && (providerContactNames.has(item.entity) || (item.context && providerContactNames.has(item.context)))).length === 8, 'Expected one visible event for each of the eight synthetic Provider/Contact endpoint requests.');
     assert(items.filter((item) => item.type === 'CONTACT_CREATED' && item.entity === names.contactOriginal).length === 1, 'Initial methods did not collapse into one CONTACT_CREATED event.');
     assert(!items.some((item) => item.type === 'CONTACT_METHOD_ADDED' && [names.initialEmail, names.initialPhone].includes(item.entity)), 'Initial contact methods leaked as standalone added events.');
     assert(!items.some((item) => [names.deleteValue, names.deleteContact, names.setupCompany].includes(item.entity)), 'DELETE-only fixture appeared in recent activity.');
@@ -345,8 +460,25 @@ async function run() {
       assert(matches.length === 1, `Automation activity filter did not preserve synthetic payment event ${expected.type} at ${expected.occurredAt}.`);
     }
 
-    const clientFeed = await apiRequest('/recent-activity?limit=6&category=CLIENT');
-    assert(clientFeed.response.status === 200 && Array.isArray(clientFeed.body.data) && clientFeed.body.data.length === 0, 'Unsupported client activity did not return an empty feed.');
+    // J: category=CLIENT filter -> returns Client activities only, covering the scenarios above.
+    const clientFeed = await apiRequest('/recent-activity?limit=20&category=CLIENT');
+    assert(clientFeed.response.status === 200 && Array.isArray(clientFeed.body.data), 'Client activity filter request failed.');
+    const clientItems = clientFeed.body.data;
+    assert(clientItems.every((item) => item.category === 'CLIENT'), 'Client activity filter returned another category.');
+    assert(clientItems.every((item) => Object.keys(item).sort().join(',') === expectedKeys), 'Client activity exposed request, audit, raw JSON, user, or other internal fields.');
+
+    one(clientItems, 'CLIENT_CREATED', names.clientNew); // A
+    one(clientItems, 'CLIENT_CREATED', names.clientFromProvider); // B
+    one(clientItems, 'CLIENT_UPDATED', names.clientUpdatedName); // C
+    one(clientItems, 'CLIENT_UPDATED', names.clientForFiscal); // D (fiscal-only PATCH keeps the current commercial name)
+    one(clientItems, 'CLIENT_DEACTIVATED', names.clientFromProvider); // E
+    one(clientItems, 'CLIENT_REACTIVATED', names.clientFromProvider); // F
+    one(clientItems, 'CLIENT_DEACTIVATED', names.clientFinalRole); // G
+    assert(!clientItems.some((item) => item.entity === names.clientForAddress && item.type !== 'CLIENT_CREATED'), 'H: the generic address mutation leaked into Client activity.'); // H
+    assert(!clientItems.some((item) => item.entity === names.clientForAlias && item.type !== 'CLIENT_CREATED'), 'I: the generic alias mutation leaked into Client activity.'); // I
+    assert(!items.some((item) => item.category === 'CLIENT' && item.entity === names.clientForAddress && item.type !== 'CLIENT_CREATED'), 'H: the generic address mutation leaked into the unfiltered feed as Client activity.');
+    assert(!items.some((item) => item.category === 'CLIENT' && item.entity === names.clientForAlias && item.type !== 'CLIENT_CREATED'), 'I: the generic alias mutation leaked into the unfiltered feed as Client activity.');
+
     const invalidCategory = await apiRequest('/recent-activity?limit=6&category=UNKNOWN');
     assert(invalidCategory.response.status === 400, 'Invalid recent activity category was not rejected.');
 

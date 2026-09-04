@@ -31,9 +31,10 @@ export interface RecentActivitySource {
   rows: AuditRow[];
   contacts: Map<string, ContactLabelRow>;
   companies: Map<string, string>;
+  companyRoles: Map<string, Set<string>>;
 }
 
-export type AuditActivityCategory = 'PROVIDER' | 'CONTACT';
+export type AuditActivityCategory = 'PROVIDER' | 'CONTACT' | 'CLIENT';
 
 function snapshotId(snapshot: Snapshot, key: string): string | null {
   const value = snapshot?.[key];
@@ -47,7 +48,8 @@ export class RecentActivityRepository {
   async findRecent(limit: number, category?: AuditActivityCategory): Promise<RecentActivitySource> {
     const categoryTables = category === 'PROVIDER'
       ? ['empresas', 'empresa_roles', 'empresas_fiscales', 'alias_empresa']
-      : category === 'CONTACT' ? ['contactos', 'medios_contacto'] : null;
+      : category === 'CONTACT' ? ['contactos', 'medios_contacto']
+      : category === 'CLIENT' ? ['empresas', 'empresa_roles', 'empresas_fiscales'] : null;
     const categoryCondition = categoryTables
       ? "HAVING bool_or(schema_name = 'core' AND table_name = ANY($2::text[]))"
       : '';
@@ -103,10 +105,23 @@ export class RecentActivityRepository {
       FROM core.empresas
       WHERE empresa_id = ANY($1::bigint[])`, [[...companyIds]]);
 
+    // Current active-role membership per company. This lets the service tell apart audit rows
+    // that are structurally identical between the Clients and Providers PATCH workflows (a plain
+    // empresas/empresas_fiscales change carries no per-request workflow marker) without guessing
+    // from anything other than what actually holds true for that company right now.
+    const roleRows = companyIds.size === 0 ? [] : await this.database.query<{ empresa_id: string; rol: string }>(`
+      SELECT empresa_id::text AS empresa_id, rol
+      FROM core.empresa_roles
+      WHERE empresa_id = ANY($1::bigint[]) AND estatus = 'ACTIVO'`, [[...companyIds]]);
+    const companyRoles = new Map<string, Set<string>>();
+    for (const companyId of companyIds) companyRoles.set(companyId, new Set());
+    for (const roleRow of roleRows) companyRoles.get(roleRow.empresa_id)?.add(roleRow.rol);
+
     return {
       rows,
       contacts: new Map(contacts.map((contact) => [contact.id, contact])),
-      companies: new Map(companies.map((company) => [company.id, company.name]))
+      companies: new Map(companies.map((company) => [company.id, company.name])),
+      companyRoles
     };
   }
 }

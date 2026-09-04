@@ -33,19 +33,20 @@ describe('RecentActivity', () => {
     expect(listMock).toHaveBeenCalledWith(6, undefined);
   });
 
-  it('shows the four visible filters with Todos selected by default and no Clientes option', async () => {
+  it('shows the five visible filters with Todos selected by default, including Clientes', async () => {
     listMock.mockResolvedValue([]);
     renderActivity();
     await screen.findByText('No hay actividad reciente.');
     expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Proveedores' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Clientes' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Contactos' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Automatizaciones' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Clientes' })).not.toBeInTheDocument();
   });
 
   it.each([
     ['Proveedores', 'PROVIDER'],
+    ['Clientes', 'CLIENT'],
     ['Contactos', 'CONTACT'],
     ['Automatizaciones', 'AUTOMATION']
   ] as const)('%s updates the URL, preserves unrelated parameters, and reloads only activity as %s', async (label, category) => {
@@ -91,12 +92,25 @@ describe('RecentActivity', () => {
   it.each([
     ['/', 'No hay actividad reciente.'],
     ['/?activityCategory=PROVIDER', 'No hay actividad reciente de proveedores.'],
+    ['/?activityCategory=CLIENT', 'No hay actividad reciente de clientes.'],
     ['/?activityCategory=CONTACT', 'No hay actividad reciente de contactos.'],
     ['/?activityCategory=AUTOMATION', 'No hay actividad reciente de automatizaciones.']
   ])('uses the restrained empty state for %s', async (path, message) => {
     listMock.mockResolvedValue([]);
     renderActivity(path);
     expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['CLIENT_CREATED', 'Cliente creado'],
+    ['CLIENT_UPDATED', 'Cliente actualizado'],
+    ['CLIENT_DEACTIVATED', 'Cliente desactivado'],
+    ['CLIENT_REACTIVATED', 'Cliente reactivado']
+  ] as const)('renders %s Client activity cards with the correct Spanish label', async (type, title) => {
+    listMock.mockResolvedValue([{ type, category: 'CLIENT', title, entity: 'Daubert USA', context: null, occurredAt: '2026-08-25T19:42:00.000Z' }]);
+    renderActivity('/?activityCategory=CLIENT');
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    expect(screen.getByText('Daubert USA')).toBeInTheDocument();
   });
 
   it('formats today, yesterday, and older instants once in Mexico City time', () => {
