@@ -4,6 +4,10 @@ const { once } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+// Set once run() logs in the synthetic test session; read by request() below.
+let sessionCookie = null;
 
 // Local dev convenience: apps/api/.env carries TEST_DATABASE_URL for the spawned Nest process
 // (loaded there via ConfigModule), but this runner never gets it unless the shell exports it
@@ -86,18 +90,19 @@ async function fixtureCompany(pool, suffix, options = {}) {
   } finally { client.release(); }
 }
 
-async function request(path, method = 'GET', body, requestId = `alias-api-${randomUUID()}`) {
+// x-request-id is always server-generated (Security V1 Phase 4); a client
+// can no longer choose the value that lands in audit.cambios.request_id, so
+// this captures the returned response header instead of trusting an input.
+async function request(path, method = 'GET', body) {
+  const headers = { ...(sessionCookie ? { cookie: sessionCookie } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
+  const response = await fetch(`http://127.0.0.1:${port}/api${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const requestId = response.headers.get('x-request-id');
   requestIds.add(requestId);
-  const response = await fetch(`http://127.0.0.1:${port}/api${path}`, {
-    method,
-    headers: { 'x-request-id': requestId, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) })
-  });
   return { response, body: await response.json(), requestId };
 }
 
-async function getAliases(companyId, requestId) { return request(`/companies/${companyId}/aliases`, 'GET', undefined, requestId); }
-async function patchAliases(companyId, aliases, requestId) { return request(`/companies/${companyId}/aliases`, 'PATCH', { aliases }, requestId); }
+async function getAliases(companyId) { return request(`/companies/${companyId}/aliases`, 'GET', undefined); }
+async function patchAliases(companyId, aliases) { return request(`/companies/${companyId}/aliases`, 'PATCH', { aliases }); }
 async function getProvider(id) { return request(`/providers/${id}`); }
 
 async function waitForApi() {
@@ -115,6 +120,7 @@ async function run() {
   let api;
   let verified = false;
   let startup = '';
+  let authSession = null;
   try {
     await assertLiveDatabase(pool, 'Fixture');
     verified = true;
@@ -127,6 +133,8 @@ async function run() {
     api.stdout.on('data', (chunk) => { startup += chunk; });
     api.stderr.on('data', (chunk) => { startup += chunk; });
     await waitForApi();
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
 
     // A CLIENTE-only company has no PROVEEDOR/SERVICIO/FLETE role: the Providers alias endpoint
     // 404s for it today. This is exactly the gap the generic companies/:id/aliases contract fixes.
@@ -134,12 +142,10 @@ async function run() {
     const providerLookup = await getProvider(clientOnly.id);
     assert(providerLookup.response.status === 404, 'A CLIENTE-only company unexpectedly has a Providers detail route.');
 
-    const emptyRequest = `alias-empty-${randomUUID()}`;
-    const empty = await getAliases(clientOnly.id, emptyRequest);
+    const empty = await getAliases(clientOnly.id);
     assert(empty.response.status === 200 && Array.isArray(empty.body.data.aliases) && empty.body.data.aliases.length === 0 && empty.body.data.otherAliases.length === 0, `CLIENTE-only company should read an empty alias set: ${JSON.stringify(empty.body)}`);
 
-    const addRequest = `alias-add-${randomUUID()}`;
-    const added = await patchAliases(clientOnly.id, [`${marker}_ALT_NAME`], addRequest);
+    const added = await patchAliases(clientOnly.id, [`${marker}_ALT_NAME`]);
     assert(added.response.status === 200 && added.body.data.aliases.includes(`${marker}_ALT_NAME`), `CLIENTE-only company should be able to add an alias: ${JSON.stringify(added.body)}`);
     const afterAdd = await getAliases(clientOnly.id);
     assert(afterAdd.response.status === 200 && afterAdd.body.data.aliases.length === 1, 'Added alias was not persisted for the CLIENTE-only company.');
@@ -147,16 +153,14 @@ async function run() {
     // Prove the endpoint is genuinely company-neutral, not merely "also works for Providers"
     // by accident: a PROVEEDOR company must see the exact same data through both contracts.
     const providerCompany = await fixtureCompany(pool, 'PROVIDER', { type: 'PROVEEDOR', roles: ['PROVEEDOR'] });
-    const providerAliasRequest = `alias-provider-${randomUUID()}`;
-    const providerAdded = await patchAliases(providerCompany.id, [`${marker}_PROVIDER_ALT`], providerAliasRequest);
+    const providerAdded = await patchAliases(providerCompany.id, [`${marker}_PROVIDER_ALT`]);
     assert(providerAdded.response.status === 200 && providerAdded.body.data.aliases.includes(`${marker}_PROVIDER_ALT`), `Generic endpoint should work for a Provider company too: ${JSON.stringify(providerAdded.body)}`);
     const providerDetail = await getProvider(providerCompany.id);
     assert(providerDetail.response.status === 200 && providerDetail.body.data.aliases.includes(`${marker}_PROVIDER_ALT`), 'Alias added through the generic endpoint is not visible through the existing Provider detail route.');
 
     // Cross-company active-alias conflict must be rejected without partial mutation.
     const conflictTarget = await fixtureCompany(pool, 'CONFLICT_TARGET', { type: 'CLIENTE', roles: ['CLIENTE'] });
-    const conflictRequest = `alias-conflict-${randomUUID()}`;
-    const conflict = await patchAliases(conflictTarget.id, [`${marker}_PROVIDER_ALT`], conflictRequest);
+    const conflict = await patchAliases(conflictTarget.id, [`${marker}_PROVIDER_ALT`]);
     assert(conflict.response.status === 409 && conflict.body.code === 'ALIAS_ALREADY_ASSOCIATED', `Cross-company alias conflict was not rejected: ${JSON.stringify(conflict.body)}`);
     const conflictState = await getAliases(conflictTarget.id);
     assert(conflictState.body.data.aliases.length === 0, 'A rejected alias conflict left a partial mutation.');
@@ -170,8 +174,7 @@ async function run() {
     assert(unchangedAfterRejections.body.data.aliases.length === 1, 'A rejected validation payload mutated the alias set.');
 
     // Clearing all aliases (empty array) is a valid, intentional operation.
-    const clearRequest = `alias-clear-${randomUUID()}`;
-    const cleared = await patchAliases(clientOnly.id, [], clearRequest);
+    const cleared = await patchAliases(clientOnly.id, []);
     assert(cleared.response.status === 200 && cleared.body.data.aliases.length === 0, `Clearing aliases with an empty array failed: ${JSON.stringify(cleared.body)}`);
 
     // Not-found and malformed-id behavior, matching the rest of the API's contract.
@@ -187,7 +190,7 @@ async function run() {
 
     // request-id / error contract.
     assert(afterAdd.response.headers.get('x-request-id') !== null, 'x-request-id was not echoed back.');
-    const notFoundContract = await request(`/companies/${missingId}/aliases`, 'GET', undefined, `alias-notfound-${randomUUID()}`);
+    const notFoundContract = await request(`/companies/${missingId}/aliases`, 'GET', undefined);
     const errorBodyKeys = Object.keys(notFoundContract.body).sort();
     assert(errorBodyKeys.every((key) => ['statusCode', 'message', 'code'].includes(key)) && !JSON.stringify(notFoundContract.body).toLowerCase().includes('select '), `Error contract leaked internal details: ${JSON.stringify(notFoundContract.body)}`);
 
@@ -196,8 +199,10 @@ async function run() {
     const origin = ['origin', 'origen'].find((column) => auditColumns.has(column));
     const table = ['table_name', 'tabla'].find((column) => auditColumns.has(column));
     assert(origin && table, 'audit.cambios lacks required context columns.');
-    const addAudit = await pool.query(`SELECT ${origin} AS origin, ${table} AS table_name FROM audit.cambios WHERE request_id = $1`, [addRequest]);
+    const addAudit = await pool.query(`SELECT ${origin} AS origin, ${table} AS table_name${auditColumns.has('usuario_id') ? ', usuario_id' : ''}${auditColumns.has('usuario_email') ? ', usuario_email' : ''} FROM audit.cambios WHERE request_id = $1`, [added.requestId]);
     assert(addAudit.rows.length > 0 && addAudit.rows.every((row) => row.table_name === 'alias_empresa' && row.origin === 'DAUBERT_HUB'), 'Alias mutation was not audited under its request ID.');
+    if (auditColumns.has('usuario_id')) assert(addAudit.rows.every((row) => row.usuario_id === authSession.userId), 'Authenticated audit usuario_id was not populated from request.user.');
+    if (auditColumns.has('usuario_email')) assert(addAudit.rows.every((row) => row.usuario_email === authSession.email), 'Authenticated audit usuario_email was not populated from request.user.');
 
     console.log('Aliases integration checks passed.');
   } catch (error) {
@@ -225,6 +230,7 @@ async function run() {
       assert(auditLeftovers.rows[0].count === 0, 'Aliases cleanup left audit fixtures.');
       console.log('Aliases cleanup verified: zero company/role/alias/audit fixtures remain.');
     }
+    await cleanupAuthenticatedTestSession(authSession);
     await pool.end();
   }
 }

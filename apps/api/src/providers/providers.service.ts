@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuditIdentity } from '../common/authenticated-request';
 import { normalizeAliasList } from '../companies/company-aliases.repository';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import type { ListProvidersDto } from './dto/list-providers.dto';
@@ -52,9 +53,9 @@ export interface GetProviderResponse {
 export class ProvidersService {
   constructor(private readonly repository: ProvidersRepository) {}
 
-  async create(input: CreateProviderDto, requestId: string): Promise<CreateProviderResponse> {
+  async create(input: CreateProviderDto, requestId: string, identity: AuditIdentity): Promise<CreateProviderResponse> {
     try {
-      const created = await this.repository.create(input, requestId);
+      const created = await this.repository.create(input, requestId, identity);
       return this.mapResponse(created);
     } catch (error) {
       this.throwKnownConflict(error);
@@ -75,11 +76,11 @@ export class ProvidersService {
     return this.mapGetResponse(provider);
   }
 
-  async update(id: number, input: UpdateProviderDto, requestId: string): Promise<GetProviderResponse> {
+  async update(id: number, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     this.validateFiscalFormat(input);
     const normalizedInput = this.normalizeAliases(input);
     try {
-      const provider = await this.repository.update(id, normalizedInput, requestId);
+      const provider = await this.repository.update(id, normalizedInput, requestId, identity);
       if (!provider) throw new NotFoundException('Proveedor no encontrado.');
       return this.mapGetResponse(provider);
     } catch (error) {
@@ -88,17 +89,17 @@ export class ProvidersService {
     }
   }
 
-  async deactivate(id: number, requestId: string): Promise<GetProviderResponse> {
-    return this.changeStatus(id, 'INACTIVO', requestId);
+  async deactivate(id: number, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
+    return this.changeStatus(id, 'INACTIVO', requestId, identity);
   }
 
-  async reactivate(id: number, requestId: string): Promise<GetProviderResponse> {
-    return this.changeStatus(id, 'ACTIVO', requestId);
+  async reactivate(id: number, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
+    return this.changeStatus(id, 'ACTIVO', requestId, identity);
   }
 
-  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<GetProviderResponse> {
+  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     try {
-      const provider = await this.repository.changeStatus(id, status, requestId);
+      const provider = await this.repository.changeStatus(id, status, requestId, identity);
       if (!provider) throw new NotFoundException('Proveedor no encontrado.');
       return this.mapGetResponse(provider);
     } catch (error) {

@@ -11,15 +11,11 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import type { RequestWithId } from '../common/request-id.middleware';
+import { identityFromRequest, type AuthenticatedRequest } from '../common/authenticated-request';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsDto } from './dto/list-clients.dto';
 import { ClientsService } from './clients.service';
-
-interface ClientRequest extends RequestWithId {
-  user?: { id?: string | number | null; email?: string | null };
-}
 
 @Controller('clients')
 export class ClientsController {
@@ -38,37 +34,33 @@ export class ClientsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() input: CreateClientDto, @Req() request: ClientRequest) {
-    return this.clients.create(input, request.requestId, this.identity(request));
+  create(@Body() input: CreateClientDto, @Req() request: AuthenticatedRequest) {
+    return this.clients.create(input, request.requestId, identityFromRequest(request));
   }
 
   @Patch(':clientId')
-  update(@Param('clientId') clientId: string, @Body() input: UpdateClientDto, @Req() request: ClientRequest) {
+  update(@Param('clientId') clientId: string, @Body() input: UpdateClientDto, @Req() request: AuthenticatedRequest) {
     this.assertId(clientId);
-    return this.clients.update(clientId, input, request.requestId, this.identity(request));
+    return this.clients.update(clientId, input, request.requestId, identityFromRequest(request));
   }
 
   @Post(':clientId/deactivate')
   @HttpCode(HttpStatus.OK)
-  deactivate(@Param('clientId') clientId: string, @Req() request: ClientRequest) {
+  deactivate(@Param('clientId') clientId: string, @Req() request: AuthenticatedRequest) {
     this.assertId(clientId);
-    return this.clients.deactivate(clientId, request.requestId, this.identity(request));
+    return this.clients.deactivate(clientId, request.requestId, identityFromRequest(request));
   }
 
   @Post(':clientId/reactivate')
   @HttpCode(HttpStatus.OK)
-  reactivate(@Param('clientId') clientId: string, @Req() request: ClientRequest) {
+  reactivate(@Param('clientId') clientId: string, @Req() request: AuthenticatedRequest) {
     this.assertId(clientId);
-    return this.clients.reactivate(clientId, request.requestId, this.identity(request));
+    return this.clients.reactivate(clientId, request.requestId, identityFromRequest(request));
   }
 
   private assertId(id: string): void {
     if (!/^[1-9]\d*$/.test(id) || BigInt(id) > 9223372036854775807n) {
       throw new BadRequestException('El identificador del cliente debe ser un entero positivo.');
     }
-  }
-
-  private identity(request: ClientRequest): { userId: string | null; userEmail: string | null } {
-    return { userId: request.user?.id == null ? null : String(request.user.id), userEmail: request.user?.email ?? null };
   }
 }

@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuditIdentity } from '../common/authenticated-request';
 import type { AdjustDocumentSeriesDto } from './dto/adjust-document-series.dto';
 import { DocumentSeriesRepository, type DocumentSeriesConfiguration } from './document-series.repository';
 
@@ -20,9 +21,9 @@ export class AutomationsService {
     return this.mapResponse(configuration);
   }
 
-  async adjustDocumentSeries(automationCode: string, seriesCode: string, input: AdjustDocumentSeriesDto, requestId: string): Promise<AutomationSeriesResponse> {
+  async adjustDocumentSeries(automationCode: string, seriesCode: string, input: AdjustDocumentSeriesDto, requestId: string, identity: AuditIdentity): Promise<AutomationSeriesResponse> {
     try {
-      await this.repository.adjustNextFolio(automationCode, seriesCode, input.nextFolio, input.reason, requestId);
+      await this.repository.adjustNextFolio(automationCode, seriesCode, input.nextFolio, input.reason, requestId, identity);
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code === 'AUTOMATION_NOT_FOUND' || code === 'DOCUMENT_SERIES_NOT_FOUND') {

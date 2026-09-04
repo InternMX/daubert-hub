@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import type { AuditIdentity } from '../common/authenticated-request';
 import { replaceCompanyAliases } from '../companies/company-aliases.repository';
 import type { CreateProviderDto } from './dto/create-provider.dto';
 import { FiscalChangeMode, type UpdateProviderDto } from './dto/update-provider.dto';
@@ -80,11 +81,11 @@ const sortExpressions: Record<ProviderSortBy, string> = {
 export class ProvidersRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async create(input: CreateProviderDto, requestId: string): Promise<CreatedProviderRecord> {
+  async create(input: CreateProviderDto, requestId: string, identity: AuditIdentity): Promise<CreatedProviderRecord> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const company = await this.insertCompany(client, input);
       await client.query('INSERT INTO core.empresa_roles (empresa_id, rol) VALUES ($1, $2)', [company.empresa_id, input.providerType]);
       const fiscal = input.fiscal ? await this.insertFiscal(client, company.empresa_id, input) : null;
@@ -229,11 +230,11 @@ export class ProvidersRepository {
     return provider ?? null;
   }
 
-  async update(id: number, input: UpdateProviderDto, requestId: string): Promise<FoundProviderRecord | null> {
+  async update(id: number, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const company = await this.lockProvider(client, id);
       if (!company) {
         await client.query('COMMIT');
@@ -268,11 +269,11 @@ export class ProvidersRepository {
     }
   }
 
-  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<FoundProviderRecord | null> {
+  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const company = await this.lockProvider(client, id);
       if (!company) { await client.query('COMMIT'); return null; }
       if (company.estatus === 'BLOQUEADO') throw Object.assign(new Error('PROVIDER_STATUS_NOT_MANAGEABLE'), { code: 'PROVIDER_STATUS_NOT_MANAGEABLE' });
@@ -335,9 +336,11 @@ export class ProvidersRepository {
     await client.query('INSERT INTO core.empresas_fiscales (empresa_id, razon_social, rfc, es_vigente, fecha_inicio) VALUES ($1, $2, $3, TRUE, $4)', [id, legalName, rfc, fiscal.effectiveStartDate]);
   }
 
-  private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {
+  private async setAuditContext(client: PoolClient, requestId: string, identity: AuditIdentity): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);
+    await client.query("SELECT set_config('app.user_id', COALESCE($1, ''), true)", [identity.userId]);
+    await client.query("SELECT set_config('app.user_email', COALESCE($1, ''), true)", [identity.userEmail]);
   }
 
   private async insertCompany(client: PoolClient, input: CreateProviderDto): Promise<CompanyRow> {

@@ -21,8 +21,8 @@ describe('ContactsService', () => {
     const input = { ...baseInput, ...fields, contactType } as CreateContactDto;
     const create = vi.fn().mockResolvedValue(created(input));
     const service = new ContactsService({ create } as never);
-    await expect(service.create(input, 'request-1')).resolves.toMatchObject({ data: { contactType, status: 'ACTIVO', isPrimary: false } });
-    expect(create).toHaveBeenCalledWith(input, 'request-1');
+    await expect(service.create(input, 'request-1', { userId: null, userEmail: null })).resolves.toMatchObject({ data: { contactType, status: 'ACTIVO', isPrimary: false } });
+    expect(create).toHaveBeenCalledWith(input, 'request-1', { userId: null, userEmail: null });
   });
 
   it.each([
@@ -31,7 +31,7 @@ describe('ContactsService', () => {
     ['BUZON_GENERICO missing area', { ...baseInput, contactType: ContactType.GenericMailbox, area: null }]
   ])('rejects %s', async (_scenario, input) => {
     const service = new ContactsService({ create: vi.fn() } as never);
-    await expect(service.create(input as CreateContactDto, 'request-1')).rejects.toMatchObject({ status: 400 });
+    await expect(service.create(input as CreateContactDto, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
   });
 
   it.each([
@@ -44,18 +44,18 @@ describe('ContactsService', () => {
   ])('accepts %s', async (_scenario, methods) => {
     const input = { ...baseInput, methods } as CreateContactDto;
     const service = new ContactsService({ create: vi.fn().mockResolvedValue(created(input)) } as never);
-    await expect(service.create(input, 'request-1')).resolves.toMatchObject({ data: { methods: expect.arrayContaining(methods.map((method) => expect.objectContaining({ type: method.type, value: method.value }))) } });
+    await expect(service.create(input, 'request-1', { userId: null, userEmail: null })).resolves.toMatchObject({ data: { methods: expect.arrayContaining(methods.map((method) => expect.objectContaining({ type: method.type, value: method.value }))) } });
   });
 
   it('rejects duplicate email case-insensitively and invalid emails', async () => {
     const service = new ContactsService({ create: vi.fn() } as never);
-    await expect(service.create({ ...baseInput, methods: [email, { type: ContactMethodType.Email, value: 'MARIA@EXAMPLE.TEST' }] }, 'request-1')).rejects.toMatchObject({ status: 400 });
-    await expect(service.create({ ...baseInput, methods: [{ type: ContactMethodType.Email, value: 'not-an-email' }] }, 'request-1')).rejects.toMatchObject({ status: 400 });
+    await expect(service.create({ ...baseInput, methods: [email, { type: ContactMethodType.Email, value: 'MARIA@EXAMPLE.TEST' }] }, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
+    await expect(service.create({ ...baseInput, methods: [{ type: ContactMethodType.Email, value: 'not-an-email' }] }, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
   });
 
   it.each(['portal.example.test', 'ftp://portal.example.test', 'https://portal.example.test/bad path'])('rejects invalid WEB URL %s', async (value) => {
     const service = new ContactsService({ create: vi.fn() } as never);
-    await expect(service.create({ ...baseInput, methods: [{ type: ContactMethodType.Web, value }] }, 'request-1')).rejects.toMatchObject({ status: 400 });
+    await expect(service.create({ ...baseInput, methods: [{ type: ContactMethodType.Web, value }] }, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
   });
 
   it.each([
@@ -64,12 +64,12 @@ describe('ContactsService', () => {
     ['COMPANY_NOT_FOUND', 404]
   ])('rejects %s companies safely', async (code, status) => {
     const service = new ContactsService({ create: vi.fn().mockRejectedValue({ code }) } as never);
-    await expect(service.create(baseInput, 'request-1')).rejects.toMatchObject({ status });
+    await expect(service.create(baseInput, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status });
   });
 
   it('returns all methods with bigint identifiers as strings and omits payment routing', async () => {
     const input = { ...baseInput, methods: [email, { type: ContactMethodType.Phone, value: '449 123 4567' }] };
-    const response = await new ContactsService({ create: vi.fn().mockResolvedValue(created(input)) } as never).create(input, 'request-1');
+    const response = await new ContactsService({ create: vi.fn().mockResolvedValue(created(input)) } as never).create(input, 'request-1', { userId: null, userEmail: null });
     expect(response.data.id).toBe('9007199254740993');
     expect(response.data.methods).toHaveLength(2);
     expect(response.data.methods.every((method) => typeof method.id === 'string')).toBe(true);
@@ -78,20 +78,20 @@ describe('ContactsService', () => {
   });
 
   it('rejects an empty contact patch', async () => {
-    await expect(new ContactsService({ update: vi.fn() } as never).update('121', {}, 'request-edit')).rejects.toMatchObject({ status: 400 });
+    await expect(new ContactsService({ update: vi.fn() } as never).update('121', {}, 'request-edit', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
   });
 
   it('returns updated contact data with string bigint IDs and no payment routing', async () => {
     const record = { contacto_id: '9007199254740993', empresa_id: '9007199254740994', tipo_contacto: 'PERSONA', nombre: 'María López', area: 'Compras', cargo: null, observaciones: 'Editada', estatus: 'ACTIVO', es_contacto_principal: false };
     const update = vi.fn().mockResolvedValue(record); const service = new ContactsService({ update } as never);
-    const response = await service.update(record.contacto_id, { name: 'María López', position: null }, 'request-edit');
-    expect(update).toHaveBeenCalledWith(record.contacto_id, { name: 'María López', position: null }, 'request-edit');
+    const response = await service.update(record.contacto_id, { name: 'María López', position: null }, 'request-edit', { userId: null, userEmail: null });
+    expect(update).toHaveBeenCalledWith(record.contacto_id, { name: 'María López', position: null }, 'request-edit', { userId: null, userEmail: null });
     expect(response).toEqual({ data: { id: record.contacto_id, companyId: record.empresa_id, contactType: 'PERSONA', name: 'María López', area: 'Compras', position: null, notes: 'Editada', status: 'ACTIVO', isPrimary: false } });
     expect(JSON.stringify(response)).not.toMatch(/recibe_notificacion_pago|tipo_destinatario_pago/);
   });
 
   it('returns 404 for a nonexistent contact edit', async () => {
-    await expect(new ContactsService({ update: vi.fn().mockResolvedValue(null) } as never).update('999999999999999', { notes: 'x' }, 'request-edit')).rejects.toMatchObject({ status: 404 });
+    await expect(new ContactsService({ update: vi.fn().mockResolvedValue(null) } as never).update('999999999999999', { notes: 'x' }, 'request-edit', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 404 });
   });
 
   it.each([
@@ -99,7 +99,7 @@ describe('ContactsService', () => {
     ['CONTACT_NAME_NOT_ALLOWED', 400], ['CONTACT_POSITION_NOT_ALLOWED', 400], ['CONTACT_TYPE_NOT_EDITABLE', 409], ['CONTACT_NO_CHANGES', 400]
   ])('maps contact edit error %s safely', async (code, status) => {
     const service = new ContactsService({ update: vi.fn().mockRejectedValue({ code }) } as never);
-    await expect(service.update('121', { notes: 'x' }, 'request-edit')).rejects.toMatchObject({ status, response: expect.not.stringContaining('SQL') });
+    await expect(service.update('121', { notes: 'x' }, 'request-edit', { userId: null, userEmail: null })).rejects.toMatchObject({ status, response: expect.not.stringContaining('SQL') });
   });
 
   it.each([
@@ -109,14 +109,14 @@ describe('ContactsService', () => {
     const record = { contacto_id: '9223372036854775807', empresa_id: '9007199254740994', tipo_contacto: 'PERSONA', nombre: 'María López', area: 'Compras', cargo: 'Compradora', observaciones: 'Conservar', estatus: status, es_contacto_principal: true };
     const changeStatus = vi.fn().mockResolvedValue(record);
     const service = new ContactsService({ changeStatus } as never);
-    const response = await service[operation](record.contacto_id, 'request-status');
-    expect(changeStatus).toHaveBeenCalledWith(record.contacto_id, status, 'request-status');
+    const response = await service[operation](record.contacto_id, 'request-status', { userId: null, userEmail: null });
+    expect(changeStatus).toHaveBeenCalledWith(record.contacto_id, status, 'request-status', { userId: null, userEmail: null });
     expect(response).toEqual({ data: { id: record.contacto_id, companyId: record.empresa_id, contactType: 'PERSONA', name: 'María López', area: 'Compras', position: 'Compradora', notes: 'Conservar', status, isPrimary: true } });
   });
 
   it.each(['deactivate', 'reactivate'] as const)('returns 404 when %s cannot find the contact', async (operation) => {
     const service = new ContactsService({ changeStatus: vi.fn().mockResolvedValue(null) } as never);
-    await expect(service[operation]('9223372036854775807', 'request-status')).rejects.toMatchObject({ status: 404, message: 'Contacto no encontrado.' });
+    await expect(service[operation]('9223372036854775807', 'request-status', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 404, message: 'Contacto no encontrado.' });
   });
 
   it.each([
@@ -128,6 +128,6 @@ describe('ContactsService', () => {
     ['COMPANY_NOT_ACTIVE', 'La empresa no está activa.']
   ])('maps lifecycle conflict %s safely', async (code, message) => {
     const service = new ContactsService({ changeStatus: vi.fn().mockRejectedValue({ code, detail: 'SQL internals' }) } as never);
-    await expect(service.reactivate('121', 'request-status')).rejects.toMatchObject({ status: 409, response: { code, message } });
+    await expect(service.reactivate('121', 'request-status', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code, message } });
   });
 });

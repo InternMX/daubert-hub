@@ -1,12 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuditContext } from './audit-context';
+import type { AuditIdentity } from '../common/authenticated-request';
+import { PasswordPolicyError } from './password-policy';
 import { PasswordService } from './password.service';
 import { SessionsService } from './sessions.service';
 import { toSafeUser, type SafeUser } from './users.types';
 import { UsersService } from './users.service';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Correo o contraseña incorrectos.';
+const WRONG_CURRENT_PASSWORD_MESSAGE = 'La contraseña actual no es correcta.';
+const SAME_PASSWORD_MESSAGE = 'La nueva contraseña debe ser diferente a la actual.';
 
 // A fixed, precomputed, valid Argon2id hash of an arbitrary constant string
 // that is not, and will never be, a real user's password. Verifying against
@@ -58,5 +62,29 @@ export class AuthService {
   async getUserForToken(token: string): Promise<SafeUser | null> {
     const active = await this.sessions.resolveActiveSession(token);
     return active ? active.user : null;
+  }
+
+  // Self-service: the caller must already be authenticated (request.user);
+  // this re-proves knowledge of the CURRENT password before accepting a new
+  // one, independent of session validity. The session itself is untouched —
+  // mustChangePassword flips to false and the existing session keeps working.
+  async changePassword(userId: string, currentPassword: string, newPassword: string, identity: AuditIdentity): Promise<SafeUser> {
+    const row = await this.users.findCredentialsById(userId);
+    if (!row) throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+
+    const currentMatches = await this.passwords.verifyPassword(row.passwordHash, currentPassword);
+    if (!currentMatches) throw new UnauthorizedException(WRONG_CURRENT_PASSWORD_MESSAGE);
+
+    if (newPassword === currentPassword) throw new BadRequestException(SAME_PASSWORD_MESSAGE);
+
+    const context: AuditContext = { requestId: randomUUID(), origin: 'DAUBERT_HUB', actorUserId: identity.userId, actorUserEmail: identity.userEmail };
+    try {
+      const updated = await this.users.updatePassword(userId, newPassword, false, context);
+      if (!updated) throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
+      return updated;
+    } catch (error) {
+      if (error instanceof PasswordPolicyError) throw new BadRequestException(error.message);
+      throw error;
+    }
   }
 }

@@ -3,7 +3,7 @@ import { SESSION_LIFETIME_MS, SessionsService } from '../src/security/sessions.s
 import { hashSessionToken } from '../src/security/session-token';
 
 function setup() {
-  const repository = { create: vi.fn(), findActiveByTokenHash: vi.fn(), revoke: vi.fn(), revokeAllForUser: vi.fn() };
+  const repository = { create: vi.fn(), findActiveByTokenHash: vi.fn(), revoke: vi.fn(), revokeByTokenHash: vi.fn(), revokeAllForUser: vi.fn() };
   const service = new SessionsService(repository as never);
   return { service, repository };
 }
@@ -47,18 +47,11 @@ describe('SessionsService', () => {
     await expect(service.resolveActiveSession('inactive-user-token')).resolves.toBeNull();
   });
 
-  it('revokeByToken revokes the resolved active session', async () => {
+  it('revokeByToken hashes and revokes without requiring an active-session lookup', async () => {
     const { service, repository } = setup();
-    repository.findActiveByTokenHash.mockResolvedValue({ sessionId: '7', user: {} });
     await service.revokeByToken('raw-token');
-    expect(repository.revoke).toHaveBeenCalledWith('7');
-  });
-
-  it('revokeByToken is a safe no-op (idempotent) when the token does not resolve to an active session', async () => {
-    const { service, repository } = setup();
-    repository.findActiveByTokenHash.mockResolvedValue(null);
-    await expect(service.revokeByToken('already-revoked-or-unknown')).resolves.toBeUndefined();
-    expect(repository.revoke).not.toHaveBeenCalled();
+    expect(repository.revokeByTokenHash).toHaveBeenCalledWith(hashSessionToken('raw-token'));
+    expect(repository.findActiveByTokenHash).not.toHaveBeenCalled();
   });
 
   it('revokeAllForUser delegates directly to the repository', async () => {

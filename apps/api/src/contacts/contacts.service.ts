@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuditIdentity } from '../common/authenticated-request';
 import { ContactMethodType, ContactType, type CreateContactDto } from './dto/create-contact.dto';
 import type { UpdateContactDto } from './dto/update-contact.dto';
 import { ContactsRepository, type ContactRow, type CreatedContactRecord } from './contacts.repository';
@@ -22,20 +23,20 @@ export interface UpdateContactResponse { data: ContactData; }
 export class ContactsService {
   constructor(private readonly repository: ContactsRepository) {}
 
-  async create(input: CreateContactDto, requestId: string): Promise<CreateContactResponse> {
+  async create(input: CreateContactDto, requestId: string, identity: AuditIdentity): Promise<CreateContactResponse> {
     this.validate(input);
     try {
-      return this.mapResponse(await this.repository.create(input, requestId));
+      return this.mapResponse(await this.repository.create(input, requestId, identity));
     } catch (error) {
       this.throwKnownError(error);
       throw error;
     }
   }
 
-  async update(id: string, input: UpdateContactDto, requestId: string): Promise<UpdateContactResponse> {
+  async update(id: string, input: UpdateContactDto, requestId: string, identity: AuditIdentity): Promise<UpdateContactResponse> {
     if (Object.keys(input).length === 0) throw new BadRequestException('Proporciona al menos un campo para actualizar.');
     try {
-      const contact = await this.repository.update(id, input, requestId);
+      const contact = await this.repository.update(id, input, requestId, identity);
       if (!contact) throw new NotFoundException('Contacto no encontrado.');
       return this.mapContactResponse(contact);
     } catch (error) {
@@ -44,17 +45,17 @@ export class ContactsService {
     }
   }
 
-  deactivate(id: string, requestId: string): Promise<UpdateContactResponse> {
-    return this.changeStatus(id, 'INACTIVO', requestId);
+  deactivate(id: string, requestId: string, identity: AuditIdentity): Promise<UpdateContactResponse> {
+    return this.changeStatus(id, 'INACTIVO', requestId, identity);
   }
 
-  reactivate(id: string, requestId: string): Promise<UpdateContactResponse> {
-    return this.changeStatus(id, 'ACTIVO', requestId);
+  reactivate(id: string, requestId: string, identity: AuditIdentity): Promise<UpdateContactResponse> {
+    return this.changeStatus(id, 'ACTIVO', requestId, identity);
   }
 
-  private async changeStatus(id: string, status: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<UpdateContactResponse> {
+  private async changeStatus(id: string, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<UpdateContactResponse> {
     try {
-      const contact = await this.repository.changeStatus(id, status, requestId);
+      const contact = await this.repository.changeStatus(id, status, requestId, identity);
       if (!contact) throw new NotFoundException('Contacto no encontrado.');
       return this.mapContactResponse(contact);
     } catch (error) {

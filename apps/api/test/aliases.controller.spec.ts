@@ -5,7 +5,7 @@ describe('AliasesController', () => {
   it('passes exact bigint company id strings and nullable identity independently per request', async () => {
     const replace = vi.fn().mockResolvedValue({ data: { aliases: ['BMASC'], otherAliases: [] } });
     const controller = new AliasesController({ replace } as never);
-    await controller.replace('9007199254740993', { aliases: ['BMASC'] }, { requestId: 'alias-1', user: { id: 42, email: 'user@example.test' } } as never);
+    await controller.replace('9007199254740993', { aliases: ['BMASC'] }, { requestId: 'alias-1', user: { id: '42', email: 'user@example.test' } } as never);
     expect(replace).toHaveBeenCalledWith('9007199254740993', ['BMASC'], 'alias-1', { userId: '42', userEmail: 'user@example.test' });
   });
 

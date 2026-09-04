@@ -7,7 +7,7 @@ type LockedContact = ContactRow & { company_status: string };
 const base: LockedContact = { contacto_id: '9007199254740993', empresa_id: '31', tipo_contacto: ContactType.Person, nombre: 'María Lopez', area: 'Compras', cargo: 'Compradora', observaciones: 'Inicial', estatus: 'ACTIVO', es_contacto_principal: true, company_status: 'ACTIVO' };
 
 function setup(row: LockedContact | null, updated: ContactRow = base) {
-  const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+  const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
     .mockResolvedValueOnce({ rows: row ? [row] : [] });
   if (row) query.mockResolvedValueOnce({ rows: [updated] });
   query.mockResolvedValueOnce(undefined);
@@ -18,8 +18,8 @@ function setup(row: LockedContact | null, updated: ContactRow = base) {
 async function successful(input: UpdateContactDto, row: LockedContact = base) {
   const updated = { ...row, nombre: input.name === undefined ? row.nombre : input.name, area: input.area === undefined ? row.area : input.area, cargo: input.position === undefined ? row.cargo : input.position, observaciones: input.notes === undefined ? row.observaciones : input.notes };
   const context = setup(row, updated);
-  const result = await context.repository.update('9007199254740993', input, 'request-edit');
-  return { ...context, result, updateCall: context.query.mock.calls[4]! };
+  const result = await context.repository.update('9007199254740993', input, 'request-edit', { userId: null, userEmail: null });
+  return { ...context, result, updateCall: context.query.mock.calls[6]! };
 }
 
 describe('ContactsRepository update', () => {
@@ -46,7 +46,7 @@ describe('ContactsRepository update', () => {
 
   it.each([null, ''])('rejects a cleared PERSONA name (%s)', async (name) => {
     const { repository } = setup(base);
-    await expect(repository.update(base.contacto_id, { name }, 'request-edit')).rejects.toMatchObject({ code: 'PERSON_NAME_REQUIRED' });
+    await expect(repository.update(base.contacto_id, { name }, 'request-edit', { userId: null, userEmail: null })).rejects.toMatchObject({ code: 'PERSON_NAME_REQUIRED' });
   });
 
   it.each([ContactType.Area, ContactType.GenericMailbox])('updates required area and notes for %s without person fields', async (contactType) => {
@@ -66,7 +66,7 @@ describe('ContactsRepository update', () => {
   it.each([ContactType.Area, ContactType.GenericMailbox])('protects required fields and person-only data for %s', async (contactType) => {
     const row = { ...base, tipo_contacto: contactType, nombre: null, cargo: null };
     for (const [input, code] of [[{ area: null }, 'CONTACT_AREA_REQUIRED'], [{ area: '' }, 'CONTACT_AREA_REQUIRED'], [{ name: 'María' }, 'CONTACT_NAME_NOT_ALLOWED'], [{ position: 'Compradora' }, 'CONTACT_POSITION_NOT_ALLOWED']] as const) {
-      await expect(setup(row).repository.update(base.contacto_id, input, 'request-edit')).rejects.toMatchObject({ code });
+      await expect(setup(row).repository.update(base.contacto_id, input, 'request-edit', { userId: null, userEmail: null })).rejects.toMatchObject({ code });
     }
   });
 
@@ -78,13 +78,13 @@ describe('ContactsRepository update', () => {
     ['blocked company', { ...base, company_status: 'BLOQUEADO' }]
   ])('rejects %s before update', async (_scenario, row) => {
     const context = setup(row);
-    await expect(context.repository.update(base.contacto_id, { notes: 'x' }, 'request-edit')).rejects.toMatchObject({ code: row.company_status === 'ACTIVO' ? 'CONTACT_NOT_ACTIVE' : 'COMPANY_NOT_ACTIVE' });
+    await expect(context.repository.update(base.contacto_id, { notes: 'x' }, 'request-edit', { userId: null, userEmail: null })).rejects.toMatchObject({ code: row.company_status === 'ACTIVO' ? 'CONTACT_NOT_ACTIVE' : 'COMPANY_NOT_ACTIVE' });
     expect(context.query.mock.calls.some((call) => String(call[0]).includes('UPDATE core.contactos'))).toBe(false);
   });
 
   it('returns null for a nonexistent contact', async () => {
     const { repository } = setup(null);
-    await expect(repository.update('999999999999999', { notes: 'x' }, 'request-edit')).resolves.toBeNull();
+    await expect(repository.update('999999999999999', { notes: 'x' }, 'request-edit', { userId: null, userEmail: null })).resolves.toBeNull();
   });
 
   it('sets audit context and updates only descriptive contact columns', async () => {

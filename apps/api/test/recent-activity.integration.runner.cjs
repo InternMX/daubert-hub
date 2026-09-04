@@ -2,6 +2,7 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
 
 const port = 3105;
 const marker = `HUB_TEST_ACTIVITY_${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -55,20 +56,24 @@ async function waitForApi() {
   throw new Error('Timed out waiting for the recent activity integration API.');
 }
 
-async function apiRequest(path, method = 'GET', payload, requestId) {
+// Set once by run() after the synthetic test session logs in; attached to
+// every business request below.
+let sessionCookie = null;
+
+// x-request-id is always server-generated (Security V1 Phase 4) — a client
+// can no longer choose the value that lands in audit.cambios.request_id.
+// Callers must read the returned `requestId` (from the response header) for
+// any later audit correlation, instead of pre-choosing one to send.
+async function apiRequest(path, method = 'GET', payload) {
   const headers = {};
   if (payload !== undefined) headers['content-type'] = 'application/json';
-  if (requestId) headers['x-request-id'] = requestId;
+  if (sessionCookie) headers.cookie = sessionCookie;
   const response = await fetch(`http://127.0.0.1:${port}/api${path}`, {
     method, headers, body: payload === undefined ? undefined : JSON.stringify(payload)
   });
-  return { response, body: await response.json() };
-}
-
-function nextRequestId(label) {
-  const id = `activity-${label}-${randomUUID()}`;
-  requestIds.add(id);
-  return id;
+  const requestId = response.headers.get('x-request-id');
+  if (requestId) requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
 function one(items, type, entity) {
@@ -80,6 +85,8 @@ function one(items, type, entity) {
 async function cleanup(pool, names, paymentFixtures) {
   let cleanupError;
   try {
+    const currentDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
+    assert(currentDatabase === 'daubert_hub_test', `Cleanup database mismatch: ${currentDatabase}`);
     await transaction(pool, 'DAUBERT_HUB_TEST_CLEANUP', cleanupRequestId, async (client) => {
       if (paymentFixtures.length) {
         const correoIds = paymentFixtures.map((fixture) => fixture.correoId);
@@ -156,6 +163,7 @@ async function run() {
   let api;
   let databaseVerified = false;
   let paymentFixtures = [];
+  let authSession = null;
   const names = {
     setupCompany: `${marker}_DELETE_COMPANY`,
     deleteContact: `${marker}_DELETE_CONTACT`,
@@ -230,6 +238,9 @@ async function run() {
     });
     await waitForApi();
 
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
+
     paymentFixtures = await transaction(pool, 'DAUBERT_HUB_TEST', paymentRequestId, async (client) => {
       const companies = await client.query('SELECT empresa_id::text AS id FROM core.empresas ORDER BY empresa_id LIMIT 5');
       assert(companies.rows.length === 5, 'Synthetic payment fixture requires five existing test companies.');
@@ -283,127 +294,127 @@ async function run() {
     const clientActionOrder = [];
 
     // A: brand-new company + CLIENTE role -> exactly one CLIENT_CREATED
-    const clientCreateId = nextRequestId('client-create'); clientActionOrder.push(clientCreateId);
-    const clientNew = await apiRequest('/clients', 'POST', { commercialName: names.clientNew }, clientCreateId);
+        const clientNew = await apiRequest('/clients', 'POST', { commercialName: names.clientNew });
+    clientActionOrder.push(clientNew.requestId);
     assert(clientNew.response.status === 201, `Client create failed with ${clientNew.response.status}.`);
 
     // B: existing Provider gains CLIENTE -> exactly one CLIENT_CREATED, Provider role untouched
-    const clientFromProviderCreateId = nextRequestId('client-from-provider-create'); clientActionOrder.push(clientFromProviderCreateId);
-    const providerForClient = await apiRequest('/providers', 'POST', { commercialName: names.clientFromProvider, providerType: 'PROVEEDOR' }, clientFromProviderCreateId);
+        const providerForClient = await apiRequest('/providers', 'POST', { commercialName: names.clientFromProvider, providerType: 'PROVEEDOR' });
+    clientActionOrder.push(providerForClient.requestId);
     assert(providerForClient.response.status === 201, `Provider fixture for Client gain failed with ${providerForClient.response.status}.`);
     const clientFromProviderId = providerForClient.body.data.id;
 
-    const clientGainId = nextRequestId('client-gain'); clientActionOrder.push(clientGainId);
-    const clientGain = await apiRequest('/clients', 'POST', { commercialName: names.clientFromProvider }, clientGainId);
+        const clientGain = await apiRequest('/clients', 'POST', { commercialName: names.clientFromProvider });
+    clientActionOrder.push(clientGain.requestId);
     assert(clientGain.response.status === 201 && clientGain.body.data.id === clientFromProviderId, `Existing Provider did not gain CLIENTE on the same company: ${JSON.stringify(clientGain.body)}`);
     const clientFromProviderRoles = await pool.query('SELECT rol, estatus FROM core.empresa_roles WHERE empresa_id = $1 ORDER BY rol', [clientFromProviderId]);
     assert(clientFromProviderRoles.rows.some((row) => row.rol === 'PROVEEDOR' && row.estatus === 'ACTIVO'), 'Existing PROVEEDOR role was disturbed when gaining CLIENTE.');
     assert(clientFromProviderRoles.rows.some((row) => row.rol === 'CLIENTE' && row.estatus === 'ACTIVO'), 'CLIENTE role was not added.');
 
     // C: update Client general data -> exactly one CLIENT_UPDATED
-    const clientForUpdateCreateId = nextRequestId('client-for-update-create'); clientActionOrder.push(clientForUpdateCreateId);
-    const clientForUpdate = await apiRequest('/clients', 'POST', { commercialName: names.clientForUpdate }, clientForUpdateCreateId);
+        const clientForUpdate = await apiRequest('/clients', 'POST', { commercialName: names.clientForUpdate });
+    clientActionOrder.push(clientForUpdate.requestId);
     assert(clientForUpdate.response.status === 201, 'Client-for-update fixture create failed.');
     const clientForUpdateId = clientForUpdate.body.data.id;
-    const clientUpdateId = nextRequestId('client-update'); clientActionOrder.push(clientUpdateId);
-    const clientUpdated = await apiRequest(`/clients/${clientForUpdateId}`, 'PATCH', { commercialName: names.clientUpdatedName, notes: 'Nota de prueba' }, clientUpdateId);
+        const clientUpdated = await apiRequest(`/clients/${clientForUpdateId}`, 'PATCH', { commercialName: names.clientUpdatedName, notes: 'Nota de prueba' });
+    clientActionOrder.push(clientUpdated.requestId);
     assert(clientUpdated.response.status === 200 && clientUpdated.body.data.commercialName === names.clientUpdatedName, 'Client update failed.');
 
     // D: fiscal update / NEW_IDENTITY -> exactly one CLIENT_UPDATED despite multiple audit rows
     const clientForFiscalRfc = nextRfc('CFF');
-    const clientForFiscalCreateId = nextRequestId('client-for-fiscal-create'); clientActionOrder.push(clientForFiscalCreateId);
-    const clientForFiscal = await apiRequest('/clients', 'POST', { commercialName: names.clientForFiscal, fiscal: { legalName: `${names.clientForFiscal} SA`, rfc: clientForFiscalRfc } }, clientForFiscalCreateId);
+        const clientForFiscal = await apiRequest('/clients', 'POST', { commercialName: names.clientForFiscal, fiscal: { legalName: `${names.clientForFiscal} SA`, rfc: clientForFiscalRfc } });
+    clientActionOrder.push(clientForFiscal.requestId);
     assert(clientForFiscal.response.status === 201, 'Client-for-fiscal fixture create failed.');
     const clientForFiscalId = clientForFiscal.body.data.id;
     const clientNewIdentityRfc = nextRfc('CNI');
-    const clientFiscalUpdateId = nextRequestId('client-fiscal-update'); clientActionOrder.push(clientFiscalUpdateId);
-    const clientFiscalUpdated = await apiRequest(`/clients/${clientForFiscalId}`, 'PATCH', { fiscal: { legalName: 'Nueva Identidad SA', rfc: clientNewIdentityRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-09-10' } }, clientFiscalUpdateId);
+        const clientFiscalUpdated = await apiRequest(`/clients/${clientForFiscalId}`, 'PATCH', { fiscal: { legalName: 'Nueva Identidad SA', rfc: clientNewIdentityRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-09-10' } });
+    clientActionOrder.push(clientFiscalUpdated.requestId);
     assert(clientFiscalUpdated.response.status === 200 && clientFiscalUpdated.body.data.fiscal.rfc === clientNewIdentityRfc, 'Client fiscal NEW_IDENTITY update failed.');
-    const clientFiscalAudit = await pool.query("SELECT tabla, operacion FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = $1", [clientFiscalUpdateId]);
+    const clientFiscalAudit = await pool.query("SELECT tabla, operacion FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = $1", [clientFiscalUpdated.requestId]);
     assert(clientFiscalAudit.rows.length >= 2, 'Fiscal NEW_IDENTITY update did not produce multiple audit rows as expected.');
 
     // E/F: deactivate then reactivate a multi-role Client (company stays ACTIVO throughout)
-    const clientDeactivateMultiId = nextRequestId('client-deactivate-multi'); clientActionOrder.push(clientDeactivateMultiId);
-    const clientDeactivatedMulti = await apiRequest(`/clients/${clientFromProviderId}/deactivate`, 'POST', undefined, clientDeactivateMultiId);
+        const clientDeactivatedMulti = await apiRequest(`/clients/${clientFromProviderId}/deactivate`, 'POST', undefined);
+    clientActionOrder.push(clientDeactivatedMulti.requestId);
     assert(clientDeactivatedMulti.response.status === 200 && clientDeactivatedMulti.body.data.clientStatus === 'INACTIVO', 'Multi-role Client deactivate failed.');
     const multiRoleCompanyAfterDeactivate = await pool.query('SELECT estatus FROM core.empresas WHERE empresa_id = $1', [clientFromProviderId]);
     assert(multiRoleCompanyAfterDeactivate.rows[0].estatus === 'ACTIVO', 'Multi-role Client deactivate incorrectly deactivated the company.');
 
-    const clientReactivateMultiId = nextRequestId('client-reactivate-multi'); clientActionOrder.push(clientReactivateMultiId);
-    const clientReactivatedMulti = await apiRequest(`/clients/${clientFromProviderId}/reactivate`, 'POST', undefined, clientReactivateMultiId);
+        const clientReactivatedMulti = await apiRequest(`/clients/${clientFromProviderId}/reactivate`, 'POST', undefined);
+    clientActionOrder.push(clientReactivatedMulti.requestId);
     assert(clientReactivatedMulti.response.status === 200 && clientReactivatedMulti.body.data.clientStatus === 'ACTIVO', 'Multi-role Client reactivate failed.');
 
     // G: deactivate a final-role Client (company status also flips) -> exactly one CLIENT_DEACTIVATED
-    const clientFinalRoleCreateId = nextRequestId('client-final-role-create'); clientActionOrder.push(clientFinalRoleCreateId);
-    const clientFinalRole = await apiRequest('/clients', 'POST', { commercialName: names.clientFinalRole }, clientFinalRoleCreateId);
+        const clientFinalRole = await apiRequest('/clients', 'POST', { commercialName: names.clientFinalRole });
+    clientActionOrder.push(clientFinalRole.requestId);
     assert(clientFinalRole.response.status === 201, 'Client-final-role fixture create failed.');
     const clientFinalRoleId = clientFinalRole.body.data.id;
-    const clientFinalDeactivateId = nextRequestId('client-final-deactivate'); clientActionOrder.push(clientFinalDeactivateId);
-    const clientFinalDeactivated = await apiRequest(`/clients/${clientFinalRoleId}/deactivate`, 'POST', undefined, clientFinalDeactivateId);
+        const clientFinalDeactivated = await apiRequest(`/clients/${clientFinalRoleId}/deactivate`, 'POST', undefined);
+    clientActionOrder.push(clientFinalDeactivated.requestId);
     assert(clientFinalDeactivated.response.status === 200, 'Final-role Client deactivate failed.');
     const finalRoleCompanyAfterDeactivate = await pool.query('SELECT estatus FROM core.empresas WHERE empresa_id = $1', [clientFinalRoleId]);
     assert(finalRoleCompanyAfterDeactivate.rows[0].estatus === 'INACTIVO', 'Final-role Client deactivate did not also deactivate the company.');
-    const clientFinalDeactivateAudit = await pool.query("SELECT tabla, operacion FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = $1", [clientFinalDeactivateId]);
+    const clientFinalDeactivateAudit = await pool.query("SELECT tabla, operacion FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = $1", [clientFinalDeactivated.requestId]);
     assert(clientFinalDeactivateAudit.rows.length === 2, 'Final-role Client deactivate did not produce both the role and company audit rows.');
 
     // H: change a Client's company address through the generic address API -> no CLIENT activity
-    const clientForAddressCreateId = nextRequestId('client-for-address-create'); clientActionOrder.push(clientForAddressCreateId);
-    const clientForAddress = await apiRequest('/clients', 'POST', { commercialName: names.clientForAddress }, clientForAddressCreateId);
+        const clientForAddress = await apiRequest('/clients', 'POST', { commercialName: names.clientForAddress });
+    clientActionOrder.push(clientForAddress.requestId);
     assert(clientForAddress.response.status === 201, 'Client-for-address fixture create failed.');
     const clientForAddressId = clientForAddress.body.data.id;
-    const clientAddressId = nextRequestId('client-address'); clientActionOrder.push(clientAddressId);
-    const clientAddress = await apiRequest(`/companies/${clientForAddressId}/addresses`, 'POST', { tipoDireccion: 'OPERATIVA', calle: `${marker} Calle` }, clientAddressId);
+        const clientAddress = await apiRequest(`/companies/${clientForAddressId}/addresses`, 'POST', { tipoDireccion: 'OPERATIVA', calle: `${marker} Calle` });
+    clientActionOrder.push(clientAddress.requestId);
     assert(clientAddress.response.status === 201, 'Client address create failed.');
 
     // I: change a Client's aliases through the generic company alias API -> no CLIENT activity
-    const clientForAliasCreateId = nextRequestId('client-for-alias-create'); clientActionOrder.push(clientForAliasCreateId);
-    const clientForAlias = await apiRequest('/clients', 'POST', { commercialName: names.clientForAlias }, clientForAliasCreateId);
+        const clientForAlias = await apiRequest('/clients', 'POST', { commercialName: names.clientForAlias });
+    clientActionOrder.push(clientForAlias.requestId);
     assert(clientForAlias.response.status === 201, 'Client-for-alias fixture create failed.');
     const clientForAliasId = clientForAlias.body.data.id;
-    const clientAliasId = nextRequestId('client-alias'); clientActionOrder.push(clientAliasId);
-    const clientAlias = await apiRequest(`/companies/${clientForAliasId}/aliases`, 'PATCH', { aliases: [`${marker}_ALIAS`] }, clientAliasId);
+        const clientAlias = await apiRequest(`/companies/${clientForAliasId}/aliases`, 'PATCH', { aliases: [`${marker}_ALIAS`] });
+    clientActionOrder.push(clientAlias.requestId);
     assert(clientAlias.response.status === 200, 'Client alias update failed.');
 
     const clientEndpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [clientActionOrder]);
     assert(clientEndpointAudit.rows.length === clientActionOrder.length, `Not all Client scenario request IDs reached the audit log (expected ${clientActionOrder.length}, got ${clientEndpointAudit.rows.length}).`);
 
     const actionOrder = [];
-    const providerCreateId = nextRequestId('provider-create'); actionOrder.push(providerCreateId);
-    const provider = await apiRequest('/providers', 'POST', { commercialName: names.providerOriginal, providerType: 'PROVEEDOR' }, providerCreateId);
+        const provider = await apiRequest('/providers', 'POST', { commercialName: names.providerOriginal, providerType: 'PROVEEDOR' });
+    actionOrder.push(provider.requestId);
     assert(provider.response.status === 201, `Provider create failed with ${provider.response.status}.`);
     const companyId = provider.body.data.id;
 
-    const providerUpdateId = nextRequestId('provider-update'); actionOrder.push(providerUpdateId);
-    const providerUpdated = await apiRequest(`/providers/${companyId}`, 'PATCH', { commercialName: names.providerUpdated }, providerUpdateId);
+        const providerUpdated = await apiRequest(`/providers/${companyId}`, 'PATCH', { commercialName: names.providerUpdated });
+    actionOrder.push(providerUpdated.requestId);
     assert(providerUpdated.response.status === 200 && providerUpdated.body.data.commercialName === names.providerUpdated, 'Provider update failed.');
 
-    const contactCreateId = nextRequestId('contact-create'); actionOrder.push(contactCreateId);
-    const contact = await apiRequest('/contacts', 'POST', {
+        const contact = await apiRequest('/contacts', 'POST', {
       companyId, contactType: 'PERSONA', name: names.contactOriginal,
       methods: [{ type: 'CORREO', value: names.initialEmail }, { type: 'TELEFONO', value: names.initialPhone }]
-    }, contactCreateId);
+    });
+    actionOrder.push(contact.requestId);
     assert(contact.response.status === 201 && contact.body.data.methods.length === 2, 'Contact create with multiple initial methods failed.');
     const contactId = contact.body.data.id;
 
-    const contactUpdateId = nextRequestId('contact-update'); actionOrder.push(contactUpdateId);
-    const contactUpdated = await apiRequest(`/contacts/${contactId}`, 'PATCH', { name: names.contactUpdated }, contactUpdateId);
+        const contactUpdated = await apiRequest(`/contacts/${contactId}`, 'PATCH', { name: names.contactUpdated });
+    actionOrder.push(contactUpdated.requestId);
     assert(contactUpdated.response.status === 200 && contactUpdated.body.data.name === names.contactUpdated, 'Contact update failed.');
 
-    const methodAddId = nextRequestId('method-add'); actionOrder.push(methodAddId);
-    const method = await apiRequest(`/contacts/${contactId}/methods`, 'POST', { type: 'CORREO', value: names.methodOriginal }, methodAddId);
+        const method = await apiRequest(`/contacts/${contactId}/methods`, 'POST', { type: 'CORREO', value: names.methodOriginal });
+    actionOrder.push(method.requestId);
     assert(method.response.status === 201, 'Standalone method add failed.');
     const methodId = method.body.data.id;
 
-    const methodEditId = nextRequestId('method-edit'); actionOrder.push(methodEditId);
-    const editedMethod = await apiRequest(`/contact-methods/${methodId}`, 'PATCH', { value: names.methodUpdated }, methodEditId);
+        const editedMethod = await apiRequest(`/contact-methods/${methodId}`, 'PATCH', { value: names.methodUpdated });
+    actionOrder.push(editedMethod.requestId);
     assert(editedMethod.response.status === 200 && editedMethod.body.data.value === names.methodUpdated, 'Method edit failed.');
 
-    const deactivateId = nextRequestId('method-deactivate'); actionOrder.push(deactivateId);
-    const deactivated = await apiRequest(`/contact-methods/${methodId}/deactivate`, 'POST', undefined, deactivateId);
+        const deactivated = await apiRequest(`/contact-methods/${methodId}/deactivate`, 'POST', undefined);
+    actionOrder.push(deactivated.requestId);
     assert(deactivated.response.status === 200 && deactivated.body.data.status === 'INACTIVO', 'Method deactivation failed.');
 
-    const reactivateId = nextRequestId('method-reactivate'); actionOrder.push(reactivateId);
-    const reactivated = await apiRequest(`/contact-methods/${methodId}/reactivate`, 'POST', undefined, reactivateId);
+        const reactivated = await apiRequest(`/contact-methods/${methodId}/reactivate`, 'POST', undefined);
+    actionOrder.push(reactivated.requestId);
     assert(reactivated.response.status === 200 && reactivated.body.data.status === 'ACTIVO', 'Method reactivation failed.');
 
     const feed = await apiRequest('/recent-activity?limit=20');
@@ -496,6 +507,7 @@ async function run() {
         api.kill();
         await once(api, 'exit');
       }
+      await cleanupAuthenticatedTestSession(authSession);
       await pool.end();
     }
   }

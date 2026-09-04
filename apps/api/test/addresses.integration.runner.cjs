@@ -2,6 +2,10 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+// Set once run() logs in the synthetic test session; read by request() below.
+let sessionCookie = null;
 
 const port = 3107;
 const marker = `HUB_TEST_ADDRESS_${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -47,9 +51,14 @@ async function createCompany(pool, suffix, status = 'ACTIVO') {
   return result.rows[0].empresa_id;
 }
 
-async function request(path, method = 'GET', body, requestId = `address-${randomUUID()}`) {
+// x-request-id is always server-generated (Security V1 Phase 4); a client
+// can no longer choose the value that lands in audit.cambios.request_id, so
+// this captures the returned response header instead of trusting an input.
+async function request(path, method = 'GET', body) {
+  const headers = { ...(sessionCookie ? { cookie: sessionCookie } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
+  const response = await fetch(`http://127.0.0.1:${port}/api${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const requestId = response.headers.get('x-request-id');
   requestIds.add(requestId);
-  const response = await fetch(`http://127.0.0.1:${port}/api${path}`, { method, headers: { 'x-request-id': requestId, ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { response, body: await response.json(), requestId };
 }
 
@@ -69,6 +78,7 @@ async function run() {
   let server;
   let databaseVerified = false;
   let startup = '';
+  let authSession = null;
   try {
     await assertLiveTestDatabase(pool, 'Fixture');
     databaseVerified = true;
@@ -76,6 +86,8 @@ async function run() {
     server.stdout.on('data', (chunk) => { startup += chunk; });
     server.stderr.on('data', (chunk) => { startup += chunk; });
     await waitForApi();
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
 
     const companyId = await createCompany(pool, 'ACTIVE');
     const otherCompanyId = await createCompany(pool, 'OTHER');
@@ -96,14 +108,15 @@ async function run() {
 
     const types = ['FISCAL', 'COMERCIAL', 'OPERATIVA', 'ENTREGA', 'FACTURACION', 'OTRA'];
     const created = [];
+    const createdRequestIds = {};
     for (const tipoDireccion of types) {
-      const requestId = `address-create-${tipoDireccion}-${randomUUID()}`;
-      const result = await request(`/companies/${companyId}/addresses`, 'POST', { tipoDireccion, calle: `${marker} ${tipoDireccion}`, numeroExterior: '10', numeroInterior: null, colonia: 'Centro', codigoPostal: '20000', municipio: 'Aguascalientes', estado: 'Aguascalientes', referencias: null, esPrincipal: true, fechaInicio: '2026-09-01', fechaFin: '2026-09-30', ...(tipoDireccion === 'OPERATIVA' ? {} : { pais: null }) }, requestId);
-      assert(result.response.status === 201 && result.response.headers.get('x-request-id') === requestId, `${tipoDireccion} create failed: ${JSON.stringify(result.body)}`);
+      const result = await request(`/companies/${companyId}/addresses`, 'POST', { tipoDireccion, calle: `${marker} ${tipoDireccion}`, numeroExterior: '10', numeroInterior: null, colonia: 'Centro', codigoPostal: '20000', municipio: 'Aguascalientes', estado: 'Aguascalientes', referencias: null, esPrincipal: true, fechaInicio: '2026-09-01', fechaFin: '2026-09-30', ...(tipoDireccion === 'OPERATIVA' ? {} : { pais: null }) });
+      assert(result.response.status === 201 && result.response.headers.get('x-request-id') === result.requestId, `${tipoDireccion} create failed: ${JSON.stringify(result.body)}`);
       const expectedKeys = ['calle', 'codigoPostal', 'colonia', 'companyId', 'direccionCompleta', 'esPrincipal', 'estado', 'estatus', 'fechaFin', 'fechaInicio', 'id', 'municipio', 'numeroExterior', 'numeroInterior', 'pais', 'referencias', 'tipoDireccion'];
       assert(Object.keys(result.body.data).sort().join(',') === expectedKeys.sort().join(','), `${tipoDireccion} response has an incorrect contract.`);
       assert(typeof result.body.data.id === 'string' && result.body.data.tipoDireccion === tipoDireccion && result.body.data.estatus === 'ACTIVA' && result.body.data.fechaInicio === '2026-09-01' && result.body.data.fechaFin === '2026-09-30', `${tipoDireccion} response values are incorrect.`);
       created.push(result.body.data);
+      createdRequestIds[tipoDireccion] = result.requestId;
     }
     const operational = created.find((item) => item.tipoDireccion === 'OPERATIVA');
     const operationalStored = (await pool.query('SELECT pais FROM core.direcciones WHERE direccion_id = $1', [operational.id])).rows[0];
@@ -163,11 +176,11 @@ async function run() {
     const origin = ['origin', 'origen'].find((column) => columns.has(column));
     const table = ['table_name', 'tabla'].find((column) => columns.has(column));
     assert(origin && table && columns.has('request_id'), 'audit.cambios lacks required columns.');
-    const createRequestId = [...requestIds].find((id) => id.startsWith('address-create-OPERATIVA-'));
+    const createRequestId = createdRequestIds.OPERATIVA;
     const audit = await pool.query(`SELECT ${origin} AS origin, ${table} AS table_name, request_id${columns.has('usuario_id') ? ', usuario_id' : ''}${columns.has('usuario_email') ? ', usuario_email' : ''} FROM audit.cambios WHERE request_id = $1`, [createRequestId]);
     assert(audit.rows.length === 1 && audit.rows[0].origin === 'DAUBERT_HUB' && audit.rows[0].table_name === 'direcciones', 'Address audit grouping/context is incorrect.');
-    if (columns.has('usuario_id')) assert(audit.rows[0].usuario_id === null, 'Anonymous usuario_id was not null.');
-    if (columns.has('usuario_email')) assert(audit.rows[0].usuario_email === null, 'Anonymous usuario_email was not null.');
+    if (columns.has('usuario_id')) assert(audit.rows[0].usuario_id === authSession.userId, 'Authenticated usuario_id was not populated from request.user.');
+    if (columns.has('usuario_email')) assert(audit.rows[0].usuario_email === authSession.email, 'Authenticated usuario_email was not populated from request.user.');
     console.log('Address integration tests passed.');
   } catch (error) {
     if (server) console.error(startup || 'No API startup output.');
@@ -181,6 +194,7 @@ async function run() {
       await audited(pool, `address-cleanup-${randomUUID()}`, 'DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...companyIds]]);
       if (requestIds.size) await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
     }
+    await cleanupAuthenticatedTestSession(authSession);
     await pool.end();
   }
 }

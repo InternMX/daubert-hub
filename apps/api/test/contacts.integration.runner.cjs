@@ -2,6 +2,10 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+// Set once run() logs in the synthetic test session; read by the HTTP helpers below.
+let sessionCookie = null;
 
 const port = 3103;
 const marker = `HUB_TEST_CONTACT_${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -37,64 +41,79 @@ async function waitForApi() {
   throw new Error('Timed out waiting for the API integration server.');
 }
 
-async function postContact(payload, requestId) {
+// x-request-id is always server-generated (Security V1 Phase 4); a client
+// can no longer choose the value that lands in audit.cambios.request_id, so
+// each helper captures the returned response header instead of an input.
+async function postContact(payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contacts`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) },
     body: JSON.stringify(payload)
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
-async function patchContact(id, payload, requestId) {
+async function patchContact(id, payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contacts/${id}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) },
     body: JSON.stringify(payload)
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
-async function addContactMethod(id, payload, requestId) {
+async function addContactMethod(id, payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contacts/${id}/methods`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) },
     body: JSON.stringify(payload)
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
-async function patchContactMethod(id, payload, requestId) {
+async function patchContactMethod(id, payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) },
     body: JSON.stringify(payload)
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
-async function changeMethodStatus(id, action, requestId) {
+async function changeMethodStatus(id, action) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contact-methods/${id}/${action}`, {
-    method: 'POST', headers: { 'x-request-id': requestId }
+    method: 'POST', headers: sessionCookie ? { cookie: sessionCookie } : {}
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
-async function changeContactStatus(id, action, requestId) {
+async function changeContactStatus(id, action) {
   const response = await fetch(`http://127.0.0.1:${port}/api/contacts/${id}/${action}`, {
-    method: 'POST', headers: { 'x-request-id': requestId }
+    method: 'POST', headers: sessionCookie ? { cookie: sessionCookie } : {}
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
 async function getContactDirectoryList(search) {
   const query = new URLSearchParams({ search, page: '1', pageSize: '20' });
-  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies?${query}`);
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies?${query}`, { headers: sessionCookie ? { cookie: sessionCookie } : {} });
   return { response, body: await response.json() };
 }
 
 async function getContactDirectory(id) {
-  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies/${id}`);
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies/${id}`, { headers: sessionCookie ? { cookie: sessionCookie } : {} });
   return { response, body: await response.json() };
 }
 
@@ -137,6 +156,7 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   let api;
   let databaseVerified = false;
+  let authSession = null;
   try {
     const currentDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
     assert(currentDatabase === 'daubert_hub_test', `Active session database mismatch: ${currentDatabase}`);
@@ -159,6 +179,8 @@ async function run() {
     api.stdout.on('data', (chunk) => { startupOutput += chunk; });
     api.stderr.on('data', (chunk) => { startupOutput += chunk; });
     await waitForApi();
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
 
     const activeCompanyId = await createCompany(pool, 'ACTIVE', 'ACTIVO');
     const inactiveCompanyId = await createCompany(pool, 'INACTIVE', 'INACTIVO');
@@ -198,15 +220,15 @@ async function run() {
     const addedEmail = `second.${marker.toLowerCase()}@example.test`;
     const addedWebUrl = `https://portal.example.test/${marker.toLowerCase()}`;
     const additions = [
-      { requestId: `method-add-email-${randomUUID()}`, payload: { type: 'CORREO', value: addedEmail } },
-      { requestId: `method-add-phone-${randomUUID()}`, payload: { type: 'TELEFONO', value: '449 123 4567 ext. 204' } },
-      { requestId: `method-add-whatsapp-${randomUUID()}`, payload: { type: 'WHATSAPP', value: '+52 449 555 0202' } },
-      { requestId: `method-add-web-${randomUUID()}`, payload: { type: 'WEB', value: addedWebUrl } }
+      { payload: { type: 'CORREO', value: addedEmail } },
+      { payload: { type: 'TELEFONO', value: '449 123 4567 ext. 204' } },
+      { payload: { type: 'WHATSAPP', value: '+52 449 555 0202' } },
+      { payload: { type: 'WEB', value: addedWebUrl } }
     ];
     const addedMethodIds = [];
     for (const addition of additions) {
-      requestIds.add(addition.requestId);
-      const added = await addContactMethod(addMethodContactId, addition.payload, addition.requestId);
+      const added = await addContactMethod(addMethodContactId, addition.payload);
+      addition.requestId = added.requestId;
       assert(added.response.status === 201, `Method ${addition.payload.type} creation failed: ${JSON.stringify(added.body)}`);
       assert(added.response.headers.get('x-request-id') === addition.requestId, `Method ${addition.payload.type} response did not preserve x-request-id.`);
       assert(typeof added.body.data.id === 'string' && added.body.data.type === addition.payload.type && added.body.data.value === addition.payload.value && added.body.data.status === 'ACTIVO', `Method ${addition.payload.type} response is inconsistent.`);
@@ -325,16 +347,14 @@ async function run() {
     assert(editDeactivated.response.status === 200, `Edit-method inactive setup failed: ${JSON.stringify(editDeactivated.body)}`);
 
     const emailBeforeEdit = (await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones FROM core.medios_contacto WHERE medio_id = $1', [activeEmailId])).rows[0];
-    const emailEditRequestId = `method-edit-email-${randomUUID()}`;
-    requestIds.add(emailEditRequestId);
-    const correctedEmail = await patchContactMethod(activeEmailId, { value: 'corrected@example.test' }, emailEditRequestId);
-    assert(correctedEmail.response.status === 200 && correctedEmail.response.headers.get('x-request-id') === emailEditRequestId, `Active email edit failed: ${JSON.stringify(correctedEmail.body)}`);
+    const correctedEmail = await patchContactMethod(activeEmailId, { value: 'corrected@example.test' });
+    assert(correctedEmail.response.status === 200 && correctedEmail.response.headers.get('x-request-id') === correctedEmail.requestId, `Active email edit failed: ${JSON.stringify(correctedEmail.body)}`);
     assert(JSON.stringify(correctedEmail.body) === JSON.stringify({ data: { id: activeEmailId, type: 'CORREO', value: 'corrected@example.test', status: 'ACTIVO' } }), 'Method edit response did not expose exactly the safe updated representation with a string ID.');
     const emailAfterEdit = (await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones FROM core.medios_contacto WHERE medio_id = $1', [activeEmailId])).rows[0];
     assert(emailAfterEdit.medio_id === emailBeforeEdit.medio_id && emailAfterEdit.contacto_id === emailBeforeEdit.contacto_id && emailAfterEdit.estatus === emailBeforeEdit.estatus && emailAfterEdit.es_principal === emailBeforeEdit.es_principal && emailAfterEdit.recibe_notificacion_pago === emailBeforeEdit.recibe_notificacion_pago && emailAfterEdit.tipo_destinatario_pago === emailBeforeEdit.tipo_destinatario_pago && emailAfterEdit.observaciones === emailBeforeEdit.observaciones, 'Email edit changed the ID, parent, status, principal, payment routing, or observations.');
     assert(emailAfterEdit.valor === 'corrected@example.test', 'Email edit did not persist the corrected value.');
-    const methodEditAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', emailEditRequestId]);
-    assert(methodEditAudit.rows.length === 1 && methodEditAudit.rows[0].schema_name === 'core' && methodEditAudit.rows[0].table_name === 'medios_contacto' && String(methodEditAudit.rows[0].operation).toUpperCase().includes('UPDATE') && methodEditAudit.rows[0].origin === 'DAUBERT_HUB' && methodEditAudit.rows[0].request_id === emailEditRequestId, 'Method edit audit was not exactly one DAUBERT_HUB UPDATE with the HTTP request ID.');
+    const methodEditAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', correctedEmail.requestId]);
+    assert(methodEditAudit.rows.length === 1 && methodEditAudit.rows[0].schema_name === 'core' && methodEditAudit.rows[0].table_name === 'medios_contacto' && String(methodEditAudit.rows[0].operation).toUpperCase().includes('UPDATE') && methodEditAudit.rows[0].origin === 'DAUBERT_HUB' && methodEditAudit.rows[0].request_id === correctedEmail.requestId, 'Method edit audit was not exactly one DAUBERT_HUB UPDATE with the HTTP request ID.');
 
     const inactiveValueRequestId = `method-edit-inactive-value-${randomUUID()}`;
     requestIds.add(inactiveValueRequestId);
@@ -423,8 +443,6 @@ async function run() {
     assert(editedDirectoryContact.methods.some((item) => item.id === activeEmailId && item.value === 'corrected@example.test'), 'Directory did not show the corrected active method.');
     assert(editedDirectoryContact.inactiveMethods.some((item) => item.id === inactivePhoneId && item.value === '+52 449 555 0311 ext. 8' && item.type === 'WHATSAPP'), 'Directory did not show the corrected inactive method in inactiveMethods.');
 
-    const contactRequestId = `contact-create-${randomUUID()}`;
-    requestIds.add(contactRequestId);
     const methods = [
       { type: 'CORREO', value: `maria.${marker.toLowerCase()}@example.test` },
       { type: 'CORREO', value: `compras.${marker.toLowerCase()}@example.test` },
@@ -432,9 +450,9 @@ async function run() {
       { type: 'TELEFONO', value: '449 555 0102 ext. 204' },
       { type: 'WHATSAPP', value: '+52 449 555 0103' }
     ];
-    const created = await postContact({ companyId: activeCompanyId, contactType: 'PERSONA', name: `${marker} PERSON`, area: 'Integration', position: 'Synthetic Contact', notes: 'integration fixture', methods }, contactRequestId);
+    const created = await postContact({ companyId: activeCompanyId, contactType: 'PERSONA', name: `${marker} PERSON`, area: 'Integration', position: 'Synthetic Contact', notes: 'integration fixture', methods });
     assert(created.response.status === 201, `Active company contact creation failed: ${JSON.stringify(created.body)}`);
-    assert(created.response.headers.get('x-request-id') === contactRequestId, 'Contact response did not preserve x-request-id.');
+    assert(created.response.headers.get('x-request-id') === created.requestId, 'Contact response did not preserve x-request-id.');
     assert(typeof created.body.data.id === 'string' && created.body.data.methods.length === 5 && created.body.data.methods.every((method) => typeof method.id === 'string'), 'Contact response did not preserve bigint IDs or all methods.');
     assert(!JSON.stringify(created.body).includes('recibe_notificacion_pago') && !JSON.stringify(created.body).includes('tipo_destinatario_pago'), 'Contact response exposed payment routing fields.');
 
@@ -446,30 +464,26 @@ async function run() {
     const typeCounts = storedMethods.rows.reduce((counts, method) => ({ ...counts, [method.tipo_medio]: (counts[method.tipo_medio] || 0) + 1 }), {});
     assert(typeCounts.CORREO === 2 && typeCounts.TELEFONO === 2 && typeCounts.WHATSAPP === 1, 'Method types were lost or collapsed.');
 
-    const auditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', contactRequestId]);
+    const auditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id${auditColumns.has('usuario_id') ? ', usuario_id' : ''}${auditColumns.has('usuario_email') ? ', usuario_email' : ''} FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', created.requestId]);
     assert(auditRows.rows.length === 6, 'Expected one contact and five method audit insert events.');
     assert(auditRows.rows.filter((row) => row.schema_name === 'core' && row.table_name === 'contactos').length === 1, 'Missing audit insert for the contact.');
     assert(auditRows.rows.filter((row) => row.schema_name === 'core' && row.table_name === 'medios_contacto').length === 5, 'Missing audit inserts for contact methods.');
-    assert(auditRows.rows.every((row) => String(row.operation).toUpperCase().includes('INSERT') && row.origin === 'DAUBERT_HUB' && row.request_id === contactRequestId), 'Contact audit origin, request ID, or operation is inconsistent.');
+    assert(auditRows.rows.every((row) => String(row.operation).toUpperCase().includes('INSERT') && row.origin === 'DAUBERT_HUB' && row.request_id === created.requestId), 'Contact audit origin, request ID, or operation is inconsistent.');
+    if (auditColumns.has('usuario_id')) assert(auditRows.rows.every((row) => row.usuario_id === authSession.userId), 'Authenticated audit usuario_id was not populated from request.user.');
+    if (auditColumns.has('usuario_email')) assert(auditRows.rows.every((row) => row.usuario_email === authSession.email), 'Authenticated audit usuario_email was not populated from request.user.');
 
-    const editPersonCreateId = `contact-edit-person-create-${randomUUID()}`;
-    requestIds.add(editPersonCreateId);
-    const editPerson = await postContact({ companyId: activeCompanyId, contactType: 'PERSONA', name: `${marker} Maria Lopez`, area: 'Compras', position: 'Compradora', notes: 'Observación inicial', methods: [{ type: 'CORREO', value: `edit.${marker.toLowerCase()}@example.test` }, { type: 'TELEFONO', value: '+52 449 555 0188' }] }, editPersonCreateId);
+    const editPerson = await postContact({ companyId: activeCompanyId, contactType: 'PERSONA', name: `${marker} Maria Lopez`, area: 'Compras', position: 'Compradora', notes: 'Observación inicial', methods: [{ type: 'CORREO', value: `edit.${marker.toLowerCase()}@example.test` }, { type: 'TELEFONO', value: '+52 449 555 0188' }] });
     assert(editPerson.response.status === 201, `PERSONA edit fixture creation failed: ${JSON.stringify(editPerson.body)}`);
     const editPersonId = editPerson.body.data.id;
     const inactiveEditMethodId = editPerson.body.data.methods[1].id;
-    const editMethodDeactivateId = `contact-edit-method-deactivate-${randomUUID()}`;
-    requestIds.add(editMethodDeactivateId);
-    const editMethodDeactivated = await changeMethodStatus(inactiveEditMethodId, 'deactivate', editMethodDeactivateId);
+    const editMethodDeactivated = await changeMethodStatus(inactiveEditMethodId, 'deactivate');
     assert(editMethodDeactivated.response.status === 200, `PERSONA inactive method setup failed: ${JSON.stringify(editMethodDeactivated.body)}`);
     const methodsBeforeEdit = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [editPersonId]);
     assert(methodsBeforeEdit.rows.length === 2 && methodsBeforeEdit.rows.filter((method) => method.estatus === 'ACTIVO').length === 1 && methodsBeforeEdit.rows.filter((method) => method.estatus === 'INACTIVO').length === 1, 'PERSONA edit fixture did not have one active and one inactive method.');
 
-    const editPersonRequestId = `contact-edit-person-${randomUUID()}`;
-    requestIds.add(editPersonRequestId);
-    const editedPerson = await patchContact(editPersonId, { name: `${marker} María López`, area: 'Compras y Abastecimiento', position: null, notes: 'Observación actualizada' }, editPersonRequestId);
+    const editedPerson = await patchContact(editPersonId, { name: `${marker} María López`, area: 'Compras y Abastecimiento', position: null, notes: 'Observación actualizada' });
     assert(editedPerson.response.status === 200, `PERSONA PATCH failed: ${JSON.stringify(editedPerson.body)}`);
-    assert(editedPerson.response.headers.get('x-request-id') === editPersonRequestId, 'PERSONA PATCH did not preserve x-request-id.');
+    assert(editedPerson.response.headers.get('x-request-id') === editedPerson.requestId, 'PERSONA PATCH did not preserve x-request-id.');
     assert(editedPerson.body.data.id === editPersonId && typeof editedPerson.body.data.id === 'string' && editedPerson.body.data.companyId === activeCompanyId && editedPerson.body.data.contactType === 'PERSONA' && editedPerson.body.data.name === `${marker} María López` && editedPerson.body.data.area === 'Compras y Abastecimiento' && editedPerson.body.data.position === null && editedPerson.body.data.notes === 'Observación actualizada' && editedPerson.body.data.status === 'ACTIVO', 'PERSONA PATCH response did not return the updated immutable representation.');
     assert(!JSON.stringify(editedPerson.body).includes('recibe_notificacion_pago') && !JSON.stringify(editedPerson.body).includes('tipo_destinatario_pago'), 'PERSONA PATCH exposed payment routing fields.');
     const storedEditedPerson = await pool.query('SELECT contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [editPersonId]);
@@ -477,17 +491,13 @@ async function run() {
     assert(personRow && personRow.empresa_id === activeCompanyId && personRow.tipo_contacto === 'PERSONA' && personRow.nombre === `${marker} María López` && personRow.area === 'Compras y Abastecimiento' && personRow.cargo === null && personRow.observaciones === 'Observación actualizada' && personRow.estatus === 'ACTIVO' && personRow.es_contacto_principal === false, 'PERSONA PATCH changed immutable fields or failed to persist descriptive fields.');
     const methodsAfterEdit = await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE contacto_id = $1 ORDER BY medio_id', [editPersonId]);
     assert(JSON.stringify(methodsAfterEdit.rows) === JSON.stringify(methodsBeforeEdit.rows), 'PERSONA PATCH changed active/inactive methods or payment metadata.');
-    const editAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', editPersonRequestId]);
-    assert(editAudit.rows.length === 1 && editAudit.rows[0].schema_name === 'core' && editAudit.rows[0].table_name === 'contactos' && String(editAudit.rows[0].operation).toUpperCase().includes('UPDATE') && editAudit.rows[0].origin === 'DAUBERT_HUB' && editAudit.rows[0].request_id === editPersonRequestId, 'PERSONA PATCH audit event was not one DAUBERT_HUB contact UPDATE with the request ID.');
+    const editAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', editedPerson.requestId]);
+    assert(editAudit.rows.length === 1 && editAudit.rows[0].schema_name === 'core' && editAudit.rows[0].table_name === 'contactos' && String(editAudit.rows[0].operation).toUpperCase().includes('UPDATE') && editAudit.rows[0].origin === 'DAUBERT_HUB' && editAudit.rows[0].request_id === editedPerson.requestId, 'PERSONA PATCH audit event was not one DAUBERT_HUB contact UPDATE with the request ID.');
 
     for (const [contactType, initialArea, updatedArea] of [['AREA', 'Compras', 'Compras y Abastecimiento'], ['BUZON_GENERICO', 'Pagos', 'Pagos a Proveedores']]) {
-      const createId = `contact-edit-${contactType.toLowerCase()}-create-${randomUUID()}`;
-      requestIds.add(createId);
-      const fixture = await postContact({ companyId: activeCompanyId, contactType, area: initialArea, notes: 'Inicial', methods: [{ type: 'CORREO', value: `${contactType.toLowerCase()}.${marker.toLowerCase()}@example.test` }] }, createId);
+      const fixture = await postContact({ companyId: activeCompanyId, contactType, area: initialArea, notes: 'Inicial', methods: [{ type: 'CORREO', value: `${contactType.toLowerCase()}.${marker.toLowerCase()}@example.test` }] });
       assert(fixture.response.status === 201, `${contactType} edit fixture creation failed: ${JSON.stringify(fixture.body)}`);
-      const editId = `contact-edit-${contactType.toLowerCase()}-${randomUUID()}`;
-      requestIds.add(editId);
-      const edited = await patchContact(fixture.body.data.id, { area: updatedArea, notes: `Nota ${contactType}` }, editId);
+      const edited = await patchContact(fixture.body.data.id, { area: updatedArea, notes: `Nota ${contactType}` });
       assert(edited.response.status === 200 && edited.body.data.contactType === contactType && edited.body.data.area === updatedArea && edited.body.data.name === null && edited.body.data.position === null, `${contactType} PATCH response violated type rules: ${JSON.stringify(edited.body)}`);
       const stored = (await pool.query('SELECT empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal FROM core.contactos WHERE contacto_id = $1', [fixture.body.data.id])).rows[0];
       assert(stored.empresa_id === activeCompanyId && stored.tipo_contacto === contactType && stored.nombre === null && stored.area === updatedArea && stored.cargo === null && stored.observaciones === `Nota ${contactType}` && stored.estatus === 'ACTIVO' && stored.es_contacto_principal === false, `${contactType} PATCH did not preserve immutable fields.`);
@@ -495,32 +505,28 @@ async function run() {
 
     const methodIds = created.body.data.methods.map((method) => method.id);
     for (const methodId of methodIds) {
-      const requestId = `method-deactivate-${randomUUID()}`;
-      requestIds.add(requestId);
-      const deactivated = await changeMethodStatus(methodId, 'deactivate', requestId);
+      const deactivated = await changeMethodStatus(methodId, 'deactivate');
       assert(deactivated.response.status === 200 && deactivated.body.data.status === 'INACTIVO' && deactivated.body.data.id === methodId, `Method deactivation failed: ${JSON.stringify(deactivated.body)}`);
       assert(!JSON.stringify(deactivated.body).includes('recibe_notificacion_pago') && !JSON.stringify(deactivated.body).includes('tipo_destinatario_pago'), 'Method lifecycle response exposed payment routing fields.');
-      const lifecycleAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', requestId]);
-      assert(lifecycleAudit.rows.length === 1 && lifecycleAudit.rows[0].schema_name === 'core' && lifecycleAudit.rows[0].table_name === 'medios_contacto' && String(lifecycleAudit.rows[0].operation).toUpperCase().includes('UPDATE') && lifecycleAudit.rows[0].origin === 'DAUBERT_HUB' && lifecycleAudit.rows[0].request_id === requestId, 'Method lifecycle audit context or update event is inconsistent.');
+      const lifecycleAudit = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOperationColumn} AS operation, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', deactivated.requestId]);
+      assert(lifecycleAudit.rows.length === 1 && lifecycleAudit.rows[0].schema_name === 'core' && lifecycleAudit.rows[0].table_name === 'medios_contacto' && String(lifecycleAudit.rows[0].operation).toUpperCase().includes('UPDATE') && lifecycleAudit.rows[0].origin === 'DAUBERT_HUB' && lifecycleAudit.rows[0].request_id === deactivated.requestId, 'Method lifecycle audit context or update event is inconsistent.');
     }
     const noActiveMethods = await pool.query('SELECT estatus FROM core.contactos WHERE contacto_id = $1', [created.body.data.id]);
     assert(noActiveMethods.rows[0].estatus === 'ACTIVO', 'Deactivating the last active method changed the contact lifecycle.');
     const directoryWithInactiveMethods = await getContactDirectory(activeCompanyId);
     const directoryContact = directoryWithInactiveMethods.body.data.contacts.find((contact) => contact.id === created.body.data.id);
     assert(directoryWithInactiveMethods.response.status === 200 && directoryContact && directoryContact.notes === 'integration fixture' && directoryContact.methods.length === 0 && directoryContact.inactiveMethods.length === 5, 'Directory did not return contact notes and separate inactive methods for an active contact.');
-    const duplicate = await changeMethodStatus(methodIds[0], 'deactivate', `method-duplicate-${randomUUID()}`);
+    const duplicate = await changeMethodStatus(methodIds[0], 'deactivate');
     assert(duplicate.response.status === 409 && duplicate.body.code === 'METHOD_ALREADY_INACTIVE', 'Repeated method deactivation did not return a safe conflict.');
-    const reactivateRequestId = `method-reactivate-${randomUUID()}`;
-    requestIds.add(reactivateRequestId);
-    const reactivated = await changeMethodStatus(methodIds[0], 'reactivate', reactivateRequestId);
+    const reactivated = await changeMethodStatus(methodIds[0], 'reactivate');
     assert(reactivated.response.status === 200 && reactivated.body.data.status === 'ACTIVO', `Method reactivation failed: ${JSON.stringify(reactivated.body)}`);
     const restoredMethod = await pool.query('SELECT estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago FROM core.medios_contacto WHERE medio_id = $1', [methodIds[0]]);
     assert(restoredMethod.rows.length === 1 && restoredMethod.rows[0].estatus === 'ACTIVO' && restoredMethod.rows[0].es_principal === false && restoredMethod.rows[0].recibe_notificacion_pago === false && restoredMethod.rows[0].tipo_destinatario_pago === null, 'Method lifecycle changed fields other than status.');
-    const missing = await changeMethodStatus('999999999999999', 'deactivate', `method-missing-${randomUUID()}`);
+    const missing = await changeMethodStatus('999999999999999', 'deactivate');
     assert(missing.response.status === 404, 'Missing method did not return a safe 404.');
 
     for (const [companyId, expectedStatus, label] of [[inactiveCompanyId, 409, 'inactive'], [blockedCompanyId, 409, 'blocked'], ['999999999999999', 404, 'nonexistent']]) {
-      const rejected = await postContact({ companyId, contactType: 'PERSONA', name: `${marker} REJECTED`, methods: [{ type: 'CORREO', value: `rejected.${marker.toLowerCase()}@example.test` }] }, `contact-${label}-${randomUUID()}`);
+      const rejected = await postContact({ companyId, contactType: 'PERSONA', name: `${marker} REJECTED`, methods: [{ type: 'CORREO', value: `rejected.${marker.toLowerCase()}@example.test` }] });
       assert(rejected.response.status === expectedStatus, `${label} company did not reject contact creation safely.`);
     }
 
@@ -552,11 +558,10 @@ async function run() {
       status,
       isPrimary: row.es_contacto_principal
     });
-    const assertSuccessfulContactLifecycle = async ({ contactId, companyId, action, status, requestId, beforeContact, beforeMethods, beforeCompany }) => {
-      requestIds.add(requestId);
-      const changed = await changeContactStatus(contactId, action, requestId);
+    const assertSuccessfulContactLifecycle = async ({ contactId, companyId, action, status, beforeContact, beforeMethods, beforeCompany }) => {
+      const changed = await changeContactStatus(contactId, action);
       assert(changed.response.status === 200, `Contact ${action} did not return explicit 200: ${JSON.stringify(changed.body)}`);
-      assert(changed.response.headers.get('x-request-id') === requestId, `Contact ${action} did not preserve x-request-id.`);
+      assert(changed.response.headers.get('x-request-id') === changed.requestId, `Contact ${action} did not preserve x-request-id.`);
       assert(JSON.stringify(changed.body) === JSON.stringify({ data: expectedLifecycleData(beforeContact, status) }), `Contact ${action} did not return all normal fields, string BIGINT IDs, and the expected status.`);
       assert(!JSON.stringify(changed.body).includes('recibe_notificacion_pago') && !JSON.stringify(changed.body).includes('tipo_destinatario_pago'), `Contact ${action} exposed payment routing.`);
       const afterContact = await contactSnapshot(contactId);
@@ -564,7 +569,7 @@ async function run() {
       assert(JSON.stringify({ ...afterContact, estatus: beforeContact.estatus }) === JSON.stringify(beforeContact), `Contact ${action} changed a core.contactos field other than estatus.`);
       assert(JSON.stringify(await methodSnapshot(contactId)) === JSON.stringify(beforeMethods), `Contact ${action} changed a method row, status, parent, principal, payment metadata, observations, value, or type.`);
       assert(JSON.stringify(await companySnapshot(companyId)) === JSON.stringify(beforeCompany), `Contact ${action} changed company data or lifecycle.`);
-      await assertContactLifecycleAudit(requestId);
+      await assertContactLifecycleAudit(changed.requestId);
       return afterContact;
     };
 
@@ -663,6 +668,8 @@ async function run() {
   } finally {
     try {
       if (databaseVerified) {
+        const cleanupDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
+        assert(cleanupDatabase === 'daubert_hub_test', `Cleanup database mismatch: ${cleanupDatabase}`);
         if (companyIds.size > 0) {
           const ids = [...companyIds];
           await queryWithAuditContext(pool, cleanupRequestId, 'DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [ids]);
@@ -680,6 +687,7 @@ async function run() {
         api.kill();
         await once(api, 'exit');
       }
+      await cleanupAuthenticatedTestSession(authSession);
       await pool.end();
     }
   }

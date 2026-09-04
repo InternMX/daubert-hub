@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import type { AuditIdentity } from '../common/authenticated-request';
 import { ContactType, type CreateContactDto, type CreateContactMethodDto } from './dto/create-contact.dto';
 import type { UpdateContactDto } from './dto/update-contact.dto';
 
@@ -39,11 +40,11 @@ export interface CreatedContactRecord {
 export class ContactsRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async create(input: CreateContactDto, requestId: string): Promise<CreatedContactRecord> {
+  async create(input: CreateContactDto, requestId: string, identity: AuditIdentity): Promise<CreatedContactRecord> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       await this.assertActiveCompany(client, input.companyId);
       const contact = await this.insertContact(client, input);
       const methods: MethodRow[] = [];
@@ -62,11 +63,11 @@ export class ContactsRepository {
     }
   }
 
-  async update(id: string, input: UpdateContactDto, requestId: string): Promise<ContactRow | null> {
+  async update(id: string, input: UpdateContactDto, requestId: string, identity: AuditIdentity): Promise<ContactRow | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const contact = await this.lockContact(client, id);
       if (!contact) { await client.query('COMMIT'); return null; }
       if (contact.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
@@ -89,11 +90,11 @@ export class ContactsRepository {
     }
   }
 
-  async changeStatus(id: string, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<ContactRow | null> {
+  async changeStatus(id: string, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactRow | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const contact = await this.lockContact(client, id);
       if (!contact) { await client.query('COMMIT'); return null; }
       if (contact.company_status === 'INACTIVO') throw Object.assign(new Error('COMPANY_INACTIVE'), { code: 'COMPANY_INACTIVE' });
@@ -120,9 +121,11 @@ export class ContactsRepository {
     }
   }
 
-  private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {
+  private async setAuditContext(client: PoolClient, requestId: string, identity: AuditIdentity): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);
+    await client.query("SELECT set_config('app.user_id', COALESCE($1, ''), true)", [identity.userId]);
+    await client.query("SELECT set_config('app.user_email', COALESCE($1, ''), true)", [identity.userEmail]);
   }
 
   private async assertActiveCompany(client: PoolClient, companyId: string): Promise<void> {

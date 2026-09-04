@@ -2,6 +2,9 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+let sessionCookie = null;
 
 const port = 3104;
 const marker = `HUB_TEST_COMPANY_LOOKUP_${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -28,10 +31,10 @@ async function waitForApi() {
   while (Date.now() < deadline) { try { if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) return; } catch { /* starting */ } await new Promise((resolve) => setTimeout(resolve, 200)); }
   throw new Error('Timed out waiting for the company lookup API.');
 }
-async function search(value) { const response = await fetch(`http://127.0.0.1:${port}/api/companies/search?search=${encodeURIComponent(value)}`); return { response, body: await response.json() }; }
+async function search(value) { const response = await fetch(`http://127.0.0.1:${port}/api/companies/search?search=${encodeURIComponent(value)}`, { headers: sessionCookie ? { cookie: sessionCookie } : {} }); return { response, body: await response.json() }; }
 
 async function run() {
-  const url = testUrl(); const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL }); let api; let databaseVerified = false;
+  const url = testUrl(); const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL }); let api; let databaseVerified = false; let authSession = null;
   try {
     assert((await pool.query('SELECT current_database() AS name')).rows[0].name === 'daubert_hub_test', 'Active session database mismatch.');
     databaseVerified = true;
@@ -46,6 +49,8 @@ async function run() {
 
     api = spawn(process.execPath, ['dist/src/main.js'], { cwd: process.cwd(), env: { ...process.env, DB_HOST: url.hostname, DB_PORT: url.port || '5432', DB_NAME: 'daubert_hub_test', DB_USER: decodeURIComponent(url.username), DB_PASSWORD: decodeURIComponent(url.password), API_PORT: String(port) }, stdio: 'ignore' });
     await waitForApi();
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
     const alias = await search(`${marker}_ALIAS`);
     assert(alias.response.status === 200 && alias.body.data.filter((row) => row.id === active).length === 1, 'Active alias search did not return exactly one company.');
     assert(alias.body.data.find((row) => row.id === active).matchedAlias === `${marker}_ALIAS`, 'Exact active alias was not selected deterministically.');
@@ -59,7 +64,7 @@ async function run() {
     assert(typeof alias.body.data.find((row) => row.id === active).id === 'string', 'Company lookup did not preserve BIGINT IDs as strings.');
     console.log('Company lookup integration checks passed.');
   } finally {
-    try { if (databaseVerified && ids.size) { const client = await pool.connect(); try { await client.query('BEGIN'); await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']); await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]); await client.query('DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [[...ids]]); await client.query('DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } } } finally { if (api && !api.killed) { api.kill(); await once(api, 'exit'); } await pool.end(); }
+    try { if (databaseVerified && ids.size) { assert((await pool.query('SELECT current_database() AS name')).rows[0].name === 'daubert_hub_test', 'Cleanup database mismatch.'); const client = await pool.connect(); try { await client.query('BEGIN'); await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']); await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]); await client.query('DELETE FROM core.medios_contacto WHERE contacto_id IN (SELECT contacto_id FROM core.contactos WHERE empresa_id = ANY($1::bigint[]))', [[...ids]]); await client.query('DELETE FROM core.contactos WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...ids]]); await client.query('COMMIT'); await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[requestId, cleanupRequestId]]); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } } } finally { await cleanupAuthenticatedTestSession(authSession); if (api && !api.killed) { api.kill(); await once(api, 'exit'); } await pool.end(); }
   }
 }
 run().catch((error) => { console.error(error.message); process.exitCode = 1; });

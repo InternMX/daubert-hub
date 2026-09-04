@@ -29,12 +29,12 @@ export class SessionsService {
     return this.repository.findActiveByTokenHash(hashSessionToken(token));
   }
 
-  // Idempotent by construction: an unknown/already-revoked/expired token
-  // simply resolves to nothing and this becomes a no-op — never an error,
-  // never a signal to the caller about which case applied.
+  // Revoke by hash without requiring the session to still be valid. Logout
+  // must invalidate an expired session or one owned by an INACTIVE user too,
+  // otherwise that token could become usable again after state restoration.
+  // The guarded UPDATE remains idempotent for unknown/already-revoked tokens.
   async revokeByToken(token: string): Promise<void> {
-    const active = await this.resolveActiveSession(token);
-    if (active) await this.repository.revoke(active.sessionId);
+    await this.repository.revokeByTokenHash(hashSessionToken(token));
   }
 
   async revokeAllForUser(userId: string): Promise<void> {

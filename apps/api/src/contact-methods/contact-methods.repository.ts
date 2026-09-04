@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import type { AuditIdentity } from '../common/authenticated-request';
 import type { AddContactMethodDto } from './dto/add-contact-method.dto';
 import type { EditContactMethodDto } from './dto/edit-contact-method.dto';
 import { validateContactMethod } from './contact-method-validation';
@@ -35,11 +36,11 @@ export interface ContactMethodRecord {
 export class ContactMethodsRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async add(contactId: string, input: AddContactMethodDto, requestId: string): Promise<ContactMethodRecord | null> {
+  async add(contactId: string, input: AddContactMethodDto, requestId: string, identity: AuditIdentity): Promise<ContactMethodRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const contact = await this.lockContact(client, contactId);
       if (!contact) { await client.query('COMMIT'); return null; }
       if (contact.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
@@ -61,11 +62,11 @@ export class ContactMethodsRepository {
     }
   }
 
-  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<ContactMethodRecord | null> {
+  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactMethodRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const method = await this.lockMethod(client, id);
       if (!method) { await client.query('COMMIT'); return null; }
       if (method.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
@@ -83,11 +84,11 @@ export class ContactMethodsRepository {
     }
   }
 
-  async edit(id: string, input: EditContactMethodDto, requestId: string): Promise<ContactMethodRecord | null> {
+  async edit(id: string, input: EditContactMethodDto, requestId: string, identity: AuditIdentity): Promise<ContactMethodRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, identity);
       const method = await this.lockMethod(client, id);
       if (!method) { await client.query('COMMIT'); return null; }
       if (method.company_status !== 'ACTIVO') throw Object.assign(new Error('COMPANY_NOT_ACTIVE'), { code: 'COMPANY_NOT_ACTIVE' });
@@ -145,8 +146,10 @@ export class ContactMethodsRepository {
     return result.rows.length > 0;
   }
 
-  private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {
+  private async setAuditContext(client: PoolClient, requestId: string, identity: AuditIdentity): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);
+    await client.query("SELECT set_config('app.user_id', COALESCE($1, ''), true)", [identity.userId]);
+    await client.query("SELECT set_config('app.user_email', COALESCE($1, ''), true)", [identity.userEmail]);
   }
 }

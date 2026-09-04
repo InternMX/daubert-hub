@@ -3,12 +3,16 @@ const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const path = require('node:path');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+let sessionCookie = null;
 
 const port = 3106;
 const apiDirectory = path.resolve(__dirname, '..');
 const marker = `HUB_TEST_AUTOMATION_${randomUUID().replace(/-/g, '').toUpperCase()}`;
 const automationCode = `${marker}_AUTO`;
 const seriesCode = `${marker}_SERIES`;
+const requestIds = new Set();
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
 function databaseUrl() {
@@ -23,7 +27,9 @@ async function transaction(pool, text, values = []) {
   try {
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST']);
-    await client.query("SELECT set_config('app.request_id', $1, true)", [`automation-test-${randomUUID()}`]);
+    const requestId = `automation-test-${randomUUID()}`;
+    requestIds.add(requestId);
+    await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);
     const result = await client.query(text, values);
     await client.query('COMMIT');
     return result;
@@ -47,14 +53,18 @@ async function waitForApi(api, startupState) {
   throw new Error(`Timed out waiting for the automation integration API.${output ? `\n${output}` : ''}`);
 }
 async function getConfiguration() {
-  const response = await fetch(`http://127.0.0.1:${port}/api/automations/${automationCode}/document-series/${seriesCode}`);
+  const response = await fetch(`http://127.0.0.1:${port}/api/automations/${automationCode}/document-series/${seriesCode}`, {
+    headers: sessionCookie ? { cookie: sessionCookie } : {}
+  });
   return { response, body: await response.json() };
 }
 async function adjust(payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/automations/${automationCode}/document-series/${seriesCode}`, {
-    method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload)
+    method: 'PATCH', headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) }, body: JSON.stringify(payload)
   });
-  return { response, body: await response.json() };
+  const requestId = response.headers.get('x-request-id');
+  if (requestId) requestIds.add(requestId);
+  return { response, body: await response.json(), requestId };
 }
 
 async function run() {
@@ -63,6 +73,7 @@ async function run() {
   let api;
   let seriesId;
   let databaseVerified = false;
+  let authSession = null;
   try {
     assert((await pool.query('SELECT current_database() AS name')).rows[0].name === 'daubert_hub_test', 'Active session database mismatch.');
     databaseVerified = true;
@@ -83,6 +94,8 @@ async function run() {
     api.stderr.on('data', (chunk) => { startupState.output += chunk; });
     api.on('error', (error) => { startupState.error = error; });
     await waitForApi(api, startupState);
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
 
     const initial = await getConfiguration();
     assert(initial.response.status === 200, `Configuration read failed: ${JSON.stringify(initial.body)}`);
@@ -97,6 +110,13 @@ async function run() {
       assert(result.response.status === 200 && result.body.data.series.nextFolio === payload.nextFolio, `Adjustment failed: ${JSON.stringify(result.body)}`);
       assert(result.body.data.adjustments.some((row) => row.newFolio === payload.nextFolio && row.reason === payload.reason), 'Adjustment history was not inserted.');
     }
+
+    const identityRow = (await pool.query(
+      'SELECT usuario_id, usuario_email FROM operacion.ajustes_series WHERE serie_id = $1 AND motivo = $2',
+      [seriesId, `${marker}_FORWARD`]
+    )).rows[0];
+    assert(identityRow.usuario_id === authSession.userId, 'Authenticated Document Series adjustment did not record usuario_id from request.user.');
+    assert(identityRow.usuario_email === authSession.email, 'Authenticated Document Series adjustment did not record usuario_email from request.user.');
 
     for (const payload of [
       { nextFolio: 0, reason: 'Invalid' }, { nextFolio: -1, reason: 'Invalid' },
@@ -125,11 +145,16 @@ async function run() {
     } finally {
       try {
         if (databaseVerified) {
+          assert((await pool.query('SELECT current_database() AS name')).rows[0].name === 'daubert_hub_test', 'Cleanup database mismatch.');
           if (seriesId) await transaction(pool, 'DELETE FROM operacion.ajustes_series WHERE serie_id = $1', [seriesId]);
           await transaction(pool, 'DELETE FROM operacion.series_documentales WHERE codigo = $1', [seriesCode]);
           await transaction(pool, 'DELETE FROM ops.automatizaciones WHERE codigo = $1', [automationCode]);
+          await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
         }
-      } finally { await pool.end(); }
+      } finally {
+        await cleanupAuthenticatedTestSession(authSession);
+        await pool.end();
+      }
     }
   }
 }

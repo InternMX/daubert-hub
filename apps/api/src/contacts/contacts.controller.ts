@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Param, Patch, Post, Req } from '@nestjs/common';
-import type { RequestWithId } from '../common/request-id.middleware';
+import { identityFromRequest, type AuthenticatedRequest } from '../common/authenticated-request';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import type { CreateContactResponse, UpdateContactResponse } from './contacts.service';
@@ -11,28 +11,28 @@ export class ContactsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() input: CreateContactDto, @Req() request: RequestWithId): Promise<CreateContactResponse> {
-    return this.contacts.create(input, request.requestId);
+  create(@Body() input: CreateContactDto, @Req() request: AuthenticatedRequest): Promise<CreateContactResponse> {
+    return this.contacts.create(input, request.requestId, identityFromRequest(request));
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() input: UpdateContactDto, @Req() request: RequestWithId): Promise<UpdateContactResponse> {
+  update(@Param('id') id: string, @Body() input: UpdateContactDto, @Req() request: AuthenticatedRequest): Promise<UpdateContactResponse> {
     this.assertValidId(id);
-    return this.contacts.update(id, input, request.requestId);
+    return this.contacts.update(id, input, request.requestId, identityFromRequest(request));
   }
 
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)
-  deactivate(@Param('id') id: string, @Req() request: RequestWithId): Promise<UpdateContactResponse> {
+  deactivate(@Param('id') id: string, @Req() request: AuthenticatedRequest): Promise<UpdateContactResponse> {
     this.assertValidId(id);
-    return this.contacts.deactivate(id, request.requestId);
+    return this.contacts.deactivate(id, request.requestId, identityFromRequest(request));
   }
 
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
-  reactivate(@Param('id') id: string, @Req() request: RequestWithId): Promise<UpdateContactResponse> {
+  reactivate(@Param('id') id: string, @Req() request: AuthenticatedRequest): Promise<UpdateContactResponse> {
     this.assertValidId(id);
-    return this.contacts.reactivate(id, request.requestId);
+    return this.contacts.reactivate(id, request.requestId, identityFromRequest(request));
   }
 
   private assertValidId(id: string): void {

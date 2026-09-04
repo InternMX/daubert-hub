@@ -10,13 +10,13 @@ describe('ProvidersService', () => {
   it('passes normalized input and maps a provider without fiscal data', async () => {
     const create = vi.fn().mockResolvedValue({ company: { empresa_id: '9007199254740993', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', estatus: 'ACTIVO', observaciones: null }, fiscal: null });
     const service = new ProvidersService({ create } as never);
-    await expect(service.create(input, 'request-1')).resolves.toEqual({ data: { id: '9007199254740993', commercialName: 'Acme', providerType: 'PROVEEDOR', status: 'ACTIVO', notes: null, fiscal: null } });
-    expect(create).toHaveBeenCalledWith(input, 'request-1');
+    await expect(service.create(input, 'request-1', { userId: null, userEmail: null })).resolves.toEqual({ data: { id: '9007199254740993', commercialName: 'Acme', providerType: 'PROVEEDOR', status: 'ACTIVO', notes: null, fiscal: null } });
+    expect(create).toHaveBeenCalledWith(input, 'request-1', { userId: null, userEmail: null });
   });
 
   it('maps fiscal data without converting bigint identifiers to numbers', async () => {
     const service = new ProvidersService({ create: vi.fn().mockResolvedValue({ company: { empresa_id: '121', tipo_empresa: 'FLETE', nombre_comercial: 'Acme Freight', estatus: 'ACTIVO', observaciones: 'note' }, fiscal: { empresa_fiscal_id: '122', razon_social: 'Acme SA', rfc: 'ABC123456XYZ' } }) } as never);
-    await expect(service.create({ ...input, providerType: ProviderType.Freight }, 'request-2')).resolves.toMatchObject({ data: { id: '121', fiscal: { id: '122', rfc: 'ABC123456XYZ' } } });
+    await expect(service.create({ ...input, providerType: ProviderType.Freight }, 'request-2', { userId: null, userEmail: null })).resolves.toMatchObject({ data: { id: '121', fiscal: { id: '122', rfc: 'ABC123456XYZ' } } });
   });
 
   it.each([
@@ -24,13 +24,13 @@ describe('ProvidersService', () => {
     ['uq_empresas_fiscales_rfc', 'RFC_ALREADY_EXISTS']
   ])('maps %s to conflict %s', async (constraint, code) => {
     const service = new ProvidersService({ create: vi.fn().mockRejectedValue({ code: '23505', constraint }) } as never);
-    await expect(service.create(input, 'request-3')).rejects.toMatchObject({ response: { code } });
+    await expect(service.create(input, 'request-3', { userId: null, userEmail: null })).rejects.toMatchObject({ response: { code } });
   });
 
   it('preserves unknown repository failures', async () => {
     const failure = new Error('connection refused');
     const service = new ProvidersService({ create: vi.fn().mockRejectedValue(failure) } as never);
-    await expect(service.create(input, 'request-4')).rejects.toBe(failure);
+    await expect(service.create(input, 'request-4', { userId: null, userEmail: null })).rejects.toBe(failure);
   });
 
   it('maps listed providers and preserves bigint identifiers as strings', async () => {
@@ -65,37 +65,37 @@ describe('ProvidersService', () => {
     const update = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme updated', provider_type: 'FLETE', roles: ['FLETE'], aliases: ['BMASC'], other_aliases: [], status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
     const service = new ProvidersService({ update } as never);
     const updateInput: UpdateProviderDto = { commercialName: 'Acme updated', providerType: ProviderType.Freight, notes: null, fiscal: { legalName: '', rfc: '' } };
-    await expect(service.update(121, updateInput, 'request-update')).resolves.toMatchObject({ data: { commercialName: 'Acme updated', providerType: 'FLETE' } });
-    expect(update).toHaveBeenCalledWith(121, updateInput, 'request-update');
+    await expect(service.update(121, updateInput, 'request-update', { userId: null, userEmail: null })).resolves.toMatchObject({ data: { commercialName: 'Acme updated', providerType: 'FLETE' } });
+    expect(update).toHaveBeenCalledWith(121, updateInput, 'request-update', { userId: null, userEmail: null });
   });
 
   it('requires an effective date for a new fiscal identity', async () => {
     const service = new ProvidersService({ update: vi.fn() } as never);
-    await expect(service.update(121, { fiscal: { legalName: 'Acme SA', rfc: 'ACM010101AA1', changeMode: FiscalChangeMode.NewIdentity } }, 'request-update')).rejects.toMatchObject({ status: 400 });
+    await expect(service.update(121, { fiscal: { legalName: 'Acme SA', rfc: 'ACM010101AA1', changeMode: FiscalChangeMode.NewIdentity } }, 'request-update', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
   });
 
   it('trims aliases and rejects case-insensitive duplicates', async () => {
     const update = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR'], aliases: ['BMASC'], other_aliases: [], status: 'ACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
     const service = new ProvidersService({ update } as never);
-    await service.update(121, { aliases: [' BMASC '] }, 'request-update');
-    expect(update).toHaveBeenCalledWith(121, { aliases: ['BMASC'] }, 'request-update');
-    await expect(service.update(121, { aliases: ['Daubert', 'daubert'] }, 'request-update')).rejects.toMatchObject({ status: 400 });
+    await service.update(121, { aliases: [' BMASC '] }, 'request-update', { userId: null, userEmail: null });
+    expect(update).toHaveBeenCalledWith(121, { aliases: ['BMASC'] }, 'request-update', { userId: null, userEmail: null });
+    await expect(service.update(121, { aliases: ['Daubert', 'daubert'] }, 'request-update', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
   });
 
   it('maps the active alias uniqueness constraint to a safe conflict', async () => {
     const service = new ProvidersService({ update: vi.fn().mockRejectedValue({ code: '23505', constraint: 'uq_alias_empresa_activo' }) } as never);
-    await expect(service.update(121, { aliases: ['TAKEN'] }, 'request-update')).rejects.toMatchObject({ status: 409, response: { code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' } });
+    await expect(service.update(121, { aliases: ['TAKEN'] }, 'request-update', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' } });
   });
 
   it('changes only the provider lifecycle status through the repository', async () => {
     const changeStatus = vi.fn().mockResolvedValue({ id: '121', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR'], status: 'INACTIVO', notes: null, fiscal_id: null, legal_name: null, rfc: null });
     const service = new ProvidersService({ changeStatus } as never);
-    await expect(service.deactivate(121, 'request-status')).resolves.toMatchObject({ data: { status: 'INACTIVO' } });
-    expect(changeStatus).toHaveBeenCalledWith(121, 'INACTIVO', 'request-status');
+    await expect(service.deactivate(121, 'request-status', { userId: null, userEmail: null })).resolves.toMatchObject({ data: { status: 'INACTIVO' } });
+    expect(changeStatus).toHaveBeenCalledWith(121, 'INACTIVO', 'request-status', { userId: null, userEmail: null });
   });
 
   it('maps lifecycle conflicts to safe 409 responses', async () => {
     const service = new ProvidersService({ changeStatus: vi.fn().mockRejectedValue({ code: 'PROVIDER_ALREADY_INACTIVE' }) } as never);
-    await expect(service.deactivate(121, 'request-status')).rejects.toMatchObject({ status: 409, response: { code: 'PROVIDER_ALREADY_INACTIVE' } });
+    await expect(service.deactivate(121, 'request-status', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'PROVIDER_ALREADY_INACTIVE' } });
   });
 });

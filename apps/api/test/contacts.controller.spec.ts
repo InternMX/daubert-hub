@@ -10,7 +10,7 @@ describe('ContactsController lifecycle', () => {
     const handler = vi.fn().mockResolvedValue({ data: { id } });
     const controller = new ContactsController({ [operation]: handler } as never);
     await expect(controller[operation](id, { requestId: 'request-status' } as never)).resolves.toMatchObject({ data: { id } });
-    expect(handler).toHaveBeenCalledWith(id, 'request-status');
+    expect(handler).toHaveBeenCalledWith(id, 'request-status', { userId: null, userEmail: null });
     expect(Reflect.getMetadata(HTTP_CODE_METADATA, ContactsController.prototype[operation])).toBe(200);
   });
 

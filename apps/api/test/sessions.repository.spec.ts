@@ -67,6 +67,13 @@ describe('SessionsRepository', () => {
     expect(query).toHaveBeenCalledWith(expect.stringContaining('revoked_at IS NULL'), ['5']);
   });
 
+  it('revokes by token hash without depending on expiry or user status', async () => {
+    const query = vi.fn().mockResolvedValue(undefined);
+    const repository = new SessionsRepository({ query } as never);
+    await repository.revokeByTokenHash('tokenhash');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE token_hash = $1 AND revoked_at IS NULL'), ['tokenhash']);
+  });
+
   it('revokes all active sessions for a user', async () => {
     const query = vi.fn().mockResolvedValue(undefined);
     const repository = new SessionsRepository({ query } as never);

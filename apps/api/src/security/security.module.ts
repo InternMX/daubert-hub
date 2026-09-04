@@ -11,9 +11,8 @@ import { SessionsService } from './sessions.service';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
 
-// Only /api/auth/login, /logout, and /me exist so far (this phase). No
-// global AuthGuard/RolesGuard yet, and no other route is protected —
-// existing Providers/Clients/etc. modules are completely untouched.
+// AppModule registers AuthGuard and MustChangePasswordGuard globally.
+// Role-based ADMIN/GENERAL authorization remains intentionally out of scope.
 @Module({
   imports: [DatabaseModule],
   controllers: [AuthController],

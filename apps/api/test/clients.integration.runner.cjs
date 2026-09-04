@@ -4,6 +4,10 @@ const { once } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+// Set once run() logs in the synthetic test session; read by request() below.
+let sessionCookie = null;
 
 // Local dev convenience: apps/api/.env carries TEST_DATABASE_URL for the spawned Nest process
 // (loaded there via ConfigModule), but this runner never gets it unless the shell exports it
@@ -95,19 +99,20 @@ async function fixtureCompany(pool, suffix, options = {}) {
   } finally { client.release(); }
 }
 
-async function request(path, method = 'GET', body, requestId = `client-api-${randomUUID()}`) {
+// x-request-id is always server-generated (Security V1 Phase 4); a client
+// can no longer choose the value that lands in audit.cambios.request_id, so
+// this captures the returned response header instead of trusting an input.
+async function request(path, method = 'GET', body) {
+  const headers = { ...(sessionCookie ? { cookie: sessionCookie } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
+  const response = await fetch(`http://127.0.0.1:${port}/api${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const requestId = response.headers.get('x-request-id');
   requestIds.add(requestId);
-  const response = await fetch(`http://127.0.0.1:${port}/api${path}`, {
-    method,
-    headers: { 'x-request-id': requestId, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) })
-  });
   return { response, body: await response.json(), requestId };
 }
 
-async function create(payload, requestId) { return request('/clients', 'POST', payload, requestId); }
-async function patch(id, payload, requestId) { return request(`/clients/${id}`, 'PATCH', payload, requestId); }
-async function lifecycle(id, action, requestId) { return request(`/clients/${id}/${action}`, 'POST', undefined, requestId); }
+async function create(payload) { return request('/clients', 'POST', payload); }
+async function patch(id, payload) { return request(`/clients/${id}`, 'PATCH', payload); }
+async function lifecycle(id, action) { return request(`/clients/${id}/${action}`, 'POST', undefined); }
 
 async function waitForApi() {
   const deadline = Date.now() + 15000;
@@ -124,6 +129,7 @@ async function run() {
   let api;
   let verified = false;
   let startup = '';
+  let authSession = null;
   try {
     await assertLiveDatabase(pool, 'Fixture');
     verified = true;
@@ -138,20 +144,20 @@ async function run() {
     api.stdout.on('data', (chunk) => { startup += chunk; });
     api.stderr.on('data', (chunk) => { startup += chunk; });
     await waitForApi();
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
 
     for (const id of ['0', '01', '-1', '1.5', 'abc', '9223372036854775808']) {
       assert((await request(`/clients/${id}`)).response.status === 400, `Invalid BIGINT ID ${id} was accepted.`);
     }
 
     const noFiscalName = `${marker}_CASE_A_NO_FISCAL`;
-    const noFiscalRequest = `client-case-a-${randomUUID()}`;
-    const noFiscal = await create({ commercialName: noFiscalName, notes: null }, noFiscalRequest);
+    const noFiscal = await create({ commercialName: noFiscalName, notes: null });
     assert(noFiscal.response.status === 201 && typeof noFiscal.body.data.id === 'string' && noFiscal.body.data.fiscal === null, `Case A without fiscal failed: ${JSON.stringify(noFiscal.body)}`);
     companyIds.add(noFiscal.body.data.id);
 
     const fiscalRfc = nextRfc('CFA');
-    const withFiscalRequest = `client-case-a-fiscal-${randomUUID()}`;
-    const withFiscal = await create({ commercialName: `${marker}_CASE_A_FISCAL`, notes: '  note  ', fiscal: { legalName: '  Client Fiscal SA  ', rfc: fiscalRfc.toLowerCase() } }, withFiscalRequest);
+    const withFiscal = await create({ commercialName: `${marker}_CASE_A_FISCAL`, notes: '  note  ', fiscal: { legalName: '  Client Fiscal SA  ', rfc: fiscalRfc.toLowerCase() } });
     assert(withFiscal.response.status === 201 && withFiscal.body.data.fiscal.rfc === fiscalRfc && withFiscal.body.data.notes === 'note', `Case A with fiscal failed: ${JSON.stringify(withFiscal.body)}`);
     companyIds.add(withFiscal.body.data.id);
 
@@ -226,8 +232,7 @@ async function run() {
     const correction = await patch(noFiscal.body.data.id, { fiscal: { legalName: 'Corrected Fiscal SA', rfc: correctedRfc, changeMode: 'CORRECTION' } });
     assert(correction.response.status === 200 && correction.body.data.fiscal.rfc === correctedRfc, 'Fiscal correction failed.');
     const newIdentityRfc = nextRfc('CNI');
-    const historyRequest = `client-history-${randomUUID()}`;
-    const history = await patch(noFiscal.body.data.id, { fiscal: { legalName: 'New Identity SA', rfc: newIdentityRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-09-03' } }, historyRequest);
+    const history = await patch(noFiscal.body.data.id, { fiscal: { legalName: 'New Identity SA', rfc: newIdentityRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-09-03' } });
     assert(history.response.status === 200 && history.body.data.fiscal.rfc === newIdentityRfc, 'Fiscal NEW_IDENTITY failed.');
     const identities = await pool.query('SELECT rfc, es_vigente, fecha_inicio::text, fecha_fin::text FROM core.empresas_fiscales WHERE empresa_id = $1 ORDER BY empresa_fiscal_id', [noFiscal.body.data.id]);
     assert(identities.rows.filter((row) => row.es_vigente).length === 1 && identities.rows.some((row) => row.rfc === correctedRfc && !row.es_vigente && row.fecha_fin === '2026-09-03'), 'Fiscal history/current semantics are incorrect.');
@@ -321,10 +326,9 @@ async function run() {
     assert(list.response.headers.get('x-request-id') === list.requestId, 'x-request-id was not echoed back on a successful response.');
     const missingId = '424242424242424242';
     assert((await pool.query('SELECT 1 FROM core.empresas WHERE empresa_id = $1', [missingId])).rows.length === 0, 'Chosen not-found fixture ID unexpectedly exists.');
-    const notFoundRequest = `client-notfound-${randomUUID()}`;
-    const notFoundResponse = await request(`/clients/${missingId}`, 'GET', undefined, notFoundRequest);
+    const notFoundResponse = await request(`/clients/${missingId}`, 'GET', undefined);
     assert(notFoundResponse.response.status === 404, 'Unknown but well-formed BIGINT id did not return 404.');
-    assert(notFoundResponse.response.headers.get('x-request-id') === notFoundRequest, 'x-request-id was not echoed back on a 404 response.');
+    assert(notFoundResponse.response.headers.get('x-request-id') === notFoundResponse.requestId, 'x-request-id was not echoed back on a 404 response.');
     const errorBodyKeys = Object.keys(notFoundResponse.body).sort();
     assert(errorBodyKeys.every((key) => ['statusCode', 'message', 'code'].includes(key)) && notFoundResponse.body.statusCode === 404 && !JSON.stringify(notFoundResponse.body).toLowerCase().includes('select '), `Error contract leaked internal details: ${JSON.stringify(notFoundResponse.body)}`);
 
@@ -332,12 +336,12 @@ async function run() {
     const origin = ['origin', 'origen'].find((column) => auditColumns.has(column));
     const table = ['table_name', 'tabla'].find((column) => auditColumns.has(column));
     assert(origin && table && auditColumns.has('request_id'), 'audit.cambios lacks required context columns.');
-    const createAudit = await pool.query(`SELECT ${origin} AS origin, ${table} AS table_name${auditColumns.has('usuario_id') ? ', usuario_id' : ''}${auditColumns.has('usuario_email') ? ', usuario_email' : ''} FROM audit.cambios WHERE request_id = $1`, [withFiscalRequest]);
+    const createAudit = await pool.query(`SELECT ${origin} AS origin, ${table} AS table_name${auditColumns.has('usuario_id') ? ', usuario_id' : ''}${auditColumns.has('usuario_email') ? ', usuario_email' : ''} FROM audit.cambios WHERE request_id = $1`, [withFiscal.requestId]);
     const tables = new Set(createAudit.rows.map((row) => row.table_name));
     assert(['empresas', 'empresa_roles', 'empresas_fiscales'].every((name) => tables.has(name)) && createAudit.rows.every((row) => row.origin === 'DAUBERT_HUB'), 'Create audit transaction/context is incomplete.');
-    if (auditColumns.has('usuario_id')) assert(createAudit.rows.every((row) => row.usuario_id === null), 'Anonymous audit usuario_id is not null.');
-    if (auditColumns.has('usuario_email')) assert(createAudit.rows.every((row) => row.usuario_email === null), 'Anonymous audit usuario_email is not null.');
-    const historyAudit = await pool.query(`SELECT count(*)::int AS count FROM audit.cambios WHERE request_id = $1 AND ${table} = 'empresas_fiscales'`, [historyRequest]);
+    if (auditColumns.has('usuario_id')) assert(createAudit.rows.every((row) => row.usuario_id === authSession.userId), 'Authenticated audit usuario_id was not populated from request.user.');
+    if (auditColumns.has('usuario_email')) assert(createAudit.rows.every((row) => row.usuario_email === authSession.email), 'Authenticated audit usuario_email was not populated from request.user.');
+    const historyAudit = await pool.query(`SELECT count(*)::int AS count FROM audit.cambios WHERE request_id = $1 AND ${table} = 'empresas_fiscales'`, [history.requestId]);
     assert(historyAudit.rows[0].count >= 2, 'Fiscal history mutation was not audited under one request ID.');
 
     console.log('Clients integration checks passed.');
@@ -366,6 +370,7 @@ async function run() {
       assert(auditLeftovers.rows[0].count === 0, 'Clients cleanup left audit fixtures.');
       console.log('Clients cleanup verified: zero company/role/fiscal/audit fixtures remain.');
     }
+    await cleanupAuthenticatedTestSession(authSession);
     await pool.end();
   }
 }

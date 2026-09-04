@@ -282,6 +282,7 @@ async function run() {
       api.kill();
       await once(api, 'exit');
     }
+    await database.onModuleDestroy();
   }
 }
 

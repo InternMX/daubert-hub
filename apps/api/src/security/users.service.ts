@@ -83,6 +83,12 @@ export class UsersService {
     return row ? toSafeUser(row) : null;
   }
 
+  // The password-bearing row for self-service change-password verification.
+  // Never expose this row shape outside the authentication path.
+  async findCredentialsById(userId: string): Promise<UserRow | null> {
+    return this.repository.findById(userId);
+  }
+
   // mustChangePassword is the caller's explicit intent: an administrator
   // resetting someone else's password passes true; a later phase's
   // self-service "change my password" flow (after a forced reset) passes

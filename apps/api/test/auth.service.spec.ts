@@ -20,7 +20,7 @@ function userRow(overrides: Partial<UserRow> = {}): UserRow {
 }
 
 function setup() {
-  const users = { findForAuthentication: vi.fn(), recordSuccessfulLogin: vi.fn(), findById: vi.fn(), createUser: vi.fn(), updatePassword: vi.fn() };
+  const users = { findForAuthentication: vi.fn(), recordSuccessfulLogin: vi.fn(), findById: vi.fn(), findCredentialsById: vi.fn(), createUser: vi.fn(), updatePassword: vi.fn() };
   const passwords = { verifyPassword: vi.fn(), hashPassword: vi.fn() };
   const sessions = { createSession: vi.fn(), resolveActiveSession: vi.fn(), revokeByToken: vi.fn(), revokeAllForUser: vi.fn() };
   const service = new AuthService(users as never, passwords as never, sessions as never);
@@ -132,5 +132,55 @@ describe('AuthService.getUserForToken', () => {
     const { service, sessions } = setup();
     sessions.resolveActiveSession.mockResolvedValue(null);
     await expect(service.getUserForToken('raw-token')).resolves.toBeNull();
+  });
+});
+
+describe('AuthService.changePassword', () => {
+  const identity = { userId: '9007199254740993123', userEmail: 'ana@example.test' };
+
+  it('verifies the current password, hashes and persists the new one, and clears mustChangePassword', async () => {
+    const { service, users, passwords } = setup();
+    const row = userRow({ passwordHash: '$argon2id$current-hash' });
+    users.findCredentialsById.mockResolvedValue(row);
+    passwords.verifyPassword.mockResolvedValue(true);
+    users.updatePassword.mockResolvedValue({ id: row.id, mustChangePassword: false });
+
+    const result = await service.changePassword(row.id, 'the-current-password', 'a-brand-new-password', identity);
+
+    expect(users.findCredentialsById).toHaveBeenCalledWith(row.id);
+    expect(passwords.verifyPassword).toHaveBeenCalledWith(row.passwordHash, 'the-current-password');
+    expect(users.updatePassword).toHaveBeenCalledWith(row.id, 'a-brand-new-password', false, expect.objectContaining({ actorUserId: identity.userId, actorUserEmail: identity.userEmail }));
+    expect(result).toEqual({ id: row.id, mustChangePassword: false });
+  });
+
+  it('rejects with a generic 401 when the current password is wrong, without persisting anything', async () => {
+    const { service, users, passwords } = setup();
+    const row = userRow();
+    users.findCredentialsById.mockResolvedValue(row);
+    passwords.verifyPassword.mockResolvedValue(false);
+
+    await expect(service.changePassword(row.id, 'wrong-current-password', 'a-brand-new-password', identity)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(users.updatePassword).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the new password is identical to the current password, without persisting anything', async () => {
+    const { service, users, passwords } = setup();
+    const row = userRow();
+    users.findCredentialsById.mockResolvedValue(row);
+    passwords.verifyPassword.mockResolvedValue(true);
+
+    await expect(service.changePassword(row.id, 'same-password-value', 'same-password-value', identity)).rejects.toMatchObject({ status: 400 });
+    expect(users.updatePassword).not.toHaveBeenCalled();
+  });
+
+  it('maps a password-policy violation on the new password to a 400', async () => {
+    const { PasswordPolicyError } = await import('../src/security/password-policy');
+    const { service, users, passwords } = setup();
+    const row = userRow();
+    users.findCredentialsById.mockResolvedValue(row);
+    passwords.verifyPassword.mockResolvedValue(true);
+    users.updatePassword.mockRejectedValue(new PasswordPolicyError('La contraseña debe tener al menos 12 caracteres.'));
+
+    await expect(service.changePassword(row.id, 'the-current-password', 'short', identity)).rejects.toMatchObject({ status: 400 });
   });
 });

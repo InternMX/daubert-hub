@@ -26,6 +26,6 @@ describe('AutomationsService', () => {
   it('maps an unchanged folio to a clear conflict', async () => {
     const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'DOCUMENT_SERIES_FOLIO_UNCHANGED' }) };
     const service = new AutomationsService(repository as never);
-    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', { nextFolio: 994, reason: 'Motivo' }, 'request-1')).rejects.toMatchObject({ status: 409, response: { code: 'DOCUMENT_SERIES_FOLIO_UNCHANGED' } });
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', { nextFolio: 994, reason: 'Motivo' }, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'DOCUMENT_SERIES_FOLIO_UNCHANGED' } });
   });
 });

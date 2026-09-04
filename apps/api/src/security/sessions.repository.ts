@@ -56,6 +56,10 @@ export class SessionsRepository {
     await this.database.query('UPDATE security.sessions SET revoked_at = now() WHERE session_id = $1 AND revoked_at IS NULL', [sessionId]);
   }
 
+  async revokeByTokenHash(tokenHash: string): Promise<void> {
+    await this.database.query('UPDATE security.sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL', [tokenHash]);
+  }
+
   async revokeAllForUser(userId: string): Promise<void> {
     await this.database.query('UPDATE security.sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
   }

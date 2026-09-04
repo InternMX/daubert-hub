@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuditIdentity } from '../common/authenticated-request';
 import { validateContactMethod } from './contact-method-validation';
 import { ContactMethodsRepository, type ContactMethodRecord } from './contact-methods.repository';
 import type { AddContactMethodDto } from './dto/add-contact-method.dto';
@@ -15,10 +16,10 @@ export interface AddedContactMethodResponse {
 export class ContactMethodsService {
   constructor(private readonly repository: ContactMethodsRepository) {}
 
-  async add(contactId: string, input: AddContactMethodDto, requestId: string): Promise<AddedContactMethodResponse> {
+  async add(contactId: string, input: AddContactMethodDto, requestId: string, identity: AuditIdentity): Promise<AddedContactMethodResponse> {
     validateContactMethod(input.type, input.value);
     try {
-      const method = await this.repository.add(contactId, input, requestId);
+      const method = await this.repository.add(contactId, input, requestId, identity);
       if (!method) throw new NotFoundException('Contacto no encontrado.');
       return { data: { id: method.id, type: method.type, value: method.value, status: method.status } };
     } catch (error) {
@@ -31,10 +32,10 @@ export class ContactMethodsService {
     }
   }
 
-  async edit(id: string, input: EditContactMethodDto, requestId: string): Promise<AddedContactMethodResponse> {
+  async edit(id: string, input: EditContactMethodDto, requestId: string, identity: AuditIdentity): Promise<AddedContactMethodResponse> {
     if (input.type === undefined && input.value === undefined) throw new BadRequestException('Debe proporcionar al menos un campo para editar.');
     try {
-      const method = await this.repository.edit(id, input, requestId);
+      const method = await this.repository.edit(id, input, requestId, identity);
       if (!method) throw new NotFoundException('Medio de contacto no encontrado.');
       return { data: { id: method.id, type: method.type, value: method.value, status: method.status } };
     } catch (error) {
@@ -47,17 +48,17 @@ export class ContactMethodsService {
     }
   }
 
-  deactivate(id: number, requestId: string): Promise<ContactMethodResponse> {
-    return this.changeStatus(id, 'INACTIVO', requestId);
+  deactivate(id: number, requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
+    return this.changeStatus(id, 'INACTIVO', requestId, identity);
   }
 
-  reactivate(id: number, requestId: string): Promise<ContactMethodResponse> {
-    return this.changeStatus(id, 'ACTIVO', requestId);
+  reactivate(id: number, requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
+    return this.changeStatus(id, 'ACTIVO', requestId, identity);
   }
 
-  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string): Promise<ContactMethodResponse> {
+  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
     try {
-      const method = await this.repository.changeStatus(id, status, requestId);
+      const method = await this.repository.changeStatus(id, status, requestId, identity);
       if (!method) throw new NotFoundException('Medio de contacto no encontrado.');
       return this.mapResponse(method);
     } catch (error) {

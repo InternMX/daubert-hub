@@ -85,7 +85,7 @@ export class DocumentSeriesRepository {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
-      await this.setAuditContext(client, requestId);
+      await this.setAuditContext(client, requestId, user);
       await this.assertAutomationExists(client, automationCode);
       const series = await this.lockSeries(client, seriesCode);
       if (!series) throw Object.assign(new Error('DOCUMENT_SERIES_NOT_FOUND'), { code: 'DOCUMENT_SERIES_NOT_FOUND' });
@@ -108,9 +108,16 @@ export class DocumentSeriesRepository {
     }
   }
 
-  private async setAuditContext(client: PoolClient, requestId: string): Promise<void> {
+  // operacion.series_documentales/ajustes_series carry no generic audit
+  // trigger today (folio-change identity is instead recorded directly on
+  // ajustes_series.usuario_id/usuario_email below), but app.user_id/
+  // app.user_email are still set here for consistency with every other
+  // repository and in case a generic trigger is ever attached later.
+  private async setAuditContext(client: PoolClient, requestId: string, identity: AuditUser): Promise<void> {
     await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     await client.query("SELECT set_config('app.request_id', $1, true)", [requestId]);
+    await client.query("SELECT set_config('app.user_id', COALESCE($1, ''), true)", [identity.userId ?? null]);
+    await client.query("SELECT set_config('app.user_email', COALESCE($1, ''), true)", [identity.userEmail ?? null]);
   }
 
   private async assertAutomationExists(client: PoolClient, code: string): Promise<void> {

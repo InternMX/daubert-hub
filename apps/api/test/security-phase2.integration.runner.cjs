@@ -183,6 +183,7 @@ async function run() {
   } finally {
     await assertLiveDatabase(database, 'pre-cleanup');
     await cleanup(createdId);
+    await database.onModuleDestroy();
   }
 }
 

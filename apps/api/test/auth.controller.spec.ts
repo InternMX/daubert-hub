@@ -8,6 +8,10 @@ function fakeResponse() {
   return { cookie: vi.fn(), clearCookie: vi.fn() };
 }
 
+function fakeAuth() {
+  return { login: vi.fn(), logout: vi.fn(), getUserForToken: vi.fn(), changePassword: vi.fn() };
+}
+
 describe('AuthController.login', () => {
   it('returns only the safe user, sets the session cookie, and never exposes the token in the body', async () => {
     const auth = { login: vi.fn().mockResolvedValue({ user: safeUser, token: 'raw-token-value' }), logout: vi.fn(), getUserForToken: vi.fn() };
@@ -52,29 +56,48 @@ describe('AuthController.logout', () => {
 });
 
 describe('AuthController.me', () => {
-  it('returns the safe user for a valid session cookie', async () => {
-    const auth = { login: vi.fn(), logout: vi.fn(), getUserForToken: vi.fn().mockResolvedValue(safeUser) };
+  // AuthGuard already resolved and attached request.user before the handler
+  // runs — me() must use it directly rather than re-authenticating the
+  // cookie a second time (Phase 3's getUserForToken is not called here).
+  it('returns request.user as attached by AuthGuard, without re-authenticating', () => {
+    const auth = { login: vi.fn(), logout: vi.fn(), getUserForToken: vi.fn() };
     const controller = new AuthController(auth as never, { secure: false });
-    const request = { headers: { cookie: 'daubert_session=raw-token-value' } };
+    const request = { headers: {}, user: safeUser };
 
-    await expect(controller.me(request as never)).resolves.toEqual({ data: { user: safeUser } });
-    expect(auth.getUserForToken).toHaveBeenCalledWith('raw-token-value');
+    expect(controller.me(request as never)).toEqual({ data: { user: safeUser } });
+    expect(auth.getUserForToken).not.toHaveBeenCalled();
   });
 
-  it('rejects with 401 when there is no session cookie', async () => {
+  it('rejects with 401 when request.user is unset (defensive: AuthGuard should already have rejected)', () => {
     const auth = { login: vi.fn(), logout: vi.fn(), getUserForToken: vi.fn() };
     const controller = new AuthController(auth as never, { secure: false });
     const request = { headers: {} };
 
-    await expect(controller.me(request as never)).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(auth.getUserForToken).not.toHaveBeenCalled();
+    expect(() => controller.me(request as never)).toThrow(UnauthorizedException);
+  });
+});
+
+describe('AuthController.changePassword', () => {
+  it('extracts identity from request.user and returns only the safe user', async () => {
+    const auth = fakeAuth();
+    auth.changePassword.mockResolvedValue(safeUser);
+    const controller = new AuthController(auth as never, { secure: false });
+    const request = { headers: {}, user: safeUser };
+
+    const result = await controller.changePassword({ currentPassword: 'old-password-value', newPassword: 'new-password-value' }, request as never);
+
+    expect(auth.changePassword).toHaveBeenCalledWith(safeUser.id, 'old-password-value', 'new-password-value', { userId: safeUser.id, userEmail: safeUser.email });
+    expect(result).toEqual({ data: { user: safeUser } });
+    expect(JSON.stringify(result)).not.toContain('old-password-value');
+    expect(JSON.stringify(result)).not.toContain('new-password-value');
   });
 
-  it('rejects with 401 when the session cookie does not resolve to an active session', async () => {
-    const auth = { login: vi.fn(), logout: vi.fn(), getUserForToken: vi.fn().mockResolvedValue(null) };
+  it('rejects with 401 when request.user is unset (defensive)', async () => {
+    const auth = fakeAuth();
     const controller = new AuthController(auth as never, { secure: false });
-    const request = { headers: { cookie: 'daubert_session=expired-or-revoked' } };
+    const request = { headers: {} };
 
-    await expect(controller.me(request as never)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(controller.changePassword({ currentPassword: 'x', newPassword: 'y' }, request as never)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(auth.changePassword).not.toHaveBeenCalled();
   });
 });

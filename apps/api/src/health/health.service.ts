@@ -1,33 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import type { QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
-
-export type RuntimeEnvironment = 'PRODUCTION' | 'TEST' | 'UNKNOWN';
 
 export interface HealthResponse {
   status: 'ok';
   database?: 'connected' | 'unavailable';
-  environment?: RuntimeEnvironment;
 }
 
-interface CurrentDatabaseRow extends QueryResultRow {
-  database_name: string;
-}
-
+// Public, unauthenticated endpoint (see HealthController) — kept deliberately
+// minimal. It used to also report `environment: 'PRODUCTION' | 'TEST' |
+// 'UNKNOWN'` derived from current_database(); that unauthenticated
+// environment/database-name fingerprinting was removed. The Docker
+// healthcheck (deploy/README.md) only ever depended on `"database":
+// "connected"`, which is preserved unchanged.
 @Injectable()
 export class HealthService {
   constructor(private readonly database: DatabaseService) {}
 
   async getHealth(): Promise<HealthResponse> {
     try {
-      const [result] = await this.database.query<CurrentDatabaseRow>(
-        'SELECT current_database() AS database_name'
-      );
-      const environment: RuntimeEnvironment = result?.database_name === 'daubert_global'
-        ? 'PRODUCTION'
-        : result?.database_name === 'daubert_hub_test' ? 'TEST' : 'UNKNOWN';
-
-      return { status: 'ok', database: 'connected', environment };
+      await this.database.query('SELECT 1');
+      return { status: 'ok', database: 'connected' };
     } catch {
       return { status: 'ok', database: 'unavailable' };
     }

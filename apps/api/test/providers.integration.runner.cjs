@@ -2,6 +2,10 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { Pool } = require('pg');
+const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
+
+// Set once run() logs in the synthetic test session; read by the HTTP helpers below.
+let sessionCookie = null;
 
 const port = 3102;
 const marker = `HUB_TEST_PROVIDER_${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -37,50 +41,65 @@ async function waitForApi() {
   throw new Error('Timed out waiting for the API integration server.');
 }
 
-async function postProvider(payload, requestId) {
+// x-request-id is always server-generated (Security V1 Phase 4); a client
+// can no longer choose the value that lands in audit.cambios.request_id, so
+// each helper captures the returned response header instead of an input.
+async function postProvider(payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/providers`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) },
     body: JSON.stringify(payload)
   });
   const body = await response.json();
-  return { response, body };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body, requestId };
 }
 
 async function getProviders(query = '') {
-  const response = await fetch(`http://127.0.0.1:${port}/api/providers${query}`);
+  const response = await fetch(`http://127.0.0.1:${port}/api/providers${query}`, { headers: sessionCookie ? { cookie: sessionCookie } : {} });
   const body = await response.json();
-  return { response, body };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body, requestId };
 }
 
 async function getProvider(id) {
-  const response = await fetch(`http://127.0.0.1:${port}/api/providers/${id}`);
+  const response = await fetch(`http://127.0.0.1:${port}/api/providers/${id}`, { headers: sessionCookie ? { cookie: sessionCookie } : {} });
   const body = await response.json();
-  return { response, body };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body, requestId };
 }
 
 async function getContactDirectory(path = '') {
-  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies${path}`);
+  const response = await fetch(`http://127.0.0.1:${port}/api/contact-directory/companies${path}`, { headers: sessionCookie ? { cookie: sessionCookie } : {} });
   const body = await response.json();
-  return { response, body };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body, requestId };
 }
 
-async function patchProvider(id, payload, requestId) {
+async function patchProvider(id, payload) {
   const response = await fetch(`http://127.0.0.1:${port}/api/providers/${id}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-request-id': requestId },
+    headers: { 'content-type': 'application/json', ...(sessionCookie ? { cookie: sessionCookie } : {}) },
     body: JSON.stringify(payload)
   });
   const body = await response.json();
-  return { response, body };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body, requestId };
 }
 
-async function changeProviderStatus(id, action, requestId) {
+async function changeProviderStatus(id, action) {
   const response = await fetch(`http://127.0.0.1:${port}/api/providers/${id}/${action}`, {
-    method: 'POST', headers: { 'x-request-id': requestId }
+    method: 'POST', headers: sessionCookie ? { cookie: sessionCookie } : {}
   });
   const body = await response.json();
-  return { response, body };
+  const requestId = response.headers.get('x-request-id');
+  requestIds.add(requestId);
+  return { response, body, requestId };
 }
 
 async function queryWithAuditContext(pool, requestId, text, values) {
@@ -105,6 +124,7 @@ async function run() {
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   let api;
   let databaseVerified = false;
+  let authSession = null;
   try {
     const currentDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
     assert(currentDatabase === 'daubert_hub_test', `Active session database mismatch: ${currentDatabase}`);
@@ -136,6 +156,8 @@ async function run() {
     api.stdout.on('data', (chunk) => { startupOutput += chunk; });
     api.stderr.on('data', (chunk) => { startupOutput += chunk; });
     await waitForApi();
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    sessionCookie = authSession.cookie;
 
     const directory = await getContactDirectory('?page=1&pageSize=25');
     assert(directory.response.status === 200 && directory.body.data.length > 0 && directory.body.data.every((company) => typeof company.id === 'string' && Number.isInteger(company.contactCount)), 'Contact directory list failed or did not preserve company IDs/counts.');
@@ -145,26 +167,20 @@ async function run() {
     const adhecintasDirectory = await getContactDirectory('/99');
     assert(adhecintasDirectory.response.status === 200 && adhecintasDirectory.body.data.contacts.length === 4 && adhecintasDirectory.body.data.contacts.every((contact) => contact.methods.length > 0 && contact.methods.every((method) => method.type === 'CORREO' && typeof method.value === 'string' && method.value.trim())), 'Contact directory did not return ADHECINTAS active contact methods with values.');
 
-    const noFiscalRequestId = `provider-${randomUUID()}`;
-    requestIds.add(noFiscalRequestId);
-    const noFiscal = await postProvider({ commercialName: `${marker}_NO_FISCAL`, providerType: 'PROVEEDOR', fiscal: null, notes: null }, noFiscalRequestId);
+    const noFiscal = await postProvider({ commercialName: `${marker}_NO_FISCAL`, providerType: 'PROVEEDOR', fiscal: null, notes: null });
     assert(noFiscal.response.status === 201, `Provider without fiscal failed: ${JSON.stringify(noFiscal.body)}`);
     assert(noFiscal.body.data.fiscal === null, 'Provider without fiscal returned fiscal data.');
-    assert(noFiscal.response.headers.get('x-request-id') === noFiscalRequestId, 'Provider response did not preserve x-request-id.');
+    assert(noFiscal.response.headers.get('x-request-id') === noFiscal.requestId, 'Provider response did not preserve x-request-id.');
     createdIds.add(noFiscal.body.data.id);
 
-    const fiscalRequestId = `provider-${randomUUID()}`;
-    requestIds.add(fiscalRequestId);
     const fiscalRfc = `HUB${String(Date.now()).slice(-6)}ABC`;
-    const withFiscal = await postProvider({ commercialName: `${marker}_WITH_FISCAL`, providerType: 'SERVICIO', fiscal: { legalName: '  Hub Test Legal Name  ', rfc: fiscalRfc.toLowerCase() }, notes: '  integration note  ' }, fiscalRequestId);
+    const withFiscal = await postProvider({ commercialName: `${marker}_WITH_FISCAL`, providerType: 'SERVICIO', fiscal: { legalName: '  Hub Test Legal Name  ', rfc: fiscalRfc.toLowerCase() }, notes: '  integration note  ' });
     assert(withFiscal.response.status === 201, `Provider with fiscal failed: ${JSON.stringify(withFiscal.body)}`);
     assert(withFiscal.body.data.fiscal.rfc === fiscalRfc, 'RFC was not normalized to uppercase.');
-    assert(withFiscal.response.headers.get('x-request-id') === fiscalRequestId, 'Fiscal response did not preserve x-request-id.');
+    assert(withFiscal.response.headers.get('x-request-id') === withFiscal.requestId, 'Fiscal response did not preserve x-request-id.');
     createdIds.add(withFiscal.body.data.id);
 
-    const freightRequestId = `provider-${randomUUID()}`;
-    requestIds.add(freightRequestId);
-    const freight = await postProvider({ commercialName: `${marker}_FREIGHT`, providerType: 'FLETE' }, freightRequestId);
+    const freight = await postProvider({ commercialName: `${marker}_FREIGHT`, providerType: 'FLETE' });
     assert(freight.response.status === 201, `Freight provider failed: ${JSON.stringify(freight.body)}`);
     createdIds.add(freight.body.data.id);
 
@@ -242,9 +258,7 @@ async function run() {
     const listedFiscal = listed.body.data.find((provider) => provider.id === withFiscal.body.data.id);
     assert(listedFiscal.fiscal && listedFiscal.fiscal.id === withFiscal.body.data.fiscal.id && listedFiscal.fiscal.legalName === 'Hub Test Legal Name', 'Provider listing did not select the current fiscal record.');
 
-    const deactivateRequestId = `provider-deactivate-${randomUUID()}`;
-    requestIds.add(deactivateRequestId);
-    const deactivated = await changeProviderStatus(noFiscal.body.data.id, 'deactivate', deactivateRequestId);
+    const deactivated = await changeProviderStatus(noFiscal.body.data.id, 'deactivate');
     assert(deactivated.response.status === 201 && deactivated.body.data.status === 'INACTIVO', `Provider deactivation failed: ${JSON.stringify(deactivated.body)}`);
     const defaultAfterDeactivate = await getProviders(`?search=${encodeURIComponent(marker)}`);
     assert(defaultAfterDeactivate.body.meta.total === 2 && defaultAfterDeactivate.body.data.every((provider) => provider.id !== noFiscal.body.data.id), 'Default directory included an inactive provider.');
@@ -254,13 +268,11 @@ async function run() {
     assert(allDirectory.body.meta.total === 3, 'All directory filter did not include active and inactive providers.');
     const inactiveDetail = await getProvider(noFiscal.body.data.id);
     assert(inactiveDetail.response.status === 200 && inactiveDetail.body.data.status === 'INACTIVO' && inactiveDetail.body.data.roles.join(',') === 'PROVEEDOR' && inactiveDetail.body.data.fiscal === null, 'Deactivation changed provider membership or detail data.');
-    const repeatedDeactivate = await changeProviderStatus(noFiscal.body.data.id, 'deactivate', `provider-deactivate-${randomUUID()}`);
+    const repeatedDeactivate = await changeProviderStatus(noFiscal.body.data.id, 'deactivate');
     assert(repeatedDeactivate.response.status === 409 && repeatedDeactivate.body.code === 'PROVIDER_ALREADY_INACTIVE', 'Repeated deactivation did not return the expected conflict.');
-    const reactivateRequestId = `provider-reactivate-${randomUUID()}`;
-    requestIds.add(reactivateRequestId);
-    const reactivated = await changeProviderStatus(noFiscal.body.data.id, 'reactivate', reactivateRequestId);
+    const reactivated = await changeProviderStatus(noFiscal.body.data.id, 'reactivate');
     assert(reactivated.response.status === 201 && reactivated.body.data.status === 'ACTIVO', `Provider reactivation failed: ${JSON.stringify(reactivated.body)}`);
-    const lifecycleAudit = await pool.query(`SELECT ${auditTableColumn} AS table_name FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [deactivateRequestId, reactivateRequestId]]);
+    const lifecycleAudit = await pool.query(`SELECT ${auditTableColumn} AS table_name FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [deactivated.requestId, reactivated.requestId]]);
     assert(lifecycleAudit.rows.length === 2 && lifecycleAudit.rows.every((row) => row.table_name === 'empresas'), 'Lifecycle audit touched tables other than core.empresas.');
 
     const commercialDescending = await getProviders(`?search=${encodeURIComponent(marker)}&sortBy=commercialName&sortOrder=desc`);
@@ -311,37 +323,33 @@ async function run() {
     assert(primaryRoleRows.length === 3, 'Provider type and role mapping is incorrect.');
     assert(new Set(primaryRoleRows.map((row) => row.tipo_empresa)).size === 3, 'PROVEEDOR, SERVICIO, and FLETE were not all persisted.');
 
-    const duplicateNameRequestId = `provider-${randomUUID()}`;
-    requestIds.add(duplicateNameRequestId);
-    const duplicateName = await postProvider({ commercialName: `  ${marker.toLowerCase()}_no_fiscal  `, providerType: 'PROVEEDOR' }, duplicateNameRequestId);
+    const duplicateName = await postProvider({ commercialName: `  ${marker.toLowerCase()}_no_fiscal  `, providerType: 'PROVEEDOR' });
     assert(duplicateName.response.status === 409 && duplicateName.body.code === 'PROVIDER_NAME_ALREADY_EXISTS', 'Case-insensitive duplicate commercial name was not rejected.');
     const duplicateNameCount = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE lower(btrim(nombre_comercial)) = lower(btrim($1))', [`${marker}_NO_FISCAL`]);
     assert(duplicateNameCount.rows[0].count === 1, 'Duplicate commercial name left a partial company.');
 
-    const duplicateRfcRequestId = `provider-${randomUUID()}`;
-    requestIds.add(duplicateRfcRequestId);
     const rollbackName = `${marker}_RFC_ROLLBACK`;
-    const duplicateRfc = await postProvider({ commercialName: rollbackName, providerType: 'PROVEEDOR', fiscal: { legalName: 'Rollback Test', rfc: fiscalRfc } }, duplicateRfcRequestId);
+    const duplicateRfc = await postProvider({ commercialName: rollbackName, providerType: 'PROVEEDOR', fiscal: { legalName: 'Rollback Test', rfc: fiscalRfc } });
     assert(duplicateRfc.response.status === 409 && duplicateRfc.body.code === 'RFC_ALREADY_EXISTS', 'Duplicate RFC was not rejected.');
     const rollbackRows = await pool.query('SELECT e.empresa_id, r.rol FROM core.empresas e LEFT JOIN core.empresa_roles r ON r.empresa_id = e.empresa_id WHERE e.nombre_comercial = $1', [rollbackName]);
     assert(rollbackRows.rows.length === 0, 'Duplicate RFC rollback left an orphan company or role.');
 
-    const invalid = await postProvider({ commercialName: `${marker}_INVALID`, providerType: 'CLIENTE', fiscal: { legalName: 'Only legal name' } }, `provider-${randomUUID()}`);
+    const invalid = await postProvider({ commercialName: `${marker}_INVALID`, providerType: 'CLIENTE', fiscal: { legalName: 'Only legal name' } });
     assert(invalid.response.status === 400, 'Invalid payload did not return 400.');
     const invalidCount = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial = $1', [`${marker}_INVALID`]);
     assert(invalidCount.rows[0].count === 0, 'Invalid payload touched PostgreSQL.');
 
-    const auditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', fiscalRequestId]);
+    const auditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin, request_id${auditColumns.has('usuario_id') ? ', usuario_id' : ''}${auditColumns.has('usuario_email') ? ', usuario_email' : ''} FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', withFiscal.requestId]);
     assert(auditRows.rows.length >= 3, 'Expected audit rows were not created.');
     const auditedTables = new Set(auditRows.rows.map((row) => `${row.schema_name}.${row.table_name}`));
     ['core.empresas', 'core.empresa_roles', 'core.empresas_fiscales'].forEach((table) => assert(auditedTables.has(table), `Missing audit row for ${table}.`));
-    assert(auditRows.rows.every((row) => row.origin === 'DAUBERT_HUB' && row.request_id === fiscalRequestId), 'Audit context is inconsistent.');
+    assert(auditRows.rows.every((row) => row.origin === 'DAUBERT_HUB' && row.request_id === withFiscal.requestId), 'Audit context is inconsistent.');
+    if (auditColumns.has('usuario_id')) assert(auditRows.rows.every((row) => row.usuario_id === authSession.userId), 'Authenticated audit usuario_id was not populated from request.user.');
+    if (auditColumns.has('usuario_email')) assert(auditRows.rows.every((row) => row.usuario_email === authSession.email), 'Authenticated audit usuario_email was not populated from request.user.');
 
-    const editRequestId = `provider-edit-${randomUUID()}`;
-    requestIds.add(editRequestId);
     const editedName = `${marker}_WITH_FISCAL_EDITED`;
     const newAlias = `${marker}_NEW_ALIAS`;
-    const edited = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: '  corrected note  ', aliases: [`${sharedAlias}_TWO`, `  ${newAlias}  `], fiscal: { legalName: 'Corrected Legal Name', rfc: fiscalRfc } }, editRequestId);
+    const edited = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: '  corrected note  ', aliases: [`${sharedAlias}_TWO`, `  ${newAlias}  `], fiscal: { legalName: 'Corrected Legal Name', rfc: fiscalRfc } });
     assert(edited.response.status === 200, `Provider edit failed: ${JSON.stringify(edited.body)}`);
     assert(edited.body.data.commercialName === editedName && edited.body.data.providerType === 'FLETE' && edited.body.data.notes === 'corrected note', 'Provider edit response is incorrect.');
     assert(edited.body.data.aliases.join(',') === [`${sharedAlias}_TWO`, newAlias].join(','), 'Provider edit did not trim, add, or preserve aliases.');
@@ -351,38 +359,32 @@ async function run() {
     const preservedFileAlias = await pool.query("SELECT count(*)::int AS count FROM core.alias_empresa WHERE empresa_id = $1 AND alias = $2 AND tipo_alias = 'NOMBRE_ARCHIVO'", [withFiscal.body.data.id, `${marker}_FILE_ALIAS`]);
     assert(preservedFileAlias.rows[0].count === 1, 'Alternate-name reconciliation modified another alias type.');
 
-    const duplicateAliases = await patchProvider(noFiscal.body.data.id, { aliases: [`${marker}_DUPLICATE`, `${marker.toLowerCase()}_duplicate`] }, `provider-alias-duplicate-${randomUUID()}`);
+    const duplicateAliases = await patchProvider(noFiscal.body.data.id, { aliases: [`${marker}_DUPLICATE`, `${marker.toLowerCase()}_duplicate`] });
     assert(duplicateAliases.response.status === 400, 'Case-insensitive aliases in the same payload were accepted.');
-    const emptyAlias = await patchProvider(noFiscal.body.data.id, { aliases: ['   '] }, `provider-alias-empty-${randomUUID()}`);
+    const emptyAlias = await patchProvider(noFiscal.body.data.id, { aliases: ['   '] });
     assert(emptyAlias.response.status === 400, 'An empty trimmed alias was accepted.');
-    const aliasConflictRequestId = `provider-alias-conflict-${randomUUID()}`;
-    requestIds.add(aliasConflictRequestId);
     const rollbackCommercialName = `${marker}_ALIAS_ROLLBACK`;
-    const aliasConflict = await patchProvider(noFiscal.body.data.id, { commercialName: rollbackCommercialName, aliases: [exactAlias, `${sharedAlias.toLowerCase()}_two`] }, aliasConflictRequestId);
+    const aliasConflict = await patchProvider(noFiscal.body.data.id, { commercialName: rollbackCommercialName, aliases: [exactAlias, `${sharedAlias.toLowerCase()}_two`] });
     assert(aliasConflict.response.status === 409 && aliasConflict.body.code === 'ALIAS_ALREADY_ASSOCIATED' && aliasConflict.body.message === 'Este alias ya está asociado a otra empresa.', 'Alias ownership conflict did not return the expected response.');
     const aliasRollback = await pool.query('SELECT nombre_comercial FROM core.empresas WHERE empresa_id = $1', [noFiscal.body.data.id]);
     assert(aliasRollback.rows[0].nombre_comercial === `${marker}_NO_FISCAL`, 'Alias conflict did not roll back the company update.');
 
-    const correctionRequestId = `provider-rfc-correction-${randomUUID()}`;
-    requestIds.add(correctionRequestId);
     const correctedRfc = `CRR${String(Date.now()).slice(-6)}XYZ`;
-    const correction = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: 'corrected note', aliases: [newAlias], fiscal: { legalName: 'Corrected Legal Name', rfc: correctedRfc, changeMode: 'CORRECTION' } }, correctionRequestId);
+    const correction = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: 'corrected note', aliases: [newAlias], fiscal: { legalName: 'Corrected Legal Name', rfc: correctedRfc, changeMode: 'CORRECTION' } });
     assert(correction.response.status === 200 && correction.body.data.fiscal.rfc === correctedRfc, 'RFC correction failed.');
     assert(correction.body.data.aliases.join(',') === newAlias, 'Provider edit did not remove an alias or preserve the unchanged alias.');
     assert(correction.body.data.otherAliases.length === 1 && correction.body.data.otherAliases[0].alias === `${marker}_FILE_ALIAS`, 'Editable alias reconciliation altered read-only aliases.');
     const correctionCount = await pool.query('SELECT count(*)::int AS count FROM core.empresas_fiscales WHERE empresa_id = $1', [withFiscal.body.data.id]);
     assert(correctionCount.rows[0].count === 2, 'RFC correction created a historical identity.');
 
-    const identityRequestId = `provider-new-identity-${randomUUID()}`;
-    requestIds.add(identityRequestId);
     const newRfc = `NEW${String(Date.now()).slice(-6)}XYZ`;
-    const identity = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: 'corrected note', fiscal: { legalName: 'New Legal Identity', rfc: newRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-08-21' } }, identityRequestId);
+    const identity = await patchProvider(withFiscal.body.data.id, { commercialName: editedName, providerType: 'FLETE', notes: 'corrected note', fiscal: { legalName: 'New Legal Identity', rfc: newRfc, changeMode: 'NEW_IDENTITY', effectiveStartDate: '2026-08-21' } });
     assert(identity.response.status === 200 && identity.body.data.fiscal.rfc === newRfc, 'New fiscal identity failed.');
     const identities = await pool.query('SELECT rfc, es_vigente, fecha_inicio::text, fecha_fin::text FROM core.empresas_fiscales WHERE empresa_id = $1 ORDER BY empresa_fiscal_id', [withFiscal.body.data.id]);
     assert(identities.rows.filter((row) => row.es_vigente).length === 1 && identities.rows.some((row) => row.rfc === correctedRfc && !row.es_vigente && row.fecha_fin === '2026-08-21') && identities.rows.some((row) => row.rfc === newRfc && row.es_vigente && row.fecha_inicio === '2026-08-21'), 'Fiscal history transition was not preserved.');
-    const editAuditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', identityRequestId]);
+    const editAuditRows = await pool.query(`SELECT ${auditSchemaColumn} AS schema_name, ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin, request_id FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = $2`, ['DAUBERT_HUB', identity.requestId]);
     assert(editAuditRows.rows.some((row) => row.table_name === 'empresas_fiscales') && editAuditRows.rows.every((row) => row.origin === 'DAUBERT_HUB'), 'Fiscal edit audit context is inconsistent.');
-    const aliasAuditRows = await pool.query(`SELECT ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [editRequestId, correctionRequestId]]);
+    const aliasAuditRows = await pool.query(`SELECT ${auditTableColumn} AS table_name, ${auditOriginColumn} AS origin FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [edited.requestId, correction.requestId]]);
     assert(aliasAuditRows.rows.some((row) => row.table_name === 'alias_empresa') && aliasAuditRows.rows.every((row) => row.origin === 'DAUBERT_HUB'), 'Alias edits did not preserve the provider audit context.');
     console.log('Provider integration checks passed.');
   } catch (error) {
@@ -390,12 +392,15 @@ async function run() {
   } finally {
     try {
       if (databaseVerified) {
+        const cleanupDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
+        assert(cleanupDatabase === 'daubert_hub_test', `Cleanup database mismatch: ${cleanupDatabase}`);
         if (createdIds.size > 0) {
           const client = await pool.connect();
           try {
             await client.query('BEGIN');
             await client.query("SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB_TEST_CLEANUP']);
             await client.query("SELECT set_config('app.request_id', $1, true)", [cleanupRequestId]);
+            await client.query('DELETE FROM core.alias_empresa WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
             await client.query('DELETE FROM core.empresas_fiscales WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
             await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
             await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...createdIds]]);
@@ -417,6 +422,7 @@ async function run() {
         api.kill();
         await once(api, 'exit');
       }
+      await cleanupAuthenticatedTestSession(authSession);
       await pool.end();
     }
   }

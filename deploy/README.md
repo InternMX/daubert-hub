@@ -6,7 +6,7 @@ This deployment runs the compiled Daubert Hub web and API applications in Docker
 
 The browser connects only to the host port published by `web`. Nginx serves the compiled Vite SPA and forwards `/api` and `/api/*` unchanged to `api:3000` on the Compose bridge network. The API has no published host port and connects to Windows PostgreSQL at `host.docker.internal:5432`.
 
-The API healthcheck calls `/api/health` and marks the container healthy only when the response contains `"database":"connected"`. The response's existing `environment` value remains derived from PostgreSQL `current_database()`; this deployment adds no TEST/PRODUCTION flag.
+The API healthcheck calls `/api/health` and marks the container healthy only when the response contains `"database":"connected"`. As of Security V1 Phase 4, `/api/health` is public but no longer reports `environment` (`PRODUCTION`/`TEST`/`UNKNOWN`) or any other database fingerprinting to unauthenticated callers — only `{"status":"ok","database":"connected"|"unavailable"}`.
 
 ## Prerequisites
 
