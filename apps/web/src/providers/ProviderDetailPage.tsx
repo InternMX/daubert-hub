@@ -6,6 +6,7 @@ import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { CompanyStatusChip } from '../components/CompanyStatusChip';
 import { CompanyAddressesSection } from '../companies/CompanyAddressesSection';
+import { CompanyContactsSection } from '../companies/CompanyContactsSection';
 import { deactivateProvider, getProvider, ProviderApiError, reactivateProvider, type ProviderDetail, type ProviderType } from '../services/providers';
 
 const providerTypeLabels: Record<ProviderType, string> = {
@@ -96,6 +97,7 @@ export function ProviderDetailPage() {
           <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Datos fiscales</Typography>
           {provider.fiscal ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 2, sm: 6 }} sx={{ mt: 2 }}><DetailField label="Razón social" value={provider.fiscal.legalName} /><DetailField label="RFC" value={provider.fiscal.rfc} /></Stack> : <Typography color="text.secondary" sx={{ mt: 1 }}>No hay datos fiscales registrados.</Typography>}
         </Paper>
+        <CompanyContactsSection companyId={provider.id} />
       </Stack>
       <Dialog open={confirming} onClose={() => !changingStatus && setConfirming(false)}>
         <DialogTitle>{isActive ? 'Desactivar proveedor' : 'Reactivar proveedor'}</DialogTitle>

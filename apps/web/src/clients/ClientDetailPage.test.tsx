@@ -104,6 +104,17 @@ describe('ClientDetailPage', () => {
     expect(screen.queryByText('Inactivo')).not.toBeInTheDocument();
   });
 
+  it('preserves an exact BIGINT-style client id in the contacts navigation link', async () => {
+    const clientId = '9007199254740993123';
+    listCompanyAddressesMock.mockResolvedValue([]);
+    getCompanyAliasesMock.mockResolvedValue({ aliases: [], otherAliases: [] });
+    getClientMock.mockResolvedValue({ id: clientId, commercialName: 'Acme', companyType: 'CLIENTE', roles: ['CLIENTE'], status: 'ACTIVO', clientStatus: 'ACTIVO', notes: null, fiscal: null });
+    renderPage(`/clients/${clientId}`);
+
+    await screen.findByRole('heading', { name: 'Acme' });
+    expect(screen.getByRole('link', { name: 'Ver contactos' })).toHaveAttribute('href', `/contacts?company=${clientId}`);
+  });
+
   it('shows a directory return for a missing client', async () => {
     getClientMock.mockRejectedValue(new ClientApiError(404, undefined, 'request-404'));
     renderPage();

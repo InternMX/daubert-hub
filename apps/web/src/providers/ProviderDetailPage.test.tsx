@@ -41,9 +41,21 @@ describe('ProviderDetailPage', () => {
     expect(screen.getByText('No hay datos fiscales registrados.')).toBeInTheDocument();
     expect(await screen.findByText('No hay direcciones registradas para esta empresa.')).toBeInTheDocument();
     expect(listCompanyAddressesMock).toHaveBeenCalledWith('121');
+    expect(screen.getByRole('link', { name: 'Ver contactos' })).toHaveAttribute('href', '/contacts?company=121');
     const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
     expect(headings.indexOf('Direcciones')).toBeGreaterThan(headings.indexOf('Información general'));
     expect(headings.indexOf('Direcciones')).toBeLessThan(headings.indexOf('Datos fiscales'));
+    expect(headings.indexOf('Contactos relacionados')).toBe(headings.length - 1);
+  });
+
+  it('preserves an exact BIGINT-style provider id in the contacts navigation link', async () => {
+    const id = '9007199254740993123';
+    listCompanyAddressesMock.mockResolvedValue([]);
+    getProviderMock.mockResolvedValue({ id, commercialName: 'Transportes Acme', providerType: 'FLETE', roles: ['FLETE'], status: 'ACTIVO', notes: null, aliases: [], otherAliases: [], fiscal: null });
+    renderPage(`/providers/${id}`);
+
+    await screen.findByRole('heading', { name: 'Transportes Acme' });
+    expect(screen.getByRole('link', { name: 'Ver contactos' })).toHaveAttribute('href', `/contacts?company=${id}`);
   });
 
   it('shows fiscal data and returns to the filtered directory path', async () => {

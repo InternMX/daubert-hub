@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { CompanyStatusChip } from '../components/CompanyStatusChip';
 import { CompanyAddressesSection } from '../companies/CompanyAddressesSection';
 import { CompanyAliasesSection } from '../companies/CompanyAliasesSection';
+import { CompanyContactsSection } from '../companies/CompanyContactsSection';
 import { ClientApiError, deactivateClient, getClient, reactivateClient, type ClientDetail } from '../services/clients';
 
 const roleLabels: Record<string, string> = {
@@ -95,11 +96,7 @@ export function ClientDetailPage() {
           {client.fiscal ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 2, sm: 6 }} sx={{ mt: 2 }}><DetailField label="Razón social" value={client.fiscal.legalName} /><DetailField label="RFC" value={client.fiscal.rfc} /></Stack> : <Typography color="text.secondary" sx={{ mt: 1 }}>No hay datos fiscales registrados.</Typography>}
         </Paper>
         <CompanyAliasesSection companyId={client.id} />
-        <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
-          <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Contactos relacionados</Typography>
-          <Typography color="text.secondary" sx={{ mt: 1 }}>Consulta y administra los contactos de esta empresa desde el directorio de contactos.</Typography>
-          <Button component={Link} to={`/contacts?company=${encodeURIComponent(client.id)}`} variant="outlined" sx={{ mt: 2 }}>Ver contactos</Button>
-        </Paper>
+        <CompanyContactsSection companyId={client.id} />
       </Stack>
       <Dialog open={confirming} onClose={() => !changingStatus && setConfirming(false)}>
         <DialogTitle>{isActive ? 'Desactivar cliente' : 'Reactivar cliente'}</DialogTitle>
