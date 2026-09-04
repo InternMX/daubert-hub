@@ -27,12 +27,9 @@ describe('EditProviderPage', () => {
     expect(screen.getByText('Editar')).toHaveAttribute('aria-current', 'page');
     expect(getProviderMock).toHaveBeenCalledTimes(1);
     expect(screen.getByDisplayValue('ACM010101AA1')).toBeInTheDocument();
-    expect(screen.getByText('BMASC')).toBeInTheDocument();
-    expect(screen.getByText('B+ASC')).toBeInTheDocument();
-    expect(screen.getByText('TRES GUERRAS · Nombre de archivo')).toBeInTheDocument();
-    expect(screen.getByText('TRANSPORTES TRESGUERRAS · Nombre de carpeta')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Eliminar alias TRES GUERRAS')).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Los alias no distinguen entre mayúsculas y minúsculas.');
+    expect(screen.queryByText('BMASC')).not.toBeInTheDocument();
+    expect(screen.queryByText('Alias / nombres alternativos')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Escribe un alias y presiona Enter...')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled();
   });
 
@@ -53,24 +50,15 @@ describe('EditProviderPage', () => {
     expect(await screen.findByText('Detalle')).toBeInTheDocument();
   });
 
-  it('keeps alias changes local and submits the final set', async () => {
+  it('does not send an aliases field, leaving alias management to the detail page', async () => {
     getProviderMock.mockResolvedValue(provider);
-    updateProviderMock.mockResolvedValue({ provider, requestId: 'update-aliases' });
+    updateProviderMock.mockResolvedValue({ provider, requestId: 'update-1' });
     const user = userEvent.setup();
     renderPage();
-    await screen.findByText('BMASC');
-    await user.click(screen.getByLabelText('Eliminar alias B+ASC'));
-    await user.type(screen.getByPlaceholderText('Escribe un alias y presiona Enter...'), ' B ASC {Enter}');
-    expect(updateProviderMock).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
-    await waitFor(() => expect(updateProviderMock).toHaveBeenCalledWith('121', expect.objectContaining({ aliases: ['BMASC', 'B ASC'] })));
-    expect(updateProviderMock.mock.calls[0]?.[1]).not.toHaveProperty('otherAliases');
-  });
-
-  it('does not show an empty other-alias subsection', async () => {
-    getProviderMock.mockResolvedValue({ ...provider, otherAliases: [] });
-    renderPage();
     await screen.findByDisplayValue('Acme');
-    expect(screen.queryByText('Otros alias registrados')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Notas internas'), 'Nueva nota');
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(updateProviderMock).toHaveBeenCalled());
+    expect(updateProviderMock.mock.calls[0]?.[1]).not.toHaveProperty('aliases');
   });
 });

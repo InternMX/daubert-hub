@@ -34,7 +34,7 @@ export interface UpdateProviderInput {
   commercialName: string;
   providerType: ProviderType;
   notes: string | null;
-  aliases: string[];
+  aliases?: string[];
   fiscal: { legalName: string; rfc: string; changeMode?: FiscalChangeMode; effectiveStartDate?: string };
 }
 

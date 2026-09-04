@@ -3,15 +3,7 @@ import { Alert, Chip, Stack, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { OtherCompanyAliasType } from '../services/providers';
-
-const otherAliasLabels: Record<OtherCompanyAliasType, string> = {
-  ABREVIATURA: 'Abreviatura',
-  RAZON_SOCIAL: 'Razón social',
-  RAZON_SOCIAL_HISTORICA: 'Razón social histórica',
-  NOMBRE_ARCHIVO: 'Nombre de archivo',
-  NOMBRE_CARPETA: 'Nombre de carpeta',
-  OTRO: 'Otro'
-};
+import { otherAliasLabels } from './companyAliasDisplay';
 
 interface CompanyAliasesFieldProps {
   value: string[];
