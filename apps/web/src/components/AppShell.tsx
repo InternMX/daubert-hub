@@ -170,9 +170,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </List>
         <Stack sx={{ mt: 'auto' }}>
           <Divider sx={{ borderColor: appTokens.navigationDivider, mb: 2 }} />
-          {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Administración</Typography>}
+          {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Operación</Typography>}
           <NavigationItem {...automationNavigation} collapsed={collapsed} />
-          {user?.role === 'ADMIN' && <NavigationItem {...usersNavigation} collapsed={collapsed} />}
+          {user?.role === 'ADMIN' && (
+            <>
+              {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, pt: 2, mb: 0.75 }}>Administración</Typography>}
+              <NavigationItem {...usersNavigation} collapsed={collapsed} />
+            </>
+          )}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
           <UserIdentity collapsed={collapsed} />
         </Stack>

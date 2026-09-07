@@ -266,25 +266,33 @@ describe('AppShell user identity', () => {
   });
 });
 
-describe('AppShell admin navigation', () => {
-  it('shows Usuarios in navigation for an ADMIN', () => {
-    mockWideViewport(true);
-    renderShell('/', createAuthContextValue({ user: testAdminUser }));
-
-    expect(screen.getByRole('link', { name: 'Usuarios' })).toHaveAttribute('href', '/users');
-  });
-
-  it('does not show Usuarios in navigation for a GENERAL user', () => {
+describe('AppShell navigation grouping (Operación vs Administración)', () => {
+  it('shows GENERAL the Operación section with Automatizaciones, and no Administración section at all', () => {
     mockWideViewport(true);
     renderShell('/', createAuthContextValue({ user: testGeneralUser }));
 
+    expect(screen.getByText('Operación')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('href', '/automations');
+    expect(screen.queryByText('Administración')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument();
   });
 
-  it('does not hide operational navigation (Automatizaciones) from a GENERAL user', () => {
+  it('shows ADMIN both the Operación section (Automatizaciones) and the Administración section (Usuarios)', () => {
     mockWideViewport(true);
-    renderShell('/', createAuthContextValue({ user: testGeneralUser }));
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
 
+    expect(screen.getByText('Operación')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('href', '/automations');
+    expect(screen.getByText('Administración')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Usuarios' })).toHaveAttribute('href', '/users');
+  });
+
+  it('places Automatizaciones before Usuarios in document order (Operación above Administración)', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    const automatizaciones = screen.getByRole('link', { name: 'Automatizaciones' });
+    const usuarios = screen.getByRole('link', { name: 'Usuarios' });
+    expect(automatizaciones.compareDocumentPosition(usuarios) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
