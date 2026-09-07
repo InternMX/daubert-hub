@@ -265,3 +265,26 @@ describe('AppShell user identity', () => {
     expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 });
+
+describe('AppShell admin navigation', () => {
+  it('shows Usuarios in navigation for an ADMIN', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    expect(screen.getByRole('link', { name: 'Usuarios' })).toHaveAttribute('href', '/users');
+  });
+
+  it('does not show Usuarios in navigation for a GENERAL user', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testGeneralUser }));
+
+    expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument();
+  });
+
+  it('does not hide operational navigation (Automatizaciones) from a GENERAL user', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testGeneralUser }));
+
+    expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('href', '/automations');
+  });
+});

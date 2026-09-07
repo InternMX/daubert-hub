@@ -10,7 +10,11 @@ export interface AuthContextValue {
   hydrationFailed: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  // Resolves to the refreshed user on success, or null when /auth/me reports
+  // the session is gone (already cleared from context by the time this
+  // resolves) — never throws for that case. Other failures (network/5xx)
+  // reject instead, leaving the existing authenticated user untouched.
+  refreshUser: () => Promise<AuthUser | null>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<AuthUser>;
 }
 

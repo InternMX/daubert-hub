@@ -52,6 +52,17 @@ export function PublicOnlyRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// ADMIN-only frontend routes (e.g. /users/*). This is UX only — the backend's
+// RolesGuard is the actual authorization boundary; a GENERAL user hitting the
+// API directly is already rejected with 403 regardless of what this renders.
+// Nested inside ProtectedLayout's <Outlet/>, so auth/mustChangePassword are
+// already resolved by the time this runs.
+export function AdminRoute() {
+  const { user } = useAuth();
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
 // /change-password: only reachable by an authenticated user who still must
 // change their password. Anyone else is redirected away — including, after a
 // successful change, back into the normal application.

@@ -11,12 +11,11 @@ import { useTheme } from '@mui/material/styles';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
+import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import { useAuth } from '../auth/authContext.core';
 import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
-import type { UserRole } from '../services/auth';
+import { roleLabels } from '../services/userLabels';
 import { appTokens } from '../theme';
-
-const roleLabels: Record<UserRole, string> = { ADMIN: 'Administrador', GENERAL: 'General' };
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
 const sidebarPreferenceKey = 'daubertHub.sidebarCollapsed';
@@ -31,6 +30,7 @@ const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIcon
 ];
 
 const automationNavigation = { to: '/automations', label: 'Automatizaciones', end: false, icon: SettingsSuggestRoundedIcon };
+const usersNavigation = { to: '/users', label: 'Usuarios', end: false, icon: PeopleAltRoundedIcon };
 
 const environmentPresentation: Record<RuntimeEnvironment, { label: string; compactLabel: string; color: 'error' | 'info' | 'warning'; variant: 'filled' | 'outlined'; title: string }> = {
   PRODUCTION: { label: 'PRODUCCIÓN', compactLabel: 'PROD', color: 'error', variant: 'filled', title: 'Daubert Hub · PROD' },
@@ -100,6 +100,7 @@ function UserIdentity({ collapsed }: { collapsed: boolean }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const theme = useTheme();
   const wideViewport = useMediaQuery(theme.breakpoints.up('lg'), { defaultMatches: true, noSsr: true });
   const initialPreference = storedPreference();
@@ -171,6 +172,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Divider sx={{ borderColor: appTokens.navigationDivider, mb: 2 }} />
           {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Administración</Typography>}
           <NavigationItem {...automationNavigation} collapsed={collapsed} />
+          {user?.role === 'ADMIN' && <NavigationItem {...usersNavigation} collapsed={collapsed} />}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
           <UserIdentity collapsed={collapsed} />
         </Stack>

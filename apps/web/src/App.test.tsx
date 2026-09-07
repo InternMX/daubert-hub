@@ -4,10 +4,16 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { listRecentActivity } from './services/recentActivity';
-import { TestAuthProvider } from './test/authTestUtils';
+import { listUsers } from './services/users';
+import { TestAuthProvider, testGeneralUser } from './test/authTestUtils';
 
 vi.mock('./services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
+vi.mock('./services/users', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/users')>()),
+  listUsers: vi.fn()
+}));
 const activityMock = vi.mocked(listRecentActivity);
+const listUsersMock = vi.mocked(listUsers);
 
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function renderApp(path = '/') {
@@ -88,5 +94,27 @@ describe('authentication routing', () => {
   it('routes a user with a pending mandatory password change to /change-password', () => {
     renderWithAuth('/clients', { isLoading: false, user: { id: '1', displayName: 'Alejandro López', email: 'a@daubertcromwell.com', role: 'ADMIN', status: 'ACTIVE', mustChangePassword: true } });
     expect(screen.getByRole('heading', { name: 'Actualiza tu contraseña' })).toBeInTheDocument();
+  });
+});
+
+describe('admin-only routing (/users)', () => {
+  beforeEach(() => {
+    listUsersMock.mockResolvedValue([]);
+    activityMock.mockResolvedValue([]);
+  });
+
+  function renderWithAuth(path: string, authValue: Parameters<typeof TestAuthProvider>[0]['value']) {
+    return render(<MemoryRouter initialEntries={[path]}><TestAuthProvider value={authValue}><App /><Location /></TestAuthProvider></MemoryRouter>);
+  }
+
+  it('renders /users for an authenticated ADMIN', async () => {
+    renderWithAuth('/users', { isLoading: false });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Usuarios' })).toBeInTheDocument();
+  });
+
+  it('redirects a GENERAL user away from /users to home', () => {
+    renderWithAuth('/users', { isLoading: false, user: testGeneralUser });
+    expect(screen.getByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Usuarios' })).not.toBeInTheDocument();
   });
 });

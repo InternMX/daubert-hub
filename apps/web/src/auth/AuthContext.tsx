@@ -54,9 +54,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     navigate('/login', { replace: true });
   }, [navigate]);
 
-  const refreshUser = useCallback(async () => {
-    const current = await getCurrentUser();
-    setUser(current);
+  // Session invalidation must never depend on some later, unrelated business
+  // request happening to hit the global interceptor — /auth/me is exempt from
+  // that interceptor by design (its own 401 is normal/ambiguous, see
+  // changePassword below), so this is the one place that reconciles identity
+  // against it directly. A 401 here means the session is actually gone: clear
+  // the authenticated user immediately and let the existing route guards
+  // (ProtectedLayout, AdminRoute, ...) redirect to /login on their own next
+  // render — no manual navigate() call needed, and no fabricated identity.
+  const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
+    try {
+      const current = await getCurrentUser();
+      setUser(current);
+      return current;
+    } catch (error) {
+      if (error instanceof AuthApiError && error.status === 401) {
+        setUser(null);
+        return null;
+      }
+      // Network/5xx: ambiguous, not proof the session is invalid — preserve
+      // the existing authenticated user (same caution as Phase 5 hydration's
+      // hydrationFailed path) and let the caller decide how to handle it.
+      throw error;
+    }
   }, []);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {

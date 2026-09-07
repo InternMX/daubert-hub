@@ -1,18 +1,26 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { getRuntimeEnvironment } from '../services/health';
 import { listClients } from '../services/clients';
 import { listRecentActivity } from '../services/recentActivity';
+import { getUser, updateUser } from '../services/users';
 import { AuthProvider } from './AuthContext';
+import { useAuth } from './authContext.core';
 
 vi.mock('../services/health', () => ({ getRuntimeEnvironment: vi.fn() }));
 vi.mock('../services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
 vi.mock('../services/clients', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/clients')>()),
   listClients: vi.fn()
+}));
+vi.mock('../services/users', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/users')>()),
+  getUser: vi.fn(),
+  updateUser: vi.fn()
 }));
 
 function jsonResponse(body: unknown, status = 200) {
@@ -264,6 +272,143 @@ describe('logout', () => {
     renderApp('/');
     await screen.findByRole('heading', { level: 1, name: 'Inicio' });
     await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+
+    expect(await screen.findByRole('heading', { name: 'Daubert Hub' })).toBeInTheDocument();
+  });
+});
+
+// A tiny consumer used to exercise AuthProvider.refreshUser() directly,
+// independent of any page that happens to call it.
+function RefreshUserProbe() {
+  const { user, refreshUser } = useAuth();
+  const [outcome, setOutcome] = useState<'idle' | 'success' | 'cleared' | 'error'>('idle');
+
+  async function handleRefresh() {
+    try {
+      const refreshed = await refreshUser();
+      setOutcome(refreshed ? 'success' : 'cleared');
+    } catch {
+      setOutcome('error');
+    }
+  }
+
+  return (
+    <div>
+      <output data-testid="probe-user">{user ? user.displayName : 'none'}</output>
+      <output data-testid="probe-outcome">{outcome}</output>
+      <button onClick={() => void handleRefresh()}>Refrescar</button>
+    </div>
+  );
+}
+
+function renderProbe() {
+  return render(<MemoryRouter><AuthProvider><RefreshUserProbe /></AuthProvider></MemoryRouter>);
+}
+
+describe('AuthProvider.refreshUser', () => {
+  it('replaces the authenticated user with the real /auth/me response on success', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { user: adminUser } })) // initial hydration
+      .mockResolvedValueOnce(jsonResponse({ data: { user: { ...adminUser, displayName: 'Nombre Actualizado' } } })); // refreshUser()
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderProbe();
+    expect(await screen.findByTestId('probe-user')).toHaveTextContent(adminUser.displayName);
+
+    await user.click(screen.getByRole('button', { name: 'Refrescar' }));
+
+    await waitFor(() => expect(screen.getByTestId('probe-user')).toHaveTextContent('Nombre Actualizado'));
+    expect(screen.getByTestId('probe-outcome')).toHaveTextContent('success');
+  });
+
+  it('clears the authenticated user immediately when /auth/me returns 401 — no fabricated identity, no logout() call', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { user: adminUser } })) // initial hydration
+      .mockResolvedValueOnce(jsonResponse({ statusCode: 401, message: 'No autenticado.' }, 401)); // refreshUser()
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderProbe();
+    expect(await screen.findByTestId('probe-user')).toHaveTextContent(adminUser.displayName);
+
+    await user.click(screen.getByRole('button', { name: 'Refrescar' }));
+
+    await waitFor(() => expect(screen.getByTestId('probe-user')).toHaveTextContent('none'));
+    expect(screen.getByTestId('probe-outcome')).toHaveTextContent('cleared');
+    // Only /auth/me was ever called — refreshUser must not call /auth/logout to
+    // clear an already-invalid session.
+    expect(fetchMock.mock.calls.every((call) => String(call[0]).endsWith('/auth/me'))).toBe(true);
+  });
+});
+
+describe('self-profile edit through EditUserPage', () => {
+  const managedSelfUser = {
+    id: adminUser.id,
+    displayName: adminUser.displayName,
+    email: adminUser.email,
+    role: 'ADMIN' as const,
+    status: 'ACTIVE' as const,
+    mustChangePassword: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    lastLoginAt: null
+  };
+
+  it('a self displayName edit refreshes AuthContext identity and the user remains logged in', async () => {
+    const user = userEvent.setup();
+    let meCallCount = 0;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        meCallCount += 1;
+        const displayName = meCallCount === 1 ? adminUser.displayName : 'Nombre Actualizado';
+        return Promise.resolve(jsonResponse({ data: { user: { ...adminUser, displayName } } }));
+      }
+      return Promise.resolve(jsonResponse({ data: [] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    // First call: EditUserPage's own load (pre-fill with the original name, so
+    // "changed" detection still works below). Second call: UserDetailPage's
+    // load after navigation, reflecting the post-update state.
+    vi.mocked(getUser)
+      .mockResolvedValueOnce(managedSelfUser)
+      .mockResolvedValueOnce({ ...managedSelfUser, displayName: 'Nombre Actualizado' });
+    vi.mocked(updateUser).mockResolvedValue({ ...managedSelfUser, displayName: 'Nombre Actualizado' });
+
+    renderApp(`/users/${adminUser.id}/edit`);
+    const nameField = await screen.findByLabelText('Nombre');
+    await user.clear(nameField);
+    await user.type(nameField, 'Nombre Actualizado');
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Nombre Actualizado' })).toBeInTheDocument();
+    // AppShell identity (sidebar) reflects the refreshed name too, not just the page.
+    expect(within(screen.getByLabelText('Navegación principal')).getByText('Nombre Actualizado')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Daubert Hub' })).not.toBeInTheDocument();
+  });
+
+  it('a self email edit causes immediate authenticated-state loss and a route transition to /login, without any later business request', async () => {
+    const user = userEvent.setup();
+    let meCallCount = 0;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) {
+        meCallCount += 1;
+        if (meCallCount === 1) return Promise.resolve(jsonResponse({ data: { user: adminUser } }));
+        return Promise.resolve(jsonResponse({ statusCode: 401, message: 'No autenticado.' }, 401));
+      }
+      return Promise.resolve(jsonResponse({ data: [] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(getUser).mockResolvedValue(managedSelfUser);
+    vi.mocked(updateUser).mockResolvedValue({ ...managedSelfUser, email: 'nuevo@daubertcromwell.com' });
+
+    renderApp(`/users/${adminUser.id}/edit`);
+    const emailField = await screen.findByLabelText('Correo');
+    await user.clear(emailField);
+    await user.type(emailField, 'nuevo@daubertcromwell.com');
+    await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
 
     expect(await screen.findByRole('heading', { name: 'Daubert Hub' })).toBeInTheDocument();
   });

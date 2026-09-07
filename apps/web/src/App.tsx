@@ -2,7 +2,7 @@ import { Button, Paper, Stack, Typography } from '@mui/material';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { ChangePasswordPage } from './auth/ChangePasswordPage';
 import { LoginPage } from './auth/LoginPage';
-import { ChangePasswordRoute, ProtectedLayout, PublicOnlyRoute } from './auth/RouteGuards';
+import { AdminRoute, ChangePasswordRoute, ProtectedLayout, PublicOnlyRoute } from './auth/RouteGuards';
 import { PageHeader } from './components/PageHeader';
 import { RecentActivity } from './components/RecentActivity';
 import { NewProviderPage } from './providers/NewProviderPage';
@@ -16,6 +16,10 @@ import { ClientsPage } from './clients/ClientsPage';
 import { ContactsPage } from './contacts/ContactsPage';
 import { AutomationsPage } from './automations/AutomationsPage';
 import { AudiRemissionsPage } from './automations/AudiRemissionsPage';
+import { UsersPage } from './users/UsersPage';
+import { NewUserPage } from './users/NewUserPage';
+import { UserDetailPage } from './users/UserDetailPage';
+import { EditUserPage } from './users/EditUserPage';
 
 function HomePage() {
   return (
@@ -54,6 +58,12 @@ export function App() {
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
+        <Route element={<AdminRoute />}>
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/new" element={<NewUserPage />} />
+          <Route path="/users/:userId/edit" element={<EditUserPage />} />
+          <Route path="/users/:userId" element={<UserDetailPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
