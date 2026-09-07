@@ -1,3 +1,4 @@
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { UserEmailConflictError, UsersService, UserValidationError } from '../src/security/users.service';
 import { PasswordPolicyError } from '../src/security/password-policy';
@@ -22,11 +23,24 @@ function row(overrides: Partial<UserRow> = {}): UserRow {
 }
 
 function setup() {
-  const repository = { findByEmail: vi.fn(), findById: vi.fn(), create: vi.fn(), updatePassword: vi.fn() };
+  const repository = {
+    findByEmail: vi.fn(),
+    findById: vi.fn(),
+    create: vi.fn(),
+    updatePassword: vi.fn(),
+    list: vi.fn(),
+    updateProfile: vi.fn(),
+    deactivate: vi.fn(),
+    reactivate: vi.fn(),
+    adminResetPassword: vi.fn()
+  };
   const passwords = { hashPassword: vi.fn().mockResolvedValue('$argon2id$stored-hash'), verifyPassword: vi.fn() };
   const service = new UsersService(repository as never, passwords as never);
   return { service, repository, passwords };
 }
+
+const admin = () => row({ id: '1', role: 'ADMIN', status: 'ACTIVE' });
+const targetGeneral = () => row({ id: '2', role: 'GENERAL', status: 'ACTIVE' });
 
 describe('UsersService.createUser', () => {
   it('creates an ADMIN user as ACTIVE with must_change_password true', async () => {
@@ -150,5 +164,166 @@ describe('UsersService.updatePassword', () => {
     const { service, repository } = setup();
     repository.updatePassword.mockResolvedValue(null);
     await expect(service.updatePassword('999', 'a-new-valid-password', false, context)).resolves.toBeNull();
+  });
+});
+
+describe('UsersService.list / getUser', () => {
+  it('lists safe users only', async () => {
+    const { service, repository } = setup();
+    repository.list.mockResolvedValue([admin(), targetGeneral()]);
+    const users = await service.list();
+    expect(users).toHaveLength(2);
+    expect(users.every((user) => !('passwordHash' in user))).toBe(true);
+  });
+
+  it('returns a safe user detail', async () => {
+    const { service, repository } = setup();
+    repository.findById.mockResolvedValue(targetGeneral());
+    const user = await service.getUser('2');
+    expect(user).not.toHaveProperty('passwordHash');
+    expect(user.id).toBe('2');
+  });
+
+  it('throws NotFoundException for a missing user', async () => {
+    const { service, repository } = setup();
+    repository.findById.mockResolvedValue(null);
+    await expect(service.getUser('999')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('UsersService.updateUser', () => {
+  it('edits displayName', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockResolvedValue(row({ displayName: 'New Name' }));
+    const user = await service.updateUser('1', '2', { displayName: 'New Name' }, context);
+    expect(repository.updateProfile).toHaveBeenCalledWith('2', { displayName: 'New Name', email: undefined, role: undefined }, context);
+    expect(user.displayName).toBe('New Name');
+  });
+
+  it('edits email', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockResolvedValue(row({ email: 'new@example.test' }));
+    const user = await service.updateUser('1', '2', { email: 'new@example.test' }, context);
+    expect(repository.updateProfile).toHaveBeenCalledWith('2', { displayName: undefined, email: 'new@example.test', role: undefined }, context);
+    expect(user.email).toBe('new@example.test');
+  });
+
+  it('edits role', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockResolvedValue(row({ role: 'ADMIN' }));
+    const user = await service.updateUser('1', '2', { role: 'ADMIN' }, context);
+    expect(repository.updateProfile).toHaveBeenCalledWith('2', { displayName: undefined, email: undefined, role: 'ADMIN' }, context);
+    expect(user.role).toBe('ADMIN');
+  });
+
+  it('rejects an empty PATCH payload without calling the repository', async () => {
+    const { service, repository } = setup();
+    await expect(service.updateUser('1', '2', {}, context)).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('rejects an ADMIN changing their own role, without calling the repository', async () => {
+    const { service, repository } = setup();
+    await expect(service.updateUser('1', '1', { role: 'GENERAL' }, context)).rejects.toMatchObject({ response: { code: 'SELF_ROLE_CHANGE_NOT_ALLOWED' } });
+    expect(repository.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('allows an ADMIN editing their own displayName/email', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockResolvedValue(row({ id: '1', displayName: 'Self Edit' }));
+    await expect(service.updateUser('1', '1', { displayName: 'Self Edit' }, context)).resolves.toMatchObject({ displayName: 'Self Edit' });
+  });
+
+  it('maps a repository LAST_ACTIVE_ADMIN rejection to a 409 Conflict', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockRejectedValue(Object.assign(new Error('LAST_ACTIVE_ADMIN'), { code: 'LAST_ACTIVE_ADMIN' }));
+    await expect(service.updateUser('1', '2', { role: 'GENERAL' }, context)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('maps a repository duplicate-email rejection to a 409 Conflict', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockRejectedValue({ code: '23505', constraint: 'uq_users_email' });
+    await expect(service.updateUser('1', '2', { email: 'dup@example.test' }, context)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws NotFoundException when the target does not exist', async () => {
+    const { service, repository } = setup();
+    repository.updateProfile.mockResolvedValue(null);
+    await expect(service.updateUser('1', '999', { displayName: 'X' }, context)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('UsersService.deactivateUser', () => {
+  it('rejects an ADMIN deactivating their own account, without calling the repository', async () => {
+    const { service, repository } = setup();
+    await expect(service.deactivateUser('1', '1', context)).rejects.toMatchObject({ response: { code: 'SELF_DEACTIVATION_NOT_ALLOWED' } });
+    expect(repository.deactivate).not.toHaveBeenCalled();
+  });
+
+  it('deactivates another user (implies session revocation, handled transactionally by the repository)', async () => {
+    const { service, repository } = setup();
+    repository.deactivate.mockResolvedValue(row({ id: '2', status: 'INACTIVE' }));
+    const user = await service.deactivateUser('1', '2', context);
+    expect(repository.deactivate).toHaveBeenCalledWith('2', context);
+    expect(user.status).toBe('INACTIVE');
+  });
+
+  it('maps a repository LAST_ACTIVE_ADMIN rejection to a 409 Conflict', async () => {
+    const { service, repository } = setup();
+    repository.deactivate.mockRejectedValue(Object.assign(new Error('LAST_ACTIVE_ADMIN'), { code: 'LAST_ACTIVE_ADMIN' }));
+    await expect(service.deactivateUser('1', '2', context)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws NotFoundException when the target does not exist', async () => {
+    const { service, repository } = setup();
+    repository.deactivate.mockResolvedValue(null);
+    await expect(service.deactivateUser('1', '999', context)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('UsersService.reactivateUser', () => {
+  it('reactivates a user', async () => {
+    const { service, repository } = setup();
+    repository.reactivate.mockResolvedValue(row({ id: '2', status: 'ACTIVE' }));
+    const user = await service.reactivateUser('2', context);
+    expect(repository.reactivate).toHaveBeenCalledWith('2', context);
+    expect(user.status).toBe('ACTIVE');
+  });
+
+  it('throws NotFoundException when the target does not exist', async () => {
+    const { service, repository } = setup();
+    repository.reactivate.mockResolvedValue(null);
+    await expect(service.reactivateUser('999', context)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('UsersService.resetPassword (administrator-driven)', () => {
+  it('rejects an ADMIN resetting their own password through this endpoint, without hashing or calling the repository', async () => {
+    const { service, repository, passwords } = setup();
+    await expect(service.resetPassword('1', '1', 'a-new-valid-password', context)).rejects.toMatchObject({ response: { code: 'SELF_PASSWORD_RESET_NOT_ALLOWED' } });
+    expect(passwords.hashPassword).not.toHaveBeenCalled();
+    expect(repository.adminResetPassword).not.toHaveBeenCalled();
+  });
+
+  it('hashes the new password, and the repository sets mustChangePassword=true and revokes sessions', async () => {
+    const { service, repository, passwords } = setup();
+    repository.adminResetPassword.mockResolvedValue(row({ id: '2', mustChangePassword: true }));
+    const user = await service.resetPassword('1', '2', 'a-new-valid-password', context);
+    expect(passwords.hashPassword).toHaveBeenCalledWith('a-new-valid-password');
+    expect(repository.adminResetPassword).toHaveBeenCalledWith('2', '$argon2id$stored-hash', context);
+    expect(user.mustChangePassword).toBe(true);
+  });
+
+  it('rejects a policy-violating password before hashing or persisting', async () => {
+    const { service, repository, passwords } = setup();
+    await expect(service.resetPassword('1', '2', 'short', context)).rejects.toBeInstanceOf(BadRequestException);
+    expect(passwords.hashPassword).not.toHaveBeenCalled();
+    expect(repository.adminResetPassword).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException when the target does not exist', async () => {
+    const { service, repository } = setup();
+    repository.adminResetPassword.mockResolvedValue(null);
+    await expect(service.resetPassword('1', '999', 'a-new-valid-password', context)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

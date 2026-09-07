@@ -57,9 +57,11 @@ async function assertLiveTestDatabase(database) {
   }
 }
 
-// Creates a synthetic GENERAL, must_change_password=false user and logs in
-// for real. `apiBaseUrl` is e.g. `http://127.0.0.1:3101/api`.
-async function createAuthenticatedTestSession(apiBaseUrl, markerPrefix) {
+// Creates a synthetic user (GENERAL by default, or ADMIN when { role: 'ADMIN' }
+// is passed — Phase 6), must_change_password=false, and logs in for real.
+// `apiBaseUrl` is e.g. `http://127.0.0.1:3101/api`.
+async function createAuthenticatedTestSession(apiBaseUrl, markerPrefix, options = {}) {
+  const role = options.role === 'ADMIN' ? 'ADMIN' : 'GENERAL';
   const testUrl = guardedUrl('TEST_DATABASE_URL', { required: true });
 
   const { DatabaseService } = require('../../dist/src/database/database.service');
@@ -80,7 +82,7 @@ async function createAuthenticatedTestSession(apiBaseUrl, markerPrefix) {
   const setupContext = { requestId: `test-auth-setup-${randomUUID()}`, origin: 'DAUBERT_HUB_TEST', actorUserId: null, actorUserEmail: null };
   let cleanupIdentity = null;
   try {
-    const created = await users.createUser({ displayName: `${marker} display`, email, password, role: 'GENERAL' }, setupContext);
+    const created = await users.createUser({ displayName: `${marker} display`, email, password, role }, setupContext);
     cleanupIdentity = { userId: created.id, email, marker };
     // Ordinary business integration runners need must_change_password=false —
     // an ADMIN-provisioned account defaults to true (Phase 2), so flip it via
@@ -124,9 +126,13 @@ async function cleanupAuthenticatedTestSession(session) {
   if (!adminUrl) {
     console.warn('MANUAL CLEANUP REQUIRED: the application role has no DELETE on security.users/security.sessions by design.');
     console.warn('Run the following against daubert_hub_test with an administrative connection:');
+    // Sessions, then the user row, then audit — in that order. Deleting the
+    // security.users row itself fires trg_audit_users again (for the DELETE
+    // operation), so audit.cambios must be cleaned up LAST, after that final
+    // row exists, or it would be left behind permanently.
     console.warn(`  DELETE FROM security.sessions WHERE user_id IN (SELECT user_id FROM security.users WHERE user_id = ${userId} AND email = '${session.email}');`);
-    console.warn(`  DELETE FROM audit.cambios WHERE esquema='security' AND tabla='users' AND registro_id='user_id=${userId}';`);
     console.warn(`  DELETE FROM security.users WHERE user_id = ${userId} AND email = '${session.email}';`);
+    console.warn(`  DELETE FROM audit.cambios WHERE esquema='security' AND tabla='users' AND registro_id='user_id=${userId}';`);
     return;
   }
 
@@ -138,11 +144,14 @@ async function cleanupAuthenticatedTestSession(session) {
       throw new Error(`Admin cleanup connection is not daubert_hub_test (got "${live.rows[0].name}").`);
     }
     await adminPool.query('DELETE FROM security.sessions WHERE user_id = $1', [userId]);
-    await adminPool.query('DELETE FROM audit.cambios WHERE esquema=$1 AND tabla=$2 AND registro_id=$3', ['security', 'users', `user_id=${userId}`]);
     await adminPool.query('DELETE FROM security.users WHERE user_id = $1', [userId]);
+    // After, not before: deleting the user row above fires trg_audit_users
+    // once more (for the DELETE itself), so its audit row only exists now.
+    await adminPool.query('DELETE FROM audit.cambios WHERE esquema=$1 AND tabla=$2 AND registro_id=$3', ['security', 'users', `user_id=${userId}`]);
     const leftoverUser = await adminPool.query('SELECT count(*)::int AS n FROM security.users WHERE user_id = $1', [userId]);
     const leftoverSessions = await adminPool.query('SELECT count(*)::int AS n FROM security.sessions WHERE user_id = $1', [userId]);
-    if (leftoverUser.rows[0].n !== 0 || leftoverSessions.rows[0].n !== 0) {
+    const leftoverAudit = await adminPool.query('SELECT count(*)::int AS n FROM audit.cambios WHERE esquema=$1 AND tabla=$2 AND registro_id=$3', ['security', 'users', `user_id=${userId}`]);
+    if (leftoverUser.rows[0].n !== 0 || leftoverSessions.rows[0].n !== 0 || leftoverAudit.rows[0].n !== 0) {
       throw new Error('Automated admin cleanup left test-auth fixtures behind.');
     }
   } finally {

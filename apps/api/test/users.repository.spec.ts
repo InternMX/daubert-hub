@@ -118,4 +118,279 @@ describe('UsersRepository', () => {
 
     await expect(repository.updatePassword('999', 'new-hash', true, context)).resolves.toBeNull();
   });
+
+  it('lists users ordered by display name, mapping BIGINT ids as strings', async () => {
+    const query = vi.fn().mockResolvedValue([rawRow, { ...rawRow, user_id: '2', display_name: 'Beta' }]);
+    const repository = new UsersRepository({ query } as never);
+
+    const users = await repository.list();
+
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('ORDER BY display_name ASC'));
+    expect(users).toHaveLength(2);
+    expect(users.every((user) => typeof user.id === 'string')).toBe(true);
+  });
+
+  // Every transactional helper below begins with the same 4 audit-context
+  // queries (origin, request_id, user_id, user_email) after BEGIN, and a
+  // findByIdForUpdate SELECT ... FOR UPDATE before the actual mutation.
+
+  describe('updateProfile', () => {
+    it('updates displayName only and does not revoke sessions', async () => {
+      const updatedRow = { ...rawRow, display_name: 'New Name' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined) // BEGIN
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined) // audit context
+        .mockResolvedValueOnce({ rows: [rawRow] }) // findByIdForUpdate
+        .mockResolvedValueOnce({ rows: [updatedRow] }) // UPDATE ... RETURNING
+        .mockResolvedValueOnce(undefined); // COMMIT
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      const result = await repository.updateProfile('9007199254740993123', { displayName: 'New Name' }, context);
+
+      expect(result?.displayName).toBe('New Name');
+      expect(query).toHaveBeenCalledTimes(8);
+      expect(query).toHaveBeenNthCalledWith(8, 'COMMIT');
+      expect(query.mock.calls.some((call) => String(call[0]).includes('security.sessions'))).toBe(false);
+    });
+
+    it('revokes sessions when email changes', async () => {
+      const updatedRow = { ...rawRow, email: 'new@example.test' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [rawRow] })
+        .mockResolvedValueOnce({ rows: [updatedRow] })
+        .mockResolvedValueOnce(undefined) // UPDATE security.sessions
+        .mockResolvedValueOnce(undefined); // COMMIT
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await repository.updateProfile('9007199254740993123', { email: 'new@example.test' }, context);
+
+      expect(query).toHaveBeenNthCalledWith(8, expect.stringContaining('security.sessions'), ['9007199254740993123']);
+    });
+
+    it('revokes sessions when role changes (not demoting the last active admin)', async () => {
+      const currentGeneral = { ...rawRow, role: 'GENERAL' };
+      const updatedRow = { ...currentGeneral, role: 'ADMIN' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [currentGeneral] })
+        .mockResolvedValueOnce({ rows: [updatedRow] })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      const result = await repository.updateProfile('9007199254740993123', { role: 'ADMIN' }, context);
+
+      expect(result?.role).toBe('ADMIN');
+      expect(query).toHaveBeenNthCalledWith(8, expect.stringContaining('security.sessions'), ['9007199254740993123']);
+    });
+
+    it('does not revoke sessions or lock admin rows for a displayName-only change even when the target is an ADMIN', async () => {
+      const adminRow = { ...rawRow, role: 'ADMIN', status: 'ACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [adminRow] })
+        .mockResolvedValueOnce({ rows: [{ ...adminRow, display_name: 'New Name' }] })
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await repository.updateProfile('9007199254740993123', { displayName: 'New Name' }, context);
+
+      expect(query).toHaveBeenCalledTimes(8);
+      expect(query.mock.calls.some((call) => String(call[0]).includes("role = 'ADMIN'"))).toBe(false);
+    });
+
+    it('rejects demoting the last ACTIVE ADMIN and rolls back without mutating', async () => {
+      const lastAdmin = { ...rawRow, role: 'ADMIN', status: 'ACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [lastAdmin] }) // findByIdForUpdate
+        .mockResolvedValueOnce({ rows: [{ user_id: lastAdmin.user_id }] }) // assertNotLastActiveAdmin: only 1 row
+        .mockResolvedValueOnce(undefined); // ROLLBACK
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.updateProfile(lastAdmin.user_id, { role: 'GENERAL' }, context)).rejects.toMatchObject({ code: 'LAST_ACTIVE_ADMIN' });
+      expect(query).toHaveBeenNthCalledWith(8, 'ROLLBACK');
+      expect(client.release).toHaveBeenCalledOnce();
+    });
+
+    it('allows demoting an admin when at least one other ACTIVE ADMIN remains', async () => {
+      const target = { ...rawRow, role: 'ADMIN', status: 'ACTIVE' };
+      const otherAdminId = '2';
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [target] })
+        .mockResolvedValueOnce({ rows: [{ user_id: target.user_id }, { user_id: otherAdminId }] }) // 2 active admins
+        .mockResolvedValueOnce({ rows: [{ ...target, role: 'GENERAL' }] })
+        .mockResolvedValueOnce(undefined) // revoke sessions
+        .mockResolvedValueOnce(undefined); // COMMIT
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      const result = await repository.updateProfile(target.user_id, { role: 'GENERAL' }, context);
+      expect(result?.role).toBe('GENERAL');
+    });
+
+    it('returns null when the target does not exist', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.updateProfile('999', { displayName: 'X' }, context)).resolves.toBeNull();
+    });
+  });
+
+  describe('deactivate', () => {
+    it('sets status INACTIVE and revokes all sessions atomically', async () => {
+      const active = { ...rawRow, role: 'GENERAL', status: 'ACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [active] })
+        .mockResolvedValueOnce({ rows: [{ ...active, status: 'INACTIVE' }] })
+        .mockResolvedValueOnce(undefined) // revoke sessions
+        .mockResolvedValueOnce(undefined); // COMMIT
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      const result = await repository.deactivate(active.user_id, context);
+
+      expect(result?.status).toBe('INACTIVE');
+      expect(query).toHaveBeenNthCalledWith(8, expect.stringContaining('security.sessions'), [active.user_id]);
+    });
+
+    it('rejects deactivating an already-INACTIVE user', async () => {
+      const inactive = { ...rawRow, status: 'INACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [inactive] })
+        .mockResolvedValueOnce(undefined); // ROLLBACK
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.deactivate(inactive.user_id, context)).rejects.toMatchObject({ code: 'USER_ALREADY_INACTIVE' });
+    });
+
+    it('rejects deactivating the last ACTIVE ADMIN', async () => {
+      const lastAdmin = { ...rawRow, role: 'ADMIN', status: 'ACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [lastAdmin] })
+        .mockResolvedValueOnce({ rows: [{ user_id: lastAdmin.user_id }] })
+        .mockResolvedValueOnce(undefined); // ROLLBACK
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.deactivate(lastAdmin.user_id, context)).rejects.toMatchObject({ code: 'LAST_ACTIVE_ADMIN' });
+    });
+
+    it('allows deactivating an admin when another ACTIVE ADMIN remains', async () => {
+      const target = { ...rawRow, role: 'ADMIN', status: 'ACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [target] })
+        .mockResolvedValueOnce({ rows: [{ user_id: target.user_id }, { user_id: '2' }] })
+        .mockResolvedValueOnce({ rows: [{ ...target, status: 'INACTIVE' }] })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.deactivate(target.user_id, context)).resolves.toMatchObject({ status: 'INACTIVE' });
+    });
+
+    it('returns null when the target does not exist', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.deactivate('999', context)).resolves.toBeNull();
+    });
+  });
+
+  describe('reactivate', () => {
+    it('sets status ACTIVE without touching password or sessions', async () => {
+      const inactive = { ...rawRow, status: 'INACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [inactive] })
+        .mockResolvedValueOnce({ rows: [{ ...inactive, status: 'ACTIVE' }] })
+        .mockResolvedValueOnce(undefined); // COMMIT
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      const result = await repository.reactivate(inactive.user_id, context);
+
+      expect(result?.status).toBe('ACTIVE');
+      expect(query).toHaveBeenCalledTimes(8);
+      expect(query.mock.calls.some((call) => String(call[0]).includes('security.sessions'))).toBe(false);
+    });
+
+    it('rejects reactivating an already-ACTIVE user', async () => {
+      const activeRow = { ...rawRow, status: 'ACTIVE' };
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [activeRow] })
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.reactivate(activeRow.user_id, context)).rejects.toMatchObject({ code: 'USER_ALREADY_ACTIVE' });
+    });
+  });
+
+  describe('adminResetPassword', () => {
+    it('sets a new password hash, forces must_change_password=true, and revokes all sessions', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [rawRow] })
+        .mockResolvedValueOnce({ rows: [{ ...rawRow, password_hash: 'new-hash', must_change_password: true }] })
+        .mockResolvedValueOnce(undefined) // revoke sessions
+        .mockResolvedValueOnce(undefined); // COMMIT
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      const result = await repository.adminResetPassword(rawRow.user_id, 'new-hash', context);
+
+      expect(result?.passwordHash).toBe('new-hash');
+      expect(result?.mustChangePassword).toBe(true);
+      expect(query).toHaveBeenNthCalledWith(8, expect.stringContaining('security.sessions'), [rawRow.user_id]);
+    });
+
+    it('returns null when the target does not exist', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce(undefined);
+      const client = { query, release: vi.fn() };
+      const repository = new UsersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
+
+      await expect(repository.adminResetPassword('999', 'new-hash', context)).resolves.toBeNull();
+    });
+  });
 });

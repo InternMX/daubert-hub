@@ -16,7 +16,8 @@
     "test:integration:security-phase2": "npm run build && node test/security-phase2.integration.runner.cjs",
     "test:integration:security-phase3": "npm run build && node test/security-phase3.integration.runner.cjs",
     "test:integration:security-phase4": "npm run build && node test/security-phase4.integration.runner.cjs",
-    "test:integration": "npm run build && node test/providers.integration.runner.cjs && node test/contacts.integration.runner.cjs && node test/companies.integration.runner.cjs && node test/recent-activity.integration.runner.cjs && node test/automations.integration.runner.cjs && node test/addresses.integration.runner.cjs && node test/clients.integration.runner.cjs && node test/aliases.integration.runner.cjs && node test/security-phase2.integration.runner.cjs && node test/security-phase3.integration.runner.cjs && node test/security-phase4.integration.runner.cjs"
+    "test:integration:security-phase6": "npm run build && node test/security-phase6.integration.runner.cjs",
+    "test:integration": "npm run build && node test/providers.integration.runner.cjs && node test/contacts.integration.runner.cjs && node test/companies.integration.runner.cjs && node test/recent-activity.integration.runner.cjs && node test/automations.integration.runner.cjs && node test/addresses.integration.runner.cjs && node test/clients.integration.runner.cjs && node test/aliases.integration.runner.cjs && node test/security-phase2.integration.runner.cjs && node test/security-phase3.integration.runner.cjs && node test/security-phase4.integration.runner.cjs && node test/security-phase6.integration.runner.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",

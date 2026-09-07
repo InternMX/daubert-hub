@@ -8,14 +8,15 @@ import { PasswordService } from './password.service';
 import { COOKIE_SECURITY_CONFIG, type CookieSecurityConfig } from './session-cookie';
 import { SessionsRepository } from './sessions.repository';
 import { SessionsService } from './sessions.service';
+import { UsersController } from './users.controller';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
 
-// AppModule registers AuthGuard and MustChangePasswordGuard globally.
-// Role-based ADMIN/GENERAL authorization remains intentionally out of scope.
+// AppModule registers AuthGuard, MustChangePasswordGuard, and RolesGuard
+// globally (in that order). UsersController is ADMIN-only via @Roles('ADMIN').
 @Module({
   imports: [DatabaseModule],
-  controllers: [AuthController],
+  controllers: [AuthController, UsersController],
   providers: [
     PasswordService,
     UsersRepository,

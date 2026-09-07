@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuditContext } from './audit-context';
-import { assertPasswordPolicy } from './password-policy';
+import { assertPasswordPolicy, PasswordPolicyError } from './password-policy';
 import { PasswordService } from './password.service';
-import { CreateUserInput as RepositoryCreateUserInput, UsersRepository } from './users.repository';
+import { CreateUserInput as RepositoryCreateUserInput, UpdateUserProfileInput, UsersRepository } from './users.repository';
 import { toSafeUser, type SafeUser, type UserRole, type UserRow } from './users.types';
 
 export class UserValidationError extends Error {
@@ -105,5 +105,117 @@ export class UsersService {
   async recordSuccessfulLogin(userId: string, context: AuditContext): Promise<SafeUser | null> {
     const row = await this.repository.touchLastLogin(userId, context);
     return row ? toSafeUser(row) : null;
+  }
+
+  // --- ADMIN user-administration (Phase 6) ---------------------------------
+  // Everything below is reached only through UsersController, which is
+  // ADMIN-only (RolesGuard + @Roles('ADMIN')). Unlike createUser/updatePassword
+  // above (shared with the bootstrap script and self-service change-password),
+  // these methods throw Nest HTTP exceptions directly, matching the rest of
+  // the application's business-service convention (e.g. ClientsService).
+
+  async list(): Promise<SafeUser[]> {
+    return (await this.repository.list()).map(toSafeUser);
+  }
+
+  async getUser(userId: string): Promise<SafeUser> {
+    const row = await this.repository.findById(userId);
+    if (!row) throw new NotFoundException('Usuario no encontrado.');
+    return toSafeUser(row);
+  }
+
+  // PATCH /users/:userId may only touch displayName/email/role. A role
+  // change targeting the acting ADMIN's own account is rejected outright —
+  // see Phase 6 self-administration policy — before any database access.
+  async updateUser(actingUserId: string, targetUserId: string, input: UpdateUserProfileInput, context: AuditContext): Promise<SafeUser> {
+    if (input.displayName === undefined && input.email === undefined && input.role === undefined) {
+      throw new BadRequestException({ code: 'EMPTY_PATCH', message: 'El payload PATCH no puede estar vacío.' });
+    }
+    if (input.role !== undefined && targetUserId === actingUserId) {
+      throw new ConflictException({ code: 'SELF_ROLE_CHANGE_NOT_ALLOWED', message: 'No puedes cambiar tu propio rol.' });
+    }
+
+    const displayName = input.displayName !== undefined ? input.displayName.trim() : undefined;
+    if (displayName !== undefined && !displayName) throw new BadRequestException('El nombre no puede estar vacío.');
+    const email = input.email !== undefined ? input.email.trim() : undefined;
+    if (email !== undefined && !email) throw new BadRequestException('El correo electrónico no puede estar vacío.');
+
+    try {
+      const row = await this.repository.updateProfile(targetUserId, { displayName, email, role: input.role }, context);
+      if (!row) throw new NotFoundException('Usuario no encontrado.');
+      return toSafeUser(row);
+    } catch (error) {
+      this.throwKnownBusinessError(error);
+      throw error;
+    }
+  }
+
+  // Self-administration policy: an ADMIN can never deactivate their own
+  // currently authenticated account through this endpoint (they would
+  // otherwise instantly lock themselves out with no path back in without a
+  // second ADMIN). Self password changes stay on POST /api/auth/change-password.
+  async deactivateUser(actingUserId: string, targetUserId: string, context: AuditContext): Promise<SafeUser> {
+    if (targetUserId === actingUserId) {
+      throw new ConflictException({ code: 'SELF_DEACTIVATION_NOT_ALLOWED', message: 'No puedes desactivar tu propia cuenta.' });
+    }
+    try {
+      const row = await this.repository.deactivate(targetUserId, context);
+      if (!row) throw new NotFoundException('Usuario no encontrado.');
+      return toSafeUser(row);
+    } catch (error) {
+      this.throwKnownBusinessError(error);
+      throw error;
+    }
+  }
+
+  // Reactivation never restores a session, changes the password, or clears
+  // mustChangePassword — the existing password remains valid unless
+  // separately reset.
+  async reactivateUser(targetUserId: string, context: AuditContext): Promise<SafeUser> {
+    try {
+      const row = await this.repository.reactivate(targetUserId, context);
+      if (!row) throw new NotFoundException('Usuario no encontrado.');
+      return toSafeUser(row);
+    } catch (error) {
+      this.throwKnownBusinessError(error);
+      throw error;
+    }
+  }
+
+  // Administrator-driven reset: always forces must_change_password=true and
+  // revokes every session for the target (see UsersRepository.adminResetPassword).
+  // An ADMIN can never reset their own password through this endpoint — self
+  // password changes stay on POST /api/auth/change-password.
+  async resetPassword(actingUserId: string, targetUserId: string, newPassword: string, context: AuditContext): Promise<SafeUser> {
+    if (targetUserId === actingUserId) {
+      throw new ConflictException({ code: 'SELF_PASSWORD_RESET_NOT_ALLOWED', message: 'No puedes restablecer tu propia contraseña desde este flujo. Usa el cambio de contraseña de tu cuenta.' });
+    }
+
+    let passwordHash: string;
+    try {
+      assertPasswordPolicy(newPassword);
+      passwordHash = await this.passwords.hashPassword(newPassword);
+    } catch (error) {
+      if (error instanceof PasswordPolicyError) throw new BadRequestException(error.message);
+      throw error;
+    }
+
+    const row = await this.repository.adminResetPassword(targetUserId, passwordHash, context);
+    if (!row) throw new NotFoundException('Usuario no encontrado.');
+    return toSafeUser(row);
+  }
+
+  private throwKnownBusinessError(error: unknown): void {
+    const code = (error as PostgresError).code;
+    const constraint = (error as PostgresError).constraint;
+    const conflicts: Record<string, string> = {
+      LAST_ACTIVE_ADMIN: 'No es posible completar esta acción: debe existir al menos un administrador activo.',
+      USER_ALREADY_INACTIVE: 'El usuario ya está inactivo.',
+      USER_ALREADY_ACTIVE: 'El usuario ya está activo.'
+    };
+    if (code && conflicts[code]) throw new ConflictException({ code, message: conflicts[code] });
+    if (code === '23505' && constraint === 'uq_users_email') {
+      throw new ConflictException({ code: 'USER_EMAIL_CONFLICT', message: 'Ya existe un usuario registrado con ese correo electrónico.' });
+    }
   }
 }
