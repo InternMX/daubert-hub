@@ -4,14 +4,19 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
-import { Box, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
+import { Avatar, Box, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
+import { useAuth } from '../auth/authContext.core';
 import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
+import type { UserRole } from '../services/auth';
 import { appTokens } from '../theme';
+
+const roleLabels: Record<UserRole, string> = { ADMIN: 'Administrador', GENERAL: 'General' };
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
 const sidebarPreferenceKey = 'daubertHub.sidebarCollapsed';
@@ -54,6 +59,43 @@ function NavigationItem({ to, label, end, icon: Icon, collapsed }: typeof naviga
         )}
       </NavLink>
     </Tooltip>
+  );
+}
+
+function UserIdentity({ collapsed }: { collapsed: boolean }) {
+  const { user, logout } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+
+  if (!user) return null;
+
+  async function handleLogout() {
+    if (signingOut) return;
+    setSigningOut(true);
+    await logout();
+  }
+
+  const roleLabel = roleLabels[user.role];
+  const initial = user.displayName.trim().charAt(0).toUpperCase() || '?';
+
+  return (
+    <Stack direction="row" alignItems="center" spacing={1} sx={{ px: collapsed ? 0 : 1, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+      <Tooltip title={collapsed ? `${user.displayName} · ${roleLabel}` : ''} placement="right">
+        <Avatar sx={{ width: 32, height: 32, fontSize: '0.875rem', bgcolor: appTokens.navigationHover, color: 'common.white' }}>{initial}</Avatar>
+      </Tooltip>
+      {!collapsed && (
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography noWrap variant="body2" sx={{ color: 'common.white', fontWeight: 700, lineHeight: 1.3 }}>{user.displayName}</Typography>
+          <Typography noWrap variant="caption" color={appTokens.navigationMuted}>{roleLabel}</Typography>
+        </Box>
+      )}
+      <Tooltip title="Cerrar sesión" placement="right">
+        <span>
+          <IconButton aria-label="Cerrar sesión" size="small" color="inherit" disabled={signingOut} onClick={handleLogout}>
+            <LogoutRoundedIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Stack>
   );
 }
 
@@ -129,6 +171,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Divider sx={{ borderColor: appTokens.navigationDivider, mb: 2 }} />
           {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Administración</Typography>}
           <NavigationItem {...automationNavigation} collapsed={collapsed} />
+          <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
+          <UserIdentity collapsed={collapsed} />
         </Stack>
       </Box>
       <Box component="main" sx={{ minWidth: 0, px: { xs: 3, sm: 4, lg: 6 }, py: { xs: 4, md: 5 } }}>

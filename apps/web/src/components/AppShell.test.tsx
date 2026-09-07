@@ -2,7 +2,9 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthContextValue } from '../auth/authContext.core';
 import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
+import { createAuthContextValue, testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
 import { AppShell } from './AppShell';
 
 vi.mock('../services/health', () => ({ getRuntimeEnvironment: vi.fn() }));
@@ -26,14 +28,14 @@ function mockWideViewport(initiallyWide: boolean) {
   };
 }
 
-function renderShell(path = '/') {
-  return render(<MemoryRouter initialEntries={[path]}><AppShell><Routes>
+function renderShell(path = '/', authValue?: Partial<AuthContextValue>) {
+  return render(<MemoryRouter initialEntries={[path]}><TestAuthProvider value={authValue}><AppShell><Routes>
     <Route path="/" element={<div>Inicio page</div>} />
     <Route path="/providers" element={<div>Providers page</div>} />
     <Route path="/clients" element={<div>Clients page</div>} />
     <Route path="/contacts" element={<div>Contacts page</div>} />
     <Route path="/automations" element={<div>Automations page</div>} />
-  </Routes></AppShell></MemoryRouter>);
+  </Routes></AppShell></TestAuthProvider></MemoryRouter>);
 }
 
 function shell() { return screen.getByTestId('app-shell'); }
@@ -224,5 +226,42 @@ describe('AppShell sidebar', () => {
     expect(screen.getByText('Clients page')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Clientes' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Proveedores' })).not.toHaveAttribute('aria-current', 'page');
+  });
+});
+
+describe('AppShell user identity', () => {
+  it('shows the authenticated ADMIN user with the Spanish role label', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    expect(screen.getByText('Alejandro López')).toBeInTheDocument();
+    expect(screen.getByText('Administrador')).toBeInTheDocument();
+  });
+
+  it('shows the authenticated GENERAL user with the Spanish role label', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testGeneralUser }));
+
+    expect(screen.getByText('Ana Ruiz')).toBeInTheDocument();
+    expect(screen.getByText('General')).toBeInTheDocument();
+  });
+
+  it('logs out when the logout action is used', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn().mockResolvedValue(undefined);
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides identity details but keeps the logout action reachable while collapsed', () => {
+    mockWideViewport(false);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    expect(screen.queryByText('Alejandro López')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,8 @@
 import { Button, Paper, Stack, Typography } from '@mui/material';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
-import { AppShell } from './components/AppShell';
+import { ChangePasswordPage } from './auth/ChangePasswordPage';
+import { LoginPage } from './auth/LoginPage';
+import { ChangePasswordRoute, ProtectedLayout, PublicOnlyRoute } from './auth/RouteGuards';
 import { PageHeader } from './components/PageHeader';
 import { RecentActivity } from './components/RecentActivity';
 import { NewProviderPage } from './providers/NewProviderPage';
@@ -36,8 +38,10 @@ function HomePage() {
 
 export function App() {
   return (
-    <AppShell>
-      <Routes>
+    <Routes>
+      <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
+      <Route path="/change-password" element={<ChangePasswordRoute><ChangePasswordPage /></ChangePasswordRoute>} />
+      <Route element={<ProtectedLayout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/providers/new" element={<NewProviderPage />} />
@@ -51,7 +55,7 @@ export function App() {
         <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppShell>
+      </Route>
+    </Routes>
   );
 }
