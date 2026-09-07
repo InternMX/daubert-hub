@@ -1,10 +1,13 @@
-import { Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material';
+import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import { Alert, Box, Button, CircularProgress, FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { createUser, describeUsersApiError, UsersApiError, type UserRole } from '../services/users';
 import { roleLabels } from '../services/userLabels';
+import { GeneratePasswordActions } from './GeneratePasswordActions';
 
 const MIN_PASSWORD_LENGTH = 12;
 const GENERIC_ERROR_MESSAGE = 'No fue posible crear el usuario. Inténtalo nuevamente.';
@@ -30,6 +33,13 @@ export function NewUserPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  function applyGeneratedPassword(generated: string) {
+    setTemporaryPassword(generated);
+    setConfirmPassword(generated);
+    setFieldErrors((current) => ({ ...current, temporaryPassword: undefined, confirmPassword: undefined }));
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -92,7 +102,7 @@ export function NewUserPage() {
             </FormControl>
             <TextField
               label="Contraseña temporal"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={temporaryPassword}
               onChange={(event) => setTemporaryPassword(event.target.value)}
               error={Boolean(fieldErrors.temporaryPassword)}
@@ -100,10 +110,21 @@ export function NewUserPage() {
               fullWidth
               autoComplete="new-password"
               disabled={submitting}
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick={() => setShowPassword((value) => !value)} edge="end" size="small">
+                        {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }
+              }}
             />
             <TextField
               label="Confirmar contraseña temporal"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               error={Boolean(fieldErrors.confirmPassword)}
@@ -112,6 +133,7 @@ export function NewUserPage() {
               autoComplete="new-password"
               disabled={submitting}
             />
+            <GeneratePasswordActions password={temporaryPassword} onGenerate={applyGeneratedPassword} disabled={submitting} />
             <Typography variant="body2" color="text.secondary">El usuario deberá cambiar esta contraseña en su primer inicio de sesión.</Typography>
           </Stack>
         </Paper>

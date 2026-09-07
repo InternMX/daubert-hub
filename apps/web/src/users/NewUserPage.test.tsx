@@ -120,4 +120,25 @@ describe('NewUserPage', () => {
     renderPage();
     expect(screen.getByText('El usuario deberá cambiar esta contraseña en su primer inicio de sesión.')).toBeInTheDocument();
   });
+
+  it('generating a password populates both the password and confirmation fields, and submits successfully', async () => {
+    const user = userEvent.setup();
+    createUserMock.mockResolvedValue(managedUser);
+    renderPage();
+    await user.type(screen.getByLabelText('Nombre'), 'Ana Admin');
+    await user.type(screen.getByLabelText('Correo electrónico'), 'ana@daubertcromwell.com');
+
+    await user.click(screen.getByRole('button', { name: 'Generar contraseña' }));
+
+    const passwordField = screen.getByLabelText('Contraseña temporal') as HTMLInputElement;
+    const confirmField = screen.getByLabelText('Confirmar contraseña temporal') as HTMLInputElement;
+    expect(passwordField.value).toHaveLength(16);
+    expect(confirmField.value).toBe(passwordField.value);
+    expect(passwordField.value.length).toBeGreaterThanOrEqual(12);
+    const generatedPassword = passwordField.value;
+
+    await user.click(screen.getByRole('button', { name: 'Crear usuario' }));
+
+    await waitFor(() => expect(createUserMock).toHaveBeenCalledWith(expect.objectContaining({ temporaryPassword: generatedPassword })));
+  });
 });

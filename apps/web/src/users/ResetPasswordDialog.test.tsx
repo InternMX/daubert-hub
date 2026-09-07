@@ -80,4 +80,40 @@ describe('ResetPasswordDialog', () => {
     rerender(<ResetPasswordDialog open userId="2" onClose={onClose} onSuccess={vi.fn()} />);
     expect(screen.getByLabelText('Nueva contraseña temporal')).toHaveValue('');
   });
+
+  it('generating a password populates both fields, satisfies the policy, and can be submitted', async () => {
+    const user = userEvent.setup();
+    resetPasswordMock.mockResolvedValue(managedUser);
+    render(<ResetPasswordDialog open userId="2" onClose={vi.fn()} onSuccess={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Generar contraseña' }));
+
+    const passwordField = screen.getByLabelText('Nueva contraseña temporal') as HTMLInputElement;
+    const confirmField = screen.getByLabelText('Confirmar contraseña temporal') as HTMLInputElement;
+    expect(passwordField.value).toHaveLength(16);
+    expect(confirmField.value).toBe(passwordField.value);
+    expect(passwordField.value.length).toBeGreaterThanOrEqual(12);
+    // Captured now: submitting clears the field on success (below), and the
+    // input's .value is a live DOM read, not a snapshot.
+    const generatedPassword = passwordField.value;
+
+    await user.click(screen.getByRole('button', { name: 'Restablecer contraseña' }));
+
+    await waitFor(() => expect(resetPasswordMock).toHaveBeenCalledWith('2', generatedPassword));
+  });
+
+  it('clears the generated password from state after a successful reset', async () => {
+    const user = userEvent.setup();
+    resetPasswordMock.mockResolvedValue(managedUser);
+    const { rerender } = render(<ResetPasswordDialog open userId="2" onClose={vi.fn()} onSuccess={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Generar contraseña' }));
+    await user.click(screen.getByRole('button', { name: 'Restablecer contraseña' }));
+    await waitFor(() => expect(resetPasswordMock).toHaveBeenCalled());
+
+    rerender(<ResetPasswordDialog open={false} userId="2" onClose={vi.fn()} onSuccess={vi.fn()} />);
+    rerender(<ResetPasswordDialog open userId="2" onClose={vi.fn()} onSuccess={vi.fn()} />);
+    expect(screen.getByLabelText('Nueva contraseña temporal')).toHaveValue('');
+    expect(screen.getByLabelText('Confirmar contraseña temporal')).toHaveValue('');
+  });
 });

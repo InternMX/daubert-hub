@@ -1,6 +1,9 @@
-import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, Stack, TextField } from '@mui/material';
+import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, IconButton, InputAdornment, Stack, TextField } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { describeUsersApiError, resetPassword, type ManagedUser } from '../services/users';
+import { GeneratePasswordActions } from './GeneratePasswordActions';
 
 const MIN_PASSWORD_LENGTH = 12;
 const GENERIC_ERROR_MESSAGE = 'No fue posible restablecer la contraseña. Inténtalo nuevamente.';
@@ -27,12 +30,20 @@ export function ResetPasswordDialog({ open, userId, onClose, onSuccess }: ResetP
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   function clear() {
     setNewPassword('');
     setConfirmPassword('');
     setFieldErrors({});
     setSubmitError(null);
+    setShowPassword(false);
+  }
+
+  function applyGeneratedPassword(generated: string) {
+    setNewPassword(generated);
+    setConfirmPassword(generated);
+    setFieldErrors((current) => ({ ...current, newPassword: undefined, confirmPassword: undefined }));
   }
 
   // Password fields never outlive the dialog being open: cleared whenever it
@@ -72,7 +83,7 @@ export function ResetPasswordDialog({ open, userId, onClose, onSuccess }: ResetP
           {submitError && <Alert severity="error">{submitError}</Alert>}
           <TextField
             label="Nueva contraseña temporal"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             error={Boolean(fieldErrors.newPassword)}
@@ -81,10 +92,21 @@ export function ResetPasswordDialog({ open, userId, onClose, onSuccess }: ResetP
             autoFocus
             autoComplete="new-password"
             disabled={submitting}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick={() => setShowPassword((value) => !value)} edge="end" size="small">
+                      {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
+                    </IconButton>
+                  </InputAdornment>
+                )
+              }
+            }}
           />
           <TextField
             label="Confirmar contraseña temporal"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             error={Boolean(fieldErrors.confirmPassword)}
@@ -93,6 +115,7 @@ export function ResetPasswordDialog({ open, userId, onClose, onSuccess }: ResetP
             autoComplete="new-password"
             disabled={submitting}
           />
+          <GeneratePasswordActions password={newPassword} onGenerate={applyGeneratedPassword} disabled={submitting} />
         </Stack>
       </DialogContent>
       <DialogActions>
