@@ -2,8 +2,10 @@ import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
+import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
+import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Avatar, Box, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
@@ -15,7 +17,7 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import { useAuth } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { roleLabels } from '../services/userLabels';
-import { appTokens } from '../theme';
+import { appTokens, useColorMode } from '../theme';
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
 const sidebarPreferenceKey = 'daubertHub.sidebarCollapsed';
@@ -77,6 +79,28 @@ function VersionFooter({ version, commit, collapsed }: { version: string | null;
         {label}
       </Typography>
     </Tooltip>
+  );
+}
+
+// Icon-only, tooltip-labeled — mirrors the collapse/expand control at the
+// top of the sidebar (same pattern: no visible text, just an icon +
+// tooltip/aria-label), which keeps it visually secondary to the more
+// prominent UserIdentity row (avatar, name, role, logout) right below it.
+// Renders identically whether the sidebar is collapsed or expanded, so
+// there is no separate collapsed-only/expanded-only behavior to keep in sync.
+function AppearanceToggle({ collapsed }: { collapsed: boolean }) {
+  const { mode, toggleColorMode } = useColorMode();
+  const isDark = mode === 'dark';
+  const label = isDark ? 'Activar modo claro' : 'Activar modo oscuro';
+
+  return (
+    <Box sx={{ display: 'flex', justifyContent: collapsed ? 'center' : 'flex-start', px: collapsed ? 0 : 1, mb: 1 }}>
+      <Tooltip title={label} placement="right">
+        <IconButton aria-label={label} size="small" color="inherit" onClick={toggleColorMode}>
+          {isDark ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
+        </IconButton>
+      </Tooltip>
+    </Box>
   );
 }
 
@@ -204,6 +228,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </>
           )}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
+          <AppearanceToggle collapsed={collapsed} />
           <UserIdentity collapsed={collapsed} />
           <VersionFooter version={appVersion} commit={appCommit} collapsed={collapsed} />
         </Stack>

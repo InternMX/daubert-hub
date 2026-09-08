@@ -6,6 +6,7 @@ import { App } from './App';
 import { listRecentActivity } from './services/recentActivity';
 import { listUsers } from './services/users';
 import { TestAuthProvider, testGeneralUser } from './test/authTestUtils';
+import { ColorModeProvider } from './theme';
 
 vi.mock('./services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
 vi.mock('./services/users', async (importOriginal) => ({
@@ -17,7 +18,7 @@ const listUsersMock = vi.mocked(listUsers);
 
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function renderApp(path = '/') {
-  return render(<MemoryRouter initialEntries={[path]}><TestAuthProvider><App /><Location /></TestAuthProvider></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><TestAuthProvider><App /><Location /></TestAuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
 describe('application navigation', () => {
@@ -71,7 +72,7 @@ describe('authentication routing', () => {
   beforeEach(() => activityMock.mockResolvedValue([]));
 
   function renderWithAuth(path: string, authValue: Parameters<typeof TestAuthProvider>[0]['value']) {
-    return render(<MemoryRouter initialEntries={[path]}><TestAuthProvider value={authValue}><App /><Location /></TestAuthProvider></MemoryRouter>);
+    return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><TestAuthProvider value={authValue}><App /><Location /></TestAuthProvider></ColorModeProvider></MemoryRouter>);
   }
 
   it('sends an unauthenticated visitor to /login and preserves the requested route', async () => {
@@ -104,7 +105,7 @@ describe('admin-only routing (/users)', () => {
   });
 
   function renderWithAuth(path: string, authValue: Parameters<typeof TestAuthProvider>[0]['value']) {
-    return render(<MemoryRouter initialEntries={[path]}><TestAuthProvider value={authValue}><App /><Location /></TestAuthProvider></MemoryRouter>);
+    return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><TestAuthProvider value={authValue}><App /><Location /></TestAuthProvider></ColorModeProvider></MemoryRouter>);
   }
 
   it('renders /users for an authenticated ADMIN', async () => {

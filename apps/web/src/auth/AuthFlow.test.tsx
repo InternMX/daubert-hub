@@ -10,6 +10,7 @@ import { listRecentActivity } from '../services/recentActivity';
 import { getUser, updateUser } from '../services/users';
 import { AuthProvider } from './AuthContext';
 import { useAuth } from './authContext.core';
+import { ColorModeProvider } from '../theme';
 
 vi.mock('../services/health', () => ({ getHealth: vi.fn() }));
 vi.mock('../services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
@@ -31,7 +32,7 @@ const adminUser = { id: '1', displayName: 'Alejandro López', email: 'alejandro@
 const mustChangeUser = { ...adminUser, mustChangePassword: true };
 
 function renderApp(path = '/') {
-  return render(<MemoryRouter initialEntries={[path]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><AuthProvider><App /></AuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
 beforeEach(() => {

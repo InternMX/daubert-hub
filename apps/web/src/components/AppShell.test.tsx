@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { createAuthContextValue, testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
+import { ColorModeProvider } from '../theme';
 import { AppShell } from './AppShell';
 
 vi.mock('../services/health', () => ({ getHealth: vi.fn() }));
@@ -33,13 +34,13 @@ function mockWideViewport(initiallyWide: boolean) {
 }
 
 function renderShell(path = '/', authValue?: Partial<AuthContextValue>) {
-  return render(<MemoryRouter initialEntries={[path]}><TestAuthProvider value={authValue}><AppShell><Routes>
+  return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><TestAuthProvider value={authValue}><AppShell><Routes>
     <Route path="/" element={<div>Inicio page</div>} />
     <Route path="/providers" element={<div>Providers page</div>} />
     <Route path="/clients" element={<div>Clients page</div>} />
     <Route path="/contacts" element={<div>Contacts page</div>} />
     <Route path="/automations" element={<div>Automations page</div>} />
-  </Routes></AppShell></TestAuthProvider></MemoryRouter>);
+  </Routes></AppShell></TestAuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
 function shell() { return screen.getByTestId('app-shell'); }
@@ -280,6 +281,101 @@ describe('AppShell version footer', () => {
 
     await screen.findByText('PRUEBAS');
     expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
+  });
+});
+
+describe('AppShell appearance toggle', () => {
+  it('shows the moon icon with "Activar modo oscuro" in light mode by default', async () => {
+    mockWideViewport(true);
+    mockHealth('TEST');
+    renderShell();
+
+    expect(await screen.findByRole('button', { name: 'Activar modo oscuro' })).toBeInTheDocument();
+  });
+
+  it('initializes directly in dark mode when a saved dark preference exists, without a visible light flash in the rendered state', async () => {
+    localStorage.setItem('daubertHub.colorMode', 'dark');
+    mockWideViewport(true);
+    mockHealth('TEST');
+    renderShell();
+
+    expect(await screen.findByRole('button', { name: 'Activar modo claro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Activar modo oscuro' })).not.toBeInTheDocument();
+  });
+
+  it('toggling switches the icon/aria-label from "Activar modo oscuro" to "Activar modo claro" and back, and persists to localStorage', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    mockHealth('TEST');
+    renderShell();
+    const toggle = await screen.findByRole('button', { name: 'Activar modo oscuro' });
+
+    await user.click(toggle);
+
+    expect(screen.getByRole('button', { name: 'Activar modo claro' })).toBeInTheDocument();
+    expect(localStorage.getItem('daubertHub.colorMode')).toBe('dark');
+
+    await user.click(screen.getByRole('button', { name: 'Activar modo claro' }));
+
+    expect(screen.getByRole('button', { name: 'Activar modo oscuro' })).toBeInTheDocument();
+    expect(localStorage.getItem('daubertHub.colorMode')).toBe('light');
+  });
+
+  it('is keyboard accessible and shows a tooltip', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    mockHealth('TEST');
+    renderShell();
+    const toggle = await screen.findByRole('button', { name: 'Activar modo oscuro' });
+
+    await user.hover(toggle);
+    expect(await screen.findByRole('tooltip', { name: 'Activar modo oscuro' })).toBeInTheDocument();
+
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('button', { name: 'Activar modo claro' })).toBeInTheDocument();
+  });
+
+  it('works while the sidebar is collapsed', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(false);
+    mockHealth('TEST');
+    renderShell();
+
+    expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'true');
+    const toggle = await screen.findByRole('button', { name: 'Activar modo oscuro' });
+    await user.click(toggle);
+
+    expect(screen.getByRole('button', { name: 'Activar modo claro' })).toBeInTheDocument();
+    expect(localStorage.getItem('daubertHub.colorMode')).toBe('dark');
+  });
+
+  it('works while the sidebar is expanded', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    mockHealth('TEST');
+    renderShell();
+
+    expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'false');
+    const toggle = await screen.findByRole('button', { name: 'Activar modo oscuro' });
+    await user.click(toggle);
+
+    expect(screen.getByRole('button', { name: 'Activar modo claro' })).toBeInTheDocument();
+  });
+
+  it('remains visually secondary to logout: both reachable, logout still functions after toggling appearance', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn().mockResolvedValue(undefined);
+    mockWideViewport(true);
+    mockHealth('TEST');
+    renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
+
+    const toggle = await screen.findByRole('button', { name: 'Activar modo oscuro' });
+    await user.click(toggle);
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -5,6 +5,7 @@ import { App } from '../App';
 import { getHealth } from '../services/health';
 import { installSessionInterceptor } from '../services/httpInterceptor';
 import { AuthProvider } from './AuthContext';
+import { ColorModeProvider } from '../theme';
 
 // These tests exercise the real global-fetch interceptor (services/httpInterceptor.ts)
 // together with AuthProvider and real, unmocked services/clients — proving that a
@@ -32,7 +33,7 @@ beforeEach(() => {
 });
 
 function renderApp(path = '/clients') {
-  return render(<MemoryRouter initialEntries={[path]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><AuthProvider><App /></AuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
 describe('session expiration via a business API call', () => {

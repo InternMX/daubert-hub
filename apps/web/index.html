@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Centro operativo de Daubert" />
     <title>Daubert Hub</title>
+    <!--
+      Avoids a light->dark flash on load for a returning user with a saved
+      dark preference: paints the correct page background before React
+      mounts, using the same key/values as theme/colorMode.core.ts
+      (daubertHub.colorMode) and theme/theme.ts's dark background.default
+      (kept as the same literal MUI dark-mode default used there, "#121212" —
+      not worth threading through a shared constant for two occurrences).
+      Deliberately tiny: no SSR, no pre-hydration framework, just inline CSS
+      + one synchronous localStorage read.
+    -->
+    <style>
+      html { background-color: #F6F6F3; }
+      html[data-color-mode='dark'] { background-color: #121212; }
+    </style>
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem('daubertHub.colorMode') === 'dark') {
+            document.documentElement.setAttribute('data-color-mode', 'dark');
+          }
+        } catch (error) { /* Storage unavailable — light default stands. */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
