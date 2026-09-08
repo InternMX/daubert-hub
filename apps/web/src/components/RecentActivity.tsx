@@ -41,12 +41,16 @@ export function RecentActivity() {
   if (loading) content = <Box role="status" sx={{ py: 3, textAlign: 'center' }}><CircularProgress size={22} aria-label="Cargando actividad reciente" /></Box>;
   else if (error) content = <Typography color="text.secondary" sx={{ mt: 1 }}>No fue posible cargar la actividad reciente.</Typography>;
   else if (items.length === 0) content = <Typography color="text.secondary" sx={{ mt: 1 }}>{emptyMessages[category ?? 'ALL']}</Typography>;
-  else content = <Stack divider={<Divider flexItem />} sx={{ mt: 1.5 }}>{items.map((item, index) => <Box key={`${item.type}-${item.occurredAt}-${index}`} sx={{ py: 1.5 }}>
-    <Typography fontWeight={700}>{item.title}</Typography>
-    <Typography color="text.secondary">{item.entity}{item.category !== 'AUTOMATION' && item.context ? ` · ${item.context}` : ''}</Typography>
-    {item.category === 'AUTOMATION' && item.context ? <Typography variant="body2" color="text.secondary">{item.context}</Typography> : null}
-    <Typography variant="body2" color="text.secondary">{formatActivityTimestamp(item.occurredAt)}</Typography>
-  </Box>)}</Stack>;
+  else content = <Stack divider={<Divider flexItem />} sx={{ mt: 1.5 }}>{items.map((item, index) => {
+    const actorLabel = item.actor?.displayName || item.actor?.email || null;
+    const timestampLine = actorLabel ? `${actorLabel} · ${formatActivityTimestamp(item.occurredAt)}` : formatActivityTimestamp(item.occurredAt);
+    return <Box key={`${item.type}-${item.occurredAt}-${index}`} sx={{ py: 1.5 }}>
+      <Typography fontWeight={700}>{item.title}</Typography>
+      <Typography color="text.secondary">{item.entity}{item.category !== 'AUTOMATION' && item.context ? ` · ${item.context}` : ''}</Typography>
+      {item.category === 'AUTOMATION' && item.context ? <Typography variant="body2" color="text.secondary">{item.context}</Typography> : null}
+      <Typography variant="body2" color="text.secondary">{timestampLine}</Typography>
+    </Box>;
+  })}</Stack>;
 
   return <><Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" aria-label="Filtrar actividad reciente" sx={{ mt: 2 }}>
     {filters.map((filter) => {

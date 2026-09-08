@@ -12,6 +12,14 @@ interface AuditRow extends QueryResultRow {
   before_data: Snapshot;
   after_data: Snapshot;
   occurred_at: Date | string;
+  // The authenticated actor for the whole request (audit.cambios.usuario_id/
+  // usuario_email — see AuditContext) — identical across every row in the
+  // same request_id group, since they all share one set_config(...) call
+  // per transaction. usuario_email is the historical snapshot as recorded
+  // at the time; the current display name is resolved separately below
+  // (actorDisplayNames), since audit.cambios never stores display_name.
+  usuario_id: string | null;
+  usuario_email: string | null;
 }
 
 interface ContactLabelRow extends QueryResultRow {
@@ -32,6 +40,11 @@ export interface RecentActivitySource {
   contacts: Map<string, ContactLabelRow>;
   companies: Map<string, string>;
   companyRoles: Map<string, Set<string>>;
+  // Current display_name per usuario_id, resolved from security.users —
+  // best-effort enrichment only. A usuario_id with no matching row here
+  // (user deleted/never resolvable) simply means the service falls back to
+  // displayName = null, never a fabricated name.
+  actorDisplayNames: Map<string, string>;
 }
 
 export type AuditActivityCategory = 'PROVIDER' | 'CONTACT' | 'CLIENT';
@@ -63,7 +76,9 @@ export class RecentActivityRepository {
           change.datos_anteriores AS before_data,
           change.datos_nuevos AS after_data,
           change.fecha AS occurred_at,
-          change.cambio_id AS audit_id
+          change.cambio_id AS audit_id,
+          change.usuario_id,
+          change.usuario_email
         FROM audit.cambios change
         WHERE change.origen = 'DAUBERT_HUB'
           AND change.request_id IS NOT NULL
@@ -76,7 +91,8 @@ export class RecentActivityRepository {
         LIMIT $1
       )
       SELECT normalized.request_id, normalized.schema_name, normalized.table_name, normalized.operation,
-        normalized.before_data, normalized.after_data, normalized.occurred_at
+        normalized.before_data, normalized.after_data, normalized.occurred_at,
+        normalized.usuario_id, normalized.usuario_email
       FROM recent_requests
       JOIN normalized USING (request_id)
       ORDER BY recent_requests.request_occurred_at DESC, request_id DESC,
@@ -117,11 +133,24 @@ export class RecentActivityRepository {
     for (const companyId of companyIds) companyRoles.set(companyId, new Set());
     for (const roleRow of roleRows) companyRoles.get(roleRow.empresa_id)?.add(roleRow.rol);
 
+    // Best-effort current display_name per actor — audit.cambios only ever
+    // stores the historical usuario_email snapshot (see AuditRow), never a
+    // name. A usuario_id that no longer resolves (deleted user, etc.)
+    // simply yields no map entry; the service falls back to displayName =
+    // null rather than fabricating one.
+    const actorIds = new Set<string>();
+    for (const row of rows) if (row.usuario_id) actorIds.add(row.usuario_id);
+    const actors = actorIds.size === 0 ? [] : await this.database.query<{ id: string; display_name: string }>(`
+      SELECT user_id::text AS id, display_name
+      FROM security.users
+      WHERE user_id = ANY($1::bigint[])`, [[...actorIds]]);
+
     return {
       rows,
       contacts: new Map(contacts.map((contact) => [contact.id, contact])),
       companies: new Map(companies.map((company) => [company.id, company.name])),
-      companyRoles
+      companyRoles,
+      actorDisplayNames: new Map(actors.map((actor) => [actor.id, actor.display_name]))
     };
   }
 }

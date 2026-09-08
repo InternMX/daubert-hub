@@ -7,13 +7,15 @@ describe('RecentActivityRepository', () => {
     const query = vi.fn().mockResolvedValue([]);
     const repository = new RecentActivityRepository({ query } as never);
 
-    await expect(repository.findRecent(6)).resolves.toEqual({ rows: [], contacts: new Map(), companies: new Map(), companyRoles: new Map() });
+    await expect(repository.findRecent(6)).resolves.toEqual({ rows: [], contacts: new Map(), companies: new Map(), companyRoles: new Map(), actorDisplayNames: new Map() });
 
     expect(query).toHaveBeenCalledOnce();
     expect(query).toHaveBeenCalledWith(expect.stringContaining("FROM audit.cambios change"), [30]);
     const sql = query.mock.calls[0]?.[0] as string;
     expect(sql).toContain("change.origen = 'DAUBERT_HUB'");
     expect(sql).toContain('change.fecha AS occurred_at');
+    expect(sql).toContain('change.usuario_id');
+    expect(sql).toContain('change.usuario_email');
     expect(sql).toContain('change.request_id IS NOT NULL');
     expect(sql).toContain('GROUP BY request_id');
     expect(sql).toContain('ORDER BY request_occurred_at DESC, request_id DESC');
@@ -36,6 +38,32 @@ describe('RecentActivityRepository', () => {
     expect(query.mock.calls[1]?.[0]).not.toContain('estatus');
     expect(query.mock.calls[2]?.[0]).not.toContain('estatus');
     expect(query.mock.calls[3]?.[0]).toContain("estatus = 'ACTIVO'");
+  });
+
+  it('enriches actors with a current display name, resolved only for usuario_ids present in the rows', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{ request_id: 'r1', schema_name: 'core', table_name: 'medios_contacto', operation: 'INSERT', before_data: null, after_data: { contacto_id: 7, valor: 'a@test.mx' }, occurred_at: '2026-08-25T10:00:00Z', usuario_id: '42', usuario_email: 'historic@test.mx' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: '42', display_name: 'Alejandro López' }]);
+    const repository = new RecentActivityRepository({ query } as never);
+
+    const result = await repository.findRecent(1);
+
+    expect(result.actorDisplayNames.get('42')).toBe('Alejandro López');
+    expect(query.mock.calls[2]?.[0]).toContain('FROM security.users');
+    expect(query.mock.calls[2]?.[1]).toEqual([['42']]);
+  });
+
+  it('skips the actor lookup entirely when no row carries a usuario_id', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{ request_id: 'r1', schema_name: 'core', table_name: 'medios_contacto', operation: 'INSERT', before_data: null, after_data: { contacto_id: 7, valor: 'a@test.mx' }, occurred_at: '2026-08-25T10:00:00Z', usuario_id: null, usuario_email: null }])
+      .mockResolvedValueOnce([]);
+    const repository = new RecentActivityRepository({ query } as never);
+
+    const result = await repository.findRecent(1);
+
+    expect(result.actorDisplayNames).toEqual(new Map());
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it.each([

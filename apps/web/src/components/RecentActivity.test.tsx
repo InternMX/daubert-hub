@@ -11,7 +11,7 @@ const listMock = vi.mocked(listRecentActivity);
 const now = new Date('2026-08-26T02:00:00.000Z'); // 25 Aug, 20:00 in Mexico City.
 
 function item(index: number, occurredAt = '2026-08-25T19:42:00.000Z'): RecentActivityItem {
-  return { type: 'CONTACT_METHOD_DEACTIVATED', category: index === 0 ? 'CONTACT' : 'PROVIDER', title: index === 0 ? 'Medio de contacto desactivado' : 'Proveedor actualizado', entity: index === 0 ? 'correo@empresa.com' : `Proveedor ${index}`, context: index === 0 ? 'ADHECINTAS' : null, occurredAt };
+  return { type: 'CONTACT_METHOD_DEACTIVATED', category: index === 0 ? 'CONTACT' : 'PROVIDER', title: index === 0 ? 'Medio de contacto desactivado' : 'Proveedor actualizado', entity: index === 0 ? 'correo@empresa.com' : `Proveedor ${index}`, context: index === 0 ? 'ADHECINTAS' : null, occurredAt, actor: null };
 }
 
 function Location() { return <output data-testid="location">{useLocation().search}</output>; }
@@ -107,7 +107,7 @@ describe('RecentActivity', () => {
     ['CLIENT_DEACTIVATED', 'Cliente desactivado'],
     ['CLIENT_REACTIVATED', 'Cliente reactivado']
   ] as const)('renders %s Client activity cards with the correct Spanish label', async (type, title) => {
-    listMock.mockResolvedValue([{ type, category: 'CLIENT', title, entity: 'Daubert USA', context: null, occurredAt: '2026-08-25T19:42:00.000Z' }]);
+    listMock.mockResolvedValue([{ type, category: 'CLIENT', title, entity: 'Daubert USA', context: null, occurredAt: '2026-08-25T19:42:00.000Z', actor: null }]);
     renderActivity('/?activityCategory=CLIENT');
     expect(await screen.findByText(title)).toBeInTheDocument();
     expect(screen.getByText('Daubert USA')).toBeInTheDocument();
@@ -124,7 +124,7 @@ describe('RecentActivity', () => {
     ['AUTOMATION_PARTIAL', 'Automatización con incidencias'],
     ['AUTOMATION_FAILED', 'Automatización con error']
   ] as const)('renders %s with entity, context, and the existing timestamp format', async (type, title) => {
-    listMock.mockResolvedValue([{ type, category: 'AUTOMATION', title, entity: 'Notificaciones de pago', context: '4 listos · 1 manual', occurredAt: '2026-08-19T19:31:49.919Z' }]);
+    listMock.mockResolvedValue([{ type, category: 'AUTOMATION', title, entity: 'Notificaciones de pago', context: '4 listos · 1 manual', occurredAt: '2026-08-19T19:31:49.919Z', actor: null }]);
     renderActivity('/?activityCategory=AUTOMATION');
     expect(await screen.findByText(title)).toBeInTheDocument();
     expect(screen.getByText('Notificaciones de pago')).toBeInTheDocument();
@@ -134,9 +134,9 @@ describe('RecentActivity', () => {
 
   it('renders completed, failed, and cancelled Audi items with the existing automation presentation', async () => {
     listMock.mockResolvedValue([
-      { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '5 remisiones generadas', entity: 'Remisiones Audi', context: 'Folios 969–973', occurredAt: '2026-08-25T19:42:00.000Z' },
-      { type: 'AUTOMATION_FAILED', category: 'AUTOMATION', title: 'Generación de remisiones con error', entity: 'Remisiones Audi', context: 'No fue posible completar la automatización', occurredAt: '2026-08-25T18:42:00.000Z' },
-      { type: 'AUTOMATION_CANCELLED', category: 'AUTOMATION', title: 'Generación de remisiones cancelada', entity: 'Remisiones Audi', context: null, occurredAt: '2026-08-25T17:42:00.000Z' }
+      { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '5 remisiones generadas', entity: 'Remisiones Audi', context: 'Folios 969–973', occurredAt: '2026-08-25T19:42:00.000Z', actor: null },
+      { type: 'AUTOMATION_FAILED', category: 'AUTOMATION', title: 'Generación de remisiones con error', entity: 'Remisiones Audi', context: 'No fue posible completar la automatización', occurredAt: '2026-08-25T18:42:00.000Z', actor: null },
+      { type: 'AUTOMATION_CANCELLED', category: 'AUTOMATION', title: 'Generación de remisiones cancelada', entity: 'Remisiones Audi', context: null, occurredAt: '2026-08-25T17:42:00.000Z', actor: null }
     ]);
 
     renderActivity('/?activityCategory=AUTOMATION');
@@ -147,6 +147,38 @@ describe('RecentActivity', () => {
     expect(screen.getByText('No fue posible completar la automatización')).toBeInTheDocument();
     expect(screen.getByText('Generación de remisiones cancelada')).toBeInTheDocument();
     expect(screen.getAllByText('Remisiones Audi')).toHaveLength(3);
+  });
+
+  it.each([
+    ['PROVIDER_DEACTIVATED', 'Proveedor desactivado', 'PROVIDER'],
+    ['PROVIDER_REACTIVATED', 'Proveedor reactivado', 'PROVIDER'],
+    ['CONTACT_DEACTIVATED', 'Contacto desactivado', 'CONTACT'],
+    ['CONTACT_REACTIVATED', 'Contacto reactivado', 'CONTACT'],
+    ['DOCUMENT_SERIES_ADJUSTED', 'Folio ajustado', 'AUTOMATION']
+  ] as const)('renders the new %s activity type with its Spanish label', async (type, title, category) => {
+    listMock.mockResolvedValue([{ type, category, title, entity: 'Entidad de prueba', context: category === 'AUTOMATION' ? '951 → 960' : null, occurredAt: '2026-08-25T19:42:00.000Z', actor: null }]);
+    renderActivity(`/?activityCategory=${category}`);
+    expect(await screen.findByText(title)).toBeInTheDocument();
+    expect(screen.getByText('Entidad de prueba')).toBeInTheDocument();
+  });
+
+  it('shows a restrained "name · timestamp" line for activity with a known actor', async () => {
+    listMock.mockResolvedValue([{ type: 'CONTACT_DEACTIVATED', category: 'CONTACT', title: 'Contacto desactivado', entity: 'Ana', context: 'Acme', occurredAt: '2026-08-25T19:42:00.000Z', actor: { id: '42', displayName: 'Alejandro López', email: 'alejandro@example.test' } }]);
+    renderActivity('/?activityCategory=CONTACT');
+    expect(await screen.findByText((content) => content.startsWith('Alejandro López · '))).toBeInTheDocument();
+    expect(screen.queryByText('42', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it('falls back to the historical email when the actor has no resolvable display name', async () => {
+    listMock.mockResolvedValue([{ type: 'CONTACT_DEACTIVATED', category: 'CONTACT', title: 'Contacto desactivado', entity: 'Ana', context: 'Acme', occurredAt: '2026-08-25T19:42:00.000Z', actor: { id: '42', displayName: null, email: 'historic@example.test' } }]);
+    renderActivity('/?activityCategory=CONTACT');
+    expect(await screen.findByText((content) => content.startsWith('historic@example.test · '))).toBeInTheDocument();
+  });
+
+  it('keeps the plain timestamp-only presentation for system/automation activity with no actor', async () => {
+    listMock.mockResolvedValue([{ type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Automatización completada', entity: 'Notificaciones de pago', context: '2 listos', occurredAt: '2026-08-25T19:42:00.000Z', actor: null }]);
+    renderActivity('/?activityCategory=AUTOMATION');
+    expect(await screen.findByText(formatActivityTimestamp('2026-08-25T19:42:00.000Z'))).toBeInTheDocument();
   });
 
   it('keeps the compact controls visible while loading', () => {

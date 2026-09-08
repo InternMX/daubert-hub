@@ -5,7 +5,9 @@ const { Pool } = require('pg');
 const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = require('./support/test-auth.cjs');
 
 const port = 3105;
-const marker = `HUB_TEST_ACTIVITY_${randomUUID().replace(/-/g, '').toUpperCase()}`;
+const runnerFixturePrefix = 'HUB_TEST_ACTIVITY_';
+const historicalFixturePrefixes = [runnerFixturePrefix, 'DBG_'];
+const marker = `${runnerFixturePrefix}${randomUUID().replace(/-/g, '').toUpperCase()}`;
 const markerLower = marker.toLowerCase();
 const setupRequestId = `activity-setup-${randomUUID()}`;
 const deleteRequestId = `activity-delete-${randomUUID()}`;
@@ -82,6 +84,60 @@ function one(items, type, entity) {
   return matches[0];
 }
 
+async function findHistoricalSyntheticLeftovers(pool) {
+  return (await pool.query(`
+    WITH prefixes AS (SELECT unnest($1::text[]) AS value), leftovers AS (
+      SELECT 'core.empresas' AS source, empresa_id::text AS id, nombre_comercial AS label
+      FROM core.empresas
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE left(nombre_comercial, length(prefixes.value)) = prefixes.value)
+        AND left(nombre_comercial, length($2)) <> $2
+      UNION ALL
+      SELECT 'core.contactos', contacto_id::text, coalesce(nombre, '')
+      FROM core.contactos
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE left(coalesce(nombre, ''), length(prefixes.value)) = prefixes.value)
+        AND left(coalesce(nombre, ''), length($2)) <> $2
+      UNION ALL
+      SELECT 'core.medios_contacto', medio_id::text, valor
+      FROM core.medios_contacto
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE position(lower(prefixes.value) in lower(valor)) > 0)
+        AND position(lower($2) in lower(valor)) = 0
+      UNION ALL
+      SELECT 'operacion.series_documentales', serie_id::text, codigo
+      FROM operacion.series_documentales
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE left(codigo, length(prefixes.value)) = prefixes.value)
+        AND left(codigo, length($2)) <> $2
+      UNION ALL
+      SELECT 'operacion.ajustes_series', ajuste_id::text, motivo
+      FROM operacion.ajustes_series
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE left(motivo, length(prefixes.value)) = prefixes.value)
+        AND left(motivo, length($2)) <> $2
+      UNION ALL
+      SELECT 'ops.automatizaciones', codigo, codigo
+      FROM ops.automatizaciones
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE left(codigo, length(prefixes.value)) = prefixes.value)
+        AND left(codigo, length($2)) <> $2
+      UNION ALL
+      SELECT 'core.correos_notificacion_pago', correo_id::text, outlook_message_id
+      FROM core.correos_notificacion_pago
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE position(prefixes.value in outlook_message_id) > 0)
+        AND position($2 in outlook_message_id) = 0
+      UNION ALL
+      SELECT 'security.users', user_id::text, email
+      FROM security.users
+      WHERE EXISTS (SELECT 1 FROM prefixes WHERE left(email, length(prefixes.value)) = prefixes.value)
+        AND left(email, length($2)) <> $2
+      UNION ALL
+      SELECT 'audit.cambios', cambio_id::text, coalesce(request_id, '(no request_id)')
+      FROM audit.cambios
+      WHERE EXISTS (
+          SELECT 1 FROM prefixes
+          WHERE position(prefixes.value in coalesce(datos_anteriores::text, '') || coalesce(datos_nuevos::text, '') || coalesce(usuario_email, '')) > 0
+        )
+        AND position($2 in coalesce(datos_anteriores::text, '') || coalesce(datos_nuevos::text, '') || coalesce(usuario_email, '')) = 0
+    )
+    SELECT source, id, label FROM leftovers ORDER BY source, id`, [historicalFixturePrefixes, marker])).rows;
+}
+
 async function cleanup(pool, names, paymentFixtures) {
   let cleanupError;
   try {
@@ -103,12 +159,8 @@ async function cleanup(pool, names, paymentFixtures) {
         );
       }
       const companies = await client.query(
-        'SELECT empresa_id::text AS id FROM core.empresas WHERE nombre_comercial = ANY($1::text[])',
-        [[
-          names.setupCompany, names.providerOriginal, names.providerUpdated,
-          names.clientNew, names.clientFromProvider, names.clientForUpdate, names.clientUpdatedName,
-          names.clientForFiscal, names.clientFinalRole, names.clientForAddress, names.clientForAlias
-        ]]
+        'SELECT empresa_id::text AS id FROM core.empresas WHERE left(nombre_comercial, length($1)) = $1',
+        [marker]
       );
       const companyIds = companies.rows.map((row) => row.id);
       if (companyIds.length) {
@@ -120,6 +172,9 @@ async function cleanup(pool, names, paymentFixtures) {
         await client.query('DELETE FROM core.empresa_roles WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
         await client.query('DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [companyIds]);
       }
+      await client.query('DELETE FROM operacion.ajustes_series WHERE serie_id IN (SELECT serie_id FROM operacion.series_documentales WHERE codigo = $1)', [names.seriesCode]);
+      await client.query('DELETE FROM operacion.series_documentales WHERE codigo = $1', [names.seriesCode]);
+      await client.query('DELETE FROM ops.automatizaciones WHERE codigo = $1', [names.seriesAutomationCode]);
     });
   } catch (error) {
     cleanupError = error;
@@ -128,9 +183,9 @@ async function cleanup(pool, names, paymentFixtures) {
     await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
     const coreLeftovers = await pool.query(`
       SELECT
-        (SELECT count(*) FROM core.empresas WHERE nombre_comercial LIKE $1) +
-        (SELECT count(*) FROM core.contactos WHERE nombre LIKE $1) +
-        (SELECT count(*) FROM core.medios_contacto WHERE lower(valor) LIKE $2) AS count`, [`${marker}%`, `%${markerLower}%`]);
+        (SELECT count(*) FROM core.empresas WHERE left(nombre_comercial, length($1)) = $1) +
+        (SELECT count(*) FROM core.contactos WHERE left(coalesce(nombre, ''), length($1)) = $1) +
+        (SELECT count(*) FROM core.medios_contacto WHERE position($2 in lower(valor)) > 0) AS count`, [marker, markerLower]);
     const auditLeftovers = await pool.query('SELECT count(*)::int AS count FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
     const paymentLeftovers = await pool.query(`
       SELECT
@@ -147,10 +202,21 @@ async function cleanup(pool, names, paymentFixtures) {
       LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
       WHERE correo.correo_id = 32
       GROUP BY correo.correo_id`);
-    assert(Number(coreLeftovers.rows[0].count) === 0, 'Recent activity cleanup left core marker fixtures.');
-    assert(auditLeftovers.rows[0].count === 0, 'Recent activity cleanup left correlated audit rows.');
-    assert(Number(paymentLeftovers.rows[0].correo_count) === 0 && Number(paymentLeftovers.rows[0].result_count) === 0, 'Recent activity cleanup left synthetic payment fixtures.');
+    const seriesLeftovers = await pool.query(`
+      SELECT
+        (SELECT count(*) FROM operacion.series_documentales WHERE codigo = $1) +
+        (SELECT count(*) FROM operacion.ajustes_series WHERE left(motivo, length($3)) = $3) +
+        (SELECT count(*) FROM ops.automatizaciones WHERE codigo = $2) AS count`, [names.seriesCode, names.seriesAutomationCode, marker]);
+    assert(Number(coreLeftovers.rows[0].count) === 0, `Recent activity cleanup left core fixtures for current-run marker ${marker}.`);
+    assert(Number(seriesLeftovers.rows[0].count) === 0, `Recent activity cleanup left document-series/automation fixtures for current-run marker ${marker}.`);
+    assert(auditLeftovers.rows[0].count === 0, `Recent activity cleanup left correlated audit rows for current-run marker ${marker}.`);
+    assert(Number(paymentLeftovers.rows[0].correo_count) === 0 && Number(paymentLeftovers.rows[0].result_count) === 0, `Recent activity cleanup left payment fixtures for current-run marker ${marker}.`);
     assert(paymentExample.rows.length === 1 && paymentExample.rows[0].result_count === 5 && paymentExample.rows[0].ready_count === 4 && paymentExample.rows[0].manual_count === 1 && paymentExample.rows[0].error_count === 0, 'Cleanup changed the existing correo 32 example.');
+    console.log(`Recent Activity current-run cleanup verified for exact marker ${marker}.`);
+    const historicalLeftovers = await findHistoricalSyntheticLeftovers(pool);
+    if (historicalLeftovers.length > 0) {
+      console.warn(`UNEXPECTED HISTORICAL SYNTHETIC LEFTOVERS (not current-run fixtures; not deleted): ${historicalLeftovers.map((row) => `${row.source}#${row.id} (${row.label})`).join(', ')}`);
+    }
   } catch (error) {
     cleanupError ??= error;
   }
@@ -184,6 +250,13 @@ async function run() {
     clientFinalRole: `${marker}_CLIENT_FINAL_ROLE`,
     clientForAddress: `${marker}_CLIENT_FOR_ADDRESS`,
     clientForAlias: `${marker}_CLIENT_FOR_ALIAS`,
+    providerLifecycle: `${marker}_PROVIDER_LIFECYCLE`,
+    providerMultiRole: `${marker}_PROVIDER_MULTI_ROLE`,
+    contactLifecycleCompany: `${marker}_CONTACT_LIFECYCLE_CO`,
+    contactLifecycle: `${marker}_CONTACT_LIFECYCLE`,
+    seriesAutomationCode: `${marker}_SERIES_AUTO`,
+    seriesCode: `${marker}_SERIES`,
+    seriesName: `${marker} Serie de prueba`,
     paymentMessageIds: [
       `SYNTHETIC_PAYMENT_PROCESSED_${marker}`,
       `SYNTHETIC_PAYMENT_FAILED_${marker}`,
@@ -282,7 +355,8 @@ async function run() {
       const activity = matches[0];
       assert(activity.category === 'AUTOMATION' && activity.title === expected.title && activity.context === expected.context, `${expected.type} payment activity has incorrect business fields.`);
       assert(activity.occurredAt === expected.fixture.occurredAt, `${expected.type} payment activity does not use fecha_procesado.`);
-      assert(Object.keys(activity).sort().join(',') === 'category,context,entity,occurredAt,title,type', `${expected.type} payment activity exposed unsupported fields.`);
+      assert(Object.keys(activity).sort().join(',') === 'actor,category,context,entity,occurredAt,title,type', `${expected.type} payment activity exposed unsupported fields.`);
+      assert(activity.actor === null, `${expected.type} payment activity must report actor=null for system-generated activity.`);
       return activity;
     });
     assert(!/correo_id|outlook|remitente|destinatario|detalle_error/i.test(JSON.stringify(paymentEvents)), 'Payment notification activity exposed sensitive notification data.');
@@ -420,10 +494,11 @@ async function run() {
     const feed = await apiRequest('/recent-activity?limit=20');
     assert(feed.response.status === 200 && Object.keys(feed.body).join(',') === 'data' && Array.isArray(feed.body.data), 'Recent activity response contract is invalid.');
     const items = feed.body.data;
-    const expectedKeys = 'category,context,entity,occurredAt,title,type';
+    const expectedKeys = 'actor,category,context,entity,occurredAt,title,type';
     assert(items.every((item) => Object.keys(item).sort().join(',') === expectedKeys), 'Recent activity exposed request, audit, raw JSON, user, or other internal fields.');
     const forbidden = /^(request_?id|schema|table|operation|raw|before|after|user|usuario)$/i;
     assert(items.every((item) => Object.keys(item).every((key) => !forbidden.test(key))), 'Recent activity JSON exposed an internal audit or user field.');
+    assert(items.every((item) => item.actor === null || (typeof item.actor === 'object' && Object.keys(item.actor).sort().join(',') === 'displayName,email,id')), 'Recent activity actor field has an incorrect shape.');
 
     const expected = [
       one(items, 'CONTACT_METHOD_REACTIVATED', names.methodUpdated),
@@ -495,6 +570,123 @@ async function run() {
 
     const endpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [actionOrder]);
     assert(endpointAudit.rows.length === 8, 'Not all eight endpoint request IDs reached the audit log.');
+
+    // --- Provider lifecycle + Contact lifecycle + Document Series scenarios (K-O) ---
+    // Run last, using per-category feeds (never the unfiltered/limit-bounded `feed` above) so
+    // these additional events cannot disturb the strict top-N ordering assertions already made.
+    const lifecycleActionOrder = [];
+
+    // K: single-role Provider deactivate/reactivate -> exactly one PROVIDER_DEACTIVATED/PROVIDER_REACTIVATED,
+    // company status tracks the role (no other active role exists).
+    const providerLifecycle = await apiRequest('/providers', 'POST', { commercialName: names.providerLifecycle, providerType: 'PROVEEDOR' });
+    lifecycleActionOrder.push(providerLifecycle.requestId);
+    assert(providerLifecycle.response.status === 201, 'Provider-lifecycle fixture create failed.');
+    const providerLifecycleId = providerLifecycle.body.data.id;
+
+    const providerLifecycleDeactivated = await apiRequest(`/providers/${providerLifecycleId}/deactivate`, 'POST', undefined);
+    lifecycleActionOrder.push(providerLifecycleDeactivated.requestId);
+    assert(providerLifecycleDeactivated.response.status === 200 && providerLifecycleDeactivated.body.data.status === 'INACTIVO', 'Single-role Provider deactivate did not deactivate the company.');
+
+    const providerLifecycleReactivated = await apiRequest(`/providers/${providerLifecycleId}/reactivate`, 'POST', undefined);
+    lifecycleActionOrder.push(providerLifecycleReactivated.requestId);
+    assert(providerLifecycleReactivated.response.status === 200 && providerLifecycleReactivated.body.data.status === 'ACTIVO', 'Single-role Provider reactivate did not reactivate the company.');
+
+    // L: multi-role Provider+Client deactivate -> role-scoped only, company (and CLIENTE role) stays ACTIVO.
+    const providerMultiRole = await apiRequest('/providers', 'POST', { commercialName: names.providerMultiRole, providerType: 'PROVEEDOR' });
+    lifecycleActionOrder.push(providerMultiRole.requestId);
+    assert(providerMultiRole.response.status === 201, 'Provider-multi-role fixture create failed.');
+    const providerMultiRoleId = providerMultiRole.body.data.id;
+
+    const providerMultiRoleClientGain = await apiRequest('/clients', 'POST', { commercialName: names.providerMultiRole });
+    lifecycleActionOrder.push(providerMultiRoleClientGain.requestId);
+    assert(providerMultiRoleClientGain.response.status === 201 && providerMultiRoleClientGain.body.data.id === providerMultiRoleId, 'Provider fixture did not gain CLIENTE on the same company.');
+
+    const providerMultiRoleDeactivated = await apiRequest(`/providers/${providerMultiRoleId}/deactivate`, 'POST', undefined);
+    lifecycleActionOrder.push(providerMultiRoleDeactivated.requestId);
+    assert(providerMultiRoleDeactivated.response.status === 200, 'Multi-role Provider deactivate failed.');
+    assert(providerMultiRoleDeactivated.body.data.status === 'INACTIVO', 'Multi-role Provider detail did not expose the inactive provider-role lifecycle.');
+    assert(!providerMultiRoleDeactivated.body.data.roles.includes('PROVEEDOR') && providerMultiRoleDeactivated.body.data.roles.includes('CLIENTE'), 'Multi-role Provider deactivate did not leave the role set correctly scoped.');
+    const providerMultiRoleState = await pool.query("SELECT e.estatus AS company_status, p.estatus AS provider_status, c.estatus AS client_status FROM core.empresas e JOIN core.empresa_roles p ON p.empresa_id = e.empresa_id AND p.rol = 'PROVEEDOR' JOIN core.empresa_roles c ON c.empresa_id = e.empresa_id AND c.rol = 'CLIENTE' WHERE e.empresa_id = $1", [providerMultiRoleId]);
+    assert(providerMultiRoleState.rows[0].company_status === 'ACTIVO' && providerMultiRoleState.rows[0].provider_status === 'INACTIVO' && providerMultiRoleState.rows[0].client_status === 'ACTIVO', 'Multi-role Provider deactivate did not preserve the company and CLIENTE lifecycle.');
+
+    const providerMultiRoleReactivated = await apiRequest(`/providers/${providerMultiRoleId}/reactivate`, 'POST', undefined);
+    lifecycleActionOrder.push(providerMultiRoleReactivated.requestId);
+    assert(providerMultiRoleReactivated.response.status === 200 && providerMultiRoleReactivated.body.data.roles.includes('PROVEEDOR'), 'Multi-role Provider reactivate failed.');
+
+    // M: Contact lifecycle deactivate/reactivate -> CONTACT_DEACTIVATED/CONTACT_REACTIVATED,
+    // never CONTACT_UPDATED for the pure status transition.
+    const contactLifecycleCompany = await apiRequest('/clients', 'POST', { commercialName: names.contactLifecycleCompany });
+    lifecycleActionOrder.push(contactLifecycleCompany.requestId);
+    assert(contactLifecycleCompany.response.status === 201, 'Contact-lifecycle company fixture create failed.');
+    const contactLifecycleCompanyId = contactLifecycleCompany.body.data.id;
+
+    const contactLifecycleContact = await apiRequest('/contacts', 'POST', { companyId: contactLifecycleCompanyId, contactType: 'PERSONA', name: names.contactLifecycle, methods: [{ type: 'CORREO', value: `contact-lifecycle.${markerLower}@example.test` }] });
+    lifecycleActionOrder.push(contactLifecycleContact.requestId);
+    assert(contactLifecycleContact.response.status === 201, 'Contact-lifecycle fixture create failed.');
+    const contactLifecycleId = contactLifecycleContact.body.data.id;
+
+    const contactLifecycleDeactivated = await apiRequest(`/contacts/${contactLifecycleId}/deactivate`, 'POST', undefined);
+    lifecycleActionOrder.push(contactLifecycleDeactivated.requestId);
+    assert(contactLifecycleDeactivated.response.status === 200 && contactLifecycleDeactivated.body.data.status === 'INACTIVO', 'Contact lifecycle deactivate failed.');
+
+    const contactLifecycleReactivated = await apiRequest(`/contacts/${contactLifecycleId}/reactivate`, 'POST', undefined);
+    lifecycleActionOrder.push(contactLifecycleReactivated.requestId);
+    assert(contactLifecycleReactivated.response.status === 200 && contactLifecycleReactivated.body.data.status === 'ACTIVO', 'Contact lifecycle reactivate failed.');
+
+    // N: Document Series folio adjustment -> exactly one DOCUMENT_SERIES_ADJUSTED with before/after
+    // folio context and the real actor (attributed, not fabricated).
+    await transaction(pool, 'DAUBERT_HUB_TEST', setupRequestId, (client) => client.query(
+      'INSERT INTO ops.automatizaciones (codigo, nombre, descripcion, estatus) VALUES ($1, $2, $3, $4)',
+      [names.seriesAutomationCode, 'Temporary activity automation', 'Recent activity integration test only', 'ACTIVA']
+    ));
+    await transaction(pool, 'DAUBERT_HUB_TEST', setupRequestId, (client) => client.query(
+      'INSERT INTO operacion.series_documentales (codigo, nombre, siguiente_folio, estatus) VALUES ($1, $2, $3, $4)',
+      [names.seriesCode, names.seriesName, 951, 'ACTIVA']
+    ));
+    const seriesAdjustment = await apiRequest(`/automations/${names.seriesAutomationCode}/document-series/${names.seriesCode}`, 'PATCH', { nextFolio: 960, reason: `${marker}_FOLIO_ADJUSTMENT` });
+    lifecycleActionOrder.push(seriesAdjustment.requestId);
+    assert(seriesAdjustment.response.status === 200 && seriesAdjustment.body.data.series.nextFolio === 960, 'Document series folio adjustment failed.');
+
+    // Category-scoped feeds: each of these newly created events is the newest in its own
+    // category, so a generous per-category limit guarantees it appears regardless of how many
+    // older events exist in OTHER categories (unlike the unfiltered feed above).
+    const providerLifecycleFeed = await apiRequest('/recent-activity?limit=20&category=PROVIDER');
+    const contactLifecycleFeed = await apiRequest('/recent-activity?limit=20&category=CONTACT');
+    const automationLifecycleFeed = await apiRequest('/recent-activity?limit=20&category=AUTOMATION');
+    assert(providerLifecycleFeed.response.status === 200 && contactLifecycleFeed.response.status === 200 && automationLifecycleFeed.response.status === 200, 'Could not load the lifecycle/document-series category feeds.');
+    const providerLifecycleItems = providerLifecycleFeed.body.data;
+    const contactLifecycleItems = contactLifecycleFeed.body.data;
+    const automationLifecycleItems = automationLifecycleFeed.body.data;
+
+    const providerDeactivated = one(providerLifecycleItems, 'PROVIDER_DEACTIVATED', names.providerLifecycle);
+    const providerReactivated = one(providerLifecycleItems, 'PROVIDER_REACTIVATED', names.providerLifecycle);
+    assert(providerDeactivated.category === 'PROVIDER' && providerReactivated.category === 'PROVIDER', 'Provider lifecycle activity has an incorrect category.');
+    one(providerLifecycleItems, 'PROVIDER_DEACTIVATED', names.providerMultiRole);
+    one(providerLifecycleItems, 'PROVIDER_REACTIVATED', names.providerMultiRole);
+    assert(!providerLifecycleItems.some((item) => item.entity === names.providerMultiRole && item.type === 'CLIENT_DEACTIVATED'), 'Multi-role Provider deactivate incorrectly produced Client lifecycle activity.');
+
+    const contactDeactivated = one(contactLifecycleItems, 'CONTACT_DEACTIVATED', names.contactLifecycle);
+    const contactReactivated = one(contactLifecycleItems, 'CONTACT_REACTIVATED', names.contactLifecycle);
+    assert(contactDeactivated.category === 'CONTACT' && contactReactivated.category === 'CONTACT', 'Contact lifecycle activity has an incorrect category.');
+    assert(!contactLifecycleItems.some((item) => item.entity === names.contactLifecycle && item.type === 'CONTACT_UPDATED'), 'Pure Contact status transition leaked into CONTACT_UPDATED.');
+
+    const seriesActivity = one(automationLifecycleItems, 'DOCUMENT_SERIES_ADJUSTED', names.seriesName);
+    assert(seriesActivity.category === 'AUTOMATION' && seriesActivity.title === 'Folio ajustado', 'Document series activity has incorrect business fields.');
+    assert(seriesActivity.context === '951 → 960', `Document series activity context was "${seriesActivity.context}", expected "951 → 960".`);
+    assert(seriesActivity.actor && seriesActivity.actor.email === authSession.email, 'Document series activity did not attribute the real actor by email.');
+    assert(seriesActivity.actor.displayName === `${authSession.marker} display`, 'Document series activity actor display name was not enriched from security.users.');
+
+    // O: actor attribution on ordinary audit-derived activity (not fabricated, enriched from security.users).
+    const contactCreatedActor = one(contactLifecycleItems, 'CONTACT_CREATED', names.contactOriginal).actor;
+    assert(contactCreatedActor && contactCreatedActor.email === authSession.email, 'Audit-derived activity did not attribute the authenticated actor by email.');
+    assert(contactCreatedActor.displayName === `${authSession.marker} display`, 'Audit-derived activity actor display name was not enriched from security.users.');
+    assert(typeof contactCreatedActor.id === 'string' && contactCreatedActor.id === String(authSession.userId), 'Audit-derived activity actor id was not the BIGINT-as-string user id.');
+    const automationActorCheck = automationLifecycleItems.find((item) => item.entity === 'Notificaciones de pago');
+    assert(automationActorCheck && automationActorCheck.actor === null, 'System/automation activity with no human actor must report actor=null, not omit or fabricate one.');
+
+    const lifecycleEndpointAudit = await pool.query("SELECT request_id FROM audit.cambios WHERE origen = 'DAUBERT_HUB' AND request_id = ANY($1::text[]) GROUP BY request_id", [lifecycleActionOrder.filter((id) => id !== seriesAdjustment.requestId)]);
+    assert(lifecycleEndpointAudit.rows.length === lifecycleActionOrder.length - 1, `Not all lifecycle scenario request IDs reached the audit log (expected ${lifecycleActionOrder.length - 1}, got ${lifecycleEndpointAudit.rows.length}).`);
+
     console.log('Recent activity integration checks passed, including synthetic FAILED and PARTIAL ERROR payment executions.');
   } finally {
     try {

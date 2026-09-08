@@ -56,9 +56,13 @@ describe('ProvidersRepository', () => {
     });
     expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM core.empresas company'), ['PROVEEDOR', 'Acme', 'ACTIVO']);
     expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining('ORDER BY lower(btrim(fiscal.razon_social)) DESC NULLS LAST, company.empresa_id'), ['PROVEEDOR', 'Acme', 'ACTIVO', 10, 10]);
-    expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
+    expect(query.mock.calls[0]?.[0]).toContain('SELECT role.rol, role.estatus');
+    expect(query.mock.calls[0]?.[0]).not.toContain("AND role.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')");
-    expect(query.mock.calls[0]?.[0]).toContain("company.estatus = 'INACTIVO'");
+    expect(query.mock.calls[0]?.[0]).toContain("provider_role.estatus = 'ACTIVO'");
+    expect(query.mock.calls[0]?.[0]).toContain("provider_role.estatus = 'INACTIVO'");
+    expect(query.mock.calls[0]?.[0]).toContain("company.estatus <> 'BLOQUEADO'");
+    expect(query.mock.calls[1]?.[0]).toContain("CASE WHEN company.estatus = 'BLOQUEADO' THEN 'BLOQUEADO' ELSE provider_role.estatus END AS status");
     expect(query.mock.calls[0]?.[0]).toContain("FROM core.alias_empresa alias");
     expect(query.mock.calls[0]?.[0]).toContain("alias.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain('ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC');
@@ -72,6 +76,7 @@ describe('ProvidersRepository', () => {
     expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE company.empresa_id = $1'), [121]);
     expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')");
+    expect(query.mock.calls[0]?.[0]).toContain("CASE WHEN company.estatus = 'BLOQUEADO' THEN 'BLOQUEADO' ELSE provider_role.estatus END AS status");
     expect(query.mock.calls[0]?.[0]).toContain('array_agg(role.rol ORDER BY CASE role.rol');
     expect(query.mock.calls[0]?.[0]).toContain("alias.tipo_alias = 'NOMBRE_COMERCIAL_ALTERNATIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("alias.tipo_alias <> 'NOMBRE_COMERCIAL_ALTERNATIVO'");
@@ -116,5 +121,89 @@ describe('ProvidersRepository', () => {
     await expect(repository.update(121, { commercialName: 'Must roll back', aliases: ['TAKEN'] }, 'request-alias', { userId: null, userEmail: null })).rejects.toMatchObject({ code: 'ALIAS_ALREADY_ASSOCIATED' });
     expect(query).toHaveBeenCalledWith('ROLLBACK');
     expect(query).not.toHaveBeenCalledWith('COMMIT');
+  });
+
+  describe('changeStatus (role-aware lifecycle)', () => {
+    function repositoryForChangeStatus(query: ReturnType<typeof vi.fn>, findByIdResult: unknown[]) {
+      const client = { query, release: vi.fn() };
+      const findById = vi.fn().mockResolvedValue(findByIdResult);
+      return { repository: new ProvidersRepository({ connect: vi.fn().mockResolvedValue(client), query: findById } as never), client, findById };
+    }
+
+    it('provider-only company: deactivating the provider role also deactivates the company (no other active role remains)', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', observaciones: null, estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce({ rows: [{ rol: 'PROVEEDOR', estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      const { repository } = repositoryForChangeStatus(query, [{ id: '121', status: 'INACTIVO' }]);
+
+      await repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
+
+      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['INACTIVO', 121, 'PROVEEDOR']);
+      expect(query).toHaveBeenCalledWith('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['INACTIVO', 121]);
+      expect(query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('provider + client company: deactivating the provider role leaves CLIENTE and the company ACTIVO', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', observaciones: null, estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce({ rows: [{ rol: 'PROVEEDOR', estatus: 'ACTIVO' }, { rol: 'CLIENTE', estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      const { repository } = repositoryForChangeStatus(query, [{ id: '121', status: 'ACTIVO' }]);
+
+      await repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
+
+      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['INACTIVO', 121, 'PROVEEDOR']);
+      // The company-level UPDATE must never run — CLIENTE is still active.
+      expect(query).not.toHaveBeenCalledWith(expect.stringContaining('UPDATE core.empresas SET estatus'), expect.anything());
+      expect(query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('reactivation restores the provider role and, if needed, the company', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', observaciones: null, estatus: 'INACTIVO' }] })
+        .mockResolvedValueOnce({ rows: [{ rol: 'PROVEEDOR', estatus: 'INACTIVO' }] })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      const { repository } = repositoryForChangeStatus(query, [{ id: '121', status: 'ACTIVO' }]);
+
+      await repository.changeStatus(121, 'ACTIVO', 'request-reactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
+
+      expect(query).toHaveBeenCalledWith('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['ACTIVO', 121]);
+      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['ACTIVO', 121, 'PROVEEDOR']);
+      expect(query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('throws PROVIDER_ALREADY_INACTIVE when the provider role (not the company) is already inactive, and rolls back', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', observaciones: null, estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce({ rows: [{ rol: 'PROVEEDOR', estatus: 'INACTIVO' }, { rol: 'CLIENTE', estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce(undefined);
+      const { repository } = repositoryForChangeStatus(query, []);
+
+      await expect(repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' })).rejects.toMatchObject({ code: 'PROVIDER_ALREADY_INACTIVE' });
+      expect(query).toHaveBeenCalledWith('ROLLBACK');
+      expect(query).not.toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('returns null when the company has no provider-type role at all (never a provider)', async () => {
+      const query = vi.fn()
+        .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'CLIENTE', nombre_comercial: 'Acme', observaciones: null, estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce({ rows: [{ rol: 'CLIENTE', estatus: 'ACTIVO' }] })
+        .mockResolvedValueOnce(undefined);
+      const { repository } = repositoryForChangeStatus(query, []);
+
+      await expect(repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' })).resolves.toBeNull();
+      expect(query).toHaveBeenCalledWith('COMMIT');
+    });
   });
 });

@@ -8,7 +8,8 @@ const { createAuthenticatedTestSession, cleanupAuthenticatedTestSession } = requ
 let sessionCookie = null;
 
 const port = 3102;
-const marker = `HUB_TEST_PROVIDER_${randomUUID().replace(/-/g, '').toUpperCase()}`;
+const runnerFixturePrefix = 'HUB_TEST_PROVIDER_';
+const marker = `${runnerFixturePrefix}${randomUUID().replace(/-/g, '').toUpperCase()}`;
 const cleanupRequestId = `cleanup-${randomUUID()}`;
 const createdIds = new Set();
 const requestIds = new Set([cleanupRequestId]);
@@ -259,7 +260,7 @@ async function run() {
     assert(listedFiscal.fiscal && listedFiscal.fiscal.id === withFiscal.body.data.fiscal.id && listedFiscal.fiscal.legalName === 'Hub Test Legal Name', 'Provider listing did not select the current fiscal record.');
 
     const deactivated = await changeProviderStatus(noFiscal.body.data.id, 'deactivate');
-    assert(deactivated.response.status === 201 && deactivated.body.data.status === 'INACTIVO', `Provider deactivation failed: ${JSON.stringify(deactivated.body)}`);
+    assert(deactivated.response.status === 200 && deactivated.body.data.status === 'INACTIVO', `Provider deactivation failed: ${JSON.stringify(deactivated.body)}`);
     const defaultAfterDeactivate = await getProviders(`?search=${encodeURIComponent(marker)}`);
     assert(defaultAfterDeactivate.body.meta.total === 2 && defaultAfterDeactivate.body.data.every((provider) => provider.id !== noFiscal.body.data.id), 'Default directory included an inactive provider.');
     const inactiveDirectory = await getProviders(`?search=${encodeURIComponent(marker)}&status=INACTIVO`);
@@ -267,13 +268,41 @@ async function run() {
     const allDirectory = await getProviders(`?search=${encodeURIComponent(marker)}&status=ALL`);
     assert(allDirectory.body.meta.total === 3, 'All directory filter did not include active and inactive providers.');
     const inactiveDetail = await getProvider(noFiscal.body.data.id);
-    assert(inactiveDetail.response.status === 200 && inactiveDetail.body.data.status === 'INACTIVO' && inactiveDetail.body.data.roles.join(',') === 'PROVEEDOR' && inactiveDetail.body.data.fiscal === null, 'Deactivation changed provider membership or detail data.');
+    // Role-aware lifecycle (Phase 9B): deactivation now actually deactivates the PROVEEDOR role
+    // row itself (not just the company), so `roles` (the currently-ACTIVE role aggregate) is
+    // empty afterward, while `providerType` still identifies which role this is (unfiltered by
+    // its own estatus, so the record stays discoverable/editable-status-wise right after the
+    // mutation instead of losing its identity).
+    assert(inactiveDetail.response.status === 200 && inactiveDetail.body.data.status === 'INACTIVO' && inactiveDetail.body.data.providerType === 'PROVEEDOR' && Array.isArray(inactiveDetail.body.data.roles) && inactiveDetail.body.data.roles.length === 0 && inactiveDetail.body.data.fiscal === null, 'Deactivation did not correctly update provider role membership or detail data.');
     const repeatedDeactivate = await changeProviderStatus(noFiscal.body.data.id, 'deactivate');
     assert(repeatedDeactivate.response.status === 409 && repeatedDeactivate.body.code === 'PROVIDER_ALREADY_INACTIVE', 'Repeated deactivation did not return the expected conflict.');
     const reactivated = await changeProviderStatus(noFiscal.body.data.id, 'reactivate');
-    assert(reactivated.response.status === 201 && reactivated.body.data.status === 'ACTIVO', `Provider reactivation failed: ${JSON.stringify(reactivated.body)}`);
+    assert(reactivated.response.status === 200 && reactivated.body.data.status === 'ACTIVO', `Provider reactivation failed: ${JSON.stringify(reactivated.body)}`);
+    // Role-aware lifecycle (Phase 9B): for a single-role Provider, deactivate/reactivate touches
+    // BOTH the empresa_roles row (always) and the empresas row (cascades because no other active
+    // role remains) — unlike the previous whole-company-only behavior this replaced.
     const lifecycleAudit = await pool.query(`SELECT ${auditTableColumn} AS table_name FROM audit.cambios WHERE ${auditOriginColumn} = $1 AND request_id = ANY($2::text[])`, ['DAUBERT_HUB', [deactivated.requestId, reactivated.requestId]]);
-    assert(lifecycleAudit.rows.length === 2 && lifecycleAudit.rows.every((row) => row.table_name === 'empresas'), 'Lifecycle audit touched tables other than core.empresas.');
+    assert(lifecycleAudit.rows.length === 4 && lifecycleAudit.rows.every((row) => row.table_name === 'empresas' || row.table_name === 'empresa_roles'), 'Lifecycle audit touched unexpected tables.');
+    assert(lifecycleAudit.rows.filter((row) => row.table_name === 'empresa_roles').length === 2, 'Lifecycle audit did not record both role-scoped changes.');
+    assert(lifecycleAudit.rows.filter((row) => row.table_name === 'empresas').length === 2, 'Lifecycle audit did not record both company-cascade changes for the single-role provider.');
+
+    const clientRoleRequestId = `provider-client-role-${randomUUID()}`;
+    requestIds.add(clientRoleRequestId);
+    await queryWithAuditContext(pool, clientRoleRequestId, "INSERT INTO core.empresa_roles (empresa_id, rol, estatus) VALUES ($1, 'CLIENTE', 'ACTIVO')", [noFiscal.body.data.id]);
+    const multiRoleDeactivated = await changeProviderStatus(noFiscal.body.data.id, 'deactivate');
+    assert(multiRoleDeactivated.response.status === 200 && multiRoleDeactivated.body.data.status === 'INACTIVO', 'Multi-role provider deactivation did not expose provider-role status.');
+    const multiRoleState = await pool.query("SELECT e.estatus AS company_status, p.estatus AS provider_status, c.estatus AS client_status FROM core.empresas e JOIN core.empresa_roles p ON p.empresa_id = e.empresa_id AND p.rol = 'PROVEEDOR' JOIN core.empresa_roles c ON c.empresa_id = e.empresa_id AND c.rol = 'CLIENTE' WHERE e.empresa_id = $1", [noFiscal.body.data.id]);
+    assert(multiRoleState.rows[0].company_status === 'ACTIVO' && multiRoleState.rows[0].provider_status === 'INACTIVO' && multiRoleState.rows[0].client_status === 'ACTIVO', 'Multi-role deactivation did not preserve company and CLIENTE status.');
+    const activeAfterMultiRoleDeactivate = await getProviders(`?search=${encodeURIComponent(marker)}&status=ACTIVO`);
+    assert(activeAfterMultiRoleDeactivate.body.data.every((provider) => provider.id !== noFiscal.body.data.id), 'Inactive provider role appeared under Active Providers because its company remained active.');
+    const inactiveAfterMultiRoleDeactivate = await getProviders(`?search=${encodeURIComponent(marker)}&status=INACTIVO`);
+    assert(inactiveAfterMultiRoleDeactivate.body.data.some((provider) => provider.id === noFiscal.body.data.id && provider.status === 'INACTIVO'), 'Inactive provider role did not appear under Inactive Providers.');
+    const multiRoleInactiveDetail = await getProvider(noFiscal.body.data.id);
+    assert(multiRoleInactiveDetail.body.data.status === 'INACTIVO' && multiRoleInactiveDetail.body.data.roles.join(',') === 'CLIENTE', 'Provider detail conflated active company status with inactive provider-role status.');
+    const multiRoleReactivated = await changeProviderStatus(noFiscal.body.data.id, 'reactivate');
+    assert(multiRoleReactivated.response.status === 200 && multiRoleReactivated.body.data.status === 'ACTIVO' && multiRoleReactivated.body.data.roles.join(',') === 'PROVEEDOR,CLIENTE', 'Multi-role provider reactivation did not restore active provider presentation.');
+    const activeAfterMultiRoleReactivate = await getProviders(`?search=${encodeURIComponent(marker)}&status=ACTIVO`);
+    assert(activeAfterMultiRoleReactivate.body.data.some((provider) => provider.id === noFiscal.body.data.id && provider.status === 'ACTIVO'), 'Reactivated provider did not return to Active Providers.');
 
     const commercialDescending = await getProviders(`?search=${encodeURIComponent(marker)}&sortBy=commercialName&sortOrder=desc`);
     assert(commercialDescending.body.data.map((provider) => provider.commercialName).join(',') === [`${marker}_WITH_FISCAL`, `${marker}_NO_FISCAL`, `${marker}_FREIGHT`].join(','), 'Descending commercial-name sorting is incorrect.');
@@ -307,7 +336,6 @@ async function run() {
     const extraRoleRequestId = `provider-role-${randomUUID()}`;
     requestIds.add(extraRoleRequestId);
     await queryWithAuditContext(pool, extraRoleRequestId, "INSERT INTO core.empresa_roles (empresa_id, rol, estatus) VALUES ($1, 'FLETE', 'ACTIVO')", [noFiscal.body.data.id]);
-    await queryWithAuditContext(pool, extraRoleRequestId, "INSERT INTO core.empresa_roles (empresa_id, rol, estatus) VALUES ($1, 'CLIENTE', 'ACTIVO')", [noFiscal.body.data.id]);
     const multiRoleDetail = await getProvider(noFiscal.body.data.id);
     assert(multiRoleDetail.response.status === 200 && multiRoleDetail.body.data.providerType === 'PROVEEDOR' && multiRoleDetail.body.data.roles.join(',') === 'PROVEEDOR,FLETE,CLIENTE', 'Provider detail did not return deterministically ordered active roles.');
     const freightRoles = await getProviders(`?search=${encodeURIComponent(marker)}&providerType=FLETE`);
@@ -394,6 +422,8 @@ async function run() {
       if (databaseVerified) {
         const cleanupDatabase = (await pool.query('SELECT current_database() AS name')).rows[0].name;
         assert(cleanupDatabase === 'daubert_hub_test', `Cleanup database mismatch: ${cleanupDatabase}`);
+        const currentRunCompanies = await pool.query('SELECT empresa_id::text AS id FROM core.empresas WHERE left(nombre_comercial, length($1)) = $1', [marker]);
+        currentRunCompanies.rows.forEach((row) => createdIds.add(row.id));
         if (createdIds.size > 0) {
           const client = await pool.connect();
           try {
@@ -413,9 +443,26 @@ async function run() {
           }
         }
         await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
-        const leftovers = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE $1', ['HUB_TEST_PROVIDER_%']);
-        assert(leftovers.rows[0].count === 0, 'Integration test cleanup left provider records.');
-        console.log('Integration cleanup verified: no HUB_TEST_PROVIDER records remain.');
+        const leftovers = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE left(nombre_comercial, length($1)) = $1', [marker]);
+        assert(leftovers.rows[0].count === 0, `Provider cleanup left fixtures for current-run marker ${marker}.`);
+        console.log(`Provider current-run cleanup verified for exact marker ${marker}.`);
+        const historicalLeftovers = await pool.query(`
+          SELECT 'core.empresas' AS source, empresa_id::text AS id, nombre_comercial AS label
+          FROM core.empresas
+          WHERE left(nombre_comercial, length($1)) = $1 AND left(nombre_comercial, length($2)) <> $2
+          UNION ALL
+          SELECT 'security.users', user_id::text, email
+          FROM security.users
+          WHERE left(email, length($1)) = $1 AND left(email, length($2)) <> $2
+          UNION ALL
+          SELECT 'audit.cambios', cambio_id::text, coalesce(request_id, '(no request_id)')
+          FROM audit.cambios
+          WHERE position($1 in coalesce(datos_anteriores::text, '') || coalesce(datos_nuevos::text, '') || coalesce(usuario_email, '')) > 0
+            AND position($2 in coalesce(datos_anteriores::text, '') || coalesce(datos_nuevos::text, '') || coalesce(usuario_email, '')) = 0
+          ORDER BY source, id`, [runnerFixturePrefix, marker]);
+        if (historicalLeftovers.rows.length > 0) {
+          console.warn(`UNEXPECTED HISTORICAL SYNTHETIC LEFTOVERS (not current-run fixtures; not deleted): ${historicalLeftovers.rows.map((row) => `${row.source}#${row.id} (${row.label})`).join(', ')}`);
+        }
       }
     } finally {
       if (api && !api.killed) {

@@ -66,6 +66,18 @@ interface LockedCompanyRow extends QueryResultRow {
   estatus: string;
 }
 
+interface RoleRow extends QueryResultRow {
+  rol: string;
+  estatus: string;
+}
+
+// A company holds at most one PROVEEDOR/SERVICIO/FLETE role row at a time
+// (create() inserts exactly one; update()'s type-change path UPDATEs that
+// same row's `rol` in place rather than adding a second) — so "the" provider
+// role is unambiguous. Mirrors core.empresa_roles' actual provider-type
+// values; do not add to this set without a corresponding schema change.
+const PROVIDER_ROLE_TYPES = new Set(['PROVEEDOR', 'SERVICIO', 'FLETE']);
+
 interface LockedFiscalRow extends FiscalRow {
   fecha_inicio: string | null;
   fecha_fin: string | null;
@@ -113,19 +125,21 @@ export class ProvidersRepository {
         ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC
         LIMIT 1
       ) fiscal ON TRUE
+      -- Keep inactive provider roles discoverable; the selected role's status
+      -- is authoritative for provider filtering and presentation.
        JOIN LATERAL (
-        SELECT role.rol
+        SELECT role.rol, role.estatus
         FROM core.empresa_roles role
         WHERE role.empresa_id = company.empresa_id
-          AND role.estatus = 'ACTIVO'
           AND role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')
           AND ($1::text IS NULL OR role.rol = $1)
         ORDER BY CASE WHEN role.rol = company.tipo_empresa THEN 0 ELSE 1 END, role.rol
         LIMIT 1
        ) provider_role ON TRUE
+        AND company.estatus <> 'BLOQUEADO'
         AND (
-          (company.estatus = 'ACTIVO' AND $3::text IN ('ACTIVO', 'ALL'))
-          OR (company.estatus = 'INACTIVO' AND $3::text IN ('INACTIVO', 'ALL'))
+          (provider_role.estatus = 'ACTIVO' AND $3::text IN ('ACTIVO', 'ALL'))
+          OR (provider_role.estatus = 'INACTIVO' AND $3::text IN ('INACTIVO', 'ALL'))
         )
         AND (
           $2::text IS NULL
@@ -149,7 +163,7 @@ export class ProvidersRepository {
         company.empresa_id::text AS id,
         company.nombre_comercial AS commercial_name,
         provider_role.rol AS provider_type,
-        company.estatus AS status,
+        CASE WHEN company.estatus = 'BLOQUEADO' THEN 'BLOQUEADO' ELSE provider_role.estatus END AS status,
         company.observaciones AS notes,
         fiscal.empresa_fiscal_id::text AS fiscal_id,
         fiscal.razon_social AS legal_name,
@@ -180,10 +194,10 @@ export class ProvidersRepository {
         company.empresa_id::text AS id,
         company.nombre_comercial AS commercial_name,
         provider_role.rol AS provider_type,
-        provider_roles.roles,
+        COALESCE(provider_roles.roles, ARRAY[]::text[]) AS roles,
         COALESCE(company_aliases.aliases, ARRAY[]::text[]) AS aliases,
         COALESCE(other_company_aliases.aliases, '[]'::jsonb) AS other_aliases,
-        company.estatus AS status,
+        CASE WHEN company.estatus = 'BLOQUEADO' THEN 'BLOQUEADO' ELSE provider_role.estatus END AS status,
         company.observaciones AS notes,
         fiscal.empresa_fiscal_id::text AS fiscal_id,
         fiscal.razon_social AS legal_name,
@@ -196,11 +210,11 @@ export class ProvidersRepository {
         ORDER BY fecha_inicio DESC NULLS LAST, empresa_fiscal_id DESC
         LIMIT 1
       ) fiscal ON TRUE
+      -- Keep inactive provider roles discoverable in detail and status changes.
       JOIN LATERAL (
-        SELECT role.rol
+        SELECT role.rol, role.estatus
         FROM core.empresa_roles role
         WHERE role.empresa_id = company.empresa_id
-          AND role.estatus = 'ACTIVO'
           AND role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')
         ORDER BY CASE WHEN role.rol = company.tipo_empresa THEN 0 ELSE 1 END, role.rol
         LIMIT 1
@@ -269,18 +283,46 @@ export class ProvidersRepository {
     }
   }
 
+  // Role-aware by design, mirroring ClientsRepository.changeStatus(): a
+  // multi-role company (e.g. active PROVEEDOR + active CLIENTE) must not
+  // have its OTHER active roles silently deactivated as a side effect of
+  // deactivating just the provider role, and core.empresas.estatus must
+  // stay ACTIVO as long as at least one role does. Confirmed via Phase 9A
+  // that the previous implementation flipped the whole company's estatus
+  // regardless of other active roles — this was the confirmed defect this
+  // method now fixes.
   async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
       await this.setAuditContext(client, requestId, identity);
-      const company = await this.lockProvider(client, id);
+      const company = await this.lockCompanyRow(client, id);
       if (!company) { await client.query('COMMIT'); return null; }
       if (company.estatus === 'BLOQUEADO') throw Object.assign(new Error('PROVIDER_STATUS_NOT_MANAGEABLE'), { code: 'PROVIDER_STATUS_NOT_MANAGEABLE' });
-      if (company.estatus === targetStatus) {
-        throw Object.assign(new Error(targetStatus === 'ACTIVO' ? 'PROVIDER_ALREADY_ACTIVE' : 'PROVIDER_ALREADY_INACTIVE'), { code: targetStatus === 'ACTIVO' ? 'PROVIDER_ALREADY_ACTIVE' : 'PROVIDER_ALREADY_INACTIVE' });
+      const roles = await this.lockRoles(client, id);
+      const providerRole = roles.find((role) => PROVIDER_ROLE_TYPES.has(role.rol));
+      // No provider-type role row at all (active or not) — this company was
+      // never a provider; matches the pre-existing "not found" behavior.
+      if (!providerRole) { await client.query('COMMIT'); return null; }
+
+      if (targetStatus === 'INACTIVO') {
+        if (providerRole.estatus !== 'ACTIVO') throw Object.assign(new Error('PROVIDER_ALREADY_INACTIVE'), { code: 'PROVIDER_ALREADY_INACTIVE' });
+        await client.query('UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3', ['INACTIVO', id, providerRole.rol]);
+        // Only cascade to the whole company when no OTHER role (e.g. CLIENTE)
+        // is still active — a multi-role company stays ACTIVO otherwise.
+        const otherRoleStillActive = roles.some((role) => role.rol !== providerRole.rol && role.estatus === 'ACTIVO');
+        if (!otherRoleStillActive) {
+          await client.query('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['INACTIVO', id]);
+        }
+      } else {
+        if (providerRole.estatus === 'ACTIVO' && company.estatus === 'ACTIVO') {
+          throw Object.assign(new Error('PROVIDER_ALREADY_ACTIVE'), { code: 'PROVIDER_ALREADY_ACTIVE' });
+        }
+        if (company.estatus !== 'ACTIVO') {
+          await client.query('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['ACTIVO', id]);
+        }
+        await client.query('UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3', ['ACTIVO', id, providerRole.rol]);
       }
-      await client.query('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', [targetStatus, id]);
       await client.query('COMMIT');
       return this.findById(id);
     } catch (error) {
@@ -300,6 +342,24 @@ export class ProvidersRepository {
     const activeRoles = roles.rows.map((role) => role.rol);
     if (!activeRoles.some((role) => ['PROVEEDOR', 'SERVICIO', 'FLETE'].includes(role))) return null;
     return { ...row, roles: activeRoles };
+  }
+
+  // Plain company row, no role join/filter — used by changeStatus(), which
+  // must be able to find and lock a company regardless of whether its
+  // provider role is currently active (mirrors ClientsRepository.lockCompany).
+  private async lockCompanyRow(client: PoolClient, id: number): Promise<LockedCompanyRow | null> {
+    const result = await client.query<LockedCompanyRow>(
+      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
+    return result.rows[0] ?? null;
+  }
+
+  // ALL role rows regardless of estatus — used by changeStatus() to find the
+  // provider role in either state and to check whether any OTHER role is
+  // still active before cascading to core.empresas.estatus (mirrors
+  // ClientsRepository.lockRoles()).
+  private async lockRoles(client: PoolClient, id: number): Promise<RoleRow[]> {
+    const result = await client.query<RoleRow>('SELECT rol, estatus FROM core.empresa_roles WHERE empresa_id = $1 FOR UPDATE', [id]);
+    return result.rows;
   }
 
   private async lockCurrentFiscal(client: PoolClient, id: number): Promise<LockedFiscalRow | null> {
