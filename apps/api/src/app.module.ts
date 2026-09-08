@@ -4,6 +4,7 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from './config/environment';
 import { AuthGuard } from './security/auth.guard';
+import { CsrfOriginGuard } from './security/csrf-origin.guard';
 import { MustChangePasswordGuard } from './security/must-change-password.guard';
 import { RolesGuard } from './security/roles.guard';
 import { DatabaseModule } from './database/database.module';
@@ -38,12 +39,15 @@ import { SecurityModule } from './security/security.module';
     SecurityModule
   ],
   providers: [
-    // Order matters: AuthGuard (authentication) must run before
-    // MustChangePasswordGuard (password-state policy), which must run before
-    // RolesGuard (role authorization) — each guard depends on request.user
-    // (AuthGuard) or the previous guard's policy check already having
-    // passed. Nest applies multiple APP_GUARD providers in this registration
-    // order.
+    // Order matters: CsrfOriginGuard runs FIRST, before any session lookup,
+    // password-state check, or role check — an obviously cross-site browser
+    // request is rejected before any of that work happens (see
+    // csrf-origin.guard.ts). Then AuthGuard (authentication) before
+    // MustChangePasswordGuard (password-state policy), before RolesGuard
+    // (role authorization) — each guard depends on request.user (AuthGuard)
+    // or the previous guard's policy check already having passed. Nest
+    // applies multiple APP_GUARD providers in this registration order.
+    { provide: APP_GUARD, useClass: CsrfOriginGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: MustChangePasswordGuard },
     { provide: APP_GUARD, useClass: RolesGuard }
