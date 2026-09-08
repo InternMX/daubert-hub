@@ -4,6 +4,7 @@ import { DatabaseModule } from '../database/database.module';
 import type { EnvironmentConfig } from '../config/environment';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginRateLimiterService } from './login-rate-limiter.service';
 import { PasswordService } from './password.service';
 import { COOKIE_SECURITY_CONFIG, type CookieSecurityConfig } from './session-cookie';
 import { SessionsRepository } from './sessions.repository';
@@ -23,6 +24,7 @@ import { UsersService } from './users.service';
     UsersService,
     SessionsRepository,
     SessionsService,
+    LoginRateLimiterService,
     AuthService,
     {
       provide: COOKIE_SECURITY_CONFIG,

@@ -109,6 +109,30 @@ describe('login flow', () => {
     expect(await screen.findByText('Correo o contraseña incorrectos.')).toBeInTheDocument();
   });
 
+  it('shows the backend Spanish rate-limit message on a 429, without exposing technical details or clearing unrelated state', async () => {
+    const user = userEvent.setup();
+    const rateLimitMessage = 'Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde.';
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/auth/me')) return Promise.resolve(jsonResponse({ statusCode: 401, message: 'No autenticado.' }, 401));
+      if (url.endsWith('/auth/login')) return Promise.resolve(jsonResponse({ statusCode: 429, code: 'LOGIN_RATE_LIMITED', message: rateLimitMessage }, 429));
+      return Promise.resolve(jsonResponse({ data: [] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderApp('/login');
+    await screen.findByRole('heading', { name: 'Daubert Hub' });
+    await user.type(screen.getByLabelText('Correo electrónico'), 'someone@daubertcromwell.com');
+    await user.type(screen.getByLabelText('Contraseña'), 'whatever-password');
+    await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+
+    expect(await screen.findByText(rateLimitMessage)).toBeInTheDocument();
+    // Still on the login page, submit button re-enabled — no navigation, no
+    // fabricated authenticated state from a 429.
+    expect(screen.getByRole('heading', { name: 'Daubert Hub' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Iniciar sesión' })).toBeEnabled();
+  });
+
   it('disables the submit button while a login request is pending, preventing duplicate submissions', async () => {
     const user = userEvent.setup();
     let resolveLogin: (value: Response) => void = () => undefined;

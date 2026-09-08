@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 import type { QueryResultRow } from 'pg';
 import { AppModule } from './app.module';
 import { SafeExceptionFilter } from './common/http-exception.filter';
@@ -40,6 +41,17 @@ async function assertExpectedDatabaseIfConfigured(app: Awaited<ReturnType<typeof
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
+  // The API only ever returns JSON (no HTML views), so a locked-down,
+  // no-inline-anything CSP is safe here — it's not fighting a real frontend
+  // render path. HSTS stays off: current deployment is local HTTP TEST
+  // behind a Cloudflare Quick Tunnel/Nginx, not HTTPS end-to-end at this
+  // API; forcing HSTS here would be a lie about the transport and could
+  // stick in browsers past the tunnel's lifetime. Revisit once the API is
+  // deployed behind real, permanent TLS (see Phase 8B).
+  app.use(helmet({
+    contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+    hsts: false
+  }));
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
   app.useGlobalFilters(new SafeExceptionFilter());
 

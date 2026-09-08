@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/
 import { randomUUID } from 'node:crypto';
 import type { AuditContext } from './audit-context';
 import type { AuditIdentity } from '../common/authenticated-request';
+import { LoginRateLimiterService } from './login-rate-limiter.service';
+import { normalizeEmail } from './normalize-email';
 import { PasswordPolicyError } from './password-policy';
 import { PasswordService } from './password.service';
 import { SessionsService } from './sessions.service';
@@ -30,19 +32,28 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly passwords: PasswordService,
-    private readonly sessions: SessionsService
+    private readonly sessions: SessionsService,
+    private readonly loginRateLimiter: LoginRateLimiterService
   ) {}
 
   async login(email: string, password: string): Promise<LoginResult> {
+    const normalizedEmail = normalizeEmail(email);
+    // Checked before any credential lookup: a caller already blocked never
+    // triggers a database round trip or an Argon2 verification.
+    this.loginRateLimiter.assertNotBlocked(normalizedEmail);
+
     const row = await this.users.findForAuthentication(email);
     const passwordMatches = await this.passwords.verifyPassword(row?.passwordHash ?? DUMMY_PASSWORD_HASH, password);
 
     // Unknown email, wrong password, and an inactive user all fail exactly
-    // the same way externally — never reveal which condition applied.
+    // the same way externally — never reveal which condition applied. That
+    // includes rate-limit bookkeeping: all three record a failure the same way.
     if (!row || !passwordMatches || row.status !== 'ACTIVE') {
+      this.loginRateLimiter.recordFailure(normalizedEmail);
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
+    this.loginRateLimiter.recordSuccess(normalizedEmail);
     const session = await this.sessions.createSession(row.id);
 
     // A fresh, unrelated request id — never the raw session token, which

@@ -5,6 +5,7 @@ import { useAuth } from './authContext.core';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Correo o contraseña incorrectos.';
 const GENERIC_ERROR_MESSAGE = 'No se pudo iniciar sesión. Inténtalo nuevamente.';
+const RATE_LIMITED_FALLBACK_MESSAGE = 'Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde.';
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
 
 export function LoginPage() {
@@ -24,7 +25,17 @@ export function LoginPage() {
       // On success, AuthContext's updated user flows into PublicOnlyRoute,
       // which redirects away from this page — no navigation happens here.
     } catch (caught) {
-      setError(caught instanceof AuthApiError && caught.status === 401 ? INVALID_CREDENTIALS_MESSAGE : GENERIC_ERROR_MESSAGE);
+      // Never logs the password or any technical/database detail — only a
+      // fixed message per known status is ever shown. A 429 renders the
+      // backend's own restrained Spanish message (falling back to a local
+      // copy if it's ever missing), never a raw/technical error.
+      if (caught instanceof AuthApiError && caught.status === 401) {
+        setError(INVALID_CREDENTIALS_MESSAGE);
+      } else if (caught instanceof AuthApiError && caught.status === 429) {
+        setError(caught.message || RATE_LIMITED_FALLBACK_MESSAGE);
+      } else {
+        setError(GENERIC_ERROR_MESSAGE);
+      }
       setSubmitting(false);
     }
   }

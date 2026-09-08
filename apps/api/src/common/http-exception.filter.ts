@@ -16,7 +16,23 @@ export class SafeExceptionFilter implements ExceptionFilter {
       this.logger.error(`Unhandled request: ${request.method} ${request.url}`, exception instanceof Error ? exception.stack : undefined);
     }
 
+    const retryAfterSeconds = this.retryAfterFor(httpException);
+    if (retryAfterSeconds !== undefined) response.set('Retry-After', String(retryAfterSeconds));
+
     response.status(status).json(body);
+  }
+
+  // Standard Retry-After header (RFC 9110 §10.2.3), in seconds. Read from an
+  // opt-in `retryAfterSeconds` field on the exception's response payload
+  // (currently only LoginRateLimiterService's 429) — never included in the
+  // JSON body itself (see responseFor, which never extracts it), and never
+  // varies based on anything that could reveal whether an account exists.
+  private retryAfterFor(exception: HttpException | undefined): number | undefined {
+    if (!exception) return undefined;
+    const payload = exception.getResponse();
+    if (typeof payload !== 'object' || payload === null || !('retryAfterSeconds' in payload)) return undefined;
+    const value = (payload as { retryAfterSeconds: unknown }).retryAfterSeconds;
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
   private responseFor(exception: HttpException): { statusCode: number; message: string; code?: string } {
