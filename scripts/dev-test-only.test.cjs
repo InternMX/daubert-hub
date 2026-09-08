@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { parseGuardedTestDatabaseUrl, resolveTestDatabaseUrl, deriveDatabaseEnv, EXPECTED_DATABASE_NAME } = require('./dev-test-only.cjs');
+const { parseGuardedTestDatabaseUrl, resolveTestDatabaseUrl, deriveDatabaseEnv, EXPECTED_DATABASE_NAME, readRootVersion, readGitCommit, deriveReleaseEnv } = require('./dev-test-only.cjs');
 
 test('EXPECTED_DATABASE_NAME is daubert_hub_test', () => {
   assert.equal(EXPECTED_DATABASE_NAME, 'daubert_hub_test');
@@ -107,4 +107,41 @@ test('deriveDatabaseEnv overrides DB_* and sets EXPECTED_DATABASE_NAME from the 
     DB_PASSWORD: 'local-test-only',
     EXPECTED_DATABASE_NAME: 'daubert_hub_test'
   });
+});
+
+test('readRootVersion reads the semantic version straight out of the real root package.json', () => {
+  const version = readRootVersion();
+  assert.equal(typeof version, 'string');
+  assert.match(version, /^\d+\.\d+\.\d+/);
+});
+
+test('readRootVersion returns undefined rather than throwing when package.json is missing/unparsable', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-test-only-version-'));
+  try {
+    const originalReadFileSync = fs.readFileSync;
+    fs.readFileSync = (target, ...rest) => {
+      if (String(target).endsWith('package.json')) throw new Error('ENOENT');
+      return originalReadFileSync(target, ...rest);
+    };
+    try {
+      assert.equal(readRootVersion(), undefined);
+    } finally {
+      fs.readFileSync = originalReadFileSync;
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readGitCommit returns a short SHA-shaped string in this real git checkout, or undefined if git is unavailable', () => {
+  const commit = readGitCommit();
+  assert.ok(commit === undefined || /^[0-9a-f]{4,40}$/i.test(commit));
+});
+
+test('deriveReleaseEnv never throws and only includes keys it could actually resolve', () => {
+  const env = deriveReleaseEnv();
+  const keys = Object.keys(env);
+  assert.ok(keys.every((key) => key === 'APP_VERSION' || key === 'GIT_COMMIT'));
+  if ('APP_VERSION' in env) assert.equal(typeof env.APP_VERSION, 'string');
+  if ('GIT_COMMIT' in env) assert.equal(typeof env.GIT_COMMIT, 'string');
 });

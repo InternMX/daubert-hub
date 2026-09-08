@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
-import { getRuntimeEnvironment } from '../services/health';
+import { getHealth } from '../services/health';
 import { installSessionInterceptor } from '../services/httpInterceptor';
 import { AuthProvider } from './AuthContext';
 
@@ -10,7 +10,7 @@ import { AuthProvider } from './AuthContext';
 // together with AuthProvider and real, unmocked services/clients — proving that a
 // business API call, not just /auth/*, drives session-expiration/PASSWORD_CHANGE_REQUIRED
 // handling end to end.
-vi.mock('../services/health', () => ({ getRuntimeEnvironment: vi.fn() }));
+vi.mock('../services/health', () => ({ getHealth: vi.fn() }));
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -28,7 +28,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 beforeEach(() => {
   fetchMock.mockReset();
-  vi.mocked(getRuntimeEnvironment).mockResolvedValue('TEST');
+  vi.mocked(getHealth).mockResolvedValue({ environment: 'TEST', version: '0.8.0-pilot.1', commit: 'a1b2c3d' });
 });
 
 function renderApp(path = '/clients') {

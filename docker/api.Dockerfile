@@ -22,7 +22,17 @@ RUN npm ci --omit=dev --workspace=@daubert/api --include-workspace-root=false \
 
 FROM node:24-alpine AS runtime
 
+# Release/build metadata (see apps/api/src/config/environment.ts and GET
+# /api/health) — passed in at build time via `docker build --build-arg` (or
+# compose.pilot.yaml's build.args), never derived from commit count. Both
+# have safe defaults so an ordinary `docker build` with no args still
+# produces a working image; APP_VERSION should normally be set from the root
+# package.json "version" and GIT_COMMIT from `git rev-parse --short HEAD`.
+ARG APP_VERSION=unknown
+ARG GIT_COMMIT=unknown
 ENV NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION}
+ENV GIT_COMMIT=${GIT_COMMIT}
 WORKDIR /app
 
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules

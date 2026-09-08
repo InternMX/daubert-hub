@@ -13,7 +13,7 @@ import { NavLink } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import { useAuth } from '../auth/authContext.core';
-import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
+import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { roleLabels } from '../services/userLabels';
 import { appTokens } from '../theme';
 
@@ -58,6 +58,24 @@ function NavigationItem({ to, label, end, icon: Icon, collapsed }: typeof naviga
           </ListItemButton>
         )}
       </NavLink>
+    </Tooltip>
+  );
+}
+
+// Visually secondary, discreet — never as prominent as the environment
+// chip. The Git commit is deliberately never shown in the normal UI, only
+// in the tooltip, and only when the backend actually reports one.
+function VersionFooter({ version, commit, collapsed }: { version: string | null; commit: string | null; collapsed: boolean }) {
+  if (!version || collapsed) return null;
+
+  const label = `v${version}`;
+  const title = commit ? `${label} · ${commit}` : label;
+
+  return (
+    <Tooltip title={title} placement="right">
+      <Typography noWrap variant="caption" color={appTokens.navigationMuted} sx={{ px: 1, mt: 1, display: 'block', fontSize: '0.6875rem', cursor: 'default' }}>
+        {label}
+      </Typography>
     </Tooltip>
   );
 }
@@ -107,6 +125,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [hasExplicitPreference, setHasExplicitPreference] = useState(initialPreference !== undefined);
   const [collapsed, setCollapsed] = useState(initialPreference ?? !wideViewport);
   const [runtimeEnvironment, setRuntimeEnvironment] = useState<RuntimeEnvironment | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [appCommit, setAppCommit] = useState<string | null>(null);
   const sidebarWidth = collapsed ? collapsedWidth : expandedWidth;
 
   useEffect(() => {
@@ -115,8 +135,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    getRuntimeEnvironment()
-      .then((environment) => { if (active) setRuntimeEnvironment(environment); })
+    getHealth()
+      .then((health) => {
+        if (!active) return;
+        setRuntimeEnvironment(health.environment);
+        setAppVersion(health.version);
+        setAppCommit(health.commit);
+      })
       .catch(() => { if (active) setRuntimeEnvironment('UNKNOWN'); });
     return () => { active = false; };
   }, []);
@@ -180,6 +205,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
           <UserIdentity collapsed={collapsed} />
+          <VersionFooter version={appVersion} commit={appCommit} collapsed={collapsed} />
         </Stack>
       </Box>
       <Box component="main" sx={{ minWidth: 0, px: { xs: 3, sm: 4, lg: 6 }, py: { xs: 4, md: 5 } }}>

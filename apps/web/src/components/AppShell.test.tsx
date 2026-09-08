@@ -3,11 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '../auth/authContext.core';
-import { getRuntimeEnvironment, type RuntimeEnvironment } from '../services/health';
+import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { createAuthContextValue, testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
 import { AppShell } from './AppShell';
 
-vi.mock('../services/health', () => ({ getRuntimeEnvironment: vi.fn() }));
+vi.mock('../services/health', () => ({ getHealth: vi.fn() }));
+
+function mockHealth(environment: RuntimeEnvironment, version: string | null = null, commit: string | null = null) {
+  vi.mocked(getHealth).mockResolvedValue({ environment, version, commit });
+}
 
 function mockWideViewport(initiallyWide: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -43,8 +47,8 @@ function shell() { return screen.getByTestId('app-shell'); }
 beforeEach(() => {
   localStorage.clear();
   document.title = 'Daubert Hub';
-  vi.mocked(getRuntimeEnvironment).mockReset();
-  vi.mocked(getRuntimeEnvironment).mockImplementation(() => new Promise<never>(() => undefined));
+  vi.mocked(getHealth).mockReset();
+  vi.mocked(getHealth).mockImplementation(() => new Promise<never>(() => undefined));
 });
 afterEach(() => { localStorage.clear(); document.title = 'Daubert Hub'; vi.unstubAllGlobals(); });
 
@@ -66,7 +70,7 @@ describe('AppShell sidebar', () => {
     ['UNKNOWN', 'ENTORNO DESCONOCIDO', 'Daubert Hub · UNKNOWN']
   ] as const)('renders the %s environment and updates the browser title', async (environment, label, title) => {
     mockWideViewport(true);
-    vi.mocked(getRuntimeEnvironment).mockResolvedValue(environment as RuntimeEnvironment);
+    mockHealth(environment as RuntimeEnvironment);
 
     renderShell();
 
@@ -76,7 +80,7 @@ describe('AppShell sidebar', () => {
 
   it('shows an unknown environment without claiming test or production when the request fails', async () => {
     mockWideViewport(true);
-    vi.mocked(getRuntimeEnvironment).mockRejectedValue(new Error('unavailable'));
+    vi.mocked(getHealth).mockRejectedValue(new Error('unavailable'));
 
     renderShell();
 
@@ -89,7 +93,7 @@ describe('AppShell sidebar', () => {
   it('keeps the environment visible while navigating the application', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
-    vi.mocked(getRuntimeEnvironment).mockResolvedValue('TEST');
+    mockHealth('TEST');
     renderShell();
     await screen.findByText('PRUEBAS');
 
@@ -226,6 +230,56 @@ describe('AppShell sidebar', () => {
     expect(screen.getByText('Clients page')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Clientes' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Proveedores' })).not.toHaveAttribute('aria-current', 'page');
+  });
+});
+
+describe('AppShell version footer', () => {
+  it('renders the discreet "vX.Y.Z" version near the bottom of the expanded sidebar', async () => {
+    mockWideViewport(true);
+    mockHealth('TEST', '0.8.0-pilot.1', 'a1b2c3d');
+
+    renderShell();
+
+    expect(await screen.findByText('v0.8.0-pilot.1')).toBeInTheDocument();
+    // Never prominent — the raw commit SHA must not appear as visible text.
+    expect(screen.queryByText('a1b2c3d')).not.toBeInTheDocument();
+  });
+
+  it('exposes "vX.Y.Z · commit" only via tooltip, not in the visible UI', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    mockHealth('TEST', '0.8.0-pilot.1', 'a1b2c3d');
+    renderShell();
+    const versionText = await screen.findByText('v0.8.0-pilot.1');
+
+    await user.hover(versionText);
+
+    expect(await screen.findByRole('tooltip', { name: 'v0.8.0-pilot.1 · a1b2c3d' })).toBeInTheDocument();
+  });
+
+  it('hides the version entirely while the sidebar is collapsed, and the sidebar remains otherwise usable', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    mockHealth('TEST', '0.8.0-pilot.1', 'a1b2c3d');
+    renderShell();
+    await screen.findByText('v0.8.0-pilot.1');
+
+    await user.click(screen.getByRole('button', { name: 'Contraer menú' }));
+
+    expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'true');
+    expect(screen.queryByText('v0.8.0-pilot.1')).not.toBeInTheDocument();
+    // Collapsed sidebar remains fully usable: navigation and logout still work.
+    expect(screen.getByRole('link', { name: 'Inicio' })).toBeInTheDocument();
+  });
+
+  it('renders nothing (no crash, no empty placeholder) when the backend does not report a version', async () => {
+    mockWideViewport(true);
+    mockHealth('TEST', null, null);
+
+    renderShell();
+
+    await screen.findByText('PRUEBAS');
+    expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
   });
 });
 

@@ -3,6 +3,15 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+      # Smallest mechanism to pass release/build metadata through to the
+      # image (see docker/api.Dockerfile and apps/api/src/config/
+      # environment.ts). Left unset, both default to "unknown" — set
+      # APP_VERSION/GIT_COMMIT in the shell before `docker compose build`
+      # (e.g. APP_VERSION=$(node -p "require('./package.json').version")
+      # GIT_COMMIT=$(git rev-parse --short HEAD)) to have them baked in.
+      args:
+        APP_VERSION: "${APP_VERSION:-unknown}"
+        GIT_COMMIT: "${GIT_COMMIT:-unknown}"
     restart: unless-stopped
     environment:
       DB_HOST: "${DB_HOST:?DB_HOST is required}"

@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
-import { getRuntimeEnvironment } from '../services/health';
+import { getHealth } from '../services/health';
 import { listClients } from '../services/clients';
 import { listRecentActivity } from '../services/recentActivity';
 import { getUser, updateUser } from '../services/users';
 import { AuthProvider } from './AuthContext';
 import { useAuth } from './authContext.core';
 
-vi.mock('../services/health', () => ({ getRuntimeEnvironment: vi.fn() }));
+vi.mock('../services/health', () => ({ getHealth: vi.fn() }));
 vi.mock('../services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
 vi.mock('../services/clients', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/clients')>()),
@@ -35,7 +35,7 @@ function renderApp(path = '/') {
 }
 
 beforeEach(() => {
-  vi.mocked(getRuntimeEnvironment).mockResolvedValue('TEST');
+  vi.mocked(getHealth).mockResolvedValue({ environment: 'TEST', version: '0.8.0-pilot.1', commit: 'a1b2c3d' });
   vi.mocked(listRecentActivity).mockResolvedValue([]);
   vi.mocked(listClients).mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 1 } });
 });

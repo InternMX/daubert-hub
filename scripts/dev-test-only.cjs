@@ -22,7 +22,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 
 const EXPECTED_DATABASE_NAME = 'daubert_hub_test';
 const ROOT_DIR = path.join(__dirname, '..');
@@ -101,6 +101,42 @@ function deriveDatabaseEnv(url, databaseName) {
   };
 }
 
+// Release/build metadata for local development (see apps/api/src/config/
+// environment.ts's app.version/app.commit and GET /api/health). ROOT_DIR is
+// always the actual repo root here (this script itself lives at
+// <repo>/scripts/, an unambiguous, fixed location) — unlike reading
+// package.json from inside apps/api's compiled output, there is no
+// dev-vs-dist path-depth ambiguity to worry about.
+//
+// Best-effort only: an already-set APP_VERSION/GIT_COMMIT in the
+// developer's own shell always wins (see main()), and any failure here
+// (unreadable package.json, git not installed, not a git checkout) is
+// swallowed — this must never block `npm run dev` from starting, and a
+// missing commit is an explicitly accepted local fallback ("unknown").
+function readRootVersion() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
+    return typeof parsed.version === 'string' && parsed.version.trim() ? parsed.version.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readGitCommit() {
+  try {
+    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT_DIR, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return sha || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function deriveReleaseEnv() {
+  const version = readRootVersion();
+  const commit = readGitCommit();
+  return { ...(version ? { APP_VERSION: version } : {}), ...(commit ? { GIT_COMMIT: commit } : {}) };
+}
+
 const isWindows = process.platform === 'win32';
 
 // Kills a spawned child's whole process tree, not just the immediate child. `npm run <script>`
@@ -150,7 +186,10 @@ function main() {
   console.log(`[dev:test-only] TEST_DATABASE_URL verified -> database: ${guarded.databaseName}`);
   console.log('[dev:test-only] Starting API + web against the TEST database only.');
 
-  const env = { ...process.env, ...deriveDatabaseEnv(guarded.url, guarded.databaseName) };
+  // Order matters: deriveReleaseEnv()'s values go first so an already-set
+  // APP_VERSION/GIT_COMMIT in the developer's own shell (process.env) always
+  // takes precedence — same override convention as TEST_DATABASE_URL above.
+  const env = { ...deriveReleaseEnv(), ...process.env, ...deriveDatabaseEnv(guarded.url, guarded.databaseName) };
 
   // --race semantics: both start together; if either exits for any reason, tear down the other
   // and stop, exactly like the previous npm-run-all-based behavior.
@@ -177,6 +216,6 @@ function main() {
   process.on('SIGTERM', () => shutdown(0, 'SIGTERM'));
 }
 
-module.exports = { EXPECTED_DATABASE_NAME, loadEnvFileValue, resolveTestDatabaseUrl, parseGuardedTestDatabaseUrl, deriveDatabaseEnv };
+module.exports = { EXPECTED_DATABASE_NAME, loadEnvFileValue, resolveTestDatabaseUrl, parseGuardedTestDatabaseUrl, deriveDatabaseEnv, readRootVersion, readGitCommit, deriveReleaseEnv };
 
 if (require.main === module) main();
