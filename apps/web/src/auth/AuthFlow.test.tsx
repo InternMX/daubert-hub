@@ -296,7 +296,8 @@ describe('logout', () => {
 
     renderApp('/');
     await screen.findByRole('heading', { level: 1, name: 'Inicio' });
-    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Cerrar sesión' }));
 
     expect(await screen.findByRole('heading', { name: 'Daubert Hub' })).toBeInTheDocument();
   });

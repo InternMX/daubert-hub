@@ -8,9 +8,9 @@ import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
-import { Avatar, Box, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
+import { Avatar, Box, ButtonBase, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
@@ -85,7 +85,7 @@ function VersionFooter({ version, commit, collapsed }: { version: string | null;
 // Icon-only, tooltip-labeled — mirrors the collapse/expand control at the
 // top of the sidebar (same pattern: no visible text, just an icon +
 // tooltip/aria-label), which keeps it visually secondary to the more
-// prominent UserIdentity row (avatar, name, role, logout) right below it.
+// prominent account control (avatar, name, role, account menu) right below it.
 // Renders identically whether the sidebar is collapsed or expanded, so
 // there is no separate collapsed-only/expanded-only behavior to keep in sync.
 function AppearanceToggle({ collapsed }: { collapsed: boolean }) {
@@ -104,11 +104,27 @@ function AppearanceToggle({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function UserIdentity({ collapsed }: { collapsed: boolean }) {
+// The whole identity row is a single accessible control (ButtonBase renders
+// a real <button>, so Enter/Space/focus work natively with no extra
+// handling) that opens an account menu — replacing the old side-by-side
+// avatar + standalone logout icon, which had no room to breathe in the
+// narrow collapsed sidebar. Collapsed mode shows only the centered avatar,
+// with the identity available via tooltip and via opening the menu.
+function UserAccountControl({ collapsed }: { collapsed: boolean }) {
   const { user, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const menuOpen = Boolean(anchorEl);
 
   if (!user) return null;
+
+  function handleOpen(event: MouseEvent<HTMLElement>) {
+    setAnchorEl(event.currentTarget);
+  }
+
+  function handleClose() {
+    setAnchorEl(null);
+  }
 
   async function handleLogout() {
     if (signingOut) return;
@@ -120,24 +136,60 @@ function UserIdentity({ collapsed }: { collapsed: boolean }) {
   const initial = user.displayName.trim().charAt(0).toUpperCase() || '?';
 
   return (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ px: collapsed ? 0 : 1, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+    <>
       <Tooltip title={collapsed ? `${user.displayName} · ${roleLabel}` : ''} placement="right">
-        <Avatar sx={{ width: 32, height: 32, fontSize: '0.875rem', bgcolor: appTokens.navigationHover, color: 'common.white' }}>{initial}</Avatar>
+        <ButtonBase
+          id="account-menu-button"
+          aria-label="Cuenta de usuario"
+          aria-haspopup="true"
+          aria-controls={menuOpen ? 'account-menu' : undefined}
+          aria-expanded={menuOpen || undefined}
+          onClick={handleOpen}
+          sx={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            textAlign: 'left',
+            color: 'inherit',
+            borderRadius: 1,
+            px: collapsed ? 0 : 1,
+            py: 0.5,
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            '&:hover': { bgcolor: appTokens.navigationHover },
+            '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 }
+          }}
+        >
+          <Avatar sx={{ width: 32, height: 32, fontSize: '0.875rem', bgcolor: appTokens.navigationHover, color: 'common.white' }}>{initial}</Avatar>
+          {!collapsed && (
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography noWrap variant="body2" sx={{ color: 'common.white', fontWeight: 700, lineHeight: 1.3 }}>{user.displayName}</Typography>
+              <Typography noWrap variant="caption" color={appTokens.navigationMuted}>{roleLabel}</Typography>
+            </Box>
+          )}
+        </ButtonBase>
       </Tooltip>
-      {!collapsed && (
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography noWrap variant="body2" sx={{ color: 'common.white', fontWeight: 700, lineHeight: 1.3 }}>{user.displayName}</Typography>
-          <Typography noWrap variant="caption" color={appTokens.navigationMuted}>{roleLabel}</Typography>
+      <Menu
+        id="account-menu"
+        anchorEl={anchorEl}
+        open={menuOpen}
+        onClose={handleClose}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        slotProps={{ list: { 'aria-labelledby': 'account-menu-button' } }}
+      >
+        <Box sx={{ px: 2, pt: 0.5, pb: 1, minWidth: 200, maxWidth: 280 }}>
+          <Typography noWrap variant="subtitle2" sx={{ fontWeight: 700 }}>{user.displayName}</Typography>
+          <Typography noWrap variant="body2" color="text.secondary">{user.email}</Typography>
+          <Typography variant="caption" color="text.secondary">{roleLabel}</Typography>
         </Box>
-      )}
-      <Tooltip title="Cerrar sesión" placement="right">
-        <span>
-          <IconButton aria-label="Cerrar sesión" size="small" color="inherit" disabled={signingOut} onClick={handleLogout}>
-            <LogoutRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-    </Stack>
+        <Divider />
+        <MenuItem onClick={handleLogout} disabled={signingOut}>
+          <ListItemIcon><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Cerrar sesión</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
   );
 }
 
@@ -229,7 +281,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
           <AppearanceToggle collapsed={collapsed} />
-          <UserIdentity collapsed={collapsed} />
+          <UserAccountControl collapsed={collapsed} />
           <VersionFooter version={appVersion} commit={appCommit} collapsed={collapsed} />
         </Stack>
       </Box>

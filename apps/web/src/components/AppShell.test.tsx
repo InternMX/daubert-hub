@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -373,19 +373,21 @@ describe('AppShell appearance toggle', () => {
 
     const toggle = await screen.findByRole('button', { name: 'Activar modo oscuro' });
     await user.click(toggle);
-    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Cerrar sesión' }));
 
     expect(logout).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('AppShell user identity', () => {
-  it('shows the authenticated ADMIN user with the Spanish role label', () => {
+describe('AppShell account control (expanded)', () => {
+  it('shows the authenticated ADMIN user with the Spanish role label in the identity row, without opening the menu', () => {
     mockWideViewport(true);
     renderShell('/', createAuthContextValue({ user: testAdminUser }));
 
     expect(screen.getByText('Alejandro López')).toBeInTheDocument();
     expect(screen.getByText('Administrador')).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('shows the authenticated GENERAL user with the Spanish role label', () => {
@@ -396,23 +398,193 @@ describe('AppShell user identity', () => {
     expect(screen.getByText('General')).toBeInTheDocument();
   });
 
-  it('logs out when the logout action is used', async () => {
+  it('exposes the identity row as a single accessible control with the documented aria-label', () => {
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    expect(screen.getByRole('button', { name: 'Cuenta de usuario' })).toBeInTheDocument();
+  });
+
+  it('is keyboard accessible: Enter opens the menu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    screen.getByRole('button', { name: 'Cuenta de usuario' }).focus();
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+  });
+
+  it('is keyboard accessible: Space opens the menu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    screen.getByRole('button', { name: 'Cuenta de usuario' }).focus();
+    await user.keyboard(' ');
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+  });
+});
+
+describe('AppShell account menu', () => {
+  it('opens on click and shows displayName, email, and the translated role', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    const menu = await screen.findByRole('menu');
+
+    expect(within(menu).getByText(testAdminUser.displayName)).toBeInTheDocument();
+    expect(within(menu).getByText(testAdminUser.email)).toBeInTheDocument();
+    expect(within(menu).getByText('Administrador')).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Cerrar sesión' })).toBeInTheDocument();
+  });
+
+  it('translates the GENERAL role in the menu too, using actual user data — nothing hardcoded', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testGeneralUser }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    const menu = await screen.findByRole('menu');
+
+    expect(within(menu).getByText(testGeneralUser.displayName)).toBeInTheDocument();
+    expect(within(menu).getByText(testGeneralUser.email)).toBeInTheDocument();
+    expect(within(menu).getByText('General')).toBeInTheDocument();
+  });
+
+  it('closes on Escape', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await screen.findByRole('menu');
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+  });
+
+  it('closes when clicking outside', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await screen.findByRole('menu');
+    // MUI's Menu/Popover renders a click-away backdrop (transparent, but
+    // real and clickable) in front of the rest of the page while open —
+    // that's the "outside" target a real user would click.
+    const backdrop = document.querySelector('.MuiBackdrop-root');
+    expect(backdrop).not.toBeNull();
+    await user.click(backdrop as HTMLElement);
+
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+  });
+
+  it('does not log out merely by clicking the account control — only "Cerrar sesión" does', async () => {
     const user = userEvent.setup();
     const logout = vi.fn().mockResolvedValue(undefined);
     mockWideViewport(true);
     renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
 
-    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await screen.findByRole('menu');
+
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('"Cerrar sesión" invokes AuthContext logout() on click', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn().mockResolvedValue(undefined);
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Cerrar sesión' }));
 
     expect(logout).toHaveBeenCalledTimes(1);
   });
 
-  it('hides identity details but keeps the logout action reachable while collapsed', () => {
+  it('"Cerrar sesión" is keyboard accessible: Enter activates the focused menu item', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn().mockResolvedValue(undefined);
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    const logoutItem = await screen.findByRole('menuitem', { name: 'Cerrar sesión' });
+    logoutItem.focus();
+    await user.keyboard('{Enter}');
+
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables "Cerrar sesión" and prevents duplicate logout calls while a logout is pending', async () => {
+    const user = userEvent.setup();
+    let resolveLogout: () => void = () => undefined;
+    const logout = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { resolveLogout = resolve; }));
+    mockWideViewport(true);
+    renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    const logoutItem = await screen.findByRole('menuitem', { name: 'Cerrar sesión' });
+    await user.click(logoutItem);
+
+    // Disabled via MUI's real Mui-disabled state (pointer-events: none),
+    // not just a visual style — a second click genuinely cannot land on it,
+    // exactly like a real browser. That IS the duplicate-call prevention;
+    // userEvent enforces this the same way a real user's click would fail.
+    await waitFor(() => expect(logoutItem).toHaveAttribute('aria-disabled', 'true'));
+    await expect(user.click(logoutItem)).rejects.toThrow(/pointer-events/);
+    expect(logout).toHaveBeenCalledTimes(1);
+
+    resolveLogout();
+  });
+});
+
+describe('AppShell account control (collapsed)', () => {
+  it('shows only a centered avatar, hiding name/role text', () => {
     mockWideViewport(false);
     renderShell('/', createAuthContextValue({ user: testAdminUser }));
 
     expect(screen.queryByText('Alejandro López')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    expect(screen.queryByText('Administrador')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cuenta de usuario' })).toBeInTheDocument();
+  });
+
+  it('has no standalone logout icon/button adjacent to the avatar', () => {
+    mockWideViewport(false);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).not.toBeInTheDocument();
+  });
+
+  it('shows a tooltip with the display name and role on the collapsed avatar', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(false);
+    renderShell('/', createAuthContextValue({ user: testAdminUser }));
+
+    await user.hover(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+
+    expect(await screen.findByRole('tooltip', { name: 'Alejandro López · Administrador' })).toBeInTheDocument();
+  });
+
+  it('still opens the account menu and logs out correctly while collapsed', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn().mockResolvedValue(undefined);
+    mockWideViewport(false);
+    renderShell('/', createAuthContextValue({ user: testAdminUser, logout }));
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByText(testAdminUser.email)).toBeInTheDocument();
+
+    await user.click(within(menu).getByRole('menuitem', { name: 'Cerrar sesión' }));
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 });
 
