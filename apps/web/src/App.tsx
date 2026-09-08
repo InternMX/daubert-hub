@@ -1,9 +1,9 @@
-import { Button, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { ChangePasswordPage } from './auth/ChangePasswordPage';
 import { LoginPage } from './auth/LoginPage';
 import { AdminRoute, ChangePasswordRoute, ProtectedLayout, PublicOnlyRoute } from './auth/RouteGuards';
-import { PageHeader } from './components/PageHeader';
+import { useAuth } from './auth/authContext.core';
 import { RecentActivity } from './components/RecentActivity';
 import { NewProviderPage } from './providers/NewProviderPage';
 import { ProviderDetailPage } from './providers/ProviderDetailPage';
@@ -20,23 +20,33 @@ import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
 import { EditUserPage } from './users/EditUserPage';
+import { roleLabels } from './services/userLabels';
 
 function HomePage() {
+  const { user } = useAuth();
+  if (!user) return null;
+
   return (
-    <>
-      <PageHeader title="Inicio" description="Centro de trabajo para la gestión operativa de Daubert Cromwell." />
-      <Paper variant="outlined" sx={{ mt: 4, p: { xs: 3, sm: 4 }, maxWidth: 920 }}>
-        <Typography variant="h2">Acciones rápidas</Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2.5 }}>
+    <Box sx={{ maxWidth: 920, minWidth: 0 }}>
+      <Box component="header" sx={{ minWidth: 0 }}>
+        <Typography variant="h1" sx={{ overflowWrap: 'anywhere' }}>Hola, {user.displayName}</Typography>
+        <Typography color="text.secondary" sx={{ mt: 1, overflowWrap: 'anywhere' }}>{roleLabels[user.role]} · {user.email}</Typography>
+      </Box>
+
+      <Box component="section" aria-labelledby="quick-actions-title" sx={{ mt: { xs: 4, sm: 5 } }}>
+        <Typography id="quick-actions-title" variant="h2">Acciones rápidas</Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
           <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
+          <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>
           <Button component={Link} to="/contacts?action=new-contact" variant="contained">Nuevo contacto</Button>
         </Stack>
-      </Paper>
-      <Paper variant="outlined" sx={{ mt: 2, p: { xs: 3, sm: 4 }, maxWidth: 920 }}>
-        <Typography variant="h2">Actividad reciente</Typography>
+      </Box>
+
+      <Paper component="section" aria-labelledby="recent-activity-title" variant="outlined" sx={{ mt: { xs: 4, sm: 5 }, p: { xs: 2.5, sm: 4 } }}>
+        <Typography id="recent-activity-title" variant="h2">Actividad reciente</Typography>
         <RecentActivity />
       </Paper>
-    </>
+    </Box>
   );
 }
 

@@ -53,7 +53,7 @@ describe('AuthProvider hydration', () => {
   it('renders the application when /auth/me succeeds', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: { user: adminUser } })));
     renderApp('/');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Hola, Alejandro López' })).toBeInTheDocument();
   });
 
   it('shows the login page without an alarming error when /auth/me returns 401', async () => {
@@ -157,7 +157,7 @@ describe('login flow', () => {
     expect(loginCalls).toHaveLength(1);
 
     resolveLogin(jsonResponse({ data: { user: adminUser } }));
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Hola, Alejandro López' })).toBeInTheDocument());
   });
 
   it('sends a user with a pending mandatory password change to /change-password after login', async () => {
@@ -221,7 +221,7 @@ describe('mandatory password change', () => {
     await user.type(screen.getByLabelText('Confirmar nueva contraseña'), 'a-new-long-password');
     await user.click(screen.getByRole('button', { name: 'Guardar nueva contraseña' }));
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Inicio' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Hola, Alejandro López' })).toBeInTheDocument();
   });
 
   // /auth/* calls are exempt from the global session-expiry interceptor
@@ -295,7 +295,7 @@ describe('logout', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     renderApp('/');
-    await screen.findByRole('heading', { level: 1, name: 'Inicio' });
+    await screen.findByRole('heading', { level: 1, name: 'Hola, Alejandro López' });
     await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Cerrar sesión' }));
 
