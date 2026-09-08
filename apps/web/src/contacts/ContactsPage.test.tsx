@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { CssBaseline, ThemeProvider } from '@mui/material';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +7,7 @@ import { createContact, deactivateContact, reactivateContact, updateContact } fr
 import { addContactMethod, deactivateContactMethod, editContactMethod, reactivateContactMethod } from '../services/contactMethods';
 import { searchCompanies } from '../services/companies';
 import { getContactDirectoryCompany, listContactDirectoryCompanies, type DirectoryContact, type DirectoryContactMethod } from '../services/contactDirectory';
+import { buildTheme } from '../theme';
 import { ContactsPage } from './ContactsPage';
 
 vi.mock('../services/contactDirectory', () => ({ listContactDirectoryCompanies: vi.fn(), getContactDirectoryCompany: vi.fn() }));
@@ -77,6 +79,75 @@ describe('ContactsPage global creation', () => {
   it('retains contact form behavior, methods, contextual refresh, and URL state', async () => {
     createMock.mockResolvedValue({ contact: { id: '9' } as never, requestId: 'request-1' }); await selectedPage(); const drawer = await contextualDrawer(); const form = within(drawer); fireEvent.change(form.getByRole('textbox', { name: 'Nombre' }), { target: { value: ' María López ' } }); fireEvent.change(form.getByRole('textbox', { name: 'Área' }), { target: { value: ' Compras ' } }); fireEvent.change(form.getByRole('textbox', { name: 'Cargo' }), { target: { value: ' Compradora ' } }); fireEvent.change(form.getByRole('textbox', { name: 'Valor' }), { target: { value: ' maria@example.test ' } }); fireEvent.click(form.getByRole('button', { name: 'Agregar medio' })); fireEvent.click(form.getByRole('button', { name: 'Agregar medio' })); await selectMethodType(drawer, 1, 'Teléfono'); await selectMethodType(drawer, 2, 'WhatsApp'); const values = form.getAllByRole('textbox', { name: 'Valor' }); fireEvent.change(values[1]!, { target: { value: '+52 449 555 0101' } }); fireEvent.change(values[2]!, { target: { value: '+52 449 555 0102' } }); fireEvent.click(form.getByRole('button', { name: 'Guardar contacto' }));
     await waitFor(() => expect(createMock).toHaveBeenCalledWith({ companyId: '1', contactType: 'PERSONA', name: 'María López', area: 'Compras', position: 'Compradora', notes: null, methods: [{ type: 'CORREO', value: 'maria@example.test' }, { type: 'TELEFONO', value: '+52 449 555 0101' }, { type: 'WHATSAPP', value: '+52 449 555 0102' }] })); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); expect(detailMock.mock.calls.length).toBeGreaterThan(1); expect(listMock.mock.calls.length).toBeGreaterThan(1); expect(screen.getByTestId('location')).toHaveTextContent('company=1&search=almex&page=2&pageSize=25');
+  });
+});
+
+describe('ContactsPage company list contrast', () => {
+  // Regression check for a company name rendering as dark/black text on a
+  // dark background: the row is a native <button> (for full-row click +
+  // keyboard access), and text inside a <button> does not inherit the
+  // ambient theme color the way ordinary elements do — a Typography with no
+  // explicit `color` there silently picks up the browser's `buttontext` UA
+  // color instead. Rendered here under the app's real theme (both other
+  // ContactsPage tests intentionally skip this, since they only check
+  // structure/behavior) specifically to prove the actual computed color,
+  // in both modes — not just that some class was applied.
+  function renderThemedPage(mode: 'light' | 'dark') {
+    listMock.mockResolvedValue({ data: [company], meta: { page: 2, pageSize: 25, total: 1, totalPages: 1 } });
+    detailMock.mockResolvedValue(detail);
+    const theme = buildTheme(mode);
+    const result = render(
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <MemoryRouter initialEntries={['/contacts?company=1&search=almex&page=2&pageSize=25']}>
+          <Routes><Route path="/contacts" element={<ContactsPage />} /></Routes>
+        </MemoryRouter>
+      </ThemeProvider>
+    );
+    return { theme, unmount: result.unmount };
+  }
+
+  function toRgb(color: string): string {
+    // Some palette values are already rgba() (e.g. MUI's dark-mode default
+    // text.secondary, "rgba(255, 255, 255, 0.7)") rather than hex.
+    if (!color.startsWith('#')) return color;
+    const raw = color.replace('#', '');
+    const value = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+    return `rgb(${parseInt(value.slice(0, 2), 16)}, ${parseInt(value.slice(2, 4), 16)}, ${parseInt(value.slice(4, 6), 16)})`;
+  }
+
+  it('light mode: renders the company name with the theme text.primary color', async () => {
+    const { theme } = renderThemedPage('light');
+    const names = await screen.findAllByText('ALMEX');
+    const name = names.find((el) => el.tagName === 'P')!;
+    expect(getComputedStyle(name).color).toBe(toRgb(theme.palette.text.primary));
+  });
+
+  it('dark mode: renders the company name with the theme text.primary color, not the browser default button text color', async () => {
+    const { theme } = renderThemedPage('dark');
+    const names = await screen.findAllByText('ALMEX');
+    const name = names.find((el) => el.tagName === 'P')!;
+    expect(getComputedStyle(name).color).toBe(toRgb(theme.palette.text.primary));
+    expect(getComputedStyle(name).color).not.toBe('buttontext');
+  });
+
+  it('keeps the company type as text.secondary in both modes', async () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const { theme, unmount } = renderThemedPage(mode);
+      const row = await screen.findByRole('button', { name: /ALMEX/ });
+      const typeLabel = within(row).getByText('Flete');
+      expect(getComputedStyle(typeLabel).color).toBe(toRgb(theme.palette.text.secondary));
+      unmount();
+    }
+  });
+
+  it('marks the selected company row with the semantic selected-background token, in both modes', async () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const { unmount } = renderThemedPage(mode);
+      const row = await screen.findByRole('button', { name: /ALMEX/ });
+      expect(row).toHaveAttribute('aria-pressed', 'true');
+      unmount();
+    }
   });
 });
 

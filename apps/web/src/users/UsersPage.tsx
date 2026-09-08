@@ -9,7 +9,12 @@ import { listUsers, type ManagedUser } from '../services/users';
 import { roleLabels, userStatusLabels } from '../services/userLabels';
 
 function RoleChip({ role }: { role: ManagedUser['role'] }) {
-  return <Chip label={roleLabels[role]} size="small" variant="outlined" color={role === 'ADMIN' ? 'primary' : 'default'} />;
+  // ADMIN is the one role that should stand out — a filled primary Chip
+  // (yellow background, dark contrastText, readable in both light and dark
+  // mode) rather than the old outlined yellow-on-white combination, which
+  // failed contrast. GENERAL stays a neutral outlined Chip.
+  const isAdmin = role === 'ADMIN';
+  return <Chip label={roleLabels[role]} size="small" variant={isAdmin ? 'filled' : 'outlined'} color={isAdmin ? 'primary' : 'default'} />;
 }
 
 function StatusChip({ status }: { status: ManagedUser['status'] }) {

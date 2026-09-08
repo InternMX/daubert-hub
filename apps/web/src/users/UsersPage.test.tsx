@@ -37,6 +37,23 @@ describe('UsersPage', () => {
     expect(screen.getByRole('link', { name: 'Ana Admin' })).toHaveAttribute('href', '/users/1');
   });
 
+  it('renders the ADMIN role as a filled primary Chip (yellow background + dark contrastText) rather than outlined yellow-on-white', async () => {
+    listUsersMock.mockResolvedValue([
+      { id: '1', displayName: 'Ana Admin', email: 'ana@daubertcromwell.com', role: 'ADMIN', status: 'ACTIVE', mustChangePassword: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', lastLoginAt: null },
+      { id: '2', displayName: 'Gen User', email: 'gen@daubertcromwell.com', role: 'GENERAL', status: 'ACTIVE', mustChangePassword: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', lastLoginAt: null }
+    ]);
+
+    renderPage();
+
+    const adminChip = (await screen.findByText('Administrador')).closest('.MuiChip-root');
+    expect(adminChip).toHaveClass('MuiChip-filledPrimary');
+    expect(adminChip).not.toHaveClass('MuiChip-outlined');
+
+    const generalChip = screen.getByText('General').closest('.MuiChip-root');
+    expect(generalChip).toHaveClass('MuiChip-outlined');
+    expect(generalChip).not.toHaveClass('MuiChip-filledPrimary');
+  });
+
   it('shows an empty state with zero users', async () => {
     listUsersMock.mockResolvedValue([]);
     renderPage();
