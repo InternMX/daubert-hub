@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { getDocumentSeries } from './services/automations';
+import { listAutomationsOverview, type AutomationOverview } from './services/automationsOverview';
+import { listAudiExecutions } from './services/audiExecutions';
 import { listPaymentNotificationExecutions } from './services/paymentNotifications';
 import { listRecentActivity } from './services/recentActivity';
 import { listUsers } from './services/users';
@@ -18,9 +21,41 @@ vi.mock('./services/paymentNotifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./services/paymentNotifications')>()),
   listPaymentNotificationExecutions: vi.fn()
 }));
+vi.mock('./services/automationsOverview', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/automationsOverview')>()),
+  listAutomationsOverview: vi.fn()
+}));
+vi.mock('./services/automations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/automations')>()),
+  getDocumentSeries: vi.fn()
+}));
+vi.mock('./services/audiExecutions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/audiExecutions')>()),
+  listAudiExecutions: vi.fn()
+}));
 const activityMock = vi.mocked(listRecentActivity);
 const listUsersMock = vi.mocked(listUsers);
 const paymentNotificationsMock = vi.mocked(listPaymentNotificationExecutions);
+const automationsOverviewMock = vi.mocked(listAutomationsOverview);
+const getDocumentSeriesMock = vi.mocked(getDocumentSeries);
+const audiExecutionsMock = vi.mocked(listAudiExecutions);
+
+function automationOverview(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
+  return {
+    code: 'PAYMENT_NOTIFICATIONS',
+    name: 'Notificaciones de pago',
+    description: 'Revisa periódicamente nuevas notificaciones de pago.',
+    integrationStatus: 'INTEGRATED',
+    environment: 'TEST',
+    lifecycleStatus: null,
+    polling: { intervalMinutes: 5, label: 'Cada 5 minutos' },
+    lastCheckAt: null,
+    lastProcessing: null,
+    nextCheckAt: null,
+    capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true },
+    ...overrides
+  };
+}
 
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function renderApp(path = '/', user = testAdminUser) {
@@ -28,7 +63,7 @@ function renderApp(path = '/', user = testAdminUser) {
 }
 
 describe('application navigation', () => {
-  beforeEach(() => activityMock.mockResolvedValue([]));
+  beforeEach(() => { activityMock.mockResolvedValue([]); automationsOverviewMock.mockResolvedValue([]); });
   it.each([['/', 'Hola, Alejandro López'], ['/providers', 'Proveedores'], ['/clients', 'Clientes'], ['/contacts', 'Directorio de contactos'], ['/automations', 'Automatizaciones']])('renders %s', (path, title) => {
     renderApp(path);
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
@@ -83,7 +118,7 @@ describe('application navigation', () => {
 });
 
 describe('Home operational landing page', () => {
-  beforeEach(() => activityMock.mockResolvedValue([]));
+  beforeEach(() => { activityMock.mockResolvedValue([]); automationsOverviewMock.mockResolvedValue([]); });
 
   it.each([
     [testAdminUser, 'Hola, Alejandro López', 'Administrador · alejandro@daubertcromwell.com'],
@@ -112,7 +147,7 @@ describe('Home operational landing page', () => {
 });
 
 describe('authentication routing', () => {
-  beforeEach(() => activityMock.mockResolvedValue([]));
+  beforeEach(() => { activityMock.mockResolvedValue([]); automationsOverviewMock.mockResolvedValue([]); });
 
   function renderWithAuth(path: string, authValue: Parameters<typeof TestAuthProvider>[0]['value']) {
     return render(<MemoryRouter initialEntries={[path]}><ColorModeProvider><TestAuthProvider value={authValue}><App /><Location /></TestAuthProvider></ColorModeProvider></MemoryRouter>);
@@ -144,14 +179,16 @@ describe('authentication routing', () => {
 describe('Payment Notifications navigation', () => {
   beforeEach(() => {
     activityMock.mockResolvedValue([]);
+    automationsOverviewMock.mockResolvedValue([]);
     paymentNotificationsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } });
   });
 
   it('exposes a Notificaciones de pago entry from the Automations page (no new sidebar section)', async () => {
     const user = userEvent.setup();
+    automationsOverviewMock.mockResolvedValue([automationOverview()]);
     renderApp('/automations');
     expect(screen.getByRole('heading', { level: 1, name: 'Automatizaciones' })).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: 'Ver panel' });
+    const link = await screen.findByRole('link', { name: 'Ver automatización' });
     expect(link).toHaveAttribute('href', '/automations/payment-notifications');
     await user.click(link);
     expect(await screen.findByRole('heading', { level: 1, name: 'Notificaciones de pago' })).toBeInTheDocument();
@@ -171,10 +208,58 @@ describe('Payment Notifications navigation', () => {
   });
 });
 
+describe('Automations overview navigation', () => {
+  beforeEach(() => {
+    activityMock.mockResolvedValue([]);
+    automationsOverviewMock.mockResolvedValue([
+      automationOverview({ code: 'REMISIONES_AUDI', name: 'Remisiones Audi', description: 'Generación y control de remisiones.', lifecycleStatus: 'ACTIVE', polling: { intervalMinutes: 10, label: 'Cada 10 minutos' } }),
+      automationOverview(),
+      automationOverview({ code: 'REMISIONES_CATERPILLAR', name: 'Remisiones Caterpillar', description: 'Generación y control de remisiones para Caterpillar.', integrationStatus: 'NOT_INTEGRATED', polling: { intervalMinutes: 15, label: 'Cada 15 minutos' }, capabilities: { hasDashboard: false, hasHistory: false, hasDetail: false } })
+    ]);
+    getDocumentSeriesMock.mockResolvedValue({
+      automation: { code: 'REMISIONES_AUDI', name: 'Remisiones Audi', status: 'ACTIVO' },
+      series: { code: 'REMISION_AUDI', name: 'Remisión Audi', nextFolio: 9007, status: 'ACTIVO' },
+      adjustments: []
+    });
+    audiExecutionsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } });
+  });
+
+  it('renders one card per automation and routes Audi/Payment Notifications to their dashboards', async () => {
+    const user = userEvent.setup();
+    renderApp('/automations');
+    expect(await screen.findByText('Remisiones Audi')).toBeInTheDocument();
+    expect(screen.getByText('Notificaciones de pago')).toBeInTheDocument();
+    expect(screen.getByText('Remisiones Caterpillar')).toBeInTheDocument();
+
+    const links = screen.getAllByRole('link', { name: 'Ver automatización' });
+    expect(links).toHaveLength(2);
+    const audiLink = links.find((link) => link.getAttribute('href') === '/automations/remissions/audi')!;
+    await user.click(audiLink);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Audi' })).toBeInTheDocument();
+  });
+
+  it('never renders a "Ver automatización" action for Caterpillar', async () => {
+    renderApp('/automations');
+    await screen.findByText('Remisiones Caterpillar');
+    expect(screen.getAllByRole('link', { name: 'Ver automatización' })).toHaveLength(2);
+  });
+
+  it.each([
+    ['ADMIN', testAdminUser],
+    ['GENERAL', testGeneralUser]
+  ] as const)('renders the exact same Remisiones Audi dashboard for %s', async (_role, user) => {
+    renderApp('/automations/remissions/audi', user);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Audi' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Estado operacional' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Editar próximo folio' })).toBeInTheDocument();
+  });
+});
+
 describe('admin-only routing (/users)', () => {
   beforeEach(() => {
     listUsersMock.mockResolvedValue([]);
     activityMock.mockResolvedValue([]);
+    automationsOverviewMock.mockResolvedValue([]);
   });
 
   function renderWithAuth(path: string, authValue: Parameters<typeof TestAuthProvider>[0]['value']) {

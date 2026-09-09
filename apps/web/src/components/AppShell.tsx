@@ -3,6 +3,7 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
 import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
@@ -10,8 +11,8 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Avatar, Box, ButtonBase, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import { useAuth } from '../auth/authContext.core';
@@ -31,8 +32,23 @@ const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIcon
   { to: '/contacts', label: 'Contactos', end: false, icon: ContactsRoundedIcon }
 ];
 
-const automationNavigation = { to: '/automations', label: 'Automatizaciones', end: false, icon: SettingsSuggestRoundedIcon };
 const usersNavigation = { to: '/users', label: 'Usuarios', end: false, icon: PeopleAltRoundedIcon };
+
+const automationSubmenu = [
+  { to: '/automations', label: 'Panel general' },
+  { to: '/automations/remissions/audi', label: 'Remisiones Audi' },
+  { to: '/automations/payment-notifications', label: 'Notificaciones de pago' }
+];
+
+// Panel general only matches the exact route; Audi and Payment Notifications match their whole
+// subtree (e.g. /automations/payment-notifications/:executionId still counts as that destination)
+// — mirrors NavLink's own `end` semantics without needing a real NavLink for the current item.
+function currentSubmenuTo(pathname: string): string | null {
+  if (pathname === '/automations') return '/automations';
+  if (pathname.startsWith('/automations/remissions/audi')) return '/automations/remissions/audi';
+  if (pathname.startsWith('/automations/payment-notifications')) return '/automations/payment-notifications';
+  return null;
+}
 
 const environmentPresentation: Record<RuntimeEnvironment, { label: string; compactLabel: string; color: 'error' | 'info' | 'warning'; variant: 'filled' | 'outlined'; title: string }> = {
   PRODUCTION: { label: 'PRODUCCIÓN', compactLabel: 'PROD', color: 'error', variant: 'filled', title: 'Daubert Hub · PROD' },
@@ -61,6 +77,133 @@ function NavigationItem({ to, label, end, icon: Icon, collapsed }: typeof naviga
         )}
       </NavLink>
     </Tooltip>
+  );
+}
+
+// Expanded: "Automatizaciones" is both a direct link (clicking the row navigates to /automations,
+// exactly like every other NavigationItem) and a disclosure control for its submenu — a chevron
+// button opens a MUI Menu, mirroring UserAccountControl's own Menu-anchored-to-a-button pattern
+// below. Collapsed: there is no room for a separate chevron, so the icon itself becomes a pure
+// disclosure control (click/Enter/Space opens the submenu — never a direct navigation), and
+// "Panel general" inside that submenu is how /automations stays reachable — this is the required
+// accessible alternative to a "tiny collapsed-state chevron" (Phase 10E §28). In both states, hover
+// opens the menu as a convenience enhancement only, never the sole mechanism: keyboard users Tab
+// to a real <button> and press Enter/Space, which fires the same onClick a click would. The menu
+// is never opened purely by receiving focus, so MUI's own restoreFocus-on-close (which returns
+// focus to the trigger after Escape/selection) can never reopen it in a loop.
+function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  const open = Boolean(anchorEl);
+  const pathname = useLocation().pathname;
+  const isActive = pathname.startsWith('/automations');
+  const currentTo = currentSubmenuTo(pathname);
+
+  function clearCloseTimer() {
+    if (closeTimer.current !== null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
+  function openMenu(target: HTMLElement) {
+    clearCloseTimer();
+    setAnchorEl(target);
+  }
+  function scheduleClose() {
+    clearCloseTimer();
+    closeTimer.current = window.setTimeout(() => setAnchorEl(null), 150);
+  }
+  function closeMenu() {
+    clearCloseTimer();
+    setAnchorEl(null);
+  }
+
+  const menu = (
+    <Menu
+      id="automations-submenu"
+      anchorEl={anchorEl}
+      open={open}
+      onClose={closeMenu}
+      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+      slotProps={{ list: { onMouseEnter: clearCloseTimer, onMouseLeave: scheduleClose, 'aria-label': 'Submenú de Automatizaciones' } }}
+    >
+      {automationSubmenu.map((item) => {
+        // CURRENT: readable, visibly selected, aria-current="page" — but never a navigable Link
+        // and never rendered/treated like the disabled Caterpillar entry below (Phase 10F addendum:
+        // current and unavailable are genuinely different states and must look and behave differently).
+        if (item.to === currentTo) {
+          return (
+            <MenuItem
+              key={item.to}
+              aria-current="page"
+              selected
+              disableRipple
+              onClick={closeMenu}
+              sx={{ borderLeft: '3px solid', borderLeftColor: 'primary.main', fontWeight: 700, cursor: 'default' }}
+            >
+              {item.label}
+            </MenuItem>
+          );
+        }
+        return <MenuItem key={item.to} component={Link} to={item.to} onClick={closeMenu}>{item.label}</MenuItem>;
+      })}
+      {/* Caterpillar has no Hub route (Phase 10E §18/§20) — shown disabled rather than omitted, so
+          its existence stays visible without ever navigating anywhere or inventing a route. */}
+      <MenuItem disabled>
+        <Box>
+          <Typography variant="body2">Remisiones Caterpillar</Typography>
+          <Typography variant="caption" color="text.secondary">Sin integración</Typography>
+        </Box>
+      </MenuItem>
+    </Menu>
+  );
+
+  if (collapsed) {
+    return (
+      <Box onMouseEnter={(event) => openMenu(event.currentTarget)} onMouseLeave={scheduleClose} sx={{ position: 'relative' }}>
+        <Tooltip title="Automatizaciones" placement="right">
+          <IconButton
+            aria-label="Automatizaciones"
+            aria-haspopup="true"
+            aria-controls={open ? 'automations-submenu' : undefined}
+            aria-expanded={open || undefined}
+            onClick={(event) => openMenu(event.currentTarget)}
+            sx={{ width: '100%', minHeight: 44, borderRadius: 1, color: isActive ? 'common.white' : appTokens.navigationText, '&:hover': { bgcolor: appTokens.navigationHover }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}
+          >
+            <SettingsSuggestRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        {menu}
+      </Box>
+    );
+  }
+
+  return (
+    <Box onMouseEnter={(event) => openMenu(event.currentTarget)} onMouseLeave={scheduleClose} sx={{ position: 'relative' }}>
+      <Stack direction="row" alignItems="center">
+        <NavLink to="/automations" aria-label="Automatizaciones" onClick={closeMenu} style={{ color: 'inherit', textDecoration: 'none', flex: 1, minWidth: 0 }}>
+          {({ isActive: linkActive }) => (
+            <ListItemButton selected={linkActive} sx={{ minHeight: 44, borderLeft: '3px solid', borderLeftColor: linkActive ? 'primary.main' : 'transparent', color: linkActive ? 'common.white' : appTokens.navigationText, px: 2, '&.Mui-selected': { bgcolor: appTokens.navigationActive }, '&.Mui-selected:hover, &:hover': { bgcolor: appTokens.navigationHover }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
+              <ListItemIcon sx={{ color: 'inherit', minWidth: 40, justifyContent: 'center' }}><SettingsSuggestRoundedIcon fontSize="small" /></ListItemIcon>
+              <ListItemText primary="Automatizaciones" primaryTypographyProps={{ fontSize: 14, fontWeight: linkActive ? 700 : 500, noWrap: true }} />
+            </ListItemButton>
+          )}
+        </NavLink>
+        <IconButton
+          size="small"
+          aria-label="Mostrar submenú de Automatizaciones"
+          aria-haspopup="true"
+          aria-controls={open ? 'automations-submenu' : undefined}
+          aria-expanded={open || undefined}
+          onClick={(event) => openMenu(event.currentTarget)}
+          sx={{ color: isActive ? 'common.white' : appTokens.navigationText, mr: 1 }}
+        >
+          <ExpandMoreRoundedIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+      {menu}
+    </Box>
   );
 }
 
@@ -272,7 +415,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Stack sx={{ mt: 'auto' }}>
           <Divider sx={{ borderColor: appTokens.navigationDivider, mb: 2 }} />
           {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Operación</Typography>}
-          <NavigationItem {...automationNavigation} collapsed={collapsed} />
+          <AutomationsNavigationItem collapsed={collapsed} />
           {user?.role === 'ADMIN' && (
             <>
               {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, pt: 2, mb: 0.75 }}>Administración</Typography>}

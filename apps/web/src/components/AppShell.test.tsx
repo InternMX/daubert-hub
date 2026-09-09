@@ -40,6 +40,9 @@ function renderShell(path = '/', authValue?: Partial<AuthContextValue>) {
     <Route path="/clients" element={<div>Clients page</div>} />
     <Route path="/contacts" element={<div>Contacts page</div>} />
     <Route path="/automations" element={<div>Automations page</div>} />
+    <Route path="/automations/remissions/audi" element={<div>Audi page</div>} />
+    <Route path="/automations/payment-notifications" element={<div>Payment Notifications page</div>} />
+    <Route path="/automations/payment-notifications/:executionId" element={<div>Payment Notifications detail page</div>} />
   </Routes></AppShell></TestAuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
@@ -616,5 +619,259 @@ describe('AppShell navigation grouping (Operación vs Administración)', () => {
     const automatizaciones = screen.getByRole('link', { name: 'Automatizaciones' });
     const usuarios = screen.getByRole('link', { name: 'Usuarios' });
     expect(automatizaciones.compareDocumentPosition(usuarios) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('AppShell Automatizaciones submenu', () => {
+  it('a direct click on the primary link navigates to /automations without leaving the submenu open', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('link', { name: 'Automatizaciones' }));
+
+    expect(screen.getByText('Automations page')).toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument();
+  });
+
+  it('opens the submenu via the disclosure (chevron) control on click', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+
+    const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+    expect(within(menu).getByRole('menuitem', { name: 'Panel general' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Remisiones Audi' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Notificaciones de pago' })).toBeInTheDocument();
+  });
+
+  it('is keyboard accessible: Enter on the focused disclosure control opens the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }).focus();
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+  });
+
+  it('closes on Escape', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument());
+  });
+
+  it('navigates to Remisiones Audi from the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Remisiones Audi' }));
+
+    expect(await screen.findByText('Audi page')).toBeInTheDocument();
+  });
+
+  it('navigates to Notificaciones de pago from the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Notificaciones de pago' }));
+
+    expect(await screen.findByText('Payment Notifications page')).toBeInTheDocument();
+  });
+
+  it('shows Remisiones Caterpillar as disabled in the submenu, with no route invented for it', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+
+    expect(within(menu).getByText('Remisiones Caterpillar')).toBeInTheDocument();
+    expect(within(menu).getByText('Sin integración')).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: /Remisiones Caterpillar/ })).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  describe('collapsed sidebar', () => {
+    it('opens the submenu via a click on the icon (no separate chevron needed), and Panel general still reaches /automations', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+      expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'true');
+
+      const trigger = screen.getByRole('button', { name: 'Automatizaciones' });
+      expect(trigger).toHaveAttribute('aria-haspopup', 'true');
+      await user.click(trigger);
+
+      const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      expect(trigger).toHaveAttribute('aria-controls', 'automations-submenu');
+      await user.click(within(menu).getByRole('menuitem', { name: 'Panel general' }));
+
+      expect(screen.getByText('Automations page')).toBeInTheDocument();
+    });
+
+    it('opens via keyboard Enter', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+
+      screen.getByRole('button', { name: 'Automatizaciones' }).focus();
+      await user.keyboard('{Enter}');
+
+      expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+    });
+
+    it('opens via keyboard Space', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+
+      screen.getByRole('button', { name: 'Automatizaciones' }).focus();
+      await user.keyboard(' ');
+
+      expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+    });
+
+    it('closes on Escape', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+
+      await user.click(screen.getByRole('button', { name: 'Automatizaciones' }));
+      await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument());
+    });
+
+    it('also opens via hover as an enhancement', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+
+      await user.hover(screen.getByRole('button', { name: 'Automatizaciones' }));
+
+      expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+    });
+
+    it('navigates to Remisiones Audi and Notificaciones de pago from the collapsed submenu', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+
+      await user.click(screen.getByRole('button', { name: 'Automatizaciones' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Remisiones Audi' }));
+      expect(await screen.findByText('Audi page')).toBeInTheDocument();
+    });
+  });
+
+  it('still opens the submenu via hover as a convenience enhancement (not the only mechanism)', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.hover(screen.getByRole('link', { name: 'Automatizaciones' }));
+
+    expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+  });
+});
+
+describe('AppShell Automatizaciones submenu — current-route awareness', () => {
+  async function openSubmenu(user: ReturnType<typeof userEvent.setup>) {
+    const trigger = screen.queryByRole('button', { name: 'Mostrar submenú de Automatizaciones' }) ?? screen.getByRole('button', { name: 'Automatizaciones' });
+    await user.click(trigger);
+    return screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+  }
+
+  it.each([
+    ['/automations', 'Panel general'],
+    ['/automations/remissions/audi', 'Remisiones Audi'],
+    ['/automations/payment-notifications', 'Notificaciones de pago']
+  ] as const)('marks %s as the current, non-navigable destination (%s)', async (path, label) => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell(path);
+
+    const menu = await openSubmenu(user);
+    const currentItem = within(menu).getByRole('menuitem', { name: label });
+
+    expect(currentItem).toHaveAttribute('aria-current', 'page');
+    expect(currentItem.tagName).not.toBe('A');
+    expect(currentItem).not.toHaveAttribute('href');
+    // Never the disabled/unavailable visual language.
+    expect(currentItem).not.toHaveAttribute('aria-disabled');
+
+    await user.click(currentItem);
+    expect(screen.getByText(path === '/automations' ? 'Automations page' : path === '/automations/remissions/audi' ? 'Audi page' : 'Payment Notifications page')).toBeInTheDocument();
+  });
+
+  it('treats a Payment Notifications execution detail route as still Notificaciones de pago current', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/automations/payment-notifications/9007199254740993');
+
+    const menu = await openSubmenu(user);
+    const currentItem = within(menu).getByRole('menuitem', { name: 'Notificaciones de pago' });
+
+    expect(currentItem).toHaveAttribute('aria-current', 'page');
+    expect(currentItem.tagName).not.toBe('A');
+  });
+
+  it('keeps the other, non-current destinations navigable as ordinary links', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/automations');
+
+    const menu = await openSubmenu(user);
+    const audiItem = within(menu).getByRole('menuitem', { name: 'Remisiones Audi' });
+
+    expect(audiItem.tagName).toBe('A');
+    expect(audiItem).not.toHaveAttribute('aria-current');
+    await user.click(audiItem);
+    expect(await screen.findByText('Audi page')).toBeInTheDocument();
+  });
+
+  it('keeps Remisiones Caterpillar disabled/unavailable regardless of current route, distinct from the current-page state', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/automations');
+
+    const menu = await openSubmenu(user);
+    const caterpillarItem = within(menu).getByRole('menuitem', { name: /Remisiones Caterpillar/ });
+
+    expect(caterpillarItem).toHaveAttribute('aria-disabled', 'true');
+    expect(caterpillarItem).not.toHaveAttribute('aria-current');
+  });
+
+  it('the parent Automatizaciones item stays visually active for every /automations/* route', () => {
+    mockWideViewport(true);
+    renderShell('/automations/payment-notifications/123');
+    expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('works identically in the collapsed sidebar', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(false);
+    renderShell('/automations/remissions/audi');
+
+    const menu = await openSubmenu(user);
+    const currentItem = within(menu).getByRole('menuitem', { name: 'Remisiones Audi' });
+
+    expect(currentItem).toHaveAttribute('aria-current', 'page');
+    expect(currentItem.tagName).not.toBe('A');
   });
 });
