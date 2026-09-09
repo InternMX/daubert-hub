@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { listPaymentNotificationExecutions } from './services/paymentNotifications';
 import { listRecentActivity } from './services/recentActivity';
 import { listUsers } from './services/users';
 import { TestAuthProvider, testAdminUser, testGeneralUser } from './test/authTestUtils';
@@ -13,8 +14,13 @@ vi.mock('./services/users', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./services/users')>()),
   listUsers: vi.fn()
 }));
+vi.mock('./services/paymentNotifications', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/paymentNotifications')>()),
+  listPaymentNotificationExecutions: vi.fn()
+}));
 const activityMock = vi.mocked(listRecentActivity);
 const listUsersMock = vi.mocked(listUsers);
+const paymentNotificationsMock = vi.mocked(listPaymentNotificationExecutions);
 
 function Location() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}</output>; }
 function renderApp(path = '/', user = testAdminUser) {
@@ -132,6 +138,36 @@ describe('authentication routing', () => {
   it('routes a user with a pending mandatory password change to /change-password', () => {
     renderWithAuth('/clients', { isLoading: false, user: { id: '1', displayName: 'Alejandro López', email: 'a@daubertcromwell.com', role: 'ADMIN', status: 'ACTIVE', mustChangePassword: true } });
     expect(screen.getByRole('heading', { name: 'Actualiza tu contraseña' })).toBeInTheDocument();
+  });
+});
+
+describe('Payment Notifications navigation', () => {
+  beforeEach(() => {
+    activityMock.mockResolvedValue([]);
+    paymentNotificationsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } });
+  });
+
+  it('exposes a Notificaciones de pago entry from the Automations page (no new sidebar section)', async () => {
+    const user = userEvent.setup();
+    renderApp('/automations');
+    expect(screen.getByRole('heading', { level: 1, name: 'Automatizaciones' })).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Ver panel' });
+    expect(link).toHaveAttribute('href', '/automations/payment-notifications');
+    await user.click(link);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Notificaciones de pago' })).toBeInTheDocument();
+  });
+
+  it('renders the dashboard route directly', async () => {
+    renderApp('/automations/payment-notifications');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Notificaciones de pago' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['ADMIN', testAdminUser],
+    ['GENERAL', testGeneralUser]
+  ] as const)('renders the exact same dashboard for %s', async (_role, user) => {
+    renderApp('/automations/payment-notifications', user);
+    expect(await screen.findByText('Aún no hay ejecuciones registradas.')).toBeInTheDocument();
   });
 });
 

@@ -16,6 +16,8 @@ import { ClientsPage } from './clients/ClientsPage';
 import { ContactsPage } from './contacts/ContactsPage';
 import { AutomationsPage } from './automations/AutomationsPage';
 import { AudiRemissionsPage } from './automations/AudiRemissionsPage';
+import { PaymentNotificationsPage } from './automations/PaymentNotificationsPage';
+import { PaymentNotificationExecutionDetailPage } from './automations/PaymentNotificationExecutionDetailPage';
 import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
@@ -68,6 +70,8 @@ export function App() {
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
+        <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />
+        <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
