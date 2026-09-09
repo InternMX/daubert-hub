@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { derivePaymentNotificationOutcome } from '../automations/payment-notifications/payment-notification-status';
 import { RecentActivityCategoryFilter, type ListRecentActivityDto } from './dto/list-recent-activity.dto';
 import { DocumentSeriesActivityRepository, type DocumentSeriesActivityRow } from './document-series-activity.repository';
 import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
@@ -178,14 +179,18 @@ export class RecentActivityService {
     const occurredAt = new Date(row.occurred_at);
     if (!Number.isFinite(occurredAt.getTime()) || row.result_count < 0) return null;
 
-    const usefulCount = row.ready_count + row.manual_count + row.omitted_count;
-    let type: ActivityType;
-    if (row.execution_state === 'PROCESADO') {
-      if (row.result_count === 0) return null;
-      type = row.manual_count > 0 || row.error_count > 0 ? 'AUTOMATION_PARTIAL' : 'AUTOMATION_COMPLETED';
-    } else if (row.execution_state === 'ERROR') {
-      type = usefulCount > 0 ? 'AUTOMATION_PARTIAL' : 'AUTOMATION_FAILED';
-    } else return null;
+    // Shared with the Payment Notifications dashboard (automations/payment-notifications) —
+    // see payment-notification-status.ts. outcome === null (PENDIENTE, or PROCESADO with zero
+    // results) means there is nothing worth showing here, exactly like the pre-extraction logic.
+    const outcome = derivePaymentNotificationOutcome(row.execution_state, {
+      totalResults: row.result_count,
+      readyCount: row.ready_count,
+      manualCount: row.manual_count,
+      errorCount: row.error_count,
+      omittedCount: row.omitted_count
+    });
+    if (outcome === null) return null;
+    const type: ActivityType = outcome === 'COMPLETED' ? 'AUTOMATION_COMPLETED' : outcome === 'PARTIAL' ? 'AUTOMATION_PARTIAL' : 'AUTOMATION_FAILED';
 
     // System/automation-generated — no human actor.
     return this.item(type, 'Notificaciones de pago', this.paymentContext(row), occurredAt.toISOString(), null);
