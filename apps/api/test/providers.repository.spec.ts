@@ -72,8 +72,8 @@ describe('ProvidersRepository', () => {
   it('finds one active provider with current fiscal data and all active provider roles', async () => {
     const query = vi.fn().mockResolvedValue([{ id: '9007199254740993', commercial_name: 'Acme', provider_type: 'PROVEEDOR', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], other_aliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }], status: 'ACTIVO', notes: null, fiscal_id: '9007199254740994', legal_name: 'Acme SA', rfc: 'ABC123456XYZ' }]);
     const repository = new ProvidersRepository({ query } as never);
-    await expect(repository.findById(121)).resolves.toMatchObject({ id: '9007199254740993', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], other_aliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }] });
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE company.empresa_id = $1'), [121]);
+    await expect(repository.findById('121')).resolves.toMatchObject({ id: '9007199254740993', roles: ['PROVEEDOR', 'FLETE'], aliases: ['BMASC'], other_aliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }] });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('WHERE company.empresa_id = $1'), ['121']);
     expect(query.mock.calls[0]?.[0]).toContain("role.estatus = 'ACTIVO'");
     expect(query.mock.calls[0]?.[0]).toContain("role.rol IN ('PROVEEDOR', 'SERVICIO', 'FLETE')");
     expect(query.mock.calls[0]?.[0]).toContain("CASE WHEN company.estatus = 'BLOQUEADO' THEN 'BLOQUEADO' ELSE provider_role.estatus END AS status");
@@ -86,7 +86,7 @@ describe('ProvidersRepository', () => {
 
   it('returns null when no active provider role matches the company', async () => {
     const repository = new ProvidersRepository({ query: vi.fn().mockResolvedValue([]) } as never);
-    await expect(repository.findById(121)).resolves.toBeNull();
+    await expect(repository.findById('121')).resolves.toBeNull();
   });
 
   it('reconciles aliases inside the provider update transaction', async () => {
@@ -101,10 +101,10 @@ describe('ProvidersRepository', () => {
     const client = { query, release: vi.fn() };
     const repository = new ProvidersRepository({ connect: vi.fn().mockResolvedValue(client), query: findById } as never);
 
-    await repository.update(121, { commercialName: 'Acme updated', aliases: ['BMASC', 'B+ASC'] }, 'request-alias', { userId: null, userEmail: null });
+    await repository.update('121', { commercialName: 'Acme updated', aliases: ['BMASC', 'B+ASC'] }, 'request-alias', { userId: null, userEmail: null });
 
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM core.alias_empresa'), [121, ['2']]);
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO core.alias_empresa'), [121, 'B+ASC']);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM core.alias_empresa'), ['121', ['2']]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO core.alias_empresa'), ['121', 'B+ASC']);
     expect(query).toHaveBeenCalledWith('COMMIT');
   });
 
@@ -118,7 +118,7 @@ describe('ProvidersRepository', () => {
     const client = { query, release: vi.fn() };
     const repository = new ProvidersRepository({ connect: vi.fn().mockResolvedValue(client) } as never);
 
-    await expect(repository.update(121, { commercialName: 'Must roll back', aliases: ['TAKEN'] }, 'request-alias', { userId: null, userEmail: null })).rejects.toMatchObject({ code: 'ALIAS_ALREADY_ASSOCIATED' });
+    await expect(repository.update('121', { commercialName: 'Must roll back', aliases: ['TAKEN'] }, 'request-alias', { userId: null, userEmail: null })).rejects.toMatchObject({ code: 'ALIAS_ALREADY_ASSOCIATED' });
     expect(query).toHaveBeenCalledWith('ROLLBACK');
     expect(query).not.toHaveBeenCalledWith('COMMIT');
   });
@@ -140,10 +140,10 @@ describe('ProvidersRepository', () => {
         .mockResolvedValueOnce(undefined);
       const { repository } = repositoryForChangeStatus(query, [{ id: '121', status: 'INACTIVO' }]);
 
-      await repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
+      await repository.changeStatus('121', 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
 
-      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['INACTIVO', 121, 'PROVEEDOR']);
-      expect(query).toHaveBeenCalledWith('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['INACTIVO', 121]);
+      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['INACTIVO', '121', 'PROVEEDOR']);
+      expect(query).toHaveBeenCalledWith('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['INACTIVO', '121']);
       expect(query).toHaveBeenCalledWith('COMMIT');
     });
 
@@ -156,9 +156,9 @@ describe('ProvidersRepository', () => {
         .mockResolvedValueOnce(undefined);
       const { repository } = repositoryForChangeStatus(query, [{ id: '121', status: 'ACTIVO' }]);
 
-      await repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
+      await repository.changeStatus('121', 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
 
-      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['INACTIVO', 121, 'PROVEEDOR']);
+      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['INACTIVO', '121', 'PROVEEDOR']);
       // The company-level UPDATE must never run — CLIENTE is still active.
       expect(query).not.toHaveBeenCalledWith(expect.stringContaining('UPDATE core.empresas SET estatus'), expect.anything());
       expect(query).toHaveBeenCalledWith('COMMIT');
@@ -174,10 +174,10 @@ describe('ProvidersRepository', () => {
         .mockResolvedValueOnce(undefined);
       const { repository } = repositoryForChangeStatus(query, [{ id: '121', status: 'ACTIVO' }]);
 
-      await repository.changeStatus(121, 'ACTIVO', 'request-reactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
+      await repository.changeStatus('121', 'ACTIVO', 'request-reactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' });
 
-      expect(query).toHaveBeenCalledWith('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['ACTIVO', 121]);
-      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['ACTIVO', 121, 'PROVEEDOR']);
+      expect(query).toHaveBeenCalledWith('UPDATE core.empresas SET estatus = $1 WHERE empresa_id = $2', ['ACTIVO', '121']);
+      expect(query).toHaveBeenCalledWith("UPDATE core.empresa_roles SET estatus = $1 WHERE empresa_id = $2 AND rol = $3", ['ACTIVO', '121', 'PROVEEDOR']);
       expect(query).toHaveBeenCalledWith('COMMIT');
     });
 
@@ -189,7 +189,7 @@ describe('ProvidersRepository', () => {
         .mockResolvedValueOnce(undefined);
       const { repository } = repositoryForChangeStatus(query, []);
 
-      await expect(repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' })).rejects.toMatchObject({ code: 'PROVIDER_ALREADY_INACTIVE' });
+      await expect(repository.changeStatus('121', 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' })).rejects.toMatchObject({ code: 'PROVIDER_ALREADY_INACTIVE' });
       expect(query).toHaveBeenCalledWith('ROLLBACK');
       expect(query).not.toHaveBeenCalledWith('COMMIT');
     });
@@ -202,7 +202,7 @@ describe('ProvidersRepository', () => {
         .mockResolvedValueOnce(undefined);
       const { repository } = repositoryForChangeStatus(query, []);
 
-      await expect(repository.changeStatus(121, 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' })).resolves.toBeNull();
+      await expect(repository.changeStatus('121', 'INACTIVO', 'request-deactivate', { userId: '1', userEmail: 'a@daubertcromwell.com' })).resolves.toBeNull();
       expect(query).toHaveBeenCalledWith('COMMIT');
     });
   });

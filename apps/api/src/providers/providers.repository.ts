@@ -188,7 +188,7 @@ export class ProvidersRepository {
     return { total: Number(count?.total ?? 0), providers };
   }
 
-  async findById(id: number): Promise<FoundProviderRecord | null> {
+  async findById(id: string): Promise<FoundProviderRecord | null> {
     const [provider] = await this.database.query<FoundProviderRecord>(`
       SELECT
         company.empresa_id::text AS id,
@@ -244,7 +244,7 @@ export class ProvidersRepository {
     return provider ?? null;
   }
 
-  async update(id: number, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
+  async update(id: string, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
@@ -291,7 +291,7 @@ export class ProvidersRepository {
   // that the previous implementation flipped the whole company's estatus
   // regardless of other active roles — this was the confirmed defect this
   // method now fixes.
-  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
+  async changeStatus(id: string, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<FoundProviderRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
@@ -331,7 +331,7 @@ export class ProvidersRepository {
     } finally { client.release(); }
   }
 
-  private async lockProvider(client: PoolClient, id: number): Promise<LockedProviderRow | null> {
+  private async lockProvider(client: PoolClient, id: string): Promise<LockedProviderRow | null> {
     const company = await client.query<LockedCompanyRow>(
       'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
     const row = company.rows[0];
@@ -347,7 +347,7 @@ export class ProvidersRepository {
   // Plain company row, no role join/filter — used by changeStatus(), which
   // must be able to find and lock a company regardless of whether its
   // provider role is currently active (mirrors ClientsRepository.lockCompany).
-  private async lockCompanyRow(client: PoolClient, id: number): Promise<LockedCompanyRow | null> {
+  private async lockCompanyRow(client: PoolClient, id: string): Promise<LockedCompanyRow | null> {
     const result = await client.query<LockedCompanyRow>(
       'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
     return result.rows[0] ?? null;
@@ -357,12 +357,12 @@ export class ProvidersRepository {
   // provider role in either state and to check whether any OTHER role is
   // still active before cascading to core.empresas.estatus (mirrors
   // ClientsRepository.lockRoles()).
-  private async lockRoles(client: PoolClient, id: number): Promise<RoleRow[]> {
+  private async lockRoles(client: PoolClient, id: string): Promise<RoleRow[]> {
     const result = await client.query<RoleRow>('SELECT rol, estatus FROM core.empresa_roles WHERE empresa_id = $1 FOR UPDATE', [id]);
     return result.rows;
   }
 
-  private async lockCurrentFiscal(client: PoolClient, id: number): Promise<LockedFiscalRow | null> {
+  private async lockCurrentFiscal(client: PoolClient, id: string): Promise<LockedFiscalRow | null> {
     const result = await client.query<LockedFiscalRow>(`
       SELECT empresa_fiscal_id::text, razon_social, rfc, fecha_inicio::text, fecha_fin::text
       FROM core.empresas_fiscales WHERE empresa_id = $1 AND es_vigente = TRUE
@@ -370,7 +370,7 @@ export class ProvidersRepository {
     return result.rows[0] ?? null;
   }
 
-  private async updateFiscal(client: PoolClient, id: number, current: LockedFiscalRow | null, input: UpdateProviderDto): Promise<void> {
+  private async updateFiscal(client: PoolClient, id: string, current: LockedFiscalRow | null, input: UpdateProviderDto): Promise<void> {
     const fiscal = input.fiscal;
     if (!fiscal) return;
     const legalName = fiscal.legalName?.trim() ?? '';

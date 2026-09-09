@@ -18,7 +18,7 @@ export interface EnvironmentConfig {
     // exposed via GET /api/health. Never derived from commit count.
     version: string;
     // Short Git commit SHA (e.g. "a1b2c3d"), or "unknown" when unavailable
-    // (always true for a bare local `npm run dev:api`, and never fatal).
+    // (always true for an ad-hoc workspace API launch, and never fatal).
     commit: string;
   };
 }
@@ -50,7 +50,7 @@ function booleanFlag(value: string | undefined, name: string, fallback: boolean)
 // environment. Docker (see docker/api.Dockerfile + compose.pilot.yaml) and
 // `npm run dev`/`npm run dev:test` (see scripts/dev-test-only.cjs, which
 // reads the root package.json directly) both supply it explicitly — this
-// constant only matters for a bare `npm run dev:api` or an ad-hoc process
+// constant only matters for a direct workspace dev command or an ad-hoc process
 // launch that skips both. Keep it in sync with the root package.json
 // "version" field when bumping releases; this is intentionally the one
 // place that small duplication is accepted, in exchange for the app version

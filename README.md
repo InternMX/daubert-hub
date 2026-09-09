@@ -36,7 +36,8 @@ exactly `daubert_hub_test`. The test guard refuses every other target before
 fixture mutation or cleanup. Production access uses `daubert_global` and is
 never connected from the test runner. No shared database between environments.
 
-`npm run dev` uses the same rule. It is resolved and enforced by
+`npm run dev`, `npm run dev:test`, and the API-only `npm run dev:api` use the
+same rule. It is resolved and enforced by
 `scripts/dev-test-only.cjs` *before* any dev process starts: `TEST_DATABASE_URL`
 must be set (or present in `apps/api/.env`) and must decode to exactly
 `daubert_hub_test`, or `npm run dev` exits immediately with a non-zero code and
@@ -55,6 +56,8 @@ match — a masked/incorrect URL cannot silently succeed.
 |--------|-------------|
 | `npm run dev` | Start API + frontend concurrently, against `daubert_hub_test` only |
 | `npm run dev:test` | Explicit alias for `npm run dev` |
+| `npm run dev:api` | Start only the API, against `daubert_hub_test` only |
+| `npm run dev:web` | Start only Vite; it does not start or configure an API process |
 | `npm run build` | Build API and frontend |
 | `npm run typecheck` | Run TypeScript checks both workspaces |
 | `npm run lint` | ESLint both workspaces |

@@ -9,9 +9,10 @@
 //
 // This script is the single source of truth for that decision: it resolves and validates
 // TEST_DATABASE_URL, derives DB_* overrides from it, and only then spawns the real dev
-// processes (the existing `dev:api`/`dev:web` scripts, run directly — never through a
-// publicly callable "run both, unguarded" npm script, so there is no obvious bypass command
-// sitting next to `dev`/`dev:test`) with those overrides applied. Because the spawned
+// processes (the workspace `dev` scripts, run directly rather than through root scripts that
+// users can invoke independently) with those overrides applied. Root `dev:api` comes back
+// through this launcher in API-only mode; root `dev:web` starts Vite only and cannot connect
+// an API to any database. Because the spawned
 // processes inherit this process's env, and dotenv (used by @nestjs/config) never overwrites
 // an already-set process.env value, the derived DB_* values win over whatever apps/api/.env
 // contains.
@@ -27,10 +28,16 @@ const { spawn, execFileSync } = require('node:child_process');
 const EXPECTED_DATABASE_NAME = 'daubert_hub_test';
 const ROOT_DIR = path.join(__dirname, '..');
 const DEFAULT_ENV_FILE = path.join(ROOT_DIR, 'apps', 'api', '.env');
-const DEV_SCRIPTS = [
-  { label: 'api', npmScript: 'dev:api' },
-  { label: 'web', npmScript: 'dev:web' }
+const DEV_PROCESSES = [
+  { label: 'api', workspace: '@daubert/api' },
+  { label: 'web', workspace: '@daubert/web' }
 ];
+
+function selectDevProcesses(argument) {
+  if (argument === undefined) return DEV_PROCESSES;
+  if (argument === '--api') return DEV_PROCESSES.filter(({ label }) => label === 'api');
+  throw Object.assign(new Error(`Unknown development target: ${argument}`), { code: 'DEV_TARGET_INVALID' });
+}
 
 function loadEnvFileValue(filePath, key) {
   if (!filePath || !fs.existsSync(filePath)) return undefined;
@@ -58,7 +65,7 @@ function parseGuardedTestDatabaseUrl(value) {
   if (!value) {
     throw Object.assign(new Error(
       'TEST_DATABASE_URL is not set.\n' +
-      'npm run dev only develops against daubert_hub_test and refuses to guess a database.\n' +
+      'Local API development only uses daubert_hub_test and refuses to guess a database.\n' +
       'Set TEST_DATABASE_URL in your shell, or add it to apps/api/.env (see apps/api/.env.example).'
     ), { code: 'TEST_DATABASE_URL_MISSING' });
   }
@@ -80,7 +87,7 @@ function parseGuardedTestDatabaseUrl(value) {
   if (databaseName !== EXPECTED_DATABASE_NAME) {
     throw Object.assign(new Error(
       `Refusing to start development against "${databaseName || '(missing)'}". Expected "${EXPECTED_DATABASE_NAME}".\n` +
-      'npm run dev only develops against the TEST database.'
+      'Local API development only uses the TEST database.'
     ), { code: 'TEST_DATABASE_URL_WRONG_DATABASE' });
   }
 
@@ -153,11 +160,11 @@ function terminateTree(child, signal) {
   }
 }
 
-// Runs one existing `npm run <script>` as a labeled, line-prefixed child process — reimplementing
+// Runs one workspace's `dev` script as a labeled, line-prefixed child process — reimplementing
 // just enough of the previous `npm-run-all --parallel --race --print-label` behavior (used by
 // main() below) without depending on a separate, publicly callable "run everything" npm script.
-function runDevScript(npmScript, label, env) {
-  const child = spawn('npm', ['run', npmScript], { cwd: ROOT_DIR, env, shell: true, stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows });
+function runWorkspaceDev(workspace, label, env) {
+  const child = spawn('npm', ['run', 'dev', '--workspace', workspace], { cwd: ROOT_DIR, env, shell: true, stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows });
   const prefixLines = (stream, out) => {
     let buffer = '';
     stream.on('data', (chunk) => {
@@ -174,6 +181,15 @@ function runDevScript(npmScript, label, env) {
 }
 
 function main() {
+  let devProcesses;
+  try {
+    devProcesses = selectDevProcesses(process.argv[2]);
+  } catch (error) {
+    console.error(`\n[dev:test-only] ${error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   let guarded;
   try {
     guarded = parseGuardedTestDatabaseUrl(resolveTestDatabaseUrl(process.env, DEFAULT_ENV_FILE));
@@ -184,7 +200,7 @@ function main() {
   }
 
   console.log(`[dev:test-only] TEST_DATABASE_URL verified -> database: ${guarded.databaseName}`);
-  console.log('[dev:test-only] Starting API + web against the TEST database only.');
+  console.log(`[dev:test-only] Starting ${devProcesses.map(({ label }) => label).join(' + ')} against the TEST database only.`);
 
   // Order matters: deriveReleaseEnv()'s values go first so an already-set
   // APP_VERSION/GIT_COMMIT in the developer's own shell (process.env) always
@@ -193,7 +209,7 @@ function main() {
 
   // --race semantics: both start together; if either exits for any reason, tear down the other
   // and stop, exactly like the previous npm-run-all-based behavior.
-  const children = DEV_SCRIPTS.map(({ npmScript, label }) => runDevScript(npmScript, label, env));
+  const children = devProcesses.map(({ workspace, label }) => runWorkspaceDev(workspace, label, env));
   let settled = false;
 
   function shutdown(exitCode, signal) {
@@ -206,7 +222,7 @@ function main() {
 
   children.forEach((child, index) => {
     child.on('exit', (code, signal) => {
-      const { label } = DEV_SCRIPTS[index];
+      const { label } = devProcesses[index];
       console.log(`[dev:test-only] ${label} exited${signal ? ` (signal ${signal})` : ` (code ${code})`}.`);
       shutdown(code, undefined);
     });
@@ -216,6 +232,6 @@ function main() {
   process.on('SIGTERM', () => shutdown(0, 'SIGTERM'));
 }
 
-module.exports = { EXPECTED_DATABASE_NAME, loadEnvFileValue, resolveTestDatabaseUrl, parseGuardedTestDatabaseUrl, deriveDatabaseEnv, readRootVersion, readGitCommit, deriveReleaseEnv };
+module.exports = { EXPECTED_DATABASE_NAME, loadEnvFileValue, resolveTestDatabaseUrl, parseGuardedTestDatabaseUrl, deriveDatabaseEnv, readRootVersion, readGitCommit, deriveReleaseEnv, selectDevProcesses };
 
 if (require.main === module) main();

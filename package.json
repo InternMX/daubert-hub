@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/dev-test-only.cjs",
     "dev:test": "node scripts/dev-test-only.cjs",
-    "dev:api": "npm run dev --workspace=@daubert/api",
+    "dev:api": "node scripts/dev-test-only.cjs --api",
     "dev:web": "npm run dev --workspace=@daubert/web",
     "test:dev-guard": "node --test scripts/*.test.cjs",
     "build": "npm run build --workspace=@daubert/api && npm run build --workspace=@daubert/web",

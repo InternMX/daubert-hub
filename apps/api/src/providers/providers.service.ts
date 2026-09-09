@@ -68,7 +68,7 @@ export class ProvidersService {
     return this.mapListResponse(listed, input);
   }
 
-  async get(id: number): Promise<GetProviderResponse> {
+  async get(id: string): Promise<GetProviderResponse> {
     const provider = await this.repository.findById(id);
     if (!provider) {
       throw new NotFoundException('Proveedor no encontrado.');
@@ -76,7 +76,7 @@ export class ProvidersService {
     return this.mapGetResponse(provider);
   }
 
-  async update(id: number, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
+  async update(id: string, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     this.validateFiscalFormat(input);
     const normalizedInput = this.normalizeAliases(input);
     try {
@@ -89,15 +89,15 @@ export class ProvidersService {
     }
   }
 
-  async deactivate(id: number, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
+  async deactivate(id: string, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     return this.changeStatus(id, 'INACTIVO', requestId, identity);
   }
 
-  async reactivate(id: number, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
+  async reactivate(id: string, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     return this.changeStatus(id, 'ACTIVO', requestId, identity);
   }
 
-  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
+  private async changeStatus(id: string, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     try {
       const provider = await this.repository.changeStatus(id, status, requestId, identity);
       if (!provider) throw new NotFoundException('Proveedor no encontrado.');

@@ -15,7 +15,7 @@ interface CurrentDatabaseRow extends QueryResultRow {
 }
 
 // Opt-in, dev-only live guard: the safe local-development launcher (scripts/dev-test-only.cjs
-// at the repo root) is the only thing that sets EXPECTED_DATABASE_NAME. It is absent in Docker
+// at the repo root, including root `dev:api`) sets EXPECTED_DATABASE_NAME. It is absent in Docker
 // TEST/PROD and in the integration runners, so this is a no-op there — parsing the connection
 // URL is not enough on its own, this confirms the live connection actually landed on the
 // intended database before the API starts serving traffic.

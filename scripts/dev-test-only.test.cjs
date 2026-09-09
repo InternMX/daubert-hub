@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { parseGuardedTestDatabaseUrl, resolveTestDatabaseUrl, deriveDatabaseEnv, EXPECTED_DATABASE_NAME, readRootVersion, readGitCommit, deriveReleaseEnv } = require('./dev-test-only.cjs');
+const rootPackage = require('../package.json');
+const { parseGuardedTestDatabaseUrl, resolveTestDatabaseUrl, deriveDatabaseEnv, EXPECTED_DATABASE_NAME, readRootVersion, readGitCommit, deriveReleaseEnv, selectDevProcesses } = require('./dev-test-only.cjs');
 
 test('EXPECTED_DATABASE_NAME is daubert_hub_test', () => {
   assert.equal(EXPECTED_DATABASE_NAME, 'daubert_hub_test');
@@ -107,6 +108,22 @@ test('deriveDatabaseEnv overrides DB_* and sets EXPECTED_DATABASE_NAME from the 
     DB_PASSWORD: 'local-test-only',
     EXPECTED_DATABASE_NAME: 'daubert_hub_test'
   });
+});
+
+test('normal root API development always enters the guarded launcher while web-only starts no API', () => {
+  assert.equal(rootPackage.scripts.dev, 'node scripts/dev-test-only.cjs');
+  assert.equal(rootPackage.scripts['dev:test'], 'node scripts/dev-test-only.cjs');
+  assert.equal(rootPackage.scripts['dev:api'], 'node scripts/dev-test-only.cjs --api');
+  assert.equal(rootPackage.scripts['dev:web'], 'npm run dev --workspace=@daubert/web');
+});
+
+test('selects both guarded workspace processes normally and only the API for dev:api', () => {
+  assert.deepEqual(selectDevProcesses(), [
+    { label: 'api', workspace: '@daubert/api' },
+    { label: 'web', workspace: '@daubert/web' }
+  ]);
+  assert.deepEqual(selectDevProcesses('--api'), [{ label: 'api', workspace: '@daubert/api' }]);
+  assert.throws(() => selectDevProcesses('--web'), (error) => error.code === 'DEV_TARGET_INVALID');
 });
 
 test('readRootVersion reads the semantic version straight out of the real root package.json', () => {

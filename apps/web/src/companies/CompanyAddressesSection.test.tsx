@@ -1,4 +1,4 @@
-import { render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCompanyAddress, deactivateCompanyAddress, listCompanyAddresses, reactivateCompanyAddress, updateCompanyAddress, type CompanyAddress } from '../services/companyAddresses';
@@ -50,7 +50,7 @@ describe('CompanyAddressesSection', () => {
     await user.click(screen.getByRole('button', { name: 'Agregar dirección' })); const dialog = screen.getByRole('dialog', { name: 'Agregar dirección' });
     const labels = ['Dirección completa', 'Calle', 'Número exterior', 'Número interior', 'Colonia', 'Código postal', 'Municipio o alcaldía', 'Estado', 'País', 'Referencias', 'Fecha de inicio', 'Fecha de fin', 'Dirección principal']; labels.forEach((label) => expect(within(dialog).getByLabelText(label)).toBeInTheDocument());
     await user.click(within(dialog).getByRole('combobox', { name: 'Tipo de dirección' })); for (const label of ['Fiscal', 'Comercial', 'Operativa', 'Entrega', 'Facturación', 'Otra']) expect(screen.getByRole('option', { name: label })).toBeInTheDocument(); await user.click(screen.getByRole('option', { name: 'Facturación' }));
-    await user.type(within(dialog).getByLabelText('Dirección completa'), ' Av. Uno 20 '); await user.type(within(dialog).getByLabelText('Número exterior'), ' 20 '); await user.type(within(dialog).getByLabelText('Fecha de inicio'), '2026-09-02'); await user.click(within(dialog).getByLabelText('Dirección principal')); await user.click(within(dialog).getByRole('button', { name: 'Agregar dirección' }));
+    fireEvent.change(within(dialog).getByLabelText('Dirección completa'), { target: { value: ' Av. Uno 20 ' } }); fireEvent.change(within(dialog).getByLabelText('Número exterior'), { target: { value: ' 20 ' } }); fireEvent.change(within(dialog).getByLabelText('Fecha de inicio'), { target: { value: '2026-09-02' } }); await user.click(within(dialog).getByLabelText('Dirección principal')); await user.click(within(dialog).getByRole('button', { name: 'Agregar dirección' }));
     await waitFor(() => expect(createMock).toHaveBeenCalledWith('121', expect.objectContaining({ tipoDireccion: 'FACTURACION', direccionCompleta: 'Av. Uno 20', calle: null, numeroExterior: '20', esPrincipal: true, colonia: null, referencias: null, fechaInicio: '2026-09-02', fechaFin: null })));
     expect(await screen.findByText('Av. Uno 20')).toBeInTheDocument();
   });

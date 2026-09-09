@@ -48,15 +48,15 @@ export class ContactMethodsService {
     }
   }
 
-  deactivate(id: number, requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
+  deactivate(id: string, requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
     return this.changeStatus(id, 'INACTIVO', requestId, identity);
   }
 
-  reactivate(id: number, requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
+  reactivate(id: string, requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
     return this.changeStatus(id, 'ACTIVO', requestId, identity);
   }
 
-  private async changeStatus(id: number, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
+  private async changeStatus(id: string, status: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactMethodResponse> {
     try {
       const method = await this.repository.changeStatus(id, status, requestId, identity);
       if (!method) throw new NotFoundException('Medio de contacto no encontrado.');

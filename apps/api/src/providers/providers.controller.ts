@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { identityFromRequest, type AuthenticatedRequest } from '../common/authenticated-request';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { ListProvidersDto } from './dto/list-providers.dto';
@@ -16,10 +16,8 @@ export class ProvidersController {
   }
 
   @Get(':id')
-  get(@Param('id', ParseIntPipe) id: number): Promise<GetProviderResponse> {
-    if (id < 1) {
-      throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
-    }
+  get(@Param('id') id: string): Promise<GetProviderResponse> {
+    this.assertId(id);
     return this.providers.get(id);
   }
 
@@ -30,22 +28,28 @@ export class ProvidersController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() input: UpdateProviderDto, @Req() request: AuthenticatedRequest): Promise<GetProviderResponse> {
-    if (id < 1) throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
+  update(@Param('id') id: string, @Body() input: UpdateProviderDto, @Req() request: AuthenticatedRequest): Promise<GetProviderResponse> {
+    this.assertId(id);
     return this.providers.update(id, input, request.requestId, identityFromRequest(request));
   }
 
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)
-  deactivate(@Param('id', ParseIntPipe) id: number, @Req() request: AuthenticatedRequest): Promise<GetProviderResponse> {
-    if (id < 1) throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
+  deactivate(@Param('id') id: string, @Req() request: AuthenticatedRequest): Promise<GetProviderResponse> {
+    this.assertId(id);
     return this.providers.deactivate(id, request.requestId, identityFromRequest(request));
   }
 
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
-  reactivate(@Param('id', ParseIntPipe) id: number, @Req() request: AuthenticatedRequest): Promise<GetProviderResponse> {
-    if (id < 1) throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
+  reactivate(@Param('id') id: string, @Req() request: AuthenticatedRequest): Promise<GetProviderResponse> {
+    this.assertId(id);
     return this.providers.reactivate(id, request.requestId, identityFromRequest(request));
+  }
+
+  private assertId(id: string): void {
+    if (!/^[1-9]\d*$/.test(id) || BigInt(id) > 9223372036854775807n) {
+      throw new BadRequestException('El identificador del proveedor debe ser un entero positivo.');
+    }
   }
 }

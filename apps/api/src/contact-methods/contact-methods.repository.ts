@@ -62,7 +62,7 @@ export class ContactMethodsRepository {
     }
   }
 
-  async changeStatus(id: number, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactMethodRecord | null> {
+  async changeStatus(id: string, targetStatus: 'ACTIVO' | 'INACTIVO', requestId: string, identity: AuditIdentity): Promise<ContactMethodRecord | null> {
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
@@ -113,7 +113,7 @@ export class ContactMethodsRepository {
     }
   }
 
-  private async lockMethod(client: PoolClient, id: number | string): Promise<LockedMethodRow | null> {
+  private async lockMethod(client: PoolClient, id: string): Promise<LockedMethodRow | null> {
     const result = await client.query<LockedMethodRow>(`
       SELECT method.medio_id::text AS id, method.contacto_id::text AS contact_id, method.tipo_medio AS type,
         method.valor AS value, method.estatus AS status, method.es_principal AS is_primary,
