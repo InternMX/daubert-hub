@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { adjustDocumentSeries, getDocumentSeries, type AutomationSeriesConfiguration } from '../services/automations';
 import { listAudiExecutions, type AudiProcessingSummary, type ListAudiExecutions } from '../services/audiExecutions';
-import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
+import { acknowledgeAutomationReview, listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import { AudiRemissionsPage } from './AudiRemissionsPage';
 
 vi.mock('../services/automations', async (importOriginal) => ({
@@ -14,7 +14,8 @@ vi.mock('../services/automations', async (importOriginal) => ({
 }));
 vi.mock('../services/automationsOverview', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/automationsOverview')>()),
-  listAutomationsOverview: vi.fn()
+  listAutomationsOverview: vi.fn(),
+  acknowledgeAutomationReview: vi.fn()
 }));
 vi.mock('../services/audiExecutions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/audiExecutions')>()),
@@ -25,6 +26,7 @@ const getMock = vi.mocked(getDocumentSeries);
 const adjustMock = vi.mocked(adjustDocumentSeries);
 const overviewMock = vi.mocked(listAutomationsOverview);
 const executionsMock = vi.mocked(listAudiExecutions);
+const acknowledgeMock = vi.mocked(acknowledgeAutomationReview);
 
 const configuration: AutomationSeriesConfiguration = {
   automation: { code: 'REMISIONES_AUDI', name: 'Remisiones Audi', status: 'ACTIVO' },
@@ -45,6 +47,7 @@ function audiOverview(overrides: Partial<AutomationOverview> = {}): AutomationOv
     lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' },
     nextCheckAt: null,
     capabilities: { hasDashboard: true, hasHistory: true, hasDetail: false },
+    review: { required: false, problemOccurredAt: null, problemOutcome: null },
     ...overrides
   };
 }
@@ -56,6 +59,7 @@ function execution(overrides: Partial<AudiProcessingSummary> = {}): AudiProcessi
     generatedCount: 5,
     firstFolio: '9000',
     lastFolio: '9004',
+    reviewStatus: null,
     ...overrides
   };
 }
@@ -73,6 +77,7 @@ describe('AudiRemissionsPage', () => {
     getMock.mockResolvedValue(configuration);
     overviewMock.mockResolvedValue([audiOverview()]);
     executionsMock.mockResolvedValue(executionsResponse([execution()]));
+    acknowledgeMock.mockResolvedValue({ automationCode: 'REMISIONES_AUDI', reviewRequired: false, reviewedAt: '2026-09-10T00:00:00.000Z', reviewedBy: { displayName: 'user@daubert.mx', email: 'user@daubert.mx' } });
   });
 
   describe('header and breadcrumb', () => {
@@ -216,10 +221,13 @@ describe('AudiRemissionsPage', () => {
     });
 
     it('renders a dash when no folio was generated, never a fabricated range', async () => {
-      executionsMock.mockResolvedValue(executionsResponse([execution({ generatedCount: 0, firstFolio: null, lastFolio: null })]));
+      executionsMock.mockResolvedValue(executionsResponse([execution({ generatedCount: 0, firstFolio: null, lastFolio: null, reviewStatus: null })]));
       renderPage();
       const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
-      expect(within(table).getByText('—')).toBeInTheDocument();
+      const row = within(table).getAllByRole('row')[1]!;
+      // The Folios cell renders "—" for a folio-less row; the (unrelated) Revisión cell also
+      // renders "—" for a non-current row — both dashes are expected and distinct.
+      expect(within(row).getAllByText('—').length).toBe(2);
     });
 
     it('shows the empty state when there is no processing history, without hiding the rest of the page', async () => {
@@ -246,6 +254,79 @@ describe('AudiRemissionsPage', () => {
       await screen.findByRole('table', { name: 'Procesamientos recientes' });
       await user.click(screen.getByRole('button', { name: 'Siguiente' }));
       await waitFor(() => expect(executionsMock).toHaveBeenCalledWith(2, 25));
+    });
+
+    describe('Revisión column (Phase 10I UX refinement)', () => {
+      it('shows a "Marcar como revisado" action for the row with reviewStatus REQUIRED', async () => {
+        executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]));
+        renderPage();
+        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        expect(within(table).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+      });
+
+      it('shows "Revisado" (not the action) for the row with reviewStatus REVIEWED', async () => {
+        executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REVIEWED' })]));
+        renderPage();
+        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        expect(await within(table).findByText('Revisado')).toBeInTheDocument();
+        expect(within(table).queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
+      });
+
+      it('shows a plain dash for a non-current row (reviewStatus null), even a historical FAILED one — never a fabricated action or state', async () => {
+        executionsMock.mockResolvedValue(executionsResponse([
+          execution({ outcome: 'COMPLETED', reviewStatus: null }),
+          execution({ outcome: 'FAILED', reviewStatus: null })
+        ]));
+        renderPage();
+        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        expect(within(table).queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
+        expect(within(table).queryByText('Revisado')).not.toBeInTheDocument();
+      });
+
+      it('opens the confirmation dialog, and Cancelar sends no request', async () => {
+        executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]));
+        const user = userEvent.setup();
+        renderPage();
+        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
+        expect(await screen.findByRole('dialog')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+        expect(acknowledgeMock).not.toHaveBeenCalled();
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      });
+
+      it('acknowledges without sending any processing/source ID, then refreshes the history and status sections and shows a success Snackbar', async () => {
+        executionsMock
+          .mockResolvedValueOnce(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]))
+          .mockResolvedValueOnce(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REVIEWED' })]));
+        const user = userEvent.setup();
+        renderPage();
+        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: 'Marcar como revisado' }));
+
+        expect(acknowledgeMock).toHaveBeenCalledWith('REMISIONES_AUDI');
+        expect(acknowledgeMock.mock.calls[0]).toEqual(['REMISIONES_AUDI']);
+        expect(await screen.findByText('Marcado como revisado.')).toBeInTheDocument();
+        expect(executionsMock.mock.calls.length).toBeGreaterThan(1);
+        await waitFor(() => expect(within(screen.getByRole('table', { name: 'Procesamientos recientes' })).getByText('Revisado')).toBeInTheDocument());
+      });
+
+      it('keeps the action available and shows a safe Spanish error on failure, without a raw API error', async () => {
+        executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]));
+        acknowledgeMock.mockRejectedValueOnce(new Error('boom'));
+        const user = userEvent.setup();
+        renderPage();
+        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: 'Marcar como revisado' }));
+
+        expect(await within(dialog).findByText('No fue posible marcar la automatización como revisada. Intenta nuevamente.')).toBeInTheDocument();
+        expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
+        expect(within(dialog).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+      });
     });
   });
 });

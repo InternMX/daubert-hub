@@ -2,6 +2,18 @@ export type AutomationEnvironment = 'TEST' | 'PRODUCTION' | 'UNKNOWN';
 export type AutomationIntegrationStatus = 'INTEGRATED' | 'NOT_INTEGRATED';
 export type AutomationLifecycleStatus = 'ACTIVE' | 'INACTIVE' | null;
 export type AutomationProcessingOutcome = 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'PROCESSING' | 'CANCELLED' | null;
+export type AutomationReviewOutcome = 'PARTIAL' | 'FAILED' | 'CANCELLED' | null;
+
+// Human-review acknowledgement state (Phase 10I) — separate from lastProcessing. required=true
+// while the latest review-worthy processing has no acknowledgement row yet, even if a later,
+// unrelated processing succeeded (lastProcessing.outcome=COMPLETED, review.required=true is
+// valid and intentional). The backend is authoritative here: never re-derive this in the
+// frontend from lastProcessing alone.
+export interface AutomationReview {
+  required: boolean;
+  problemOccurredAt: string | null;
+  problemOutcome: AutomationReviewOutcome;
+}
 
 export interface AutomationOverview {
   code: string;
@@ -21,6 +33,7 @@ export interface AutomationOverview {
   // anchor or reliable last-check timestamp exists (it does not, today).
   nextCheckAt: string | null;
   capabilities: { hasDashboard: boolean; hasHistory: boolean; hasDetail: boolean };
+  review: AutomationReview;
 }
 
 export interface AutomationsOverviewResponse {

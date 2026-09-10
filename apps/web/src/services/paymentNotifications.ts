@@ -3,6 +3,10 @@ import { apiBaseUrl as baseUrl } from './api';
 export type PaymentNotificationProcessingStatus = 'PENDIENTE' | 'PROCESADO' | 'ERROR';
 export type PaymentNotificationOutcomeStatus = 'COMPLETED' | 'PARTIAL' | 'FAILED' | null;
 export type PaymentNotificationResultStatus = 'LISTO' | 'MANUAL' | 'ERROR' | 'OMITIDO';
+// Backend-authoritative per-row acknowledgement state (Phase 10I UX refinement). Non-null on at
+// most one row in a list response — the row currently resolved as the outstanding problem. Never
+// derive this on the frontend by comparing outcomes across rows.
+export type PaymentNotificationReviewStatus = 'REQUIRED' | 'REVIEWED' | null;
 
 export interface PaymentNotificationExecutionSummary {
   executionId: string;
@@ -17,6 +21,7 @@ export interface PaymentNotificationExecutionSummary {
   omittedCount: number;
   summarySent: boolean;
   summarySentAt: string | null;
+  reviewStatus: PaymentNotificationReviewStatus;
 }
 
 export interface PaymentNotificationProviderResult {
@@ -68,6 +73,12 @@ function isOutcomeStatus(value: unknown): value is PaymentNotificationOutcomeSta
   return value === null || (typeof value === 'string' && outcomeStatuses.has(value as Exclude<PaymentNotificationOutcomeStatus, null>));
 }
 
+const reviewStatuses = new Set<Exclude<PaymentNotificationReviewStatus, null>>(['REQUIRED', 'REVIEWED']);
+
+function isReviewStatus(value: unknown): value is PaymentNotificationReviewStatus {
+  return value === null || (typeof value === 'string' && reviewStatuses.has(value as Exclude<PaymentNotificationReviewStatus, null>));
+}
+
 function isExecutionSummary(value: unknown): value is PaymentNotificationExecutionSummary {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
@@ -82,7 +93,8 @@ function isExecutionSummary(value: unknown): value is PaymentNotificationExecuti
     && isNonNegativeFiniteNumber(item.errorCount)
     && isNonNegativeFiniteNumber(item.omittedCount)
     && typeof item.summarySent === 'boolean'
-    && isNullableIsoDateString(item.summarySentAt);
+    && isNullableIsoDateString(item.summarySentAt)
+    && isReviewStatus(item.reviewStatus);
 }
 
 function isProviderResult(value: unknown): value is PaymentNotificationProviderResult {

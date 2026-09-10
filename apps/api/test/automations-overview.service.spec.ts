@@ -21,12 +21,15 @@ function paymentSummary(overrides: Partial<{
   };
 }
 
-function setup(options: { audiRow?: unknown; paymentData?: unknown[]; environment?: 'TEST' | 'PRODUCTION' | 'UNKNOWN' } = {}) {
+const NO_REVIEW = { required: false, problemOccurredAt: null, problemOutcome: null };
+
+function setup(options: { audiRow?: unknown; paymentData?: unknown[]; environment?: 'TEST' | 'PRODUCTION' | 'UNKNOWN'; audiReview?: unknown; paymentReview?: unknown } = {}) {
   const repository = { findAudiOverview: vi.fn().mockResolvedValue(options.audiRow ?? null) };
   const paymentNotifications = { list: vi.fn().mockResolvedValue({ data: options.paymentData ?? [], meta: { page: 1, pageSize: 1, total: options.paymentData?.length ?? 0, totalPages: 1 } }) };
   const healthService = { getHealth: vi.fn().mockResolvedValue(health(options.environment)) };
-  const service = new AutomationsOverviewService(repository as never, paymentNotifications as never, healthService as never);
-  return { service, repository, paymentNotifications, healthService };
+  const review = { getReviewState: vi.fn().mockImplementation((code: string) => Promise.resolve(code === 'REMISIONES_AUDI' ? (options.audiReview ?? NO_REVIEW) : (options.paymentReview ?? NO_REVIEW))) };
+  const service = new AutomationsOverviewService(repository as never, paymentNotifications as never, healthService as never, review as never);
+  return { service, repository, paymentNotifications, healthService, review };
 }
 
 describe('AutomationsOverviewService', () => {
@@ -163,13 +166,15 @@ describe('AutomationsOverviewService', () => {
     it('never exposes technical/internal identifiers or diagnostics anywhere in the response', async () => {
       const { service } = setup({
         audiRow: { lifecycle_status: 'ACTIVA', execution_state: 'ERROR', occurred_at: '2026-08-27T22:40:01.933Z' },
-        paymentData: [paymentSummary()]
+        paymentData: [paymentSummary()],
+        audiReview: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
       });
       const result = await service.getOverview();
       const text = JSON.stringify(result);
-      expect(text).not.toMatch(/n8n_execution_id|run_name|error_nodo|error_mensaje|correo_id|ejecucion_id|automatizacion_id|outlook|remitente|detalle_error/i);
+      expect(text).not.toMatch(/n8n_execution_id|run_name|error_nodo|error_mensaje|correo_id|ejecucion_id|automatizacion_id|outlook|remitente|detalle_error|acknowledgement_id|source_reference/i);
       for (const item of result.data) {
-        expect(Object.keys(item).sort()).toEqual(['capabilities', 'code', 'description', 'environment', 'integrationStatus', 'lastCheckAt', 'lastProcessing', 'lifecycleStatus', 'name', 'nextCheckAt', 'polling']);
+        expect(Object.keys(item).sort()).toEqual(['capabilities', 'code', 'description', 'environment', 'integrationStatus', 'lastCheckAt', 'lastProcessing', 'lifecycleStatus', 'name', 'nextCheckAt', 'polling', 'review']);
+        expect(Object.keys(item.review).sort()).toEqual(['problemOccurredAt', 'problemOutcome', 'required']);
       }
     });
 
@@ -177,8 +182,40 @@ describe('AutomationsOverviewService', () => {
       const repository = { findAudiOverview: vi.fn().mockRejectedValue(new Error('db down')) };
       const paymentNotifications = { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 1, total: 0, totalPages: 0 } }) };
       const healthService = { getHealth: vi.fn().mockResolvedValue(health()) };
-      const service = new AutomationsOverviewService(repository as never, paymentNotifications as never, healthService as never);
+      const review = { getReviewState: vi.fn().mockResolvedValue(NO_REVIEW) };
+      const service = new AutomationsOverviewService(repository as never, paymentNotifications as never, healthService as never, review as never);
       await expect(service.getOverview()).rejects.toThrow('db down');
+    });
+  });
+
+  describe('review (Phase 10I)', () => {
+    it('reports required=true with the problem outcome/occurredAt when the latest problem is unacknowledged', async () => {
+      const { service } = setup({ audiReview: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' } });
+      const { data } = await service.getOverview();
+      expect(data[0]?.review).toEqual({ required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' });
+    });
+
+    it('reports required=false once the latest problem has been acknowledged, while keeping the historical outcome', async () => {
+      const { service } = setup({ paymentReview: { required: false, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'PARTIAL' } });
+      const { data } = await service.getOverview();
+      expect(data[1]?.review).toEqual({ required: false, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'PARTIAL' });
+    });
+
+    it('reports required=false with null occurredAt/outcome when there is no historical problem', async () => {
+      const { service } = setup();
+      const { data } = await service.getOverview();
+      expect(data[0]?.review).toEqual(NO_REVIEW);
+      expect(data[1]?.review).toEqual(NO_REVIEW);
+    });
+
+    it('always reports Caterpillar review as required=false with no fabricated problem, without querying it', async () => {
+      const { service, review } = setup();
+      const { data } = await service.getOverview();
+      expect(data[2]?.review).toEqual(NO_REVIEW);
+      expect(review.getReviewState).toHaveBeenCalledTimes(2);
+      expect(review.getReviewState).toHaveBeenCalledWith('REMISIONES_AUDI');
+      expect(review.getReviewState).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS');
+      expect(review.getReviewState).not.toHaveBeenCalledWith('REMISIONES_CATERPILLAR');
     });
   });
 });

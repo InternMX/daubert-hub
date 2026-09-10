@@ -1,5 +1,5 @@
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { adjustDocumentSeries, getDocumentSeries, type AutomationSeriesConfiguration } from '../services/automations';
 import { listAudiExecutions, type ListAudiExecutions } from '../services/audiExecutions';
@@ -8,8 +8,10 @@ import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { folioRangeLabel } from './audiProcessingPresentation';
 import { formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel, processingOutcomeSeverity } from './automationOverviewPresentation';
+import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
 
 const automationCode = 'REMISIONES_AUDI';
+const automationName = 'Remisiones Audi';
 const seriesCode = 'REMISION_AUDI';
 const EXECUTIONS_PAGE_SIZE = 25;
 
@@ -39,7 +41,7 @@ function ProcessingOutcomeChip({ outcome }: { outcome: AutomationProcessingOutco
 // Independently loadable (Phase 10F §8): its own failure never hides the series configuration or
 // adjustment history below it. Sourced from GET /api/automations/overview — the same overview
 // entry and status-mapping helpers the general panel already uses, never a second implementation.
-function OperationalStatusSection() {
+function OperationalStatusSection({ refreshToken }: { refreshToken: number }) {
   const [audi, setAudi] = useState<AutomationOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -54,7 +56,7 @@ function OperationalStatusSection() {
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [retry]);
+  }, [retry, refreshToken]);
 
   if (loading) return <SectionSpinner label="Cargando estado operacional" />;
   if (error || !audi) {
@@ -88,7 +90,7 @@ function OperationalStatusSection() {
 // Independently loadable (Phase 10F §9/§18): its own failure never hides the operational header,
 // series configuration, or adjustment history. A dedicated query (not RemisionesAudiActivityRepository's
 // bounded/mixed Recent Activity feed) so every genuine execution shows here, including PROCESANDO.
-function RecentProcessingsSection() {
+function RecentProcessingsSection({ refreshToken, onAcknowledged }: { refreshToken: number; onAcknowledged: () => void }) {
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<ListAudiExecutions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,7 +106,7 @@ function RecentProcessingsSection() {
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [page, retry]);
+  }, [page, retry, refreshToken]);
 
   if (loading) return <SectionSpinner label="Cargando procesamientos recientes" />;
   if (error) {
@@ -125,7 +127,7 @@ function RecentProcessingsSection() {
     <Paper variant="outlined" sx={{ mt: 2, overflow: 'hidden' }}>
       <Box sx={{ overflowX: 'auto' }}>
         <Table aria-label="Procesamientos recientes">
-          <TableHead><TableRow><TableCell>Fecha</TableCell><TableCell>Resultado</TableCell><TableCell align="right">Remisiones</TableCell><TableCell>Folios</TableCell></TableRow></TableHead>
+          <TableHead><TableRow><TableCell>Fecha</TableCell><TableCell>Resultado</TableCell><TableCell align="right">Remisiones</TableCell><TableCell>Folios</TableCell><TableCell>Revisión</TableCell></TableRow></TableHead>
           <TableBody>
             {result.data.map((execution, index) => (
               <TableRow key={`${execution.occurredAt}-${index}`}>
@@ -133,6 +135,14 @@ function RecentProcessingsSection() {
                 <TableCell><ProcessingOutcomeChip outcome={execution.outcome} /></TableCell>
                 <TableCell align="right">{execution.generatedCount}</TableCell>
                 <TableCell>{folioRangeLabel(execution.firstFolio, execution.lastFolio)}</TableCell>
+                <TableCell>
+                  <ReviewAcknowledgementCell
+                    automationCode={automationCode}
+                    automationName={automationName}
+                    reviewStatus={execution.reviewStatus}
+                    onAcknowledged={onAcknowledged}
+                  />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -161,6 +171,13 @@ export function AudiRemissionsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
+  const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
+
+  function handleAcknowledged() {
+    setReviewRefreshToken((value) => value + 1);
+    setReviewFeedback('Marcado como revisado.');
+  }
 
   useEffect(() => {
     let active = true;
@@ -212,7 +229,7 @@ export function AudiRemissionsPage() {
 
         <Box component="section" aria-labelledby="audi-status-title">
           <Typography id="audi-status-title" variant="h2">Estado operacional</Typography>
-          <OperationalStatusSection />
+          <OperationalStatusSection refreshToken={reviewRefreshToken} />
         </Box>
 
         <Box component="section" aria-labelledby="audi-series-title">
@@ -231,7 +248,7 @@ export function AudiRemissionsPage() {
 
         <Box component="section" aria-labelledby="audi-recent-title">
           <Typography id="audi-recent-title" variant="h2">Procesamientos recientes</Typography>
-          <RecentProcessingsSection />
+          <RecentProcessingsSection refreshToken={reviewRefreshToken} onAcknowledged={handleAcknowledged} />
         </Box>
 
         <Box component="section" aria-labelledby="audi-adjustments-title">
@@ -261,6 +278,7 @@ export function AudiRemissionsPage() {
           <DialogActions><Button type="button" onClick={closeDialog} disabled={saving}>Cancelar</Button><Button type="submit" variant="contained" disabled={saving || !validFolio}>{saving ? 'Guardando...' : 'Guardar ajuste'}</Button></DialogActions>
         </Box>
       </Dialog>
+      <Snackbar open={Boolean(reviewFeedback)} autoHideDuration={4000} onClose={() => setReviewFeedback(null)} message={reviewFeedback} />
     </>
   );
 }

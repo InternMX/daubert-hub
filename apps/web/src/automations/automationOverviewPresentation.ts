@@ -32,15 +32,36 @@ export function processingOutcomeSeverity(outcome: AutomationProcessingOutcome):
   return 'default';
 }
 
-// Requiere revisión (Phase 10F §3): only an INTEGRATED automation's most recent processing
-// outcome can honestly justify a review prompt. PARTIAL/FAILED/CANCELLED are all shapes of "the
-// business process did not simply succeed"; PROCESSING is still in flight (not enough evidence
-// yet) and null means insufficient information — neither counts. A NOT_INTEGRATED automation
-// already has its own "Sin integración" metric and must never double-count here.
-export function requiresReview(automation: AutomationOverview): boolean {
-  if (automation.integrationStatus !== 'INTEGRATED') return false;
-  const outcome = automation.lastProcessing?.outcome;
-  return outcome === 'PARTIAL' || outcome === 'FAILED' || outcome === 'CANCELLED';
+// Automation Center card operational accent (Phase 10I UX refinement §2). Deliberately restrained:
+// no traffic-light circle, no green "healthy" state ever (silence already communicates health).
+// RED beats WARNING — the two accents are never shown simultaneously, and Caterpillar
+// (NOT_INTEGRATED) never gets a fabricated accent regardless of its (always-null) review/processing
+// fields. Semantic MUI theme tokens only (error.main / warning.main) — see AutomationsPage.tsx.
+export type AutomationHealthAccent = 'error' | 'warning' | null;
+
+export function automationHealthAccent(automation: AutomationOverview): AutomationHealthAccent {
+  if (automation.integrationStatus !== 'INTEGRATED') return null;
+  if (automation.lastProcessing?.outcome === 'FAILED') return 'error';
+  if (automation.review.required) return 'warning';
+  return null;
+}
+
+export interface AutomationHealthText {
+  text: string;
+  color: 'error' | 'warning';
+}
+
+// Text always accompanies the accent color (never color-only signaling). Critical semantic point:
+// acknowledged !== fixed — "Último procesamiento falló" is driven solely by lastProcessing.outcome
+// and persists even once review.required has been acknowledged to false; only "Requiere revisión"
+// is gated by review.required. Both may render together (e.g. a still-unacknowledged FAILED
+// processing) even though the card accent itself stays RED-only.
+export function automationHealthTexts(automation: AutomationOverview): AutomationHealthText[] {
+  if (automation.integrationStatus !== 'INTEGRATED') return [];
+  const texts: AutomationHealthText[] = [];
+  if (automation.lastProcessing?.outcome === 'FAILED') texts.push({ text: 'Último procesamiento falló', color: 'error' });
+  if (automation.review.required) texts.push({ text: 'Requiere revisión', color: 'warning' });
+  return texts;
 }
 
 const timeZone = 'America/Mexico_City';

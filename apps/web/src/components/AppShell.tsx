@@ -19,6 +19,7 @@ import { useAuth } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { roleLabels } from '../services/userLabels';
 import { appTokens, useColorMode } from '../theme';
+import { SidebarContext } from './sidebarContext.core';
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
 const sidebarPreferenceKey = 'daubertHub.sidebarCollapsed';
@@ -429,7 +430,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Stack>
       </Box>
       <Box component="main" sx={{ minWidth: 0, px: { xs: 3, sm: 4, lg: 6 }, py: { xs: 4, md: 5 } }}>
-        <Box sx={{ maxWidth: 1400, mx: 'auto' }}>{children}</Box>
+        <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+          <SidebarContext.Provider value={{ collapsed }}>{children}</SidebarContext.Provider>
+        </Box>
       </Box>
     </Box>
   );

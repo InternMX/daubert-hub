@@ -4,6 +4,16 @@ export type AutomationEnvironment = 'TEST' | 'PRODUCTION' | 'UNKNOWN';
 export type AutomationIntegrationStatus = 'INTEGRATED' | 'NOT_INTEGRATED';
 export type AutomationLifecycleStatus = 'ACTIVE' | 'INACTIVE' | null;
 export type AutomationProcessingOutcome = 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'PROCESSING' | 'CANCELLED' | null;
+export type AutomationReviewOutcome = 'PARTIAL' | 'FAILED' | 'CANCELLED' | null;
+
+// Human-review acknowledgement state (Phase 10I). Backend-authoritative and separate from
+// lastProcessing — required=true can coexist with lastProcessing.outcome=COMPLETED when an
+// earlier problem has not been acknowledged yet. Never re-derive `required` on the frontend.
+export interface AutomationReview {
+  required: boolean;
+  problemOccurredAt: string | null;
+  problemOutcome: AutomationReviewOutcome;
+}
 
 export interface AutomationOverview {
   code: string;
@@ -17,6 +27,14 @@ export interface AutomationOverview {
   lastProcessing: { occurredAt: string; outcome: AutomationProcessingOutcome } | null;
   nextCheckAt: string | null;
   capabilities: { hasDashboard: boolean; hasHistory: boolean; hasDetail: boolean };
+  review: AutomationReview;
+}
+
+export interface AcknowledgeAutomationReviewResponse {
+  automationCode: string;
+  reviewRequired: boolean;
+  reviewedAt: string | null;
+  reviewedBy: { displayName: string; email: string } | null;
 }
 
 export class AutomationsOverviewApiError extends Error {
@@ -28,6 +46,7 @@ export class AutomationsOverviewApiError extends Error {
 const environments = new Set<AutomationEnvironment>(['TEST', 'PRODUCTION', 'UNKNOWN']);
 const integrationStatuses = new Set<AutomationIntegrationStatus>(['INTEGRATED', 'NOT_INTEGRATED']);
 const processingOutcomes = new Set<Exclude<AutomationProcessingOutcome, null>>(['COMPLETED', 'PARTIAL', 'FAILED', 'PROCESSING', 'CANCELLED']);
+const reviewOutcomes = new Set<Exclude<AutomationReviewOutcome, null>>(['PARTIAL', 'FAILED', 'CANCELLED']);
 
 function isIsoDateString(value: unknown): value is string {
   return typeof value === 'string' && Number.isFinite(new Date(value).getTime());
@@ -69,6 +88,19 @@ function isCapabilities(value: unknown): value is AutomationOverview['capabiliti
   return typeof capabilities.hasDashboard === 'boolean' && typeof capabilities.hasHistory === 'boolean' && typeof capabilities.hasDetail === 'boolean';
 }
 
+function isReviewOutcome(value: unknown): value is AutomationReviewOutcome {
+  return value === null || (typeof value === 'string' && reviewOutcomes.has(value as Exclude<AutomationReviewOutcome, null>));
+}
+
+// Deliberately validates only `required`/`problemOccurredAt`/`problemOutcome` — technical source
+// identifiers (source_reference, ejecucion_id, correo_id) must never be part of this contract, so
+// there is nothing here to validate for them (Phase 10I §14).
+function isReview(value: unknown): value is AutomationReview {
+  if (typeof value !== 'object' || value === null) return false;
+  const review = value as Record<string, unknown>;
+  return typeof review.required === 'boolean' && isNullableIsoDateString(review.problemOccurredAt) && isReviewOutcome(review.problemOutcome);
+}
+
 function isAutomationOverview(value: unknown): value is AutomationOverview {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
@@ -82,7 +114,8 @@ function isAutomationOverview(value: unknown): value is AutomationOverview {
     && isNullableIsoDateString(item.lastCheckAt)
     && isLastProcessing(item.lastProcessing)
     && isNullableIsoDateString(item.nextCheckAt)
-    && isCapabilities(item.capabilities);
+    && isCapabilities(item.capabilities)
+    && isReview(item.review);
 }
 
 export async function listAutomationsOverview(): Promise<AutomationOverview[]> {
@@ -94,4 +127,33 @@ export async function listAutomationsOverview(): Promise<AutomationOverview[]> {
     throw new AutomationsOverviewApiError(response.status);
   }
   return body.data;
+}
+
+function isAcknowledgeReviewedBy(value: unknown): value is AcknowledgeAutomationReviewResponse['reviewedBy'] {
+  if (value === null) return true;
+  if (typeof value !== 'object') return false;
+  const reviewedBy = value as Record<string, unknown>;
+  return typeof reviewedBy.displayName === 'string' && typeof reviewedBy.email === 'string';
+}
+
+function isAcknowledgeAutomationReviewResponse(value: unknown): value is AcknowledgeAutomationReviewResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.automationCode === 'string' && item.automationCode.length > 0
+    && typeof item.reviewRequired === 'boolean'
+    && isNullableIsoDateString(item.reviewedAt)
+    && isAcknowledgeReviewedBy(item.reviewedBy);
+}
+
+// The browser never sends a source/incident ID: the server resolves the current outstanding
+// problem itself (Phase 10I §11) — this call carries no request body.
+export async function acknowledgeAutomationReview(automationCode: string): Promise<AcknowledgeAutomationReviewResponse> {
+  let response: Response;
+  try { response = await fetch(`${baseUrl}/automations/${encodeURIComponent(automationCode)}/review-acknowledgements`, { method: 'POST' }); }
+  catch { throw new AutomationsOverviewApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok || typeof body !== 'object' || body === null || !('automationCode' in body) || !isAcknowledgeAutomationReviewResponse(body)) {
+    throw new AutomationsOverviewApiError(response.status);
+  }
+  return body;
 }

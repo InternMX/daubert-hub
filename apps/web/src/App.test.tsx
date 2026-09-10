@@ -53,6 +53,7 @@ function automationOverview(overrides: Partial<AutomationOverview> = {}): Automa
     lastProcessing: null,
     nextCheckAt: null,
     capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true },
+    review: { required: false, problemOccurredAt: null, problemOutcome: null },
     ...overrides
   };
 }

@@ -1,9 +1,11 @@
-import { Alert, Box, Button, CircularProgress, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
+import { useSidebarCollapsed } from '../components/sidebarContext.core';
 import {
   getPaymentNotificationExecution,
   listPaymentNotificationExecutions,
@@ -13,8 +15,11 @@ import {
 } from '../services/paymentNotifications';
 import { OutcomeStatusChip, ResultStatusChip } from './PaymentNotificationStatusChips';
 import { executionTimestamp, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
+import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
 
 const TABLE_PAGE_SIZE = 25;
+const automationCode = 'PAYMENT_NOTIFICATIONS';
+const automationName = 'Notificaciones de pago';
 
 function SectionSpinner({ label }: { label: string }) {
   return <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress aria-label={label} size={28} /></Box>;
@@ -99,11 +104,35 @@ interface RecentExecutionsSectionProps {
   loading: boolean;
   error: boolean;
   onRetry: () => void;
+  onAcknowledged: () => void;
 }
 
-function RecentExecutionsSection({ page, onPageChange, result, loading, error, onRetry }: RecentExecutionsSectionProps) {
+// Responsive column hiding (presentational only — same data/columns are always fetched and
+// available, just not all rendered when horizontal space is constrained). Listos/Manual/Error/
+// Omitidos are a per-provider breakdown of the already-visible Total column, so they are the
+// safest four to hide first; Fecha/Resultado/Total/Resumen/Revisión always stay visible. Below
+// `md` (900px), horizontal scrolling on the table's own wrapper (overflowX: 'auto' below) is the
+// final fallback for very narrow screens.
+//
+// Three viewport tiers (never a pure CSS breakpoint object alone, since the sidebar state is a
+// runtime JS boolean, not something CSS media queries can see):
+//   < md (900px):        always compact, regardless of sidebar — not enough room either way.
+//   md .. < lg (1200px):  compact only when the persistent AppShell sidebar is expanded (it eats
+//                          enough of the remaining horizontal space to matter at this width).
+//   >= lg (1200px):       always full — plenty of room even with the sidebar expanded.
+function useCompactRecentExecutionsTable(): boolean {
+  const theme = useTheme();
+  const viewportBelowMd = useMediaQuery(theme.breakpoints.down('md'));
+  const viewportBelowLg = useMediaQuery(theme.breakpoints.down('lg'));
+  const sidebarCollapsed = useSidebarCollapsed();
+  return viewportBelowMd || (!sidebarCollapsed && viewportBelowLg);
+}
+
+function RecentExecutionsSection({ page, onPageChange, result, loading, error, onRetry, onAcknowledged }: RecentExecutionsSectionProps) {
   const start = result && result.meta.total > 0 ? (result.meta.page - 1) * result.meta.pageSize + 1 : 0;
   const end = result ? Math.min(result.meta.page * result.meta.pageSize, result.meta.total) : 0;
+  const compact = useCompactRecentExecutionsTable();
+  const detailColumnSx = { display: compact ? 'none' : 'table-cell' } as const;
 
   return (
     <Box component="section" aria-labelledby="payment-notifications-recent-title" sx={{ mt: 4, maxWidth: 1080 }}>
@@ -123,11 +152,12 @@ function RecentExecutionsSection({ page, onPageChange, result, loading, error, o
                   <TableCell>Fecha</TableCell>
                   <TableCell>Resultado</TableCell>
                   <TableCell align="right">Total</TableCell>
-                  <TableCell align="right">Listos</TableCell>
-                  <TableCell align="right">Manual</TableCell>
-                  <TableCell align="right">Error</TableCell>
-                  <TableCell align="right">Omitidos</TableCell>
+                  <TableCell align="right" sx={detailColumnSx}>Listos</TableCell>
+                  <TableCell align="right" sx={detailColumnSx}>Manual</TableCell>
+                  <TableCell align="right" sx={detailColumnSx}>Error</TableCell>
+                  <TableCell align="right" sx={detailColumnSx}>Omitidos</TableCell>
                   <TableCell>Resumen</TableCell>
+                  <TableCell>Revisión</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -142,11 +172,19 @@ function RecentExecutionsSection({ page, onPageChange, result, loading, error, o
                         : <OutcomeStatusChip outcome={execution.outcomeStatus} />}
                     </TableCell>
                     <TableCell align="right">{execution.totalResults}</TableCell>
-                    <TableCell align="right">{execution.readyCount}</TableCell>
-                    <TableCell align="right">{execution.manualCount}</TableCell>
-                    <TableCell align="right">{execution.errorCount}</TableCell>
-                    <TableCell align="right">{execution.omittedCount}</TableCell>
+                    <TableCell align="right" sx={detailColumnSx}>{execution.readyCount}</TableCell>
+                    <TableCell align="right" sx={detailColumnSx}>{execution.manualCount}</TableCell>
+                    <TableCell align="right" sx={detailColumnSx}>{execution.errorCount}</TableCell>
+                    <TableCell align="right" sx={detailColumnSx}>{execution.omittedCount}</TableCell>
                     <TableCell><Typography color={execution.summarySent ? 'text.primary' : 'text.secondary'}>{execution.summarySent ? 'Enviado' : 'No enviado'}</Typography></TableCell>
+                    <TableCell>
+                      <ReviewAcknowledgementCell
+                        automationCode={automationCode}
+                        automationName={automationName}
+                        reviewStatus={execution.reviewStatus}
+                        onAcknowledged={onAcknowledged}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -178,6 +216,15 @@ export function PaymentNotificationsPage() {
   const [tableLoadedOnce, setTableLoadedOnce] = useState(false);
   const [tableError, setTableError] = useState(false);
   const [tableRetry, setTableRetry] = useState(0);
+  const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
+
+  function handleAcknowledged() {
+    // Refresh both the latest-execution card and the processing-history table (§6) — the
+    // acknowledged execution's reviewStatus and outcomeStatus both live server-side.
+    setLatestRetry((value) => value + 1);
+    setTableRetry((value) => value + 1);
+    setReviewFeedback('Marcado como revisado.');
+  }
 
   useEffect(() => {
     let active = true;
@@ -229,9 +276,11 @@ export function PaymentNotificationsPage() {
             loading={tableLoading}
             error={tableError}
             onRetry={() => setTableRetry((value) => value + 1)}
+            onAcknowledged={handleAcknowledged}
           />
         </>
       )}
+      <Snackbar open={Boolean(reviewFeedback)} autoHideDuration={4000} onClose={() => setReviewFeedback(null)} message={reviewFeedback} />
     </>
   );
 }

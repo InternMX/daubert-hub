@@ -1,7 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SidebarContext } from '../components/sidebarContext.core';
+import { acknowledgeAutomationReview } from '../services/automationsOverview';
 import {
   getPaymentNotificationExecution,
   listPaymentNotificationExecutions,
@@ -16,9 +18,14 @@ vi.mock('../services/paymentNotifications', async (importOriginal) => ({
   listPaymentNotificationExecutions: vi.fn(),
   getPaymentNotificationExecution: vi.fn()
 }));
+vi.mock('../services/automationsOverview', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/automationsOverview')>()),
+  acknowledgeAutomationReview: vi.fn()
+}));
 
 const listMock = vi.mocked(listPaymentNotificationExecutions);
 const detailMock = vi.mocked(getPaymentNotificationExecution);
+const acknowledgeMock = vi.mocked(acknowledgeAutomationReview);
 
 function summary(overrides: Partial<PaymentNotificationExecutionSummary> = {}): PaymentNotificationExecutionSummary {
   return {
@@ -34,6 +41,7 @@ function summary(overrides: Partial<PaymentNotificationExecutionSummary> = {}): 
     omittedCount: 0,
     summarySent: false,
     summarySentAt: null,
+    reviewStatus: null,
     ...overrides
   };
 }
@@ -48,10 +56,68 @@ function detail(overrides: Partial<PaymentNotificationExecutionDetail> = {}): Pa
 
 function renderPage() { return render(<MemoryRouter><PaymentNotificationsPage /></MemoryRouter>); }
 
+// Same technique as AppShell.test.tsx's mockWideViewport, extended to answer every distinct media
+// query (the page now queries both the `md` and `lg` breakpoints independently) by parsing each
+// query's own max-width and comparing it against a single mutable "current viewport width" — so
+// both breakpoints stay consistent with one simulated width instead of being controlled separately.
+const VIEWPORT_BELOW_MD = 800; // < 900
+const VIEWPORT_MD_TO_LG = 1000; // >= 900, < 1200
+const VIEWPORT_AT_LEAST_LG = 1300; // >= 1200
+
+function mockViewportWidth(initialWidthPx: number) {
+  let currentWidth = initialWidthPx;
+  const registered = new Map<string, { mql: MediaQueryList; listeners: Set<(event: MediaQueryListEvent) => void> }>();
+
+  function matchesFor(query: string): boolean {
+    const maxWidth = /max-width:\s*([\d.]+)px/.exec(query)?.[1];
+    return maxWidth !== undefined && currentWidth <= Number(maxWidth);
+  }
+
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => {
+    let entry = registered.get(query);
+    if (!entry) {
+      const listeners = new Set<(event: MediaQueryListEvent) => void>();
+      const mql = {
+        get matches() { return matchesFor(query); },
+        media: query,
+        onchange: null,
+        addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+        removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+        addListener: (listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+        removeListener: (listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+        dispatchEvent: () => true
+      } as MediaQueryList;
+      entry = { mql, listeners };
+      registered.set(query, entry);
+    }
+    return entry.mql;
+  }));
+
+  return (widthPx: number) => {
+    currentWidth = widthPx;
+    act(() => {
+      for (const { mql, listeners } of registered.values()) {
+        listeners.forEach((listener) => listener({ matches: mql.matches, media: mql.media } as MediaQueryListEvent));
+      }
+    });
+  };
+}
+
+// Simulates AppShell's own SidebarContext.Provider (see AppShell.tsx) — the shared mechanism the
+// page reads sidebar state from, without measuring any DOM/drawer width.
+function renderPageWithSidebar(collapsed: boolean) {
+  return render(
+    <SidebarContext.Provider value={{ collapsed }}>
+      <MemoryRouter><PaymentNotificationsPage /></MemoryRouter>
+    </SidebarContext.Provider>
+  );
+}
+
 describe('PaymentNotificationsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     detailMock.mockResolvedValue(detail());
+    acknowledgeMock.mockResolvedValue({ automationCode: 'PAYMENT_NOTIFICATIONS', reviewRequired: false, reviewedAt: '2026-09-10T00:00:00.000Z', reviewedBy: { displayName: 'user@daubert.mx', email: 'user@daubert.mx' } });
   });
 
   function latestSection() {
@@ -216,5 +282,200 @@ describe('PaymentNotificationsPage', () => {
 
     await screen.findByText('NOVAPAK');
     expect(screen.queryByText('9007199254740993')).not.toBeInTheDocument();
+  });
+
+  describe('Revisión column (Phase 10I UX refinement)', () => {
+    it('shows a "Marcar como revisado" action for the row with reviewStatus REQUIRED', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REQUIRED' })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+    });
+
+    it('shows "Revisado" (not the action) for the row with reviewStatus REVIEWED', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REVIEWED' })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(await within(table).findByText('Revisado')).toBeInTheDocument();
+      expect(within(table).queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
+    });
+
+    it('shows a plain dash for a non-current row (reviewStatus null), even a historical PARTIAL/FAILED one', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'PARTIAL', reviewStatus: null })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
+      expect(within(table).queryByText('Revisado')).not.toBeInTheDocument();
+    });
+
+    it('opens the confirmation dialog, and Cancelar sends no request', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REQUIRED' })]));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+      expect(acknowledgeMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('acknowledges without sending any processing/source ID, then refreshes the latest card and table and shows a success Snackbar', async () => {
+      listMock
+        .mockResolvedValueOnce(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REQUIRED' })])) // latest (page 1, pageSize 1)
+        .mockResolvedValueOnce(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REQUIRED' })])) // table
+        .mockResolvedValueOnce(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REVIEWED' })])) // latest refresh
+        .mockResolvedValueOnce(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REVIEWED' })])); // table refresh
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Marcar como revisado' }));
+
+      expect(acknowledgeMock).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS');
+      expect(acknowledgeMock.mock.calls[0]).toEqual(['PAYMENT_NOTIFICATIONS']);
+      expect(await screen.findByText('Marcado como revisado.')).toBeInTheDocument();
+      await waitFor(() => expect(within(screen.getByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' })).getByText('Revisado')).toBeInTheDocument());
+    });
+
+    it('keeps the action available and shows a safe Spanish error on failure, without a raw API error', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REQUIRED' })]));
+      acknowledgeMock.mockRejectedValueOnce(new Error('boom'));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Marcar como revisado' }));
+
+      expect(await within(dialog).findByText('No fue posible marcar la automatización como revisada. Intenta nuevamente.')).toBeInTheDocument();
+      expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+    });
+  });
+
+  describe('responsive recent-executions columns (three viewport tiers × sidebar state)', () => {
+    const DETAIL_COLUMNS = ['Listos', 'Manual', 'Error', 'Omitidos'];
+    const ALWAYS_VISIBLE_COLUMNS = ['Fecha', 'Resultado', 'Total', 'Resumen', 'Revisión'];
+    const FULL: readonly string[] = ['table-cell', 'table-cell', 'table-cell', 'table-cell'];
+    const COMPACT: readonly string[] = ['none', 'none', 'none', 'none'];
+
+    // The six meaningful (viewport tier × sidebar state) combinations and their expected outcome,
+    // per the refined rule: compact = viewportBelowMd || (sidebarExpanded && viewportBelowLg).
+    const COMBINATIONS = [
+      { label: '<900 + collapsed', width: VIEWPORT_BELOW_MD, sidebarCollapsed: true, expectCompact: true, outcome: 'compact' },
+      { label: '<900 + expanded', width: VIEWPORT_BELOW_MD, sidebarCollapsed: false, expectCompact: true, outcome: 'compact' },
+      { label: '900–1199 + collapsed', width: VIEWPORT_MD_TO_LG, sidebarCollapsed: true, expectCompact: false, outcome: 'full' },
+      { label: '900–1199 + expanded', width: VIEWPORT_MD_TO_LG, sidebarCollapsed: false, expectCompact: true, outcome: 'compact' },
+      { label: '>=1200 + collapsed', width: VIEWPORT_AT_LEAST_LG, sidebarCollapsed: true, expectCompact: false, outcome: 'full' },
+      { label: '>=1200 + expanded', width: VIEWPORT_AT_LEAST_LG, sidebarCollapsed: false, expectCompact: false, outcome: 'full' }
+    ] as const;
+
+    function detailColumnDisplays() {
+      return DETAIL_COLUMNS.map((label) => getComputedStyle(screen.getAllByText(label, { selector: 'th, td' })[0]!).display);
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it.each(COMBINATIONS)('$label → $outcome columns', async ({ width, sidebarCollapsed, expectCompact }) => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      mockViewportWidth(width);
+      renderPageWithSidebar(sidebarCollapsed);
+      await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+
+      expect(detailColumnDisplays()).toEqual(expectCompact ? COMPACT : FULL);
+    });
+
+    it.each(ALWAYS_VISIBLE_COLUMNS)('%s stays visible in every combination', async (label) => {
+      for (const { width, sidebarCollapsed } of COMBINATIONS) {
+        listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'FAILED', reviewStatus: 'REQUIRED' })]));
+        mockViewportWidth(width);
+        const { unmount } = renderPageWithSidebar(sidebarCollapsed);
+        await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+        expect(getComputedStyle(screen.getAllByText(label, { selector: 'th, td' })[0]!).display).not.toBe('none');
+        unmount();
+      }
+    });
+
+    it('toggling sidebar state within the md–lg tier updates visible columns immediately, with no refetch', async () => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      mockViewportWidth(VIEWPORT_MD_TO_LG);
+      const { rerender } = render(
+        <SidebarContext.Provider value={{ collapsed: true }}>
+          <MemoryRouter><PaymentNotificationsPage /></MemoryRouter>
+        </SidebarContext.Provider>
+      );
+      await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(detailColumnDisplays()).toEqual(FULL);
+      const callsBeforeToggle = listMock.mock.calls.length;
+
+      rerender(
+        <SidebarContext.Provider value={{ collapsed: false }}>
+          <MemoryRouter><PaymentNotificationsPage /></MemoryRouter>
+        </SidebarContext.Provider>
+      );
+
+      expect(detailColumnDisplays()).toEqual(COMPACT);
+      expect(listMock.mock.calls.length).toBe(callsBeforeToggle);
+    });
+
+    it('sidebar toggle has no effect once viewport reaches lg — stays full, with no refetch', async () => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      mockViewportWidth(VIEWPORT_AT_LEAST_LG);
+      const { rerender } = render(
+        <SidebarContext.Provider value={{ collapsed: true }}>
+          <MemoryRouter><PaymentNotificationsPage /></MemoryRouter>
+        </SidebarContext.Provider>
+      );
+      await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(detailColumnDisplays()).toEqual(FULL);
+      const callsBeforeToggle = listMock.mock.calls.length;
+
+      rerender(
+        <SidebarContext.Provider value={{ collapsed: false }}>
+          <MemoryRouter><PaymentNotificationsPage /></MemoryRouter>
+        </SidebarContext.Provider>
+      );
+
+      expect(detailColumnDisplays()).toEqual(FULL);
+      expect(listMock.mock.calls.length).toBe(callsBeforeToggle);
+    });
+
+    it('viewport change alone (sidebar unchanged, expanded) moves between compact and full across all three tiers, with no refetch', async () => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      const setViewportWidth = mockViewportWidth(VIEWPORT_AT_LEAST_LG);
+      renderPageWithSidebar(false); // sidebar expanded throughout
+      await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(detailColumnDisplays()).toEqual(FULL); // >=lg: full even though expanded
+      const callsAfterMount = listMock.mock.calls.length;
+
+      setViewportWidth(VIEWPORT_MD_TO_LG);
+      expect(detailColumnDisplays()).toEqual(COMPACT); // md..<lg + expanded: compact
+
+      setViewportWidth(VIEWPORT_BELOW_MD);
+      expect(detailColumnDisplays()).toEqual(COMPACT); // <md: compact regardless
+
+      setViewportWidth(VIEWPORT_AT_LEAST_LG);
+      expect(detailColumnDisplays()).toEqual(FULL); // back to >=lg: full again
+
+      expect(listMock.mock.calls.length).toBe(callsAfterMount);
+    });
+
+    it('keeps the table wrapper horizontally scrollable as the final fallback for very narrow screens', async () => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      const scrollWrapper = table.parentElement!;
+      expect(getComputedStyle(scrollWrapper).overflowX).toBe('auto');
+    });
+
+    it.each(COMBINATIONS)('does not fork into a separate mobile table ($label) — exactly one table renders', async ({ width, sidebarCollapsed }) => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      mockViewportWidth(width);
+      renderPageWithSidebar(sidebarCollapsed);
+      await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(screen.getAllByRole('table').length).toBe(1);
+    });
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AutomationsOverviewApiError, listAutomationsOverview, type AutomationOverview } from './automationsOverview';
+import { acknowledgeAutomationReview, AutomationsOverviewApiError, listAutomationsOverview, type AcknowledgeAutomationReviewResponse, type AutomationOverview } from './automationsOverview';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -16,6 +16,17 @@ function overview(overrides: Partial<AutomationOverview> = {}): AutomationOvervi
     lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' },
     nextCheckAt: null,
     capabilities: { hasDashboard: true, hasHistory: true, hasDetail: false },
+    review: { required: false, problemOccurredAt: null, problemOutcome: null },
+    ...overrides
+  };
+}
+
+function acknowledgeResponse(overrides: Partial<AcknowledgeAutomationReviewResponse> = {}): AcknowledgeAutomationReviewResponse {
+  return {
+    automationCode: 'REMISIONES_AUDI',
+    reviewRequired: false,
+    reviewedAt: '2026-09-10T00:00:00.000Z',
+    reviewedBy: { displayName: 'user@daubert.mx', email: 'user@daubert.mx' },
     ...overrides
   };
 }
@@ -91,5 +102,72 @@ describe('listAutomationsOverview', () => {
   it('never coerces a malformed intervalMinutes into a rounded/truncated number', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: [overview({ polling: { intervalMinutes: '10' as never, label: 'Cada 10 minutos' } })] })));
     await expect(listAutomationsOverview()).rejects.toBeInstanceOf(AutomationsOverviewApiError);
+  });
+
+  describe('review contract (Phase 10I)', () => {
+    it('accepts required=true with a problemOccurredAt/problemOutcome', async () => {
+      const item = overview({ review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' } });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: [item] })));
+      await expect(listAutomationsOverview()).resolves.toEqual([item]);
+    });
+
+    it.each(['PARTIAL', 'FAILED', 'CANCELLED', null] as const)('accepts problemOutcome %s', async (problemOutcome) => {
+      const item = overview({ review: { required: problemOutcome !== null, problemOccurredAt: problemOutcome ? '2026-08-27T22:40:01.933Z' : null, problemOutcome } });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: [item] })));
+      await expect(listAutomationsOverview()).resolves.toEqual([item]);
+    });
+
+    it.each([
+      ['missing review field', { ...overview(), review: undefined }],
+      ['non-boolean required', { ...overview(), review: { required: 'yes', problemOccurredAt: null, problemOutcome: null } }],
+      ['unknown problemOutcome', { ...overview(), review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'COMPLETED' } }],
+      ['unparsable problemOccurredAt', { ...overview(), review: { required: true, problemOccurredAt: 'not-a-date', problemOutcome: 'FAILED' } }]
+    ])('rejects malformed review: %s', async (_label, item) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: [item] })));
+      await expect(listAutomationsOverview()).rejects.toBeInstanceOf(AutomationsOverviewApiError);
+    });
+  });
+});
+
+describe('acknowledgeAutomationReview', () => {
+  it('posts with no body and returns the safe business contract', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(acknowledgeResponse()));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(acknowledgeAutomationReview('REMISIONES_AUDI')).resolves.toEqual(acknowledgeResponse());
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/REMISIONES_AUDI/review-acknowledgements', { method: 'POST' });
+  });
+
+  it('accepts reviewedAt=null / reviewedBy=null (idempotent no-op response)', async () => {
+    const body = acknowledgeResponse({ reviewedAt: null, reviewedBy: null });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)));
+    await expect(acknowledgeAutomationReview('REMISIONES_AUDI')).resolves.toEqual(body);
+  });
+
+  it('URL-encodes the automation code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(acknowledgeResponse({ automationCode: 'A B' })));
+    vi.stubGlobal('fetch', fetchMock);
+    await acknowledgeAutomationReview('A B');
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/A%20B/review-acknowledgements', { method: 'POST' });
+  });
+
+  it('rejects a malformed success body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ reviewRequired: 'no' })));
+    await expect(acknowledgeAutomationReview('REMISIONES_AUDI')).rejects.toBeInstanceOf(AutomationsOverviewApiError);
+  });
+
+  it('surfaces the HTTP status on a failed request (e.g. 400 for Caterpillar)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 400, message: 'Esta automatización no admite revisión operativa.' }, 400)));
+    await expect(acknowledgeAutomationReview('REMISIONES_CATERPILLAR')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('surfaces status 401 for an unauthenticated request', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 401, message: 'Unauthorized' }, 401)));
+    await expect(acknowledgeAutomationReview('REMISIONES_AUDI')).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('surfaces status 0 for a network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    await expect(acknowledgeAutomationReview('REMISIONES_AUDI')).rejects.toMatchObject({ status: 0 });
   });
 });

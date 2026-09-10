@@ -3,6 +3,10 @@ import type { QueryResultRow } from 'pg';
 import { DatabaseService } from '../../database/database.service';
 
 export interface AudiExecutionRow extends QueryResultRow {
+  // Internal-only identity, used solely by AudiExecutionsService to match a row against the
+  // "current outstanding problem" resolution and compute reviewStatus — never included in the
+  // API response (Phase 10I UX refinement §3).
+  ejecucion_id: string;
   occurred_at: Date | string;
   execution_state: string;
   generated_count: number;
@@ -13,6 +17,12 @@ export interface AudiExecutionRow extends QueryResultRow {
 export interface ListedAudiExecutions {
   total: number;
   executions: AudiExecutionRow[];
+}
+
+export interface AudiProblemRow extends QueryResultRow {
+  ejecucion_id: string;
+  occurred_at: Date | string;
+  execution_state: string;
 }
 
 // Deliberately its own query, not a reuse of RemisionesAudiActivityRepository (Recent Activity):
@@ -44,6 +54,7 @@ export class AudiExecutionsRepository {
         GROUP BY remission.ejecucion_id
       )
       SELECT
+        execution.ejecucion_id::text AS ejecucion_id,
         COALESCE(execution.finalizada_en, execution.iniciada_en) AS occurred_at,
         execution.estado AS execution_state,
         COALESCE(summary.generated_count, 0) AS generated_count,
@@ -58,5 +69,26 @@ export class AudiExecutionsRepository {
       ORDER BY execution.ejecucion_id DESC
       LIMIT $1 OFFSET $2`, [pageSize, (page - 1) * pageSize]);
     return { total: totalRow?.total ?? 0, executions };
+  }
+
+  // Phase 10I (Automation Review Acknowledgements): the latest ERROR/CANCELADA execution for
+  // REMISIONES_AUDI, ordered by ejecucion_id (monotonic identity), never by a nullable timestamp
+  // alone. estado is filtered in SQL rather than scanning every row through
+  // mapAudiExecutionState, but the two states selected here (ERROR, CANCELADA) are exactly the
+  // ones that map to a review-worthy outcome (FAILED, CANCELLED) — see audi-processing-status.ts.
+  async findLatestProblem(): Promise<AudiProblemRow | null> {
+    const [row] = await this.database.query<AudiProblemRow>(`
+      SELECT
+        execution.ejecucion_id::text AS ejecucion_id,
+        COALESCE(execution.finalizada_en, execution.iniciada_en) AS occurred_at,
+        execution.estado AS execution_state
+      FROM ops.ejecuciones_automatizacion execution
+      JOIN ops.automatizaciones automation
+        ON automation.automatizacion_id = execution.automatizacion_id
+       AND automation.codigo = 'REMISIONES_AUDI'
+      WHERE execution.estado IN ('ERROR', 'CANCELADA')
+      ORDER BY execution.ejecucion_id DESC
+      LIMIT 1`);
+    return row ?? null;
   }
 }

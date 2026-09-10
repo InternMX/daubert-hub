@@ -64,6 +64,20 @@ export class PaymentNotificationsRepository {
     return { total: totalRow?.total ?? 0, executions };
   }
 
+  // Phase 10I (Automation Review Acknowledgements): newest-first, same correo_id ordering as
+  // list(), bounded so a latest-review-worthy scan can never become an unbounded table scan.
+  // Outcome derivation itself stays entirely in PaymentNotificationsService (derivePaymentNotificationOutcome)
+  // — this method returns raw rows only, never re-implements the PARTIAL/FAILED rule in SQL.
+  async listRecent(limit: number): Promise<PaymentNotificationExecutionRow[]> {
+    return this.database.query<PaymentNotificationExecutionRow>(`
+      SELECT ${EXECUTION_COLUMNS}
+      FROM core.correos_notificacion_pago correo
+      LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
+      GROUP BY correo.correo_id
+      ORDER BY correo.correo_id DESC
+      LIMIT $1`, [limit]);
+  }
+
   async findExecutionById(executionId: string): Promise<PaymentNotificationExecutionRow | null> {
     const [execution] = await this.database.query<PaymentNotificationExecutionRow>(`
       SELECT ${EXECUTION_COLUMNS}

@@ -13,10 +13,19 @@ import { PaymentNotificationsService } from './payment-notifications/payment-not
 import { AudiExecutionsController } from './remisiones-audi/audi-executions.controller';
 import { AudiExecutionsRepository } from './remisiones-audi/audi-executions.repository';
 import { AudiExecutionsService } from './remisiones-audi/audi-executions.service';
+import { ReviewAcknowledgementsController } from './review/review-acknowledgements.controller';
+import { ReviewAcknowledgementsRepository } from './review/review-acknowledgements.repository';
+import { ReviewAcknowledgementsService } from './review/review-acknowledgements.service';
 
 @Module({
   imports: [DatabaseModule, HealthModule],
-  controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController],
-  providers: [AutomationsService, DocumentSeriesRepository, PaymentNotificationsService, PaymentNotificationsRepository, AutomationsOverviewService, AutomationsOverviewRepository, AudiExecutionsService, AudiExecutionsRepository]
+  controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, ReviewAcknowledgementsController],
+  providers: [
+    AutomationsService, DocumentSeriesRepository,
+    PaymentNotificationsService, PaymentNotificationsRepository,
+    AutomationsOverviewService, AutomationsOverviewRepository,
+    AudiExecutionsService, AudiExecutionsRepository,
+    ReviewAcknowledgementsService, ReviewAcknowledgementsRepository
+  ]
 })
 export class AutomationsModule {}

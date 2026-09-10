@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AudiExecutionsService } from '../src/automations/remisiones-audi/audi-executions.service';
 
-function row(overrides: Partial<{ occurred_at: string; execution_state: string; generated_count: number; minimum_folio: string | null; maximum_folio: string | null }> = {}) {
+function row(overrides: Partial<{ ejecucion_id: string; occurred_at: string; execution_state: string; generated_count: number; minimum_folio: string | null; maximum_folio: string | null }> = {}) {
   return {
+    ejecucion_id: '10',
     occurred_at: '2026-08-27T22:40:01.933Z',
     execution_state: 'COMPLETADA',
     generated_count: 5,
@@ -12,9 +13,13 @@ function row(overrides: Partial<{ occurred_at: string; execution_state: string; 
   };
 }
 
-function setup(total: number, executions: ReturnType<typeof row>[]) {
-  const repository = { list: vi.fn().mockResolvedValue({ total, executions }) };
-  return { service: new AudiExecutionsService(repository as never), repository };
+function setup(total: number, executions: ReturnType<typeof row>[], options: { currentProblem?: { ejecucion_id: string; occurred_at: string; execution_state: string } | null; acknowledged?: boolean } = {}) {
+  const repository = {
+    list: vi.fn().mockResolvedValue({ total, executions }),
+    findLatestProblem: vi.fn().mockResolvedValue(options.currentProblem ?? null)
+  };
+  const reviewAcknowledgements = { findLatest: vi.fn().mockResolvedValue(options.acknowledged ? { acknowledgement_id: '1' } : null) };
+  return { service: new AudiExecutionsService(repository as never, reviewAcknowledgements as never), repository, reviewAcknowledgements };
 }
 
 describe('AudiExecutionsService', () => {
@@ -61,10 +66,64 @@ describe('AudiExecutionsService', () => {
     expect(result.data[0]?.occurredAt).toBe('2026-08-27T22:40:01.933Z');
   });
 
-  it('never exposes technical/internal identifiers or diagnostics', async () => {
+  it('never exposes technical/internal identifiers or diagnostics, including ejecucion_id itself', async () => {
     const { service } = setup(1, [row()]);
     const result = await service.list({ page: 1, pageSize: 25 });
-    expect(Object.keys(result.data[0]!).sort()).toEqual(['firstFolio', 'generatedCount', 'lastFolio', 'occurredAt', 'outcome']);
-    expect(JSON.stringify(result)).not.toMatch(/n8n_execution_id|run_name|error_nodo|error_mensaje|ejecucion_id|automatizacion_id|documento_origen_id|reproceso_de_id/i);
+    expect(Object.keys(result.data[0]!).sort()).toEqual(['firstFolio', 'generatedCount', 'lastFolio', 'occurredAt', 'outcome', 'reviewStatus']);
+    expect(JSON.stringify(result)).not.toMatch(/n8n_execution_id|run_name|error_nodo|error_mensaje|ejecucion_id|automatizacion_id|documento_origen_id|reproceso_de_id|acknowledgement_id/i);
+  });
+
+  describe('reviewStatus (Phase 10I UX refinement)', () => {
+    it('marks the row matching the current unacknowledged problem as REQUIRED', async () => {
+      const { service } = setup(2, [
+        row({ ejecucion_id: '20', execution_state: 'ERROR' }),
+        row({ ejecucion_id: '19', execution_state: 'COMPLETADA' })
+      ], { currentProblem: { ejecucion_id: '20', occurred_at: '2026-08-27T22:40:01.933Z', execution_state: 'ERROR' }, acknowledged: false });
+      const result = await service.list({ page: 1, pageSize: 25 });
+      expect(result.data[0]?.reviewStatus).toBe('REQUIRED');
+      expect(result.data[1]?.reviewStatus).toBeNull();
+    });
+
+    it('marks the row matching the current acknowledged problem as REVIEWED', async () => {
+      const { service } = setup(1, [row({ ejecucion_id: '20', execution_state: 'ERROR' })], {
+        currentProblem: { ejecucion_id: '20', occurred_at: '2026-08-27T22:40:01.933Z', execution_state: 'ERROR' },
+        acknowledged: true
+      });
+      const result = await service.list({ page: 1, pageSize: 25 });
+      expect(result.data[0]?.reviewStatus).toBe('REVIEWED');
+    });
+
+    it('never marks an older FAILED/CANCELLED row that is not the current problem — no independent per-row derivation', async () => {
+      // An older ERROR row (19) exists but findLatestProblem only ever resolves the newest one
+      // (20) — 19 must stay null (neither actionable nor "Revisado"), even though it shares the
+      // same outcome-based shape.
+      const { service } = setup(2, [
+        row({ ejecucion_id: '20', execution_state: 'COMPLETADA' }),
+        row({ ejecucion_id: '19', execution_state: 'ERROR' })
+      ], { currentProblem: null });
+      const result = await service.list({ page: 1, pageSize: 25 });
+      expect(result.data[0]?.reviewStatus).toBeNull();
+      expect(result.data[1]?.reviewStatus).toBeNull();
+    });
+
+    it('is null on every row when there is no current problem at all', async () => {
+      const { service } = setup(1, [row({ execution_state: 'COMPLETADA' })], { currentProblem: null });
+      const result = await service.list({ page: 1, pageSize: 25 });
+      expect(result.data[0]?.reviewStatus).toBeNull();
+    });
+
+    it('looks up the acknowledgement using the AUDI_EXECUTION source type and the resolved ejecucion_id', async () => {
+      const { service, reviewAcknowledgements } = setup(1, [row({ ejecucion_id: '20', execution_state: 'ERROR' })], {
+        currentProblem: { ejecucion_id: '20', occurred_at: '2026-08-27T22:40:01.933Z', execution_state: 'ERROR' }
+      });
+      await service.list({ page: 1, pageSize: 25 });
+      expect(reviewAcknowledgements.findLatest).toHaveBeenCalledWith('REMISIONES_AUDI', 'AUDI_EXECUTION', '20');
+    });
+
+    it('does not look up an acknowledgement at all when there is no current problem', async () => {
+      const { service, reviewAcknowledgements } = setup(1, [row()], { currentProblem: null });
+      await service.list({ page: 1, pageSize: 25 });
+      expect(reviewAcknowledgements.findLatest).not.toHaveBeenCalled();
+    });
   });
 });

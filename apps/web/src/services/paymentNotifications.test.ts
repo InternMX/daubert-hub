@@ -15,7 +15,8 @@ const summary = {
   errorCount: 0,
   omittedCount: 0,
   summarySent: false,
-  summarySentAt: null
+  summarySentAt: null,
+  reviewStatus: null
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -38,7 +39,9 @@ describe('listPaymentNotificationExecutions', () => {
     ['unknown outcomeStatus', { data: [{ ...summary, outcomeStatus: 'UNKNOWN' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
     ['unknown processingStatus', { data: [{ ...summary, processingStatus: 'UNKNOWN' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
     ['non-finite total', { data: [], meta: { page: 1, pageSize: 25, total: Number.NaN, totalPages: 0 } }],
-    ['unparsable createdAt', { data: [{ ...summary, createdAt: 'not-a-date' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }]
+    ['unparsable createdAt', { data: [{ ...summary, createdAt: 'not-a-date' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
+    ['unknown reviewStatus', { data: [{ ...summary, reviewStatus: 'ACKNOWLEDGED' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
+    ['missing reviewStatus', { data: [Object.fromEntries(Object.entries(summary).filter(([key]) => key !== 'reviewStatus'))], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }]
   ])('rejects malformed responses: %s', async (_label, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)));
     await expect(listPaymentNotificationExecutions(1, 25)).rejects.toBeInstanceOf(PaymentNotificationApiError);

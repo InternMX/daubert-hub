@@ -5,7 +5,7 @@ import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
-import { formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel, requiresReview } from './automationOverviewPresentation';
+import { automationHealthAccent, automationHealthTexts, formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel } from './automationOverviewPresentation';
 
 // The only automation codes with an actual Hub route today (Phase 10E §16/§20) — Caterpillar has
 // none, and none should ever be invented for it.
@@ -24,14 +24,32 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 // Flex column + height:100% makes every card in a grid row stretch to the tallest one (the grid's
-// own default `align-items: stretch`), and mt:'auto' on the action pins "Ver automatización" to
-// the bottom even when descriptions/metadata rows differ in count between automations.
+// own default `align-items: stretch`), and mt:'auto' on the action row pins it to the bottom even
+// when descriptions/metadata rows differ in count between automations.
+//
+// The operational accent (Phase 10I UX refinement §2) is a restrained left border strip, paired
+// with explicit text below (never color as the sole indicator) — never a traffic-light circle, and
+// never a green "healthy" accent. /automations is monitoring/navigation only: acknowledging a
+// problem now lives on the automation's own processing-history table (AudiRemissionsPage /
+// PaymentNotificationsPage), not here.
 function AutomationCard({ automation }: { automation: AutomationOverview }) {
   const route = ROUTE_BY_CODE[automation.code];
   const lifecycleLabel = lifecycleStatusLabel(automation.lifecycleStatus);
+  const accent = automationHealthAccent(automation);
+  const healthTexts = automationHealthTexts(automation);
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2.5, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Paper
+      variant="outlined"
+      sx={{
+        p: { xs: 2.5, sm: 3 },
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeftWidth: accent ? 4 : 1,
+        borderLeftColor: accent ? `${accent}.main` : 'divider'
+      }}
+    >
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'flex-start' }} spacing={1}>
         <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>{automation.name}</Typography>
         {lifecycleLabel && <Chip label={lifecycleLabel} color={lifecycleLabel === 'Activa' ? 'success' : 'default'} size="small" />}
@@ -46,6 +64,13 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
         {automation.lastProcessing && <Row label="Último procesamiento" value={formatCardTimestamp(automation.lastProcessing.occurredAt)} />}
         {automation.lastProcessing && <Row label="Resultado" value={processingOutcomeLabel(automation.lastProcessing.outcome)} />}
       </Stack>
+      {healthTexts.length > 0 && (
+        <Stack sx={{ mt: 1.5 }} spacing={0.5}>
+          {healthTexts.map((item) => (
+            <Typography key={item.text} variant="body2" fontWeight={600} color={`${item.color}.main`}>{item.text}</Typography>
+          ))}
+        </Stack>
+      )}
       {automation.integrationStatus === 'NOT_INTEGRATED' && (
         <Typography color="text.secondary" variant="body2" sx={{ mt: 2 }}>Daubert Hub todavía no recibe información operacional de esta automatización.</Typography>
       )}
@@ -58,12 +83,12 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
 
 // Total/integrated/not-integrated counts were removed (Phase 10F cleanup): they duplicated
 // information already visible on each card. Only an actionable signal remains: a single
-// restrained warning notice, shown only when at least one INTEGRATED automation's latest
-// processing outcome genuinely needs a look (requiresReview — unchanged derivation). Zero never
-// renders anything ("0 requieren revisión" would be noise, not information), and there is no
-// green/success counterpart for a healthy state — the absence of the notice already says that.
+// restrained warning notice, shown only when at least one automation's review state (Phase 10I;
+// backend-authoritative, never re-derived here) is required. Zero never renders anything
+// ("0 requieren revisión" would be noise, not information), and there is no green/success
+// counterpart for a healthy state — the absence of the notice already says that.
 function ReviewNotice({ automations }: { automations: AutomationOverview[] }) {
-  const reviewCount = automations.filter(requiresReview).length;
+  const reviewCount = automations.filter((automation) => automation.review.required).length;
   if (reviewCount === 0) return null;
 
   const message = reviewCount === 1

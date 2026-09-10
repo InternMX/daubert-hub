@@ -31,6 +31,26 @@ describe('PaymentNotificationsRepository', () => {
     });
   });
 
+  describe('listRecent (Phase 10I)', () => {
+    it('orders newest-first by correo_id and binds the limit', async () => {
+      const query = vi.fn().mockResolvedValue([]);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await repository.listRecent(500);
+      const [sql, values] = query.mock.calls[0]!;
+      expect(sql).toContain('FROM core.correos_notificacion_pago correo');
+      expect(sql).toContain('ORDER BY correo.correo_id DESC');
+      expect(sql).toContain('LIMIT $1');
+      expect(values).toEqual([500]);
+    });
+
+    it('returns the raw rows unfiltered (outcome derivation stays in the service)', async () => {
+      const rows = [{ execution_id: '32', processing_status: 'PROCESADO' }];
+      const query = vi.fn().mockResolvedValue(rows);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await expect(repository.listRecent(10)).resolves.toEqual(rows);
+    });
+  });
+
   describe('findExecutionById', () => {
     it('binds the executionId as a bigint-cast string parameter', async () => {
       const query = vi.fn().mockResolvedValue([{ execution_id: '9007199254740993' }]);

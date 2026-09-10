@@ -11,6 +11,8 @@ vi.mock('../services/automationsOverview', async (importOriginal) => ({
 
 const overviewMock = vi.mocked(listAutomationsOverview);
 
+const NO_REVIEW = { required: false, problemOccurredAt: null, problemOutcome: null } as const;
+
 function audi(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
   return {
     code: 'REMISIONES_AUDI',
@@ -24,6 +26,7 @@ function audi(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
     lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' },
     nextCheckAt: null,
     capabilities: { hasDashboard: true, hasHistory: true, hasDetail: false },
+    review: NO_REVIEW,
     ...overrides
   };
 }
@@ -41,6 +44,7 @@ function paymentNotifications(overrides: Partial<AutomationOverview> = {}): Auto
     lastProcessing: { occurredAt: '2026-09-08T18:35:00.000Z', outcome: 'PARTIAL' },
     nextCheckAt: null,
     capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true },
+    review: NO_REVIEW,
     ...overrides
   };
 }
@@ -58,6 +62,7 @@ function caterpillar(overrides: Partial<AutomationOverview> = {}): AutomationOve
     lastProcessing: null,
     nextCheckAt: null,
     capabilities: { hasDashboard: false, hasHistory: false, hasDetail: false },
+    review: NO_REVIEW,
     ...overrides
   };
 }
@@ -295,9 +300,11 @@ describe('AutomationsPage', () => {
     });
   });
 
-  describe('review warning notice', () => {
+  describe('review warning notice (Phase 10I — backend-authoritative review.required)', () => {
+    const REQUIRED = { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' } as const;
+
     it('shows a singular warning notice for exactly one automation requiring review', async () => {
-      overviewMock.mockResolvedValue([audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' } })]);
+      overviewMock.mockResolvedValue([audi({ review: REQUIRED })]);
       renderPage();
       const notice = await screen.findByText('1 automatización requiere revisión');
       expect(notice.closest('[role="alert"]')).toBeInTheDocument();
@@ -305,15 +312,15 @@ describe('AutomationsPage', () => {
 
     it('shows a plural warning notice for more than one automation requiring review', async () => {
       overviewMock.mockResolvedValue([
-        audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' } }),
-        paymentNotifications({ lastProcessing: { occurredAt: '2026-09-08T18:35:00.000Z', outcome: 'PARTIAL' } })
+        audi({ review: REQUIRED }),
+        paymentNotifications({ review: { required: true, problemOccurredAt: '2026-09-08T18:35:00.000Z', problemOutcome: 'PARTIAL' } })
       ]);
       renderPage();
       expect(await screen.findByText('2 automatizaciones requieren revisión')).toBeInTheDocument();
     });
 
     it('renders no warning notice at all when zero automations require review', async () => {
-      overviewMock.mockResolvedValue([audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' } })]);
+      overviewMock.mockResolvedValue([audi()]);
       renderPage();
       await screen.findByText('Remisiones Audi');
 
@@ -322,20 +329,13 @@ describe('AutomationsPage', () => {
       expect(screen.queryByText(/0 requieren revisión/i)).not.toBeInTheDocument();
     });
 
-    it.each(['PARTIAL', 'FAILED', 'CANCELLED'] as const)('counts a %s latest outcome toward the warning notice', async (outcome) => {
-      overviewMock.mockResolvedValue([audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome } })]);
+    it('is driven by review.required, not by lastProcessing.outcome (COMPLETED + review.required=true is valid)', async () => {
+      overviewMock.mockResolvedValue([audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' }, review: REQUIRED })]);
       renderPage();
       expect(await screen.findByText('1 automatización requiere revisión')).toBeInTheDocument();
     });
 
-    it.each(['COMPLETED', 'PROCESSING', null] as const)('does not count a %s latest outcome toward the warning notice', async (outcome) => {
-      overviewMock.mockResolvedValue([audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome } })]);
-      renderPage();
-      await screen.findByText('Remisiones Audi');
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    });
-
-    it('never counts a NOT_INTEGRATED automation, even with a failure-shaped outcome', async () => {
+    it('never counts a NOT_INTEGRATED automation (Caterpillar review is always required=false)', async () => {
       overviewMock.mockResolvedValue([caterpillar()]);
       renderPage();
       await screen.findByText('Remisiones Caterpillar');
@@ -343,10 +343,111 @@ describe('AutomationsPage', () => {
     });
 
     it('never renders a green success banner for a healthy state', async () => {
-      overviewMock.mockResolvedValue([audi({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' } })]);
+      overviewMock.mockResolvedValue([audi()]);
       renderPage();
       await screen.findByText('Remisiones Audi');
       expect(document.querySelector('.MuiAlert-standardSuccess')).not.toBeInTheDocument();
+    });
+  });
+
+  // Phase 10I UX refinement §1: acknowledging moved to each automation's own processing-history
+  // table (AudiRemissionsPage / PaymentNotificationsPage). /automations is monitoring/navigation
+  // only — the card action and its dialog never appear here regardless of review state.
+  it('never renders a "Marcar como revisado" action anywhere on the Automation Center, even when review is required', async () => {
+    overviewMock.mockResolvedValue([
+      audi({ review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' } }),
+      paymentNotifications({ review: { required: true, problemOccurredAt: '2026-09-08T18:35:00.000Z', problemOutcome: 'PARTIAL' } }),
+      caterpillar()
+    ]);
+    renderPage();
+    await screen.findByText('Remisiones Audi');
+    expect(screen.queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  describe('operational accent (Phase 10I UX refinement §2)', () => {
+    function statusText(card: HTMLElement) {
+      return { failed: card.textContent?.includes('Último procesamiento falló') ?? false, required: card.textContent?.includes('Requiere revisión') ?? false };
+    }
+
+    it('FAILED latest processing + review required: RED accent, both texts shown', async () => {
+      overviewMock.mockResolvedValue([audi({
+        lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' },
+        review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+      })]);
+      renderPage();
+      const card = await cardFor('Remisiones Audi');
+      await within(card).findByText('Último procesamiento falló');
+      expect(statusText(card)).toEqual({ failed: true, required: true });
+      expect(getComputedStyle(card).borderLeftWidth).toBe('4px');
+    });
+
+    it('FAILED latest processing + reviewed (review.required=false): RED accent still shown, but no "Requiere revisión" text — acknowledged is never fixed', async () => {
+      overviewMock.mockResolvedValue([audi({
+        lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' },
+        review: { required: false, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+      })]);
+      renderPage();
+      const card = await cardFor('Remisiones Audi');
+      await within(card).findByText('Último procesamiento falló');
+      expect(statusText(card)).toEqual({ failed: true, required: false });
+      expect(getComputedStyle(card).borderLeftWidth).toBe('4px');
+    });
+
+    it('COMPLETED latest processing + older outstanding unacknowledged problem: WARNING accent, "Requiere revisión" text only', async () => {
+      overviewMock.mockResolvedValue([audi({
+        lastProcessing: { occurredAt: '2026-08-28T00:00:00.000Z', outcome: 'COMPLETED' },
+        review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+      })]);
+      renderPage();
+      const card = await cardFor('Remisiones Audi');
+      await within(card).findByText('Requiere revisión');
+      expect(statusText(card)).toEqual({ failed: false, required: true });
+      expect(getComputedStyle(card).borderLeftWidth).toBe('4px');
+    });
+
+    it('COMPLETED latest processing + no outstanding review: no accent, no warning/red text', async () => {
+      overviewMock.mockResolvedValue([audi({
+        lastProcessing: { occurredAt: '2026-08-28T00:00:00.000Z', outcome: 'COMPLETED' },
+        review: NO_REVIEW
+      })]);
+      renderPage();
+      const card = await cardFor('Remisiones Audi');
+      await within(card).findByText('Completado');
+      expect(statusText(card)).toEqual({ failed: false, required: false });
+      expect(getComputedStyle(card).borderLeftWidth).toBe('1px');
+    });
+
+    it('the RED and WARNING accents render as different colors (never conflated)', async () => {
+      overviewMock.mockResolvedValueOnce([audi({
+        lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' },
+        review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+      })]);
+      const { unmount } = renderPage();
+      const redCard = await cardFor('Remisiones Audi');
+      await within(redCard).findByText('Último procesamiento falló');
+      const redColor = getComputedStyle(redCard).borderLeftColor;
+      unmount();
+
+      overviewMock.mockResolvedValueOnce([audi({
+        lastProcessing: { occurredAt: '2026-08-28T00:00:00.000Z', outcome: 'COMPLETED' },
+        review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+      })]);
+      renderPage();
+      const warningCard = await cardFor('Remisiones Audi');
+      await within(warningCard).findByText('Requiere revisión');
+      const warningColor = getComputedStyle(warningCard).borderLeftColor;
+
+      expect(redColor).not.toBe(warningColor);
+    });
+
+    it('never shows a fabricated accent or health text for Caterpillar (NOT_INTEGRATED)', async () => {
+      overviewMock.mockResolvedValue([caterpillar()]);
+      renderPage();
+      const card = await cardFor('Remisiones Caterpillar');
+      await within(card).findByText('Sin integración con Hub');
+      expect(statusText(card)).toEqual({ failed: false, required: false });
+      expect(getComputedStyle(card).borderLeftWidth).toBe('1px');
     });
   });
 });

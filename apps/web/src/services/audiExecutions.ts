@@ -1,6 +1,10 @@
 import { apiBaseUrl as baseUrl } from './api';
 
 export type AudiProcessingOutcome = 'COMPLETED' | 'FAILED' | 'PROCESSING' | 'CANCELLED';
+// Backend-authoritative per-row acknowledgement state (Phase 10I UX refinement). Non-null on at
+// most one row in a list response — the row currently resolved as the outstanding problem. Never
+// derive this on the frontend by comparing outcomes across rows.
+export type AudiExecutionReviewStatus = 'REQUIRED' | 'REVIEWED' | null;
 
 export interface AudiProcessingSummary {
   occurredAt: string;
@@ -8,6 +12,7 @@ export interface AudiProcessingSummary {
   generatedCount: number;
   firstFolio: string | null;
   lastFolio: string | null;
+  reviewStatus: AudiExecutionReviewStatus;
 }
 
 export interface ListAudiExecutions {
@@ -37,6 +42,12 @@ function isNullableFolio(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
 
+const reviewStatuses = new Set<Exclude<AudiExecutionReviewStatus, null>>(['REQUIRED', 'REVIEWED']);
+
+function isReviewStatus(value: unknown): value is AudiExecutionReviewStatus {
+  return value === null || (typeof value === 'string' && reviewStatuses.has(value as Exclude<AudiExecutionReviewStatus, null>));
+}
+
 function isSummary(value: unknown): value is AudiProcessingSummary {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
@@ -44,7 +55,8 @@ function isSummary(value: unknown): value is AudiProcessingSummary {
     && typeof item.outcome === 'string' && outcomes.has(item.outcome as AudiProcessingOutcome)
     && isNonNegativeFiniteInteger(item.generatedCount)
     && isNullableFolio(item.firstFolio)
-    && isNullableFolio(item.lastFolio);
+    && isNullableFolio(item.lastFolio)
+    && isReviewStatus(item.reviewStatus);
 }
 
 function isMeta(value: unknown): value is ListAudiExecutions['meta'] {

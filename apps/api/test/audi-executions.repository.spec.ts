@@ -39,4 +39,30 @@ describe('AudiExecutionsRepository', () => {
     const repository = new AudiExecutionsRepository({ query } as never);
     await expect(repository.list(1, 25)).resolves.toEqual({ total: 1, executions: rows });
   });
+
+  describe('findLatestProblem (Phase 10I)', () => {
+    it('scopes to REMISIONES_AUDI, filters to ERROR/CANCELADA, and orders by ejecucion_id DESC', async () => {
+      const query = vi.fn().mockResolvedValue([]);
+      const repository = new AudiExecutionsRepository({ query } as never);
+      await repository.findLatestProblem();
+      const sql = query.mock.calls[0]?.[0] as string;
+      expect(sql).toContain("automation.codigo = 'REMISIONES_AUDI'");
+      expect(sql).toContain("WHERE execution.estado IN ('ERROR', 'CANCELADA')");
+      expect(sql).toContain('ORDER BY execution.ejecucion_id DESC');
+      expect(sql).toContain('LIMIT 1');
+    });
+
+    it('returns the row when one exists', async () => {
+      const row = { ejecucion_id: '77', occurred_at: '2026-08-27T22:40:01.933Z', execution_state: 'ERROR' };
+      const query = vi.fn().mockResolvedValue([row]);
+      const repository = new AudiExecutionsRepository({ query } as never);
+      await expect(repository.findLatestProblem()).resolves.toEqual(row);
+    });
+
+    it('returns null when there is no ERROR/CANCELADA execution', async () => {
+      const query = vi.fn().mockResolvedValue([]);
+      const repository = new AudiExecutionsRepository({ query } as never);
+      await expect(repository.findLatestProblem()).resolves.toBeNull();
+    });
+  });
 });
