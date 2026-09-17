@@ -12,6 +12,7 @@
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "security:bootstrap-admin:prod": "ts-node --transpile-only scripts/bootstrap-admin-prod.ts",
     "security:reset-admin-password": "ts-node --transpile-only scripts/reset-admin-password.ts",
+    "security:reset-admin-password:prod": "ts-node --transpile-only scripts/reset-admin-password-prod.ts",
     "test:integration:addresses": "npm run build && node test/addresses.integration.runner.cjs",
     "test:integration:clients": "npm run build && node test/clients.integration.runner.cjs",
     "test:integration:aliases": "npm run build && node test/aliases.integration.runner.cjs",
