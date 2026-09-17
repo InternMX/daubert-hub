@@ -26,6 +26,7 @@ function detail(overrides: Partial<PaymentNotificationExecutionDetail> = {}): Pa
     summarySent: false,
     summarySentAt: null,
     reviewStatus: null,
+    reprocessAvailable: false,
     results: [],
     ...overrides
   };

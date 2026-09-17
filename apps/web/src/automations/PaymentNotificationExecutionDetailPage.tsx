@@ -61,8 +61,11 @@ export function PaymentNotificationExecutionDetailPage() {
       <Stack spacing={3} sx={{ mt: 4, maxWidth: 1040 }}>
         <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
           <Stack direction="row" alignItems="center" spacing={1.5}>
-            <OutcomeStatusChip outcome={execution.outcomeStatus} />
-            {execution.outcomeStatus === null && (
+            <OutcomeStatusChip processingStatus={execution.processingStatus} outcomeStatus={execution.outcomeStatus} />
+            {/* The chip already reads "Pendiente" while processing (PN1.2 production findings) —
+                this secondary line only adds information for the other null-outcome case, a
+                completed PROCESADO run with zero results. */}
+            {execution.outcomeStatus === null && execution.processingStatus !== 'PENDIENTE' && (
               <Typography variant="body2" color="text.secondary">Estado de procesamiento: {processingStatusLabels[execution.processingStatus]}</Typography>
             )}
           </Stack>

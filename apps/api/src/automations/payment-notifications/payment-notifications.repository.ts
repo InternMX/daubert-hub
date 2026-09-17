@@ -22,6 +22,11 @@ export interface ListedPaymentNotificationExecutions {
   executions: PaymentNotificationExecutionRow[];
 }
 
+export type ReprocessableCorreoLookup =
+  | { status: 'FOUND'; correoId: string }
+  | { status: 'NOT_FOUND' }
+  | { status: 'NOT_ELIGIBLE' };
+
 export interface PaymentNotificationProviderResultRow extends QueryResultRow {
   company_id: string;
   company_name: string | null;
@@ -76,6 +81,37 @@ export class PaymentNotificationsRepository {
       GROUP BY correo.correo_id
       ORDER BY correo.correo_id DESC
       LIMIT $1`, [limit]);
+  }
+
+  // PN1.2 targeting fix: resolves the internal correo_id for exactly the requested execution and
+  // confirms it is currently eligible, instead of always picking the newest eligible row across
+  // the whole table (the prior findLatestReprocessableCorreoId behavior let clicking Reprocesar
+  // on an older eligible row silently reprocess a newer one). Same WHERE correo.correo_id =
+  // $1::bigint scoping as findExecutionById below, and the same eligibility predicate as before:
+  // the email itself is estado='ERROR' (covers technical failures and alias/classification
+  // failures alike, per "Marcar correo con error"), OR it has at least one joined resultado in
+  // estado MANUAL or ERROR. A PENDIENTE email is never eligible on either side. Intentionally NOT
+  // wrapped in a locking SELECT ... FOR UPDATE transaction: the real reprocess idempotency/claim
+  // gate lives entirely in n8n's own atomic state-transition guard for whichever eligibility path
+  // applies to the targeted row, running on a separate connection entirely (PN1.2 §6). Deliberately
+  // not describing that guard as one fixed SQL statement here — n8n's own reevaluation logic can
+  // evolve independently of this predicate, and a hardcoded mechanism description would go stale.
+  // Two concurrent Hub requests targeting the same executionId may both resolve it and both call
+  // the webhook; n8n's own atomic state transition guarantees only one actual business retry
+  // happens.
+  async findReprocessableCorreoByExecutionId(executionId: string): Promise<ReprocessableCorreoLookup> {
+    const [row] = await this.database.query<{ correo_id: string; eligible: boolean }>(`
+      SELECT
+        correo.correo_id::text AS correo_id,
+        (correo.estado = 'ERROR' OR EXISTS (
+              SELECT 1 FROM core.resultados_notificacion_pago resultado
+              WHERE resultado.correo_id = correo.correo_id
+                AND resultado.estado IN ('MANUAL', 'ERROR')
+            )) AS eligible
+      FROM core.correos_notificacion_pago correo
+      WHERE correo.correo_id = $1::bigint`, [executionId]);
+    if (!row) return { status: 'NOT_FOUND' };
+    return row.eligible ? { status: 'FOUND', correoId: row.correo_id } : { status: 'NOT_ELIGIBLE' };
   }
 
   async findExecutionById(executionId: string): Promise<PaymentNotificationExecutionRow | null> {

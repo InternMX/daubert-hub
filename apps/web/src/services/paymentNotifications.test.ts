@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getPaymentNotificationExecution, listPaymentNotificationExecutions, PaymentNotificationApiError } from './paymentNotifications';
+import { getPaymentNotificationExecution, listPaymentNotificationExecutions, PaymentNotificationApiError, reprocessPaymentNotifications } from './paymentNotifications';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -16,7 +16,8 @@ const summary = {
   omittedCount: 0,
   summarySent: false,
   summarySentAt: null,
-  reviewStatus: null
+  reviewStatus: null,
+  reprocessAvailable: false
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -41,7 +42,9 @@ describe('listPaymentNotificationExecutions', () => {
     ['non-finite total', { data: [], meta: { page: 1, pageSize: 25, total: Number.NaN, totalPages: 0 } }],
     ['unparsable createdAt', { data: [{ ...summary, createdAt: 'not-a-date' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
     ['unknown reviewStatus', { data: [{ ...summary, reviewStatus: 'ACKNOWLEDGED' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
-    ['missing reviewStatus', { data: [Object.fromEntries(Object.entries(summary).filter(([key]) => key !== 'reviewStatus'))], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }]
+    ['missing reviewStatus', { data: [Object.fromEntries(Object.entries(summary).filter(([key]) => key !== 'reviewStatus'))], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
+    ['missing reprocessAvailable', { data: [Object.fromEntries(Object.entries(summary).filter(([key]) => key !== 'reprocessAvailable'))], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }],
+    ['non-boolean reprocessAvailable', { data: [{ ...summary, reprocessAvailable: 'true' }], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } }]
   ])('rejects malformed responses: %s', async (_label, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)));
     await expect(listPaymentNotificationExecutions(1, 25)).rejects.toBeInstanceOf(PaymentNotificationApiError);
@@ -101,5 +104,43 @@ describe('getPaymentNotificationExecution', () => {
   it('propagates a 400 status for an invalid executionId', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 400, message: 'El identificador de la ejecución debe ser un entero positivo.' }, 400)));
     await expect(getPaymentNotificationExecution('not-a-number')).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+// PN1.2 final scope cleanup: "Ejecutar ahora" (runPaymentNotifications / POST .../run) was
+// removed — the production n8n workflow already polls independently, so a manual run trigger
+// added no value. Reprocesar (below) is unaffected.
+it('no longer exports a runPaymentNotifications function', async () => {
+  const module = await import('./paymentNotifications');
+  expect((module as unknown as Record<string, unknown>).runPaymentNotifications).toBeUndefined();
+});
+
+describe('reprocessPaymentNotifications (PN1.2 targeting fix §4)', () => {
+  it('POSTs with no request body (no correo_id) to the per-execution reprocess endpoint, using the exact executionId string', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: 'TRIGGERED' }, 202));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(reprocessPaymentNotifications('9007199254740993')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/payment-notifications/9007199254740993/reprocess', { method: 'POST' });
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('body');
+  });
+
+  it('rejects with 404 when the requested executionId does not exist', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 404 }, 404)));
+    await expect(reprocessPaymentNotifications('32')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('rejects with 409 when the requested execution is no longer eligible for reprocess', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 409 }, 409)));
+    await expect(reprocessPaymentNotifications('32')).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('rejects with the HTTP status on a non-2xx response (e.g. 502 upstream failure)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 502 }, 502)));
+    await expect(reprocessPaymentNotifications('32')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('surfaces status 0 for a network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    await expect(reprocessPaymentNotifications('32')).rejects.toMatchObject({ status: 0 });
   });
 });

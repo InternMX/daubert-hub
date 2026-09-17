@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { executionTimestamp, formatTimestamp, outcomeStatusLabel, outcomeStatusSeverity, processingStatusLabels, resultCountsSummary, resultStatusLabels, resultStatusSeverity } from './paymentNotificationPresentation';
+import { executionStatusLabel, executionStatusSeverity, executionTimestamp, formatTimestamp, outcomeStatusLabel, outcomeStatusSeverity, processingStatusLabels, resultCountsSummary, resultStatusLabels, resultStatusSeverity } from './paymentNotificationPresentation';
 
 describe('processing status labels', () => {
   it('translates every stored processingStatus value', () => {
@@ -28,6 +28,25 @@ describe('outcomeStatusSeverity', () => {
     expect(outcomeStatusSeverity('PARTIAL')).toBe('warning');
     expect(outcomeStatusSeverity('FAILED')).toBe('error');
     expect(outcomeStatusSeverity(null)).toBe('default');
+  });
+});
+
+describe('executionStatusLabel/executionStatusSeverity (PN1.2 production findings)', () => {
+  it('renders PENDIENTE as "Pendiente" regardless of outcomeStatus — never "Sin resultado disponible"', () => {
+    expect(executionStatusLabel({ processingStatus: 'PENDIENTE', outcomeStatus: null })).toBe('Pendiente');
+    expect(executionStatusSeverity({ processingStatus: 'PENDIENTE', outcomeStatus: null })).toBe('default');
+  });
+
+  it('renders a PROCESADO execution with a null outcome (zero results) as "Sin resultado disponible"', () => {
+    expect(executionStatusLabel({ processingStatus: 'PROCESADO', outcomeStatus: null })).toBe('Sin resultado disponible');
+    expect(executionStatusSeverity({ processingStatus: 'PROCESADO', outcomeStatus: null })).toBe('default');
+  });
+
+  it('defers to outcomeStatusLabel/outcomeStatusSeverity once processing has produced an outcome', () => {
+    expect(executionStatusLabel({ processingStatus: 'PROCESADO', outcomeStatus: 'COMPLETED' })).toBe('Completado');
+    expect(executionStatusLabel({ processingStatus: 'PROCESADO', outcomeStatus: 'PARTIAL' })).toBe('Parcial');
+    expect(executionStatusLabel({ processingStatus: 'ERROR', outcomeStatus: 'FAILED' })).toBe('Fallido');
+    expect(executionStatusSeverity({ processingStatus: 'PROCESADO', outcomeStatus: 'COMPLETED' })).toBe('success');
   });
 });
 

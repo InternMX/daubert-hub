@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { PaymentNotificationsService } from '../src/automations/payment-notifications/payment-notifications.service';
 
@@ -30,16 +30,28 @@ function setup(options: {
   findResultsByExecutionId?: unknown[];
   listRecent?: ReturnType<typeof execution>[];
   acknowledged?: boolean;
+  findReprocessableCorreoByExecutionId?: { status: 'FOUND'; correoId: string } | { status: 'NOT_FOUND' } | { status: 'NOT_ELIGIBLE' };
+  triggerReprocessOutcome?: 'ACCEPTED' | 'NOT_CONFIGURED' | 'UPSTREAM_ERROR';
+  recordImplementation?: () => Promise<void>;
 } = {}) {
   const repository = {
     list: vi.fn().mockResolvedValue(options.listResult ?? { total: 0, executions: [] }),
     findExecutionById: vi.fn().mockResolvedValue(options.findExecutionById ?? null),
     findResultsByExecutionId: vi.fn().mockResolvedValue(options.findResultsByExecutionId ?? []),
-    listRecent: vi.fn().mockResolvedValue(options.listRecent ?? [])
+    listRecent: vi.fn().mockResolvedValue(options.listRecent ?? []),
+    findReprocessableCorreoByExecutionId: vi.fn().mockResolvedValue(options.findReprocessableCorreoByExecutionId ?? { status: 'NOT_FOUND' })
   };
   const reviewAcknowledgements = { findLatest: vi.fn().mockResolvedValue(options.acknowledged ? { acknowledgement_id: '1' } : null) };
-  return { service: new PaymentNotificationsService(repository as never, reviewAcknowledgements as never), repository, reviewAcknowledgements };
+  // PN1.2 final scope cleanup: the webhook client no longer exposes triggerRun (RUN removed).
+  const webhookClient = {
+    triggerReprocess: vi.fn().mockResolvedValue(options.triggerReprocessOutcome ?? 'ACCEPTED')
+  };
+  const triggerRequests = { record: options.recordImplementation ? vi.fn().mockImplementation(options.recordImplementation) : vi.fn().mockResolvedValue(undefined) };
+  const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never);
+  return { service, repository, reviewAcknowledgements, webhookClient, triggerRequests };
 }
+
+const identity = { userId: '5', userEmail: 'user@daubert.mx' };
 
 describe('PaymentNotificationsService', () => {
   describe('list', () => {
@@ -49,6 +61,9 @@ describe('PaymentNotificationsService', () => {
       const result = await service.list({ page: 1, pageSize: 25 });
 
       expect(result.meta).toEqual({ page: 1, pageSize: 25, total: 11, totalPages: 1 });
+      // Default execution() has manual_count: 1, so this row is PARTIAL AND reprocessAvailable
+      // (PN1.2 correction §3: a MANUAL provider result — e.g. "IZZI" missing recipients — is
+      // recoverable once master data is fixed, so it must expose Reprocesar).
       expect(result.data).toEqual([{
         executionId: '32',
         createdAt: '2026-08-19T19:31:49.884Z',
@@ -62,9 +77,33 @@ describe('PaymentNotificationsService', () => {
         omittedCount: 0,
         summarySent: false,
         summarySentAt: null,
-        reviewStatus: null
+        reviewStatus: null,
+        reprocessAvailable: true
       }]);
       expect(repository.list).toHaveBeenCalledWith(1, 25);
+    });
+
+    it('reports reprocessAvailable=true for a correo-level ERROR, and independently for a PROCESADO/PARTIAL row with a MANUAL or ERROR provider result (the IZZI case)', async () => {
+      const { service } = setup({
+        listResult: {
+          total: 3,
+          executions: [
+            execution({ execution_id: '50', processing_status: 'ERROR', total_results: 0, ready_count: 0, manual_count: 0 }),
+            execution({ execution_id: '51', processing_status: 'PROCESADO', manual_count: 1, ready_count: 4, error_count: 0 }),
+            execution({ execution_id: '52', processing_status: 'PROCESADO', manual_count: 0, ready_count: 5, error_count: 0, total_results: 5 })
+          ]
+        }
+      });
+      const result = await service.list({ page: 1, pageSize: 25 });
+      expect(result.data.find((row) => row.executionId === '50')?.reprocessAvailable).toBe(true);
+      // PARTIAL (PROCESADO + a MANUAL result, e.g. "IZZI" missing recipients) MUST imply
+      // reprocessAvailable — this is the corrected PN1.2 predicate, derived from persisted
+      // provider-result counts, not from the outcomeStatus label itself.
+      expect(result.data.find((row) => row.executionId === '51')?.outcomeStatus).toBe('PARTIAL');
+      expect(result.data.find((row) => row.executionId === '51')?.reprocessAvailable).toBe(true);
+      // A genuinely healthy COMPLETED execution (all LISTO) must stay reprocessAvailable=false.
+      expect(result.data.find((row) => row.executionId === '52')?.outcomeStatus).toBe('COMPLETED');
+      expect(result.data.find((row) => row.executionId === '52')?.reprocessAvailable).toBe(false);
     });
 
     it('derives COMPLETED when PROCESADO has only LISTO/OMITIDO results', async () => {
@@ -99,7 +138,7 @@ describe('PaymentNotificationsService', () => {
       const result = await service.list({ page: 1, pageSize: 25 });
       expect(Object.keys(result.data[0]!).sort()).toEqual([
         'createdAt', 'errorCount', 'executionId', 'manualCount', 'omittedCount', 'outcomeStatus',
-        'processedAt', 'processingStatus', 'readyCount', 'reviewStatus', 'summarySent', 'summarySentAt', 'totalResults'
+        'processedAt', 'processingStatus', 'readyCount', 'reprocessAvailable', 'reviewStatus', 'summarySent', 'summarySentAt', 'totalResults'
       ]);
       expect(JSON.stringify(result)).not.toMatch(/outlook|remitente|asunto|correos_para|correos_cc|correos_cco|rfc|detalle_error|motivo|acknowledgement_id/i);
     });
@@ -251,6 +290,126 @@ describe('PaymentNotificationsService', () => {
     it('returns null when there are no executions at all', async () => {
       const { service } = setup({ listRecent: [] });
       await expect(service.findLatestReviewWorthyExecution()).resolves.toBeNull();
+    });
+  });
+
+  // PN1.2 final scope cleanup: "Ejecutar ahora" (RUN) was removed from Payment Notifications —
+  // the production n8n workflow already polls independently, so a manual trigger for it added no
+  // value. Reprocesar (below) is unaffected.
+  it('no longer exposes a run() method', () => {
+    const { service } = setup();
+    expect((service as unknown as Record<string, unknown>).run).toBeUndefined();
+  });
+
+  describe('reprocess (PN1.2 targeting fix §4/§5/§6)', () => {
+    it('resolves the requested executionId, forwards its correo_id to the webhook, and records TRIGGERED with the internal target_reference', async () => {
+      const { service, repository, webhookClient, triggerRequests } = setup({ findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '77' }, triggerReprocessOutcome: 'ACCEPTED' });
+      const result = await service.reprocess('77', 'req-1', identity);
+      expect(result).toEqual({ status: 'TRIGGERED' });
+      expect(repository.findReprocessableCorreoByExecutionId).toHaveBeenCalledWith('77');
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('77');
+      expect(triggerRequests.record).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS', 'REPROCESS', 'TRIGGERED', 'req-1', identity, '77');
+    });
+
+    // Regression for the confirmed targeting bug: two independently eligible executions (A older,
+    // B newer, both MANUAL/reprocessAvailable=true). Clicking Reprocesar on A must resolve and
+    // forward exactly A's correo_id — B must never be selected, regardless of recency.
+    it('clicking Reprocesar on the older of two eligible executions (A) resolves and forwards A, never the newer one (B)', async () => {
+      const lookup = vi.fn().mockImplementation((executionId: string) => {
+        if (executionId === 'exec-A') return Promise.resolve({ status: 'FOUND', correoId: 'correo-A' });
+        if (executionId === 'exec-B') return Promise.resolve({ status: 'FOUND', correoId: 'correo-B' });
+        return Promise.resolve({ status: 'NOT_FOUND' });
+      });
+      const webhookClient = { triggerReprocess: vi.fn().mockResolvedValue('ACCEPTED') };
+      const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
+      const repository = { list: vi.fn(), findExecutionById: vi.fn(), findResultsByExecutionId: vi.fn(), listRecent: vi.fn(), findReprocessableCorreoByExecutionId: lookup };
+      const reviewAcknowledgements = { findLatest: vi.fn() };
+      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never);
+
+      const result = await service.reprocess('exec-A', 'req-A', identity);
+
+      expect(result).toEqual({ status: 'TRIGGERED' });
+      expect(lookup).toHaveBeenCalledWith('exec-A');
+      expect(lookup).not.toHaveBeenCalledWith('exec-B');
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('correo-A');
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalledWith('correo-B');
+      expect(triggerRequests.record).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS', 'REPROCESS', 'TRIGGERED', 'req-A', identity, 'correo-A');
+    });
+
+    it('clicking Reprocesar on the newer of two eligible executions (B) resolves and forwards B, never A', async () => {
+      const lookup = vi.fn().mockImplementation((executionId: string) => {
+        if (executionId === 'exec-A') return Promise.resolve({ status: 'FOUND', correoId: 'correo-A' });
+        if (executionId === 'exec-B') return Promise.resolve({ status: 'FOUND', correoId: 'correo-B' });
+        return Promise.resolve({ status: 'NOT_FOUND' });
+      });
+      const webhookClient = { triggerReprocess: vi.fn().mockResolvedValue('ACCEPTED') };
+      const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
+      const repository = { list: vi.fn(), findExecutionById: vi.fn(), findResultsByExecutionId: vi.fn(), listRecent: vi.fn(), findReprocessableCorreoByExecutionId: lookup };
+      const reviewAcknowledgements = { findLatest: vi.fn() };
+      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never);
+
+      const result = await service.reprocess('exec-B', 'req-B', identity);
+
+      expect(result).toEqual({ status: 'TRIGGERED' });
+      expect(lookup).toHaveBeenCalledWith('exec-B');
+      expect(lookup).not.toHaveBeenCalledWith('exec-A');
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('correo-B');
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalledWith('correo-A');
+    });
+
+    it('returns NOT_FOUND and never calls the webhook when the requested executionId does not exist', async () => {
+      const { service, webhookClient, triggerRequests } = setup({ findReprocessableCorreoByExecutionId: { status: 'NOT_FOUND' } });
+      const result = await service.reprocess('999999', 'req-2', identity);
+      expect(result).toEqual({ status: 'NOT_FOUND' });
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
+      expect(triggerRequests.record).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS', 'REPROCESS', 'NOTHING_TO_REPROCESS', 'req-2', identity, null);
+    });
+
+    it('returns NOT_ELIGIBLE and never calls the webhook when the requested execution is no longer reprocessable', async () => {
+      const { service, webhookClient, triggerRequests } = setup({ findReprocessableCorreoByExecutionId: { status: 'NOT_ELIGIBLE' } });
+      const result = await service.reprocess('52', 'req-2b', identity);
+      expect(result).toEqual({ status: 'NOT_ELIGIBLE' });
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
+      expect(triggerRequests.record).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS', 'REPROCESS', 'NOTHING_TO_REPROCESS', 'req-2b', identity, null);
+    });
+
+    it.each(['NOT_CONFIGURED', 'UPSTREAM_ERROR'] as const)('records UPSTREAM_ERROR with target_reference when the webhook outcome is %s', async (outcome) => {
+      const { service, triggerRequests } = setup({ findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '77' }, triggerReprocessOutcome: outcome });
+      const result = await service.reprocess('77', 'req-3', identity);
+      expect(result).toEqual({ status: 'UPSTREAM_ERROR' });
+      expect(triggerRequests.record).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS', 'REPROCESS', 'UPSTREAM_ERROR', 'req-3', identity, '77');
+    });
+
+    it('throws BadRequestException when the request has no authenticated user email', async () => {
+      const { service } = setup();
+      await expect(service.reprocess('32', 'req-4', { userId: null, userEmail: null })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('never exposes the resolved correo_id in the returned result', async () => {
+      const { service } = setup({ findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '999999999999999' } });
+      const result = await service.reprocess('32', 'req-5', identity);
+      expect(JSON.stringify(result)).not.toMatch(/999999999999999/);
+    });
+
+    it('still returns TRIGGERED (PN1.2 correction §11) when the webhook succeeds but the audit-row insert fails', async () => {
+      const { service, webhookClient } = setup({
+        findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '77' },
+        triggerReprocessOutcome: 'ACCEPTED',
+        recordImplementation: () => { throw new Error('db unavailable'); }
+      });
+      const result = await service.reprocess('77', 'req-6', identity);
+      expect(result).toEqual({ status: 'TRIGGERED' });
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('77');
+    });
+
+    it('still returns UPSTREAM_ERROR (not masked) when both the webhook call and the subsequent audit-row insert fail', async () => {
+      const { service } = setup({
+        findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '77' },
+        triggerReprocessOutcome: 'UPSTREAM_ERROR',
+        recordImplementation: () => { throw new Error('db unavailable'); }
+      });
+      const result = await service.reprocess('77', 'req-7', identity);
+      expect(result).toEqual({ status: 'UPSTREAM_ERROR' });
     });
   });
 });

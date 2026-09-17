@@ -69,6 +69,43 @@ describe('PaymentNotificationsRepository', () => {
     });
   });
 
+  describe('findReprocessableCorreoByExecutionId (PN1.2 targeting fix §4/§5)', () => {
+    it('resolves the requested execution when it is currently eligible, binding the executionId as a bigint-cast parameter', async () => {
+      const query = vi.fn().mockResolvedValue([{ correo_id: '77', eligible: true }]);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await expect(repository.findReprocessableCorreoByExecutionId('77')).resolves.toEqual({ status: 'FOUND', correoId: '77' });
+      const [sql, values] = query.mock.calls[0]!;
+      expect(sql).toContain("correo.estado = 'ERROR'");
+      expect(sql).toContain("resultado.estado IN ('MANUAL', 'ERROR')");
+      expect(sql).toContain('WHERE correo.correo_id = $1::bigint');
+      expect(sql).not.toContain('ORDER BY');
+      expect(sql).not.toContain('LIMIT');
+      expect(values).toEqual(['77']);
+    });
+
+    it('returns NOT_ELIGIBLE when the requested execution exists but has no recoverable unresolved work', async () => {
+      const query = vi.fn().mockResolvedValue([{ correo_id: '52', eligible: false }]);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await expect(repository.findReprocessableCorreoByExecutionId('52')).resolves.toEqual({ status: 'NOT_ELIGIBLE' });
+    });
+
+    it('returns NOT_FOUND when no execution matches the requested executionId', async () => {
+      const query = vi.fn().mockResolvedValue([]);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await expect(repository.findReprocessableCorreoByExecutionId('999999')).resolves.toEqual({ status: 'NOT_FOUND' });
+    });
+
+    it('never resolves a different execution than the one requested (regression: clicking row A must never reprocess row B)', async () => {
+      // Simulates two independently eligible rows (A older, B newer). Requesting A's executionId
+      // must bind exactly A's id and never fall back to any "latest"/ORDER BY-based resolution.
+      const query = vi.fn().mockResolvedValue([{ correo_id: '40', eligible: true }]);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await expect(repository.findReprocessableCorreoByExecutionId('40')).resolves.toEqual({ status: 'FOUND', correoId: '40' });
+      const [, values] = query.mock.calls[0]!;
+      expect(values).toEqual(['40']);
+    });
+  });
+
   describe('findResultsByExecutionId', () => {
     it('left joins core.empresas so a result survives an unresolved company name', async () => {
       const query = vi.fn().mockResolvedValue([]);

@@ -22,6 +22,10 @@ export interface PaymentNotificationExecutionSummary {
   summarySent: boolean;
   summarySentAt: string | null;
   reviewStatus: PaymentNotificationReviewStatus;
+  // PN1.2 §5: a plain per-row fact about the underlying email's own state — never derived from
+  // outcomeStatus/reviewStatus on the frontend (PN1.1c proved those are not equivalent). Unlike
+  // reviewStatus, this is not limited to "at most one row".
+  reprocessAvailable: boolean;
 }
 
 export interface PaymentNotificationProviderResult {
@@ -94,7 +98,8 @@ function isExecutionSummary(value: unknown): value is PaymentNotificationExecuti
     && isNonNegativeFiniteNumber(item.omittedCount)
     && typeof item.summarySent === 'boolean'
     && isNullableIsoDateString(item.summarySentAt)
-    && isReviewStatus(item.reviewStatus);
+    && isReviewStatus(item.reviewStatus)
+    && typeof item.reprocessAvailable === 'boolean';
 }
 
 function isProviderResult(value: unknown): value is PaymentNotificationProviderResult {
@@ -148,4 +153,15 @@ export async function getPaymentNotificationExecution(executionId: string): Prom
     throw new PaymentNotificationApiError(response.status);
   }
   return body.data;
+}
+
+// PN1.2 targeting fix §4: "Reprocesar" is per-execution — the caller passes the row's own public
+// executionId (exactly as received — never Number(executionId), same convention as
+// getPaymentNotificationExecution) in the path, and no request body. The server resolves that
+// execution's internal correo_id itself; it is never sent by, or returned to, the browser.
+export async function reprocessPaymentNotifications(executionId: string): Promise<void> {
+  let response: Response;
+  try { response = await fetch(`${baseUrl}/automations/payment-notifications/${encodeURIComponent(executionId)}/reprocess`, { method: 'POST' }); }
+  catch { throw new PaymentNotificationApiError(0); }
+  if (!response.ok) throw new PaymentNotificationApiError(response.status);
 }

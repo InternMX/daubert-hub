@@ -15,6 +15,7 @@ import {
 } from '../services/paymentNotifications';
 import { OutcomeStatusChip, ResultStatusChip } from './PaymentNotificationStatusChips';
 import { executionTimestamp, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
+import { ReprocessCell } from './ReprocessCell';
 import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
 
 const TABLE_PAGE_SIZE = 25;
@@ -32,8 +33,12 @@ function LatestExecutionCard({ execution }: { execution: PaymentNotificationExec
       <Paper variant="outlined" sx={{ mt: 2, p: { xs: 3, sm: 4 } }}>
         <Typography sx={{ fontSize: '1.25rem', fontWeight: 700 }}>{executionTimestamp(execution)}</Typography>
         <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mt: 1.5 }}>
-          <OutcomeStatusChip outcome={execution.outcomeStatus} />
-          {execution.outcomeStatus === null && (
+          <OutcomeStatusChip processingStatus={execution.processingStatus} outcomeStatus={execution.outcomeStatus} />
+          {/* The chip itself already reads "Pendiente" while processing (PN1.2 production
+              findings) — this secondary line only adds information for the other null-outcome
+              case, a completed PROCESADO run with zero results, where "Sin resultado disponible"
+              alone doesn't say the run actually finished. */}
+          {execution.outcomeStatus === null && execution.processingStatus !== 'PENDIENTE' && (
             <Typography variant="body2" color="text.secondary">Estado de procesamiento: {processingStatusLabels[execution.processingStatus]}</Typography>
           )}
         </Stack>
@@ -65,6 +70,15 @@ function AttentionSection({ executionId }: { executionId: string }) {
   }, [executionId, retry]);
 
   const attentionItems = detail?.results.filter((result) => result.status === 'MANUAL' || result.status === 'ERROR') ?? [];
+  // PENDIENTE means the execution is still in progress — an empty attentionItems list here reflects
+  // that no result has been produced yet, not that the run was evaluated and found clean. Claiming
+  // "no requiere atención" would misrepresent an in-progress run as a completed, healthy one.
+  const isPending = detail?.processingStatus === 'PENDIENTE';
+  // Confirmed production data (PN1.2 findings): historical PROCESADO rows exist with zero
+  // per-provider results, from older workflow stages. That is a real completed run that simply
+  // produced no results — not proof the run was evaluated and found healthy — so it gets its own
+  // neutral copy instead of the positive "no requiere atención" claim.
+  const isProcessedWithNoResults = detail?.processingStatus === 'PROCESADO' && detail.results.length === 0;
 
   return (
     <Box component="section" aria-labelledby="payment-notifications-attention-title" sx={{ mt: 4, maxWidth: 760 }}>
@@ -77,7 +91,13 @@ function AttentionSection({ executionId }: { executionId: string }) {
       )}
       {!loading && !error && attentionItems.length === 0 && (
         <Paper variant="outlined" sx={{ mt: 2, p: 3 }}>
-          <Typography color="text.secondary">La última ejecución no requiere atención.</Typography>
+          <Typography color="text.secondary">
+            {isPending
+              ? 'La ejecución todavía está en proceso.'
+              : isProcessedWithNoResults
+                ? 'No hay información detallada disponible para esta ejecución.'
+                : 'La última ejecución no requiere atención.'}
+          </Typography>
         </Paper>
       )}
       {!loading && !error && attentionItems.length > 0 && (
@@ -105,6 +125,7 @@ interface RecentExecutionsSectionProps {
   error: boolean;
   onRetry: () => void;
   onAcknowledged: () => void;
+  onReprocessed: () => void;
 }
 
 // Responsive column hiding (presentational only — same data/columns are always fetched and
@@ -128,7 +149,7 @@ function useCompactRecentExecutionsTable(): boolean {
   return viewportBelowMd || (!sidebarCollapsed && viewportBelowLg);
 }
 
-function RecentExecutionsSection({ page, onPageChange, result, loading, error, onRetry, onAcknowledged }: RecentExecutionsSectionProps) {
+function RecentExecutionsSection({ page, onPageChange, result, loading, error, onRetry, onAcknowledged, onReprocessed }: RecentExecutionsSectionProps) {
   const start = result && result.meta.total > 0 ? (result.meta.page - 1) * result.meta.pageSize + 1 : 0;
   const end = result ? Math.min(result.meta.page * result.meta.pageSize, result.meta.total) : 0;
   const compact = useCompactRecentExecutionsTable();
@@ -167,9 +188,12 @@ function RecentExecutionsSection({ page, onPageChange, result, loading, error, o
                       <Link to={`/automations/payment-notifications/${execution.executionId}`}>{executionTimestamp(execution)}</Link>
                     </TableCell>
                     <TableCell>
-                      {execution.outcomeStatus === null
-                        ? <Tooltip title={`Estado de procesamiento: ${processingStatusLabels[execution.processingStatus]}`}><span><OutcomeStatusChip outcome={execution.outcomeStatus} /></span></Tooltip>
-                        : <OutcomeStatusChip outcome={execution.outcomeStatus} />}
+                      {/* The chip already reads "Pendiente" for a PENDIENTE row (PN1.2 production
+                          findings), so the tooltip only adds information for the other null-outcome
+                          case: a completed PROCESADO run with zero results. */}
+                      {execution.outcomeStatus === null && execution.processingStatus !== 'PENDIENTE'
+                        ? <Tooltip title={`Estado de procesamiento: ${processingStatusLabels[execution.processingStatus]}`}><span><OutcomeStatusChip processingStatus={execution.processingStatus} outcomeStatus={execution.outcomeStatus} /></span></Tooltip>
+                        : <OutcomeStatusChip processingStatus={execution.processingStatus} outcomeStatus={execution.outcomeStatus} />}
                     </TableCell>
                     <TableCell align="right">{execution.totalResults}</TableCell>
                     <TableCell align="right" sx={detailColumnSx}>{execution.readyCount}</TableCell>
@@ -178,12 +202,22 @@ function RecentExecutionsSection({ page, onPageChange, result, loading, error, o
                     <TableCell align="right" sx={detailColumnSx}>{execution.omittedCount}</TableCell>
                     <TableCell><Typography color={execution.summarySent ? 'text.primary' : 'text.secondary'}>{execution.summarySent ? 'Enviado' : 'No enviado'}</Typography></TableCell>
                     <TableCell>
-                      <ReviewAcknowledgementCell
-                        automationCode={automationCode}
-                        automationName={automationName}
-                        reviewStatus={execution.reviewStatus}
-                        onAcknowledged={onAcknowledged}
-                      />
+                      {/* Independent actions (PN1.2 §6/§13): reprocessing never acknowledges review,
+                          and acknowledging never triggers a reprocess. Both may render together. */}
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                        <ReprocessCell
+                          executionId={execution.executionId}
+                          reprocessAvailable={execution.reprocessAvailable}
+                          processingStatus={execution.processingStatus}
+                          onReprocessed={onReprocessed}
+                        />
+                        <ReviewAcknowledgementCell
+                          automationCode={automationCode}
+                          automationName={automationName}
+                          reviewStatus={execution.reviewStatus}
+                          onAcknowledged={onAcknowledged}
+                        />
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -224,6 +258,15 @@ export function PaymentNotificationsPage() {
     setLatestRetry((value) => value + 1);
     setTableRetry((value) => value + 1);
     setReviewFeedback('Marcado como revisado.');
+  }
+
+  // PN1.2 §6/§13: reprocessing is a completely independent action from Marcar como revisado — it
+  // never acknowledges review, and refreshing here only reflects the underlying email's own state
+  // (reprocessAvailable/processingStatus) changing, never a reviewStatus side effect.
+  function handleReprocessed() {
+    setLatestRetry((value) => value + 1);
+    setTableRetry((value) => value + 1);
+    setReviewFeedback('Reproceso solicitado.');
   }
 
   useEffect(() => {
@@ -277,6 +320,7 @@ export function PaymentNotificationsPage() {
             error={tableError}
             onRetry={() => setTableRetry((value) => value + 1)}
             onAcknowledged={handleAcknowledged}
+            onReprocessed={handleReprocessed}
           />
         </>
       )}

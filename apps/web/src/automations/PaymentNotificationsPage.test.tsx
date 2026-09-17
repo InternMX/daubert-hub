@@ -7,6 +7,8 @@ import { acknowledgeAutomationReview } from '../services/automationsOverview';
 import {
   getPaymentNotificationExecution,
   listPaymentNotificationExecutions,
+  PaymentNotificationApiError,
+  reprocessPaymentNotifications,
   type ListPaymentNotificationExecutions,
   type PaymentNotificationExecutionDetail,
   type PaymentNotificationExecutionSummary
@@ -16,7 +18,8 @@ import { PaymentNotificationsPage } from './PaymentNotificationsPage';
 vi.mock('../services/paymentNotifications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/paymentNotifications')>()),
   listPaymentNotificationExecutions: vi.fn(),
-  getPaymentNotificationExecution: vi.fn()
+  getPaymentNotificationExecution: vi.fn(),
+  reprocessPaymentNotifications: vi.fn()
 }));
 vi.mock('../services/automationsOverview', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/automationsOverview')>()),
@@ -26,6 +29,7 @@ vi.mock('../services/automationsOverview', async (importOriginal) => ({
 const listMock = vi.mocked(listPaymentNotificationExecutions);
 const detailMock = vi.mocked(getPaymentNotificationExecution);
 const acknowledgeMock = vi.mocked(acknowledgeAutomationReview);
+const reprocessMock = vi.mocked(reprocessPaymentNotifications);
 
 function summary(overrides: Partial<PaymentNotificationExecutionSummary> = {}): PaymentNotificationExecutionSummary {
   return {
@@ -42,6 +46,7 @@ function summary(overrides: Partial<PaymentNotificationExecutionSummary> = {}): 
     summarySent: false,
     summarySentAt: null,
     reviewStatus: null,
+    reprocessAvailable: false,
     ...overrides
   };
 }
@@ -118,6 +123,7 @@ describe('PaymentNotificationsPage', () => {
     vi.clearAllMocks();
     detailMock.mockResolvedValue(detail());
     acknowledgeMock.mockResolvedValue({ automationCode: 'PAYMENT_NOTIFICATIONS', reviewRequired: false, reviewedAt: '2026-09-10T00:00:00.000Z', reviewedBy: { displayName: 'user@daubert.mx', email: 'user@daubert.mx' } });
+    reprocessMock.mockResolvedValue(undefined);
   });
 
   function latestSection() {
@@ -177,6 +183,34 @@ describe('PaymentNotificationsPage', () => {
     expect(within(latestSection()).queryByText('Completado')).not.toBeInTheDocument();
   });
 
+  describe('production-state status mapping (PN1.2 production findings)', () => {
+    it('renders PENDIENTE as "Pendiente" — never "Sin resultado disponible" — as the primary status label', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PENDIENTE', outcomeStatus: null, totalResults: 0, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 0 })]));
+      renderPage();
+      await screen.findByRole('heading', { level: 2, name: 'Última ejecución' });
+      const section = within(latestSection());
+      expect(section.getByText('Pendiente')).toBeInTheDocument();
+      expect(section.queryByText('Sin resultado disponible')).not.toBeInTheDocument();
+      // The chip already says "Pendiente" — the redundant secondary line is only for the other
+      // null-outcome case (a completed PROCESADO run with zero results).
+      expect(section.queryByText('Estado de procesamiento: Pendiente')).not.toBeInTheDocument();
+    });
+
+    it('renders PROCESADO with 13 results (12 LISTO / 1 MANUAL) as "Parcial", a confirmed real production shape', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PROCESADO', outcomeStatus: 'PARTIAL', totalResults: 13, readyCount: 12, manualCount: 1, errorCount: 0, omittedCount: 0 })]));
+      renderPage();
+      await screen.findByRole('heading', { level: 2, name: 'Última ejecución' });
+      expect(within(latestSection()).getByText('Parcial')).toBeInTheDocument();
+    });
+
+    it('renders PROCESADO with all LISTO as "Completado"', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PROCESADO', outcomeStatus: 'COMPLETED', totalResults: 5, readyCount: 5, manualCount: 0, errorCount: 0, omittedCount: 0 })]));
+      renderPage();
+      await screen.findByRole('heading', { level: 2, name: 'Última ejecución' });
+      expect(within(latestSection()).getByText('Completado')).toBeInTheDocument();
+    });
+  });
+
   it('shows the summary-sent and summary-not-sent states', async () => {
     listMock.mockResolvedValue(listResponse([summary({ summarySent: true })]));
     const first = renderPage();
@@ -230,12 +264,60 @@ describe('PaymentNotificationsPage', () => {
     expect(screen.queryByText('B')).not.toBeInTheDocument();
   });
 
-  it('shows the compact positive empty state (never a large success banner) when nothing needs attention', async () => {
+  it('shows a compact empty state (never a large success banner, and never a positive claim) when there are no results at all', async () => {
+    // PN1.2 production findings: a PROCESADO execution with zero results is a real historical shape
+    // (older workflow stages), not proof the run was evaluated and found healthy — so this must not
+    // say "no requiere atención" either.
     listMock.mockResolvedValue(listResponse([summary()]));
     detailMock.mockResolvedValue(detail({ results: [] }));
     renderPage();
-    expect(await screen.findByText('La última ejecución no requiere atención.')).toBeInTheDocument();
+    expect(await screen.findByText('No hay información detallada disponible para esta ejecución.')).toBeInTheDocument();
+    expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  describe('PENDIENTE attention copy (PN1.2 final semantics)', () => {
+    it('says the execution is still in progress, never "no requiere atención", when PENDIENTE with no results yet', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PENDIENTE', outcomeStatus: null, totalResults: 0, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 0 })]));
+      detailMock.mockResolvedValue(detail({ processingStatus: 'PENDIENTE', outcomeStatus: null, totalResults: 0, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 0, results: [] }));
+      renderPage();
+
+      expect(await screen.findByText('La ejecución todavía está en proceso.')).toBeInTheDocument();
+      expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
+    });
+
+    it('does not claim "no requiere atención" when PENDIENTE even with historical MANUAL results present', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PENDIENTE', outcomeStatus: null })]));
+      detailMock.mockResolvedValue(detail({
+        processingStatus: 'PENDIENTE',
+        outcomeStatus: null,
+        results: [{ companyId: '7', companyName: 'NOVAPAK', status: 'MANUAL', attentionReason: 'Faltan destinatarios principales configurados.' }]
+      }));
+      renderPage();
+
+      await screen.findByText('NOVAPAK');
+      expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
+    });
+
+    it('keeps the positive "no requiere atención" copy for a PROCESADO execution with real, healthy results', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PROCESADO' })]));
+      detailMock.mockResolvedValue(detail({ processingStatus: 'PROCESADO', results: [{ companyId: '1', companyName: 'A', status: 'LISTO', attentionReason: null }] }));
+      renderPage();
+
+      expect(await screen.findByText('La última ejecución no requiere atención.')).toBeInTheDocument();
+      expect(screen.queryByText('La ejecución todavía está en proceso.')).not.toBeInTheDocument();
+      expect(screen.queryByText('No hay información detallada disponible para esta ejecución.')).not.toBeInTheDocument();
+    });
+
+    it('uses neutral copy — never "no requiere atención" — for a PROCESADO execution with zero historical results (older workflow stage rows)', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PROCESADO', outcomeStatus: null, totalResults: 0, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 0 })]));
+      detailMock.mockResolvedValue(detail({ processingStatus: 'PROCESADO', outcomeStatus: null, totalResults: 0, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 0, results: [] }));
+      renderPage();
+
+      expect(await screen.findByText('No hay información detallada disponible para esta ejecución.')).toBeInTheDocument();
+      expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
+      expect(screen.queryByText('La ejecución todavía está en proceso.')).not.toBeInTheDocument();
+    });
   });
 
   it('renders the recent executions table with a request through the API pagination, and links to detail', async () => {
@@ -352,6 +434,222 @@ describe('PaymentNotificationsPage', () => {
       expect(await within(dialog).findByText('No fue posible marcar la automatización como revisada. Intenta nuevamente.')).toBeInTheDocument();
       expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
       expect(within(dialog).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+    });
+  });
+
+  // PN1.2 final scope cleanup: "Ejecutar ahora" was removed — the production n8n workflow already
+  // polls independently, so a manual run trigger added no value. Reprocesar (below) is unaffected.
+  it('no longer renders an "Ejecutar ahora" button anywhere on the page', async () => {
+    listMock.mockResolvedValue(listResponse([summary()]));
+    renderPage();
+    await screen.findByRole('heading', { level: 2, name: 'Última ejecución' });
+    expect(screen.queryByRole('button', { name: 'Ejecutar ahora' })).not.toBeInTheDocument();
+  });
+
+  describe('Reprocesar (PN1.2 §4/§5/§11/§13)', () => {
+    it('renders Reprocesar only when reprocessAvailable is true, independent of reviewStatus', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: false, reviewStatus: 'REQUIRED' })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+      expect(within(table).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+    });
+
+    it('renders both Reprocesar and Marcar como revisado together when both apply (the IZZI case: PARTIAL, 4 LISTO/1 MANUAL/0 ERROR)', async () => {
+      // summary()'s defaults already model this exact scenario (readyCount:4, manualCount:1,
+      // errorCount:0, outcomeStatus:'PARTIAL') — PN1.2 correction §12's confirmed UI requirement.
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: true, reviewStatus: 'REQUIRED' })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).getByRole('button', { name: 'Reprocesar' })).toBeInTheDocument();
+      expect(within(table).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
+    });
+
+    it('opens a confirmation dialog with the exact required copy, and Cancelar sends no request', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: true })]));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText('Se reevaluará el correo con la información actual. El trabajo que ya se completó correctamente no se volverá a generar intencionalmente.')).toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+      expect(reprocessMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('sends the row\'s exact executionId (no correo_id) in the path, refreshes the table, and shows "Reproceso solicitado." on confirm', async () => {
+      listMock
+        .mockResolvedValueOnce(listResponse([summary({ executionId: '32', reprocessAvailable: true })])) // latest
+        .mockResolvedValueOnce(listResponse([summary({ executionId: '32', reprocessAvailable: true })])) // table
+        .mockResolvedValueOnce(listResponse([summary({ executionId: '32', reprocessAvailable: false })])) // latest refresh
+        .mockResolvedValueOnce(listResponse([summary({ executionId: '32', reprocessAvailable: false })])); // table refresh
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(reprocessMock).toHaveBeenCalledWith('32');
+      expect(await screen.findByText('Reproceso solicitado.')).toBeInTheDocument();
+      await waitFor(() => expect(within(screen.getByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' })).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument());
+    });
+
+    // Regression for the confirmed targeting bug (PN1.2 targeting fix): two historical rows both
+    // MANUAL/reprocessAvailable=true, B newer than A. Clicking Reprocesar on the OLDER row (A)
+    // must call the API with A's own executionId, never B's — list ordering must never leak into
+    // which id is sent.
+    it('clicking Reprocesar on an older eligible row targets that row\'s executionId, never a newer eligible row\'s', async () => {
+      const rowA = summary({ executionId: '40', outcomeStatus: 'PARTIAL', reprocessAvailable: true });
+      const rowB = summary({ executionId: '41', outcomeStatus: 'PARTIAL', reprocessAvailable: true });
+      // Newest-first ordering, as the real API returns: B (41) before A (40).
+      listMock.mockResolvedValue(listResponse([rowB, rowA]));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      const reprocessButtons = within(table).getAllByRole('button', { name: 'Reprocesar' });
+      expect(reprocessButtons).toHaveLength(2);
+
+      // Second row rendered is A (the older one, executionId 40).
+      await user.click(reprocessButtons[1]!);
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(reprocessMock).toHaveBeenCalledWith('40');
+      expect(reprocessMock).not.toHaveBeenCalledWith('41');
+    });
+
+    it('clicking Reprocesar on the newer eligible row (B) targets B\'s executionId, never A\'s', async () => {
+      const rowA = summary({ executionId: '40', outcomeStatus: 'PARTIAL', reprocessAvailable: true });
+      const rowB = summary({ executionId: '41', outcomeStatus: 'PARTIAL', reprocessAvailable: true });
+      listMock.mockResolvedValue(listResponse([rowB, rowA]));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      const reprocessButtons = within(table).getAllByRole('button', { name: 'Reprocesar' });
+
+      // First row rendered is B (the newer one, executionId 41).
+      await user.click(reprocessButtons[0]!);
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(reprocessMock).toHaveBeenCalledWith('41');
+      expect(reprocessMock).not.toHaveBeenCalledWith('40');
+    });
+
+    it('keeps the action available and shows a safe Spanish error on failure', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: true })]));
+      reprocessMock.mockRejectedValueOnce(new Error('boom'));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(await within(dialog).findByText('No fue posible solicitar el reproceso. Intenta nuevamente.')).toBeInTheDocument();
+      expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
+    });
+
+    it.each([
+      [409, 'Esta ejecución ya no se puede reprocesar.'],
+      [404, 'La ejecución solicitada ya no está disponible.'],
+      [502, 'El servicio de automatización no está disponible en este momento. Intenta nuevamente más tarde.'],
+      [503, 'El servicio de automatización no está disponible en este momento. Intenta nuevamente más tarde.']
+    ] as const)('shows a sanitized, status-specific message for a %i response, never a raw status/body', async (status, message) => {
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: true })]));
+      reprocessMock.mockRejectedValueOnce(new PaymentNotificationApiError(status));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(await within(dialog).findByText(message)).toBeInTheDocument();
+      expect(screen.queryByText(String(status))).not.toBeInTheDocument();
+      // The row must remain independently actionable after a failed request — a failed Hub→n8n
+      // delivery is never allowed to lock the row the way an accepted 202 does (PN1.2 final semantics §6).
+      await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Reprocesar' })).toBeEnabled();
+    });
+
+    it('disables the same row\'s Reprocesar action after a 202, even if the next read still shows it eligible, without calling it "completado"/"procesado"/"exitoso"', async () => {
+      // The refetch after acceptance still reports reprocessAvailable: true — proving the row is
+      // disabled locally, not because reprocessAvailable ever flips server-side (PN1.2 final
+      // semantics §4/§5: a 202 is not proof of completion, so the read model may legitimately still
+      // show the prior state on the very next read).
+      listMock.mockResolvedValue(listResponse([summary({ executionId: '32', reprocessAvailable: true })]));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      const button = within(table).getByRole('button', { name: 'Reprocesar' });
+      await user.click(button);
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(reprocessMock).toHaveBeenCalledOnce();
+      await waitFor(() => expect(within(table).getByRole('button', { name: 'Reprocesar' })).toBeDisabled());
+
+      // A second click while disabled must never fire a second request — userEvent itself refuses
+      // to click a pointer-events:none (disabled) button, which is exactly the guarantee here.
+      await expect(user.click(within(table).getByRole('button', { name: 'Reprocesar' }))).rejects.toThrow();
+      expect(reprocessMock).toHaveBeenCalledOnce();
+
+      expect(screen.queryByText('Reprocesado correctamente')).not.toBeInTheDocument();
+      expect(screen.queryByText('Reproceso completado')).not.toBeInTheDocument();
+      expect(screen.queryByText('Procesado correctamente')).not.toBeInTheDocument();
+    });
+
+    it('does not mutate outcomeStatus/processingStatus/result counts locally on a 202 — only the existing refetch may change them', async () => {
+      // A confirmed real production shape (PN1.2 production findings): PROCESADO with a MANUAL
+      // result is not test-only data. Same unchanged row on every subsequent read — the point is
+      // that clicking Reprocesar alone must never locally flip outcomeStatus/processingStatus/counts
+      // to something else.
+      const partialRow = summary({ executionId: '32', reprocessAvailable: true, processingStatus: 'PROCESADO', outcomeStatus: 'PARTIAL', totalResults: 5, readyCount: 4, manualCount: 1, errorCount: 0, omittedCount: 0 });
+      listMock.mockResolvedValue(listResponse([partialRow]));
+      detailMock.mockResolvedValue(detail(partialRow));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Reprocesar' }));
+
+      await screen.findByText('Reproceso solicitado.');
+      expect(within(latestSection()).getByText('Parcial')).toBeInTheDocument();
+      expect(within(latestSection()).getByText('4 Listos · 1 Manual · 0 Error · 0 Omitidos')).toBeInTheDocument();
+      expect(acknowledgeMock).not.toHaveBeenCalled();
+    });
+
+    it('never presents Reprocesar as actionable while an execution is still PENDIENTE, even when reprocessAvailable is true', async () => {
+      // PN1.2 production findings §4: PENDIENTE must not offer Reprocesar — n8n already refuses a
+      // second claim while pending, but the UI must represent that truthfully rather than offering
+      // an action that would only be rejected. No new backend lock is added.
+      listMock.mockResolvedValue(listResponse([summary({ processingStatus: 'PENDIENTE', outcomeStatus: null, reprocessAvailable: true })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+    });
+
+    it('reprocessing does not call acknowledgeAutomationReview, and marking reviewed does not call reprocessPaymentNotifications', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: true, reviewStatus: 'REQUIRED' })]));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+      await user.click((await screen.findByRole('dialog')).querySelector('button:last-child')!);
+      await waitFor(() => expect(reprocessMock).toHaveBeenCalledOnce());
+      expect(acknowledgeMock).not.toHaveBeenCalled();
+
+      await user.click(within(screen.getByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' })).getByRole('button', { name: 'Marcar como revisado' }));
+      await user.click((await screen.findByRole('dialog')).querySelector('button:last-child')!);
+      await waitFor(() => expect(acknowledgeMock).toHaveBeenCalledOnce());
+      expect(reprocessMock).toHaveBeenCalledOnce(); // still only the earlier call — never called again
     });
   });
 

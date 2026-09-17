@@ -29,6 +29,28 @@ export function outcomeStatusSeverity(outcome: PaymentNotificationOutcomeStatus)
   return 'default';
 }
 
+interface ExecutionStatusInput {
+  processingStatus: PaymentNotificationProcessingStatus;
+  outcomeStatus: PaymentNotificationOutcomeStatus;
+}
+
+// PN1.2 production findings: PENDIENTE and "PROCESADO with zero results" both carry a null
+// outcomeStatus from the backend, but they are not the same fact — PENDIENTE means the run has not
+// finished yet, while a PROCESADO-with-zero-results row is a completed run that simply produced no
+// per-provider results (a real, historical shape, not a bug to reinterpret). The primary status
+// label must never collapse PENDIENTE into "Sin resultado disponible": that phrase only ever
+// describes the second case. Once processing has produced an outcome (or PROCESADO is known to have
+// zero results), outcomeStatusLabel/outcomeStatusSeverity already encode the right label/severity.
+export function executionStatusLabel(execution: ExecutionStatusInput): string {
+  if (execution.processingStatus === 'PENDIENTE') return processingStatusLabels.PENDIENTE;
+  return outcomeStatusLabel(execution.outcomeStatus);
+}
+
+export function executionStatusSeverity(execution: ExecutionStatusInput): StatusSeverity {
+  if (execution.processingStatus === 'PENDIENTE') return 'default';
+  return outcomeStatusSeverity(execution.outcomeStatus);
+}
+
 export const resultStatusLabels: Record<PaymentNotificationResultStatus, string> = {
   LISTO: 'Listo',
   MANUAL: 'Manual',

@@ -47,4 +47,37 @@ describe('validateEnvironment', () => {
       expect(() => validateEnvironment(valid)).not.toThrow();
     });
   });
+
+  describe('paymentNotificationsWebhooks (PN1.2, RUN removed in PN1.2 final scope cleanup)', () => {
+    it('defaults every field to null when unset, and never fails validation solely because they are missing', () => {
+      expect(() => validateEnvironment(valid)).not.toThrow();
+      expect(validateEnvironment(valid)).toMatchObject({
+        paymentNotificationsWebhooks: { reprocessWebhookUrl: null, webhookToken: null }
+      });
+    });
+
+    it('reads the two variables when provided and trims whitespace', () => {
+      expect(validateEnvironment({
+        ...valid,
+        PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL: 'https://n8n.example/webhook/reprocess',
+        PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN: '  secret  '
+      })).toMatchObject({
+        paymentNotificationsWebhooks: {
+          reprocessWebhookUrl: 'https://n8n.example/webhook/reprocess',
+          webhookToken: 'secret'
+        }
+      });
+    });
+
+    it('treats a whitespace-only value as unset', () => {
+      expect(validateEnvironment({ ...valid, PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN: '   ' })).toMatchObject({
+        paymentNotificationsWebhooks: { webhookToken: null }
+      });
+    });
+
+    it('no longer reads PAYMENT_NOTIFICATIONS_RUN_WEBHOOK_URL at all', () => {
+      const result = validateEnvironment({ ...valid, PAYMENT_NOTIFICATIONS_RUN_WEBHOOK_URL: 'https://n8n.example/webhook/run' }) as unknown as Record<string, unknown>;
+      expect((result.paymentNotificationsWebhooks as Record<string, unknown>)).not.toHaveProperty('runWebhookUrl');
+    });
+  });
 });

@@ -21,6 +21,21 @@ export interface EnvironmentConfig {
     // (always true for an ad-hoc workspace API launch, and never fatal).
     commit: string;
   };
+  // PN1.2: Hub -> n8n server-to-server webhook config for Payment Notifications' Reprocesar
+  // manual control. Deliberately optional — most environments (every other integration test
+  // runner that boots the API) never set these, so they must not be `required()` and must not
+  // block API startup. A missing value simply means the /reprocess endpoint reports a sanitized
+  // upstream-unavailable outcome at call time (PaymentNotificationsWebhookClient), never a
+  // boot-time crash. Never read anywhere else, never logged, never returned in any API response
+  // (PN1.2 §2/§10).
+  //
+  // PN1.2 final scope cleanup: PAYMENT_NOTIFICATIONS_RUN_WEBHOOK_URL was removed along with the
+  // "Ejecutar ahora" control it configured — the production n8n workflow already polls
+  // independently, so a manual run trigger added no value.
+  paymentNotificationsWebhooks: {
+    reprocessWebhookUrl: string | null;
+    webhookToken: string | null;
+  };
 }
 
 function required(value: string | undefined, name: string): string {
@@ -74,6 +89,10 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
     app: {
       version: env.APP_VERSION?.trim() || DEFAULT_APP_VERSION,
       commit: env.GIT_COMMIT?.trim() || UNKNOWN_BUILD_METADATA
+    },
+    paymentNotificationsWebhooks: {
+      reprocessWebhookUrl: env.PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL?.trim() || null,
+      webhookToken: env.PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN?.trim() || null
     }
   };
 }
