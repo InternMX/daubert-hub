@@ -1,7 +1,6 @@
-import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
-import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
-import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, IconButton, InputAdornment, Stack, TextField } from '@mui/material';
+import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, Stack, TextField } from '@mui/material';
 import { useEffect, useState } from 'react';
+import { PasswordVisibilityToggle } from '../components/PasswordVisibilityToggle';
 import { describeUsersApiError, resetPassword, type ManagedUser } from '../services/users';
 import { GeneratePasswordActions } from './GeneratePasswordActions';
 
@@ -94,13 +93,7 @@ export function ResetPasswordDialog({ open, userId, onClose, onSuccess }: ResetP
             disabled={submitting}
             slotProps={{
               input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick={() => setShowPassword((value) => !value)} edge="end" size="small">
-                      {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
-                    </IconButton>
-                  </InputAdornment>
-                )
+                endAdornment: <PasswordVisibilityToggle visible={showPassword} onToggle={() => setShowPassword((value) => !value)} disabled={submitting} />
               }
             }}
           />

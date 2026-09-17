@@ -1,5 +1,6 @@
 import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
+import { PasswordVisibilityToggle } from '../components/PasswordVisibilityToggle';
 import { AuthApiError } from '../services/auth';
 import { useAuth } from './authContext.core';
 
@@ -27,6 +28,12 @@ export function ChangePasswordPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Independent per-field toggles — these are three distinct passwords (the
+  // current one, and a new one typed twice), so revealing one must never
+  // reveal the others.
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,7 +71,7 @@ export function ChangePasswordPage() {
             {submitError && <Alert severity="error">{submitError}</Alert>}
             <TextField
               label="Contraseña actual"
-              type="password"
+              type={showCurrentPassword ? 'text' : 'password'}
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
               error={Boolean(fieldErrors.currentPassword)}
@@ -73,10 +80,15 @@ export function ChangePasswordPage() {
               autoFocus
               autoComplete="current-password"
               disabled={submitting}
+              slotProps={{
+                input: {
+                  endAdornment: <PasswordVisibilityToggle visible={showCurrentPassword} onToggle={() => setShowCurrentPassword((value) => !value)} disabled={submitting} />
+                }
+              }}
             />
             <TextField
               label="Nueva contraseña"
-              type="password"
+              type={showNewPassword ? 'text' : 'password'}
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
               error={Boolean(fieldErrors.newPassword)}
@@ -84,10 +96,15 @@ export function ChangePasswordPage() {
               fullWidth
               autoComplete="new-password"
               disabled={submitting}
+              slotProps={{
+                input: {
+                  endAdornment: <PasswordVisibilityToggle visible={showNewPassword} onToggle={() => setShowNewPassword((value) => !value)} disabled={submitting} />
+                }
+              }}
             />
             <TextField
               label="Confirmar nueva contraseña"
-              type="password"
+              type={showConfirmPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               error={Boolean(fieldErrors.confirmPassword)}
@@ -95,6 +112,11 @@ export function ChangePasswordPage() {
               fullWidth
               autoComplete="new-password"
               disabled={submitting}
+              slotProps={{
+                input: {
+                  endAdornment: <PasswordVisibilityToggle visible={showConfirmPassword} onToggle={() => setShowConfirmPassword((value) => !value)} disabled={submitting} />
+                }
+              }}
             />
             <Button
               type="submit"

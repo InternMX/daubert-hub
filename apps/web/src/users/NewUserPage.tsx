@@ -1,10 +1,9 @@
-import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
-import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
-import { Alert, Box, Button, CircularProgress, FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
+import { PasswordVisibilityToggle } from '../components/PasswordVisibilityToggle';
 import { createUser, describeUsersApiError, UsersApiError, type UserRole } from '../services/users';
 import { roleLabels } from '../services/userLabels';
 import { GeneratePasswordActions } from './GeneratePasswordActions';
@@ -112,13 +111,7 @@ export function NewUserPage() {
               disabled={submitting}
               slotProps={{
                 input: {
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick={() => setShowPassword((value) => !value)} edge="end" size="small">
-                        {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
-                      </IconButton>
-                    </InputAdornment>
-                  )
+                  endAdornment: <PasswordVisibilityToggle visible={showPassword} onToggle={() => setShowPassword((value) => !value)} disabled={submitting} />
                 }
               }}
             />

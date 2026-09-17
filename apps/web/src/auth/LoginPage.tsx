@@ -1,5 +1,6 @@
 import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
+import { PasswordVisibilityToggle } from '../components/PasswordVisibilityToggle';
 import { AuthApiError } from '../services/auth';
 import { useAuth } from './authContext.core';
 
@@ -14,6 +15,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,12 +66,17 @@ export function LoginPage() {
             />
             <TextField
               label="Contraseña"
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               fullWidth
               autoComplete="current-password"
               disabled={submitting}
+              slotProps={{
+                input: {
+                  endAdornment: <PasswordVisibilityToggle visible={showPassword} onToggle={() => setShowPassword((value) => !value)} disabled={submitting} />
+                }
+              }}
             />
             <Button
               type="submit"
