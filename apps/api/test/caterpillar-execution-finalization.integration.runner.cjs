@@ -5,6 +5,17 @@
 // exercises exactly the one new primitive that phase added:
 // ops.fn_finalizar_ejecucion_automatizacion(bigint, text, text, text).
 //
+// Phase 11A.4a update (20260918_003_caterpillar_completion_integrity.up.sql,
+// applied AFTER this suite was first written): PROCESANDO -> COMPLETADA now
+// additionally requires every reserved folio to already have a materialized
+// GENERADA operacion.remisiones row - see materializeReservation() below.
+// This runner does not test that invariant itself (see
+// test/caterpillar-completion-integrity.integration.runner.cjs for that);
+// it only satisfies it wherever a fixture here needs a genuine, successful
+// COMPLETADA transition to keep testing what this suite has always tested.
+// ERROR/CANCELADA fixtures are deliberately left unmaterialized throughout,
+// which is itself still-correct coverage: those paths must never require it.
+//
 // Three connections, deliberately NOT three application roles:
 //   - daubert_hub_test_user (TEST_DATABASE_URL): sets up/tears down temporary
 //     automation/series/route fixtures (existing test-fixture INSERT/DELETE
@@ -169,6 +180,37 @@ async function run() {
       )).rows[0];
     }
 
+    // Phase 11A.4a completion integrity (20260918_003, unaffected by this
+    // runner - see the MIGRATION-SCOPE REGRESSION section below) requires
+    // every RESERVADA folio to already have a materialized GENERADA
+    // operacion.remisiones row before PROCESANDO -> COMPLETADA is allowed.
+    // This runner only exercises the finalizer, so it materializes fixture
+    // remisiones through the already-tested Phase 11A.4a persistence
+    // primitive (operacion.fn_registrar_remision_generada), called via the
+    // SAME n8n_cat_test connection a real workflow would use - not through
+    // TEST_DATABASE_URL_MIGRATOR, which stays exclusively a read-only
+    // introspection tool in this runner (see header comment). Only the
+    // specific COMPLETADA call sites that must actually succeed call this;
+    // every ERROR/CANCELADA/rejected-COMPLETADA fixture below is left
+    // deliberately unmaterialized, proving those paths still never require it.
+    async function materializeReservation(ejecucionId, code, reserva) {
+      const folioInicial = Number(reserva.folio_inicial);
+      const folioFinal = Number(reserva.folio_final);
+      for (let folio = folioInicial; folio <= folioFinal; folio += 1) {
+        await cat.query(
+          'SELECT remision_id::text, ya_existia FROM operacion.fn_registrar_remision_generada($1, $2, $3, $4, $5, $6::jsonb)',
+          [
+            ejecucionId,
+            code,
+            folio,
+            '2026-09-18',
+            `C:\\${marker}\\remision_${code}_${folio}.pdf`,
+            JSON.stringify([{ cantidad_texto: '1 PZA' }])
+          ]
+        );
+      }
+    }
+
     // =========================================================
     // 1/2. PROCESANDO -> COMPLETADA, and RESERVADA -> APLICADA.
     // =========================================================
@@ -176,6 +218,10 @@ async function run() {
     {
       const before = await loadExecution(completedCase.ejecucionId);
       assert(before.estado === 'PROCESANDO' && before.finalizada_en === null, 'Fixture execution must start PROCESANDO with no finalizada_en.');
+
+      // Phase 11A.4a completion integrity: both reserved folios must be
+      // materialized as GENERADA remisiones before COMPLETADA is allowed.
+      await materializeReservation(completedCase.ejecucionId, serieCode, completedCase.reserva);
 
       const result = await finalize(cat, completedCase.ejecucionId, 'COMPLETADA');
       assert(result.ya_estaba_finalizada === false, 'A first COMPLETADA finalize must not report ya_estaba_finalizada.');
@@ -312,8 +358,13 @@ async function run() {
       const rutaArchivo = `C:\\${marker}\\multi.xlsx`;
       const documentoId = (await cat.query('SELECT documento_id::text FROM core.fn_crear_o_resolver_documento($1, $2, $3, $4, $5)', [empresaId, 'PROGRAMACION_ENTREGA', 'multi.xlsx', rutaArchivo, 'N8N'])).rows[0].documento_id;
       const ejecucionId = (await cat.query('SELECT ejecucion_id::text FROM ops.fn_crear_ejecucion_automatizacion($1, $2)', [autoCode, documentoId])).rows[0].ejecucion_id;
-      const reservaA = (await cat.query('SELECT reserva_id::text FROM operacion.reservar_folios_para_ejecucion($1, $2, $3)', [ejecucionId, serieCode, 1])).rows[0];
-      const reservaB = (await cat.query('SELECT reserva_id::text FROM operacion.reservar_folios_para_ejecucion($1, $2, $3)', [ejecucionId, serieCode2, 1])).rows[0];
+      const reservaA = (await cat.query('SELECT reserva_id::text, folio_inicial::text, folio_final::text FROM operacion.reservar_folios_para_ejecucion($1, $2, $3)', [ejecucionId, serieCode, 1])).rows[0];
+      const reservaB = (await cat.query('SELECT reserva_id::text, folio_inicial::text, folio_final::text FROM operacion.reservar_folios_para_ejecucion($1, $2, $3)', [ejecucionId, serieCode2, 1])).rows[0];
+
+      // Phase 11A.4a completion integrity: EVERY reservation belonging to
+      // this execution must be fully materialized, regardless of series.
+      await materializeReservation(ejecucionId, serieCode, reservaA);
+      await materializeReservation(ejecucionId, serieCode2, reservaB);
 
       const result = await finalize(cat, ejecucionId, 'COMPLETADA');
       assert(result.reservas_aplicadas === 2, `Expected both of the execution's reservations to be applied together, got ${result.reservas_aplicadas}.`);
@@ -330,6 +381,12 @@ async function run() {
     // =========================================================
     {
       const rollbackCase = await newExecutionWithReservation(1);
+      // Phase 11A.4a completion integrity: materialize BEFORE opening the
+      // to-be-rolled-back transaction below, as its own committed call - the
+      // later client-driven ROLLBACK must only undo the finalize call's own
+      // effects, not this fixture materialization.
+      await materializeReservation(rollbackCase.ejecucionId, serieCode, rollbackCase.reserva);
+
       const client = await cat.connect();
       try {
         await client.query('BEGIN');
