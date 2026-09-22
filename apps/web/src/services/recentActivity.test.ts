@@ -47,6 +47,13 @@ describe('listRecentActivity', () => {
     await expect(listRecentActivity()).resolves.toEqual([cancelled]);
   });
 
+  it('accepts processing Caterpillar activity in the common automation contract', async () => {
+    const processing = { type: 'AUTOMATION_PROCESSING', category: 'AUTOMATION', title: 'Procesando', entity: 'Remisiones Caterpillar', context: 'P5 · remision.pdf', occurredAt: '2026-09-22T20:07:00.000Z', actor: null };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [processing] }), { status: 200 })));
+
+    await expect(listRecentActivity()).resolves.toEqual([processing]);
+  });
+
   it.each(['PROVIDER_DEACTIVATED', 'PROVIDER_REACTIVATED', 'CONTACT_DEACTIVATED', 'CONTACT_REACTIVATED', 'DOCUMENT_SERIES_ADJUSTED'])('accepts the new %s activity type', async (type) => {
     const item = { type, category: type.startsWith('PROVIDER') ? 'PROVIDER' : type.startsWith('CONTACT') ? 'CONTACT' : 'AUTOMATION', title: 'Título', entity: 'Entidad', context: null, occurredAt: '2026-08-28T19:31:49.919Z', actor: null };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [item] }), { status: 200 })));

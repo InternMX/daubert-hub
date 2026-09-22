@@ -150,6 +150,33 @@ describe('RecentActivity', () => {
   });
 
   it.each([
+    ['AUTOMATION_COMPLETED', 'Completada'],
+    ['AUTOMATION_PROCESSING', 'Procesando'],
+    ['AUTOMATION_FAILED', 'Error'],
+    ['AUTOMATION_CANCELLED', 'Cancelada']
+  ] as const)('renders Caterpillar %s with existing metadata and noninteractive behavior', async (type, title) => {
+    listMock.mockResolvedValue([{
+      type, category: 'AUTOMATION', title, entity: 'Remisiones Caterpillar',
+      context: 'P5 · remision.pdf', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
+    }]);
+    renderActivity('/?activityCategory=AUTOMATION');
+
+    const heading = await screen.findByText(title);
+    expect(screen.getByText('Remisiones Caterpillar')).toBeInTheDocument();
+    expect(screen.getByText('P5 · remision.pdf')).toBeInTheDocument();
+    expect(heading.closest('a, button')).toBeNull();
+  });
+
+  it('renders the Caterpillar undetermined-process fallback without inventing a process', async () => {
+    listMock.mockResolvedValue([{
+      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Completada', entity: 'Remisiones Caterpillar',
+      context: 'Proceso no determinado · unknown.pdf', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
+    }]);
+    renderActivity('/?activityCategory=AUTOMATION');
+    expect(await screen.findByText('Proceso no determinado · unknown.pdf')).toBeInTheDocument();
+  });
+
+  it.each([
     ['PROVIDER_DEACTIVATED', 'Proveedor desactivado', 'PROVIDER'],
     ['PROVIDER_REACTIVATED', 'Proveedor reactivado', 'PROVIDER'],
     ['CONTACT_DEACTIVATED', 'Contacto desactivado', 'CONTACT'],

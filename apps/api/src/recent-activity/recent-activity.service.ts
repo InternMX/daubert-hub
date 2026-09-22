@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
+import { mapAudiExecutionState } from '../automations/audi-processing-status';
 import { derivePaymentNotificationOutcome } from '../automations/payment-notifications/payment-notification-status';
+import { caterpillarProcessLabel } from '../automations/remisiones-caterpillar/caterpillar-process-labels';
 import { RecentActivityCategoryFilter, type ListRecentActivityDto } from './dto/list-recent-activity.dto';
 import { DocumentSeriesActivityRepository, type DocumentSeriesActivityRow } from './document-series-activity.repository';
 import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
 import { RecentActivityRepository, type RecentActivitySource } from './recent-activity.repository';
 import { RemisionesAudiActivityRepository, type RemisionesAudiActivityRow } from './remisiones-audi-activity.repository';
+import { RemisionesCaterpillarActivityRepository, type RemisionesCaterpillarActivityRow } from './remisiones-caterpillar-activity.repository';
 
 type Snapshot = Record<string, unknown> | null;
-type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED';
+type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED';
 export type ActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 // The actor who performed the action, when known. Never fabricated: for a
@@ -71,6 +74,7 @@ const titles: Record<ActivityType, string> = {
   CONTACT_METHOD_DEACTIVATED: 'Medio de contacto desactivado',
   CONTACT_METHOD_REACTIVATED: 'Medio de contacto reactivado',
   AUTOMATION_COMPLETED: 'Automatización completada',
+  AUTOMATION_PROCESSING: 'Automatización en proceso',
   AUTOMATION_PARTIAL: 'Automatización con incidencias',
   AUTOMATION_FAILED: 'Automatización con error',
   AUTOMATION_CANCELLED: 'Automatización cancelada',
@@ -95,6 +99,7 @@ const categories: Record<ActivityType, ActivityCategory> = {
   CONTACT_METHOD_DEACTIVATED: 'CONTACT',
   CONTACT_METHOD_REACTIVATED: 'CONTACT',
   AUTOMATION_COMPLETED: 'AUTOMATION',
+  AUTOMATION_PROCESSING: 'AUTOMATION',
   AUTOMATION_PARTIAL: 'AUTOMATION',
   AUTOMATION_FAILED: 'AUTOMATION',
   AUTOMATION_CANCELLED: 'AUTOMATION',
@@ -135,6 +140,7 @@ export class RecentActivityService {
     private readonly repository: RecentActivityRepository,
     private readonly paymentNotifications: PaymentNotificationActivityRepository,
     private readonly remisionesAudi: RemisionesAudiActivityRepository,
+    private readonly remisionesCaterpillar: RemisionesCaterpillarActivityRepository,
     private readonly documentSeries: DocumentSeriesActivityRepository
   ) {}
 
@@ -142,10 +148,11 @@ export class RecentActivityService {
     const needsAudit = input.category !== RecentActivityCategoryFilter.AUTOMATION;
     const needsAutomation = input.category === undefined || input.category === RecentActivityCategoryFilter.AUTOMATION;
     const auditCategory = input.category === RecentActivityCategoryFilter.PROVIDER || input.category === RecentActivityCategoryFilter.CONTACT || input.category === RecentActivityCategoryFilter.CLIENT ? input.category : undefined;
-    const [source, paymentRows, audiRows, seriesRows] = await Promise.all([
+    const [source, paymentRows, audiRows, caterpillarRows, seriesRows] = await Promise.all([
       needsAudit ? (auditCategory ? this.repository.findRecent(input.limit, auditCategory) : this.repository.findRecent(input.limit)) : null,
       needsAutomation ? this.paymentNotifications.findRecent(input.limit) : [],
       needsAutomation ? this.remisionesAudi.findRecent(input.limit) : [],
+      needsAutomation ? this.remisionesCaterpillar.findRecent(input.limit) : [],
       needsAutomation ? this.documentSeries.findRecent(input.limit) : []
     ]);
     const seriesActorIds = [...new Set(seriesRows.map((row) => row.actor_id).filter((actorId): actorId is string => actorId !== null))];
@@ -154,6 +161,7 @@ export class RecentActivityService {
       ...(source ? this.auditActivities(source) : []),
       ...paymentRows.map((row) => this.paymentNotification(row)),
       ...audiRows.map((row) => this.audiActivity(row)),
+      ...caterpillarRows.map((row) => this.caterpillarActivity(row)),
       ...seriesRows.map((row) => this.documentSeriesAdjustment(row, seriesActorNames))
     ]
       .filter((item): item is RecentActivityItem => item !== null)
@@ -228,6 +236,24 @@ export class RecentActivityService {
       occurredAt: occurredAt.toISOString(),
       actor: null
     };
+  }
+
+  private caterpillarActivity(row: RemisionesCaterpillarActivityRow): RecentActivityItem | null {
+    const occurredAt = new Date(row.occurred_at);
+    const entity = row.automation_name?.trim();
+    const filename = row.source_filename?.trim();
+    const outcome = mapAudiExecutionState(row.execution_state);
+    if (!entity || !filename || !outcome || !Number.isFinite(occurredAt.getTime())) return null;
+
+    const processLabel = row.process_key?.trim() ? caterpillarProcessLabel(row.process_key) : 'Proceso no determinado';
+    const presentation = {
+      COMPLETED: { type: 'AUTOMATION_COMPLETED', title: 'Completada' },
+      PROCESSING: { type: 'AUTOMATION_PROCESSING', title: 'Procesando' },
+      FAILED: { type: 'AUTOMATION_FAILED', title: 'Error' },
+      CANCELLED: { type: 'AUTOMATION_CANCELLED', title: 'Cancelada' }
+    } as const;
+    const { type, title } = presentation[outcome];
+    return { type, category: 'AUTOMATION', title, entity, context: `${processLabel} · ${filename}`, occurredAt: occurredAt.toISOString(), actor: null };
   }
 
   // operacion.ajustes_series is a real human-actor ledger (unlike the two

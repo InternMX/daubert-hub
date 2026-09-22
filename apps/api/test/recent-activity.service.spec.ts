@@ -16,14 +16,19 @@ function audi(overrides: Partial<{ execution_id: string; automation_name: string
   return { execution_id: '1', automation_name: 'Remisiones Audi', execution_state: 'COMPLETADA' as const, run_name: null, occurred_at: at, error_node: null, error_message: null, generated_count: 1, minimum_folio: '969', maximum_folio: '969', ...overrides };
 }
 
+function caterpillar(overrides: Partial<{ execution_id: string; automation_name: string; execution_state: 'COMPLETADA' | 'PROCESANDO' | 'ERROR' | 'CANCELADA'; occurred_at: string; source_filename: string; process_key: string | null }> = {}) {
+  return { execution_id: 'activity-test-1', automation_name: 'Remisiones Caterpillar', execution_state: 'COMPLETADA' as const, occurred_at: at, source_filename: 'remision.pdf', process_key: 'CAT_P3_P4_P5_P6|P5|', ...overrides };
+}
+
 function series(overrides: Partial<{ id: string; series_name: string; folio_before: string; folio_after: string; actor_id: string | null; actor_email: string | null; occurred_at: string }> = {}) {
   return { id: '1', series_name: 'Remisiones Audi', folio_before: '951', folio_after: '960', actor_id: null, actor_email: null, occurred_at: at, ...overrides };
 }
 
-function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = [], audiRows: ReturnType<typeof audi>[] = [], companyRoles: Array<[string, string[]]> = [], actorDisplayNames: Array<[string, string]> = [], seriesRows: ReturnType<typeof series>[] = []) {
+function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: string; company_id: string; contact_type: string; name: string | null; area: string | null }]> = [], companies: Array<[string, string]> = [], payments: ReturnType<typeof payment>[] = [], audiRows: ReturnType<typeof audi>[] = [], companyRoles: Array<[string, string[]]> = [], actorDisplayNames: Array<[string, string]> = [], seriesRows: ReturnType<typeof series>[] = [], caterpillarRows: ReturnType<typeof caterpillar>[] = []) {
   const findRecent = vi.fn().mockResolvedValue({ rows, contacts: new Map(contacts), companies: new Map(companies), companyRoles: new Map(companyRoles.map(([companyId, roles]) => [companyId, new Set(roles)])), actorDisplayNames: new Map(actorDisplayNames) });
   const findPaymentNotifications = vi.fn().mockResolvedValue(payments);
   const findAudi = vi.fn().mockResolvedValue(audiRows);
+  const findCaterpillar = vi.fn().mockResolvedValue(caterpillarRows);
   const findSeries = vi.fn().mockResolvedValue(seriesRows);
   const findSeriesActorDisplayNames = vi.fn().mockResolvedValue(new Map(actorDisplayNames));
   return {
@@ -31,9 +36,10 @@ function setup(rows: ReturnType<typeof row>[], contacts: Array<[string, { id: st
       { findRecent } as never,
       { findRecent: findPaymentNotifications } as never,
       { findRecent: findAudi } as never,
+      { findRecent: findCaterpillar } as never,
       { findRecent: findSeries, findActorDisplayNames: findSeriesActorDisplayNames } as never
     ),
-    findRecent, findPaymentNotifications, findAudi, findSeries, findSeriesActorDisplayNames
+    findRecent, findPaymentNotifications, findAudi, findCaterpillar, findSeries, findSeriesActorDisplayNames
   };
 }
 
@@ -500,6 +506,53 @@ describe('RecentActivityService', () => {
   it('does not represent a processing Audi execution', async () => {
     const result = await setup([], [], [], [], [audi({ execution_state: 'PROCESANDO' })]).service.list({ limit: 6 });
     expect(result.data).toEqual([]);
+  });
+
+  it.each([
+    ['COMPLETADA', 'AUTOMATION_COMPLETED', 'Completada'],
+    ['PROCESANDO', 'AUTOMATION_PROCESSING', 'Procesando'],
+    ['ERROR', 'AUTOMATION_FAILED', 'Error'],
+    ['CANCELADA', 'AUTOMATION_CANCELLED', 'Cancelada']
+  ] as const)('maps Caterpillar state %s with process and source filename metadata', async (executionState, type, title) => {
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ execution_state: executionState })]).service.list({ limit: 6 });
+
+    expect(result.data).toEqual([{
+      type, category: 'AUTOMATION', title, entity: 'Remisiones Caterpillar',
+      context: 'P5 · remision.pdf', occurredAt: at, actor: null
+    }]);
+    expect(JSON.stringify(result)).not.toMatch(/activity-test-1|execution_id/i);
+  });
+
+  it('uses the explicit undetermined-process label when Caterpillar routing is ambiguous', async () => {
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ process_key: null, source_filename: 'ambiguous.pdf' })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ entity: 'Remisiones Caterpillar', context: 'Proceso no determinado · ambiguous.pdf' });
+  });
+
+  it('treats zero Caterpillar rows as valid and safely omits malformed rows', async () => {
+    await expect(setup([]).service.list({ limit: 6 })).resolves.toEqual({ data: [] });
+    const result = await setup([], [], [], [], [], [], [], [], [
+      caterpillar({ automation_name: ' ', source_filename: 'invalid.pdf' }),
+      caterpillar({ source_filename: ' ', occurred_at: 'not-a-date' })
+    ]).service.list({ limit: 6 });
+    expect(result.data).toEqual([]);
+  });
+
+  it('globally orders Caterpillar with Audi and Payment, then applies one final limit', async () => {
+    const sources = setup([], [], [],
+      [payment({ occurred_at: '2026-08-25T11:00:00Z' })],
+      [audi({ occurred_at: '2026-08-25T11:30:00Z' })],
+      [], [], [],
+      [
+        caterpillar({ execution_id: 'new-cat', occurred_at: '2026-08-25T12:00:00Z', source_filename: 'new.pdf' }),
+        caterpillar({ execution_id: 'old-cat', occurred_at: '2026-08-25T10:00:00Z', source_filename: 'old.pdf' })
+      ]);
+
+    const ordered = await sources.service.list({ limit: 4 });
+    expect(ordered.data.map((item) => item.entity)).toEqual(['Remisiones Caterpillar', 'Remisiones Audi', 'Notificaciones de pago', 'Remisiones Caterpillar']);
+    expect(ordered.data.map((item) => item.context)).toEqual(['P5 · new.pdf', null, '1 listo', 'P5 · old.pdf']);
+
+    const limited = await sources.service.list({ limit: 2 });
+    expect(limited.data.map((item) => item.entity)).toEqual(['Remisiones Caterpillar', 'Remisiones Audi']);
   });
 
   it('merges audit, payment, and Audi events, globally sorts them, then applies the final limit', async () => {
