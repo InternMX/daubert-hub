@@ -11,10 +11,11 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Avatar, Box, ButtonBase, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
+import { AUTOMATION_ROUTE_BY_CODE } from '../automations/automationRoutes';
 import { useAuth } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { roleLabels } from '../services/userLabels';
@@ -35,20 +36,29 @@ const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIcon
 
 const usersNavigation = { to: '/users', label: 'Usuarios', end: false, icon: PeopleAltRoundedIcon };
 
+// The paths come from AUTOMATION_ROUTE_BY_CODE (shared with AutomationsPage.tsx) rather than
+// being retyped here — the same string mismatch/staleness bug this file previously had for
+// Caterpillar (a hardcoded, permanently-disabled "Sin integración" entry that never updated once
+// Caterpillar shipped a real page and became INTEGRATED, Phase 12A.4d) can no longer happen for
+// any of these three, since there is exactly one place that declares each route.
+//
+// Phase 12A.4e: "Panel general" removed — the parent "Automatizaciones" control itself now
+// navigates directly to /automations (a split main-area/arrow interaction, see
+// AutomationsNavigationItem below), so a redundant duplicate destination inside the submenu is no
+// longer needed. Every automation page still links back to /automations via its own BreadcrumbNav.
 const automationSubmenu = [
-  { to: '/automations', label: 'Panel general' },
-  { to: '/automations/remissions/audi', label: 'Remisiones Audi' },
-  { to: '/automations/payment-notifications', label: 'Notificaciones de pago' }
+  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_AUDI!, label: 'Remisiones Audi' },
+  { to: AUTOMATION_ROUTE_BY_CODE.PAYMENT_NOTIFICATIONS!, label: 'Notificaciones de pago' },
+  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' }
 ];
 
-// Panel general only matches the exact route; Audi and Payment Notifications match their whole
-// subtree (e.g. /automations/payment-notifications/:executionId still counts as that destination)
-// — mirrors NavLink's own `end` semantics without needing a real NavLink for the current item.
+// Every automation matches its whole subtree (e.g. /automations/payment-notifications/:executionId
+// still counts as that destination) — mirrors NavLink's own `end` semantics without needing a real
+// NavLink for the current item. /automations itself (no submenu item represents it any more)
+// correctly matches nothing here — the parent control is marked active by isActive below instead.
 function currentSubmenuTo(pathname: string): string | null {
-  if (pathname === '/automations') return '/automations';
-  if (pathname.startsWith('/automations/remissions/audi')) return '/automations/remissions/audi';
-  if (pathname.startsWith('/automations/payment-notifications')) return '/automations/payment-notifications';
-  return null;
+  const match = automationSubmenu.find((item) => pathname.startsWith(item.to));
+  return match?.to ?? null;
 }
 
 const environmentPresentation: Record<RuntimeEnvironment, { label: string; compactLabel: string; color: 'error' | 'info' | 'warning'; variant: 'filled' | 'outlined'; title: string }> = {
@@ -81,42 +91,36 @@ function NavigationItem({ to, label, end, icon: Icon, collapsed }: typeof naviga
   );
 }
 
-// Expanded: "Automatizaciones" is both a direct link (clicking the row navigates to /automations,
-// exactly like every other NavigationItem) and a disclosure control for its submenu — a chevron
-// button opens a MUI Menu, mirroring UserAccountControl's own Menu-anchored-to-a-button pattern
-// below. Collapsed: there is no room for a separate chevron, so the icon itself becomes a pure
-// disclosure control (click/Enter/Space opens the submenu — never a direct navigation), and
-// "Panel general" inside that submenu is how /automations stays reachable — this is the required
-// accessible alternative to a "tiny collapsed-state chevron" (Phase 10E §28). In both states, hover
-// opens the menu as a convenience enhancement only, never the sole mechanism: keyboard users Tab
-// to a real <button> and press Enter/Space, which fires the same onClick a click would. The menu
-// is never opened purely by receiving focus, so MUI's own restoreFocus-on-close (which returns
-// focus to the trigger after Escape/selection) can never reopen it in a loop.
+// Phase 12A.4e/12A.4g: a genuine split control, with no hover behavior of any kind (Phase 12A.4g
+// removed it entirely — hovering the arrow while the mouse stayed put made the menu flicker
+// open/closed in the real built UI, and no timer/grace-period/Popper complexity was judged worth
+// it for this navigation item). MAIN AREA (the "Automatizaciones" text/icon row) is a real NavLink
+// and always navigates to /automations on click, exactly like every other NavigationItem — never a
+// disclosure control by itself. ARROW AREA is a separate, sibling <button> (never nested inside the
+// NavLink's <a> — invalid HTML — and never inside the main ListItemButton either) that only
+// opens/closes the submenu and always stops propagation, so a click on it can never bubble into and
+// trigger the main link's navigation. A plain, deterministic click/keyboard toggle: click/Enter/
+// Space opens it from closed, and click/Enter/Space again closes it — no other state to track.
+//
+// Collapsed: there is no room for a second control next to a single icon, so — unlike expanded
+// mode — the icon stays a pure disclosure control (click/Enter/Space toggles the submenu, never
+// navigates). /automations itself stays reachable while collapsed via each automation page's own
+// BreadcrumbNav ("Automatizaciones" crumb), not via a submenu entry.
 function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const closeTimer = useRef<number | null>(null);
   const open = Boolean(anchorEl);
   const pathname = useLocation().pathname;
   const isActive = pathname.startsWith('/automations');
   const currentTo = currentSubmenuTo(pathname);
+  const toggleLabel = open ? 'Ocultar automatizaciones' : 'Mostrar automatizaciones';
 
-  function clearCloseTimer() {
-    if (closeTimer.current !== null) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }
-  function openMenu(target: HTMLElement) {
-    clearCloseTimer();
-    setAnchorEl(target);
-  }
-  function scheduleClose() {
-    clearCloseTimer();
-    closeTimer.current = window.setTimeout(() => setAnchorEl(null), 150);
-  }
   function closeMenu() {
-    clearCloseTimer();
     setAnchorEl(null);
+  }
+  // Arrow/collapsed-icon click or keyboard activation: the only way this menu ever opens or
+  // closes now — open from closed, close from open.
+  function toggleMenu(target: HTMLElement) {
+    setAnchorEl((current) => (current ? null : target));
   }
 
   const menu = (
@@ -127,12 +131,12 @@ function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
       onClose={closeMenu}
       anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-      slotProps={{ list: { onMouseEnter: clearCloseTimer, onMouseLeave: scheduleClose, 'aria-label': 'Submenú de Automatizaciones' } }}
+      slotProps={{ list: { 'aria-label': 'Submenú de Automatizaciones' } }}
     >
       {automationSubmenu.map((item) => {
         // CURRENT: readable, visibly selected, aria-current="page" — but never a navigable Link
-        // and never rendered/treated like the disabled Caterpillar entry below (Phase 10F addendum:
-        // current and unavailable are genuinely different states and must look and behave differently).
+        // (Phase 10F addendum: current and any future unavailable entry are genuinely different
+        // states and must look and behave differently).
         if (item.to === currentTo) {
           return (
             <MenuItem
@@ -149,27 +153,19 @@ function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
         }
         return <MenuItem key={item.to} component={Link} to={item.to} onClick={closeMenu}>{item.label}</MenuItem>;
       })}
-      {/* Caterpillar has no Hub route (Phase 10E §18/§20) — shown disabled rather than omitted, so
-          its existence stays visible without ever navigating anywhere or inventing a route. */}
-      <MenuItem disabled>
-        <Box>
-          <Typography variant="body2">Remisiones Caterpillar</Typography>
-          <Typography variant="caption" color="text.secondary">Sin integración</Typography>
-        </Box>
-      </MenuItem>
     </Menu>
   );
 
   if (collapsed) {
     return (
-      <Box onMouseEnter={(event) => openMenu(event.currentTarget)} onMouseLeave={scheduleClose} sx={{ position: 'relative' }}>
+      <Box sx={{ position: 'relative' }}>
         <Tooltip title="Automatizaciones" placement="right">
           <IconButton
             aria-label="Automatizaciones"
             aria-haspopup="true"
             aria-controls={open ? 'automations-submenu' : undefined}
             aria-expanded={open || undefined}
-            onClick={(event) => openMenu(event.currentTarget)}
+            onClick={(event) => toggleMenu(event.currentTarget)}
             sx={{ width: '100%', minHeight: 44, borderRadius: 1, color: isActive ? 'common.white' : appTokens.navigationText, '&:hover': { bgcolor: appTokens.navigationHover }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}
           >
             <SettingsSuggestRoundedIcon fontSize="small" />
@@ -181,8 +177,9 @@ function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <Box onMouseEnter={(event) => openMenu(event.currentTarget)} onMouseLeave={scheduleClose} sx={{ position: 'relative' }}>
+    <Box sx={{ position: 'relative' }}>
       <Stack direction="row" alignItems="center">
+        {/* MAIN AREA: always a direct link to /automations — no mouse handlers of any kind. */}
         <NavLink to="/automations" aria-label="Automatizaciones" onClick={closeMenu} style={{ color: 'inherit', textDecoration: 'none', flex: 1, minWidth: 0 }}>
           {({ isActive: linkActive }) => (
             <ListItemButton selected={linkActive} sx={{ minHeight: 44, borderLeft: '3px solid', borderLeftColor: linkActive ? 'primary.main' : 'transparent', color: linkActive ? 'common.white' : appTokens.navigationText, px: 2, '&.Mui-selected': { bgcolor: appTokens.navigationActive }, '&.Mui-selected:hover, &:hover': { bgcolor: appTokens.navigationHover }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
@@ -191,13 +188,15 @@ function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
             </ListItemButton>
           )}
         </NavLink>
+        {/* ARROW AREA: a sibling of the NavLink above, never nested inside it — a real, separate
+            <button>, click/keyboard only. */}
         <IconButton
           size="small"
-          aria-label="Mostrar submenú de Automatizaciones"
+          aria-label={toggleLabel}
           aria-haspopup="true"
           aria-controls={open ? 'automations-submenu' : undefined}
           aria-expanded={open || undefined}
-          onClick={(event) => openMenu(event.currentTarget)}
+          onClick={(event) => { event.stopPropagation(); toggleMenu(event.currentTarget); }}
           sx={{ color: isActive ? 'common.white' : appTokens.navigationText, mr: 1 }}
         >
           <ExpandMoreRoundedIcon fontSize="small" />

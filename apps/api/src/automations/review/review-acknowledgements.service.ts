@@ -5,7 +5,7 @@ import { AUTOMATION_CATALOG } from '../overview/automation-catalog';
 import { PaymentNotificationsService } from '../payment-notifications/payment-notifications.service';
 import { AudiExecutionsRepository } from '../remisiones-audi/audi-executions.repository';
 import { ReviewAcknowledgementsRepository, type ReviewAcknowledgementRow } from './review-acknowledgements.repository';
-import { AUDI_EXECUTION_SOURCE_TYPE, PAYMENT_NOTIFICATION_EXECUTION_SOURCE_TYPE } from './review-source-types';
+import { AUDI_EXECUTION_SOURCE_TYPE, PAYMENT_NOTIFICATION_EXECUTION_SOURCE_TYPE, REVIEW_SUPPORTED_AUTOMATION_CODES } from './review-source-types';
 
 // Kept intentionally close to AutomationProcessingOutcome (automation-overview.types.ts), but a
 // review problem is never PROCESSING/COMPLETED/null-as-"no outcome" — only the outcomes that are
@@ -107,10 +107,16 @@ export class ReviewAcknowledgementsService {
     };
   }
 
+  // Phase 12A.4c: existence (404) and review support (400) are two separate questions.
+  // Existence still comes from the catalog (an unknown code is a 404 regardless of review
+  // support). Review support comes exclusively from REVIEW_SUPPORTED_AUTOMATION_CODES — never
+  // from entry.integrationStatus, which answers a different question (Hub integration, not review
+  // participation). An automation can be fully INTEGRATED and still not support review
+  // (Caterpillar, Phase 12A.4b/12A.4c).
   private assertSupported(automationCode: string): void {
     const entry = AUTOMATION_CATALOG.find((item) => item.code === automationCode);
     if (!entry) throw new NotFoundException('Automatización no encontrada.');
-    if (entry.integrationStatus !== 'INTEGRATED') {
+    if (!REVIEW_SUPPORTED_AUTOMATION_CODES.has(automationCode)) {
       throw new BadRequestException('Esta automatización no admite revisión operativa.');
     }
   }

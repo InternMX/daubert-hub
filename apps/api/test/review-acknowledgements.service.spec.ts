@@ -136,7 +136,14 @@ describe('ReviewAcknowledgementsService', () => {
       await expect(service.acknowledge('NOT_A_REAL_AUTOMATION', 'req-4', identity)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('throws BadRequestException for REMISIONES_CATERPILLAR (IN_PREPARATION, not INTEGRATED)', async () => {
+    // Phase 12A.4c: REMISIONES_CATERPILLAR is INTEGRATED (Phase 12A.4b, real production
+    // validation) — proving that integrationStatus alone must never confer review support.
+    // assertSupported rejects it because it is absent from the explicit
+    // REVIEW_SUPPORTED_AUTOMATION_CODES registration (review-source-types.ts), not because of its
+    // integrationStatus. Before this fix, Caterpillar becoming INTEGRATED silently turned this
+    // into a 200 no-op instead of the intended 400 — restored here as the correct, explicit
+    // rejection, from the correct cause.
+    it('throws BadRequestException for REMISIONES_CATERPILLAR: INTEGRATED but not a review-supported automation', async () => {
       const { service, audiExecutions, paymentNotifications } = setup();
       await expect(service.acknowledge('REMISIONES_CATERPILLAR', 'req-5', identity)).rejects.toBeInstanceOf(BadRequestException);
       expect(audiExecutions.findLatestProblem).not.toHaveBeenCalled();

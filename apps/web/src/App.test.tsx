@@ -6,6 +6,7 @@ import { App } from './App';
 import { getDocumentSeries } from './services/automations';
 import { listAutomationsOverview, type AutomationOverview } from './services/automationsOverview';
 import { listAudiExecutions } from './services/audiExecutions';
+import { listCaterpillarExecutions, listCaterpillarSeries } from './services/caterpillarRemissions';
 import { listPaymentNotificationExecutions } from './services/paymentNotifications';
 import { listRecentActivity } from './services/recentActivity';
 import { listUsers } from './services/users';
@@ -33,12 +34,19 @@ vi.mock('./services/audiExecutions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./services/audiExecutions')>()),
   listAudiExecutions: vi.fn()
 }));
+vi.mock('./services/caterpillarRemissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./services/caterpillarRemissions')>()),
+  listCaterpillarSeries: vi.fn(),
+  listCaterpillarExecutions: vi.fn()
+}));
 const activityMock = vi.mocked(listRecentActivity);
 const listUsersMock = vi.mocked(listUsers);
 const paymentNotificationsMock = vi.mocked(listPaymentNotificationExecutions);
 const automationsOverviewMock = vi.mocked(listAutomationsOverview);
 const getDocumentSeriesMock = vi.mocked(getDocumentSeries);
 const audiExecutionsMock = vi.mocked(listAudiExecutions);
+const caterpillarSeriesMock = vi.mocked(listCaterpillarSeries);
+const caterpillarExecutionsMock = vi.mocked(listCaterpillarExecutions);
 
 function automationOverview(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
   return {
@@ -239,7 +247,7 @@ describe('Automations overview navigation', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Audi' })).toBeInTheDocument();
   });
 
-  it('never renders a "Ver automatización" action for Caterpillar', async () => {
+  it('never renders a "Ver automatización" action for Caterpillar while hasDashboard is false', async () => {
     renderApp('/automations');
     await screen.findByText('Remisiones Caterpillar');
     expect(screen.getAllByRole('link', { name: 'Ver automatización' })).toHaveLength(2);
@@ -253,6 +261,50 @@ describe('Automations overview navigation', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Audi' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 2, name: 'Estado operacional' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Editar próximo folio' })).toBeInTheDocument();
+  });
+});
+
+// Phase 12A.4b: the real production catalog state after P5/P6 validation (2026-09-22) —
+// integrationStatus INTEGRATED, automation.estatus still independently INACTIVA (PostgreSQL truth
+// is read separately and must never be inferred from integrationStatus).
+describe('Caterpillar navigation (Phase 12A.4b)', () => {
+  beforeEach(() => {
+    activityMock.mockResolvedValue([]);
+    automationsOverviewMock.mockResolvedValue([
+      automationOverview({
+        code: 'REMISIONES_CATERPILLAR', name: 'Remisiones Caterpillar', description: 'Generación y control de remisiones para Caterpillar.',
+        integrationStatus: 'INTEGRATED', lifecycleStatus: 'INACTIVE', lastProcessing: null,
+        polling: { intervalMinutes: 15, label: 'Cada 15 minutos' },
+        capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true }
+      })
+    ]);
+    caterpillarSeriesMock.mockResolvedValue({ data: [] });
+    caterpillarExecutionsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } });
+  });
+
+  it('navigates from /automations to the Caterpillar dashboard via Ver automatización', async () => {
+    const user = userEvent.setup();
+    renderApp('/automations');
+    const link = await screen.findByRole('link', { name: 'Ver automatización' });
+    expect(link).toHaveAttribute('href', '/automations/remissions/caterpillar');
+    await user.click(link);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Caterpillar' })).toBeInTheDocument();
+  });
+
+  it('renders the dashboard route directly, with no preparation banner and an independent INACTIVA automation status', async () => {
+    renderApp('/automations/remissions/caterpillar');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Caterpillar' })).toBeInTheDocument();
+    expect(screen.queryByText('Pendiente de validación operacional con el primer archivo productivo.')).not.toBeInTheDocument();
+    expect(await screen.findByText('Inactiva')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['ADMIN', testAdminUser],
+    ['GENERAL', testGeneralUser]
+  ] as const)('renders the exact same Caterpillar dashboard for %s', async (_role, user) => {
+    renderApp('/automations/remissions/caterpillar', user);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Caterpillar' })).toBeInTheDocument();
+    expect(await screen.findByText('No hay ejecuciones de Caterpillar registradas.')).toBeInTheDocument();
   });
 });
 

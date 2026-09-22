@@ -137,19 +137,22 @@ describe('AutomationsOverviewService', () => {
     });
   });
 
-  describe('Remisiones Caterpillar (Phase 12A.3 §A)', () => {
-    it('reports the real production truth: IN_PREPARATION integration status alongside an independently INACTIVA automation', async () => {
+  describe('Remisiones Caterpillar (Phase 12A.3 §A, Phase 12A.4b production validation)', () => {
+    it('reports the real production truth: INTEGRATED status alongside an independently INACTIVA automation', async () => {
       const { service } = setup();
       const { data } = await service.getOverview();
       expect(data[2]).toMatchObject({
         code: 'REMISIONES_CATERPILLAR',
         name: 'Remisiones Caterpillar',
-        integrationStatus: 'IN_PREPARATION',
+        // Phase 12A.4b: P5/P6 completed real production validation (2026-09-22) — INTEGRATED now.
+        // ops.automatizaciones.estatus is still read independently (setup()'s default fixture is
+        // INACTIVA) and must never be inferred from integrationStatus.
+        integrationStatus: 'INTEGRATED',
         lifecycleStatus: 'INACTIVE',
         lastCheckAt: null,
         lastProcessing: null,
         nextCheckAt: null,
-        capabilities: { hasDashboard: false, hasHistory: false, hasDetail: false }
+        capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true }
       });
     });
 
@@ -159,13 +162,13 @@ describe('AutomationsOverviewService', () => {
     ] as const)('maps lifecycle_status %s to %s from the real repository row, independently of integrationStatus', async (lifecycleStatus, expected) => {
       const { service } = setup({ caterpillarRow: { lifecycle_status: lifecycleStatus, execution_state: null, occurred_at: null } });
       const { data } = await service.getOverview();
-      expect(data[2]).toMatchObject({ lifecycleStatus: expected, integrationStatus: 'IN_PREPARATION' });
+      expect(data[2]).toMatchObject({ lifecycleStatus: expected, integrationStatus: 'INTEGRATED' });
     });
 
     it('reports lifecycleStatus=null when the automation is not registered at all (repository returns null)', async () => {
       const { service } = setup({ caterpillarRow: null });
       const { data } = await service.getOverview();
-      expect(data[2]).toMatchObject({ lifecycleStatus: null, lastProcessing: null, integrationStatus: 'IN_PREPARATION' });
+      expect(data[2]).toMatchObject({ lifecycleStatus: null, lastProcessing: null, integrationStatus: 'INTEGRATED' });
     });
 
     it('treats zero executions as a normal valid state, never an error, with lastProcessing=null', async () => {
@@ -207,10 +210,10 @@ describe('AutomationsOverviewService', () => {
       expect(paymentNotifications.list).toHaveBeenCalledTimes(1);
     });
 
-    it('never infers ACTIVA from integrationStatus: IN_PREPARATION with an INACTIVA automation stays INACTIVE, never ACTIVE', async () => {
+    it('never infers ACTIVA from integrationStatus: INTEGRATED with an INACTIVA automation stays INACTIVE, never ACTIVE', async () => {
       const { service } = setup({ caterpillarRow: { lifecycle_status: 'INACTIVA', execution_state: null, occurred_at: null } });
       const { data } = await service.getOverview();
-      expect(data[2]?.integrationStatus).toBe('IN_PREPARATION');
+      expect(data[2]?.integrationStatus).toBe('INTEGRATED');
       expect(data[2]?.lifecycleStatus).toBe('INACTIVE');
     });
   });

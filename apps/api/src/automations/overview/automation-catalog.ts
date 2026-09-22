@@ -33,15 +33,21 @@ export const AUTOMATION_CATALOG: readonly AutomationCatalogEntry[] = [
     name: 'Remisiones Caterpillar',
     description: 'Generación y control de remisiones para Caterpillar.',
     pollingIntervalMinutes: 15,
-    // Phase 12A.2: PostgreSQL PROD infrastructure and the PG candidate n8n workflow exist, and Hub
-    // monitoring is being integrated, but final operational validation with the first real
-    // post-cutover file is still pending and the schedule is not yet enabled — IN_PREPARATION,
-    // never NOT_INTEGRATED (a real Hub integration is in progress) and never INTEGRATED (not yet
-    // operationally validated). Capabilities stay false until the Series/Executions/Detail
-    // endpoints and page are actually implemented (Phase 12A.1 §12/§13) — this task only updates
-    // the lifecycle status, not the capability flags.
-    integrationStatus: 'IN_PREPARATION',
-    capabilities: { hasDashboard: false, hasHistory: false, hasDetail: false }
+    // Phase 12A.2: IN_PREPARATION while PostgreSQL PROD infrastructure and the PG candidate n8n
+    // workflow existed but final operational validation was still pending.
+    //
+    // Phase 12A.4: capabilities flipped to true once the read-only Series/Executions/Detail
+    // endpoints (Phase 12A.3) and the CaterpillarRemissionsPage (Phase 12A.4) actually existed —
+    // capability flags describe whether the Hub surface exists, never whether the automation has
+    // been operationally validated (that's integrationStatus's job).
+    //
+    // Phase 12A.4b: P5 and P6 completed real production validation on 2026-09-22 (initial
+    // processing plus a second idempotent execution, both COMPLETADA) — INTEGRATED now. This is a
+    // static, hand-confirmed catalog fact (Phase 10E §5), never derived from live execution rows;
+    // it is NOT the same fact as ops.automatizaciones.estatus (still read independently — see
+    // automations-overview.service.ts's mapCaterpillar) and must never be used to infer it.
+    integrationStatus: 'INTEGRATED',
+    capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true }
   }
 ] as const;
 

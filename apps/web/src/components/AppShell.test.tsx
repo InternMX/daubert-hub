@@ -43,6 +43,7 @@ function renderShell(path = '/', authValue?: Partial<AuthContextValue>) {
     <Route path="/automations/remissions/audi" element={<div>Audi page</div>} />
     <Route path="/automations/payment-notifications" element={<div>Payment Notifications page</div>} />
     <Route path="/automations/payment-notifications/:executionId" element={<div>Payment Notifications detail page</div>} />
+    <Route path="/automations/remissions/caterpillar" element={<div>Caterpillar page</div>} />
   </Routes></AppShell></TestAuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
@@ -622,8 +623,13 @@ describe('AppShell navigation grouping (Operación vs Administración)', () => {
   });
 });
 
+// Phase 12A.4e: split-button interaction. The main "Automatizaciones" area is a real NavLink to
+// /automations; the arrow is a separate sibling <button> ("Mostrar automatizaciones" /
+// "Ocultar automatizaciones", toggling with aria-expanded) that only opens/closes the submenu and
+// never navigates. "Panel general" was removed from the submenu since the main area itself now
+// covers that destination directly.
 describe('AppShell Automatizaciones submenu', () => {
-  it('a direct click on the primary link navigates to /automations without leaving the submenu open', async () => {
+  it('clicking the main area navigates directly to /automations', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
     renderShell();
@@ -634,28 +640,101 @@ describe('AppShell Automatizaciones submenu', () => {
     expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument();
   });
 
-  it('opens the submenu via the disclosure (chevron) control on click', async () => {
+  it('no longer offers "Panel general" as a submenu item', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
     renderShell();
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
-
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
     const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
-    expect(within(menu).getByRole('menuitem', { name: 'Panel general' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Remisiones Audi' })).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: 'Notificaciones de pago' })).toBeInTheDocument();
+
+    expect(within(menu).queryByText('Panel general')).not.toBeInTheDocument();
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(3);
   });
 
-  it('is keyboard accessible: Enter on the focused disclosure control opens the submenu', async () => {
+  it('clicking the arrow opens the submenu with exactly Remisiones Audi, Notificaciones de pago, and Remisiones Caterpillar, without navigating', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
     renderShell();
 
-    screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }).focus();
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
+
+    const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+    expect(within(menu).getByRole('menuitem', { name: 'Remisiones Audi' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Notificaciones de pago' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Remisiones Caterpillar' })).toBeInTheDocument();
+    // The arrow click never navigated away from the current page.
+    expect(screen.queryByText('Automations page')).not.toBeInTheDocument();
+  });
+
+  it('clicking the arrow again closes the submenu (toggle behavior)', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    const arrow = screen.getByRole('button', { name: 'Mostrar automatizaciones' });
+    await user.click(arrow);
+    await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+
+    // Re-querying by role here would fail: MUI marks the trigger aria-hidden (as background
+    // content) while its own modal menu is open, so the live element reference is reused instead.
+    expect(arrow).toHaveAttribute('aria-label', 'Ocultar automatizaciones');
+    await user.click(arrow);
+
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument());
+  });
+
+  it('the arrow click stops propagation and never triggers the main area\'s navigation', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
+    await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+
+    expect(screen.queryByText('Automations page')).not.toBeInTheDocument();
+  });
+
+  it('aria-expanded reflects open/closed state on the arrow toggle', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    const arrow = screen.getByRole('button', { name: 'Mostrar automatizaciones' });
+    expect(arrow).not.toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(arrow);
+    await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+    // Re-querying by role would fail here — MUI marks the trigger aria-hidden while its own
+    // modal menu is open — so the same live element reference is checked directly instead.
+    expect(arrow).toHaveAttribute('aria-label', 'Ocultar automatizaciones');
+    expect(arrow).toHaveAttribute('aria-expanded', 'true');
+    expect(arrow).toHaveAttribute('aria-haspopup', 'true');
+  });
+
+  it('is keyboard accessible: Enter on the focused arrow toggle opens the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    screen.getByRole('button', { name: 'Mostrar automatizaciones' }).focus();
     await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+  });
+
+  it('is keyboard accessible: Enter again on the focused (now open) arrow toggle closes the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    const arrow = screen.getByRole('button', { name: 'Mostrar automatizaciones' });
+    arrow.focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument());
   });
 
   it('closes on Escape', async () => {
@@ -663,7 +742,7 @@ describe('AppShell Automatizaciones submenu', () => {
     mockWideViewport(true);
     renderShell();
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
     await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
     await user.keyboard('{Escape}');
 
@@ -675,7 +754,7 @@ describe('AppShell Automatizaciones submenu', () => {
     mockWideViewport(true);
     renderShell();
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Remisiones Audi' }));
 
     expect(await screen.findByText('Audi page')).toBeInTheDocument();
@@ -686,27 +765,90 @@ describe('AppShell Automatizaciones submenu', () => {
     mockWideViewport(true);
     renderShell();
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Notificaciones de pago' }));
 
     expect(await screen.findByText('Payment Notifications page')).toBeInTheDocument();
   });
 
-  it('shows Remisiones Caterpillar as disabled in the submenu, with no route invented for it', async () => {
+  it('navigates to Remisiones Caterpillar from the submenu, to the same route AutomationsPage.tsx uses', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
     renderShell();
 
-    await user.click(screen.getByRole('button', { name: 'Mostrar submenú de Automatizaciones' }));
-    const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Remisiones Caterpillar' }));
 
-    expect(within(menu).getByText('Remisiones Caterpillar')).toBeInTheDocument();
-    expect(within(menu).getByText('Sin integración')).toBeInTheDocument();
-    expect(within(menu).getByRole('menuitem', { name: /Remisiones Caterpillar/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(await screen.findByText('Caterpillar page')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['ADMIN', testAdminUser],
+    ['GENERAL', testGeneralUser]
+  ] as const)('shows the enabled Remisiones Caterpillar submenu item for %s', async (_role, user) => {
+    const userEventInstance = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', { user });
+
+    await userEventInstance.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
+    const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+    const caterpillarItem = within(menu).getByRole('menuitem', { name: 'Remisiones Caterpillar' });
+    expect(caterpillarItem).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it.each([
+    ['ADMIN', testAdminUser],
+    ['GENERAL', testGeneralUser]
+  ] as const)('%s can also navigate directly via the main Automatizaciones area', async (_role, user) => {
+    const userEventInstance = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/', { user });
+
+    await userEventInstance.click(screen.getByRole('link', { name: 'Automatizaciones' }));
+    expect(await screen.findByText('Automations page')).toBeInTheDocument();
+  });
+
+  // Phase 12A.4g: hover-to-open was removed entirely — in the real built UI, hovering the arrow
+  // while the mouse stayed put made the submenu flicker open/closed. Click/keyboard are the only
+  // ways to open or close it now, for both the arrow and the main area.
+  it('hovering the arrow area does NOT open the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.hover(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
+
+    // Give any (incorrect) async open a chance to happen before asserting its absence.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument();
+  });
+
+  it('hovering the main navigable area does NOT open the submenu', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.hover(screen.getByRole('link', { name: 'Automatizaciones' }));
+
+    // Give any (incorrect) async open a chance to happen before asserting its absence.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument();
+  });
+
+  it('hovering the arrow then clicking it still opens the submenu on exactly the first click (no flicker/instant re-close)', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    const arrow = screen.getByRole('button', { name: 'Mostrar automatizaciones' });
+    await user.hover(arrow);
+    await user.click(arrow);
+
+    expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
   });
 
   describe('collapsed sidebar', () => {
-    it('opens the submenu via a click on the icon (no separate chevron needed), and Panel general still reaches /automations', async () => {
+    it('opens the submenu via a click on the icon (no separate chevron needed) — collapsed mode keeps the icon as a pure disclosure control', async () => {
       const user = userEvent.setup();
       mockWideViewport(false);
       renderShell();
@@ -719,9 +861,22 @@ describe('AppShell Automatizaciones submenu', () => {
       const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
       expect(trigger).toHaveAttribute('aria-expanded', 'true');
       expect(trigger).toHaveAttribute('aria-controls', 'automations-submenu');
-      await user.click(within(menu).getByRole('menuitem', { name: 'Panel general' }));
+      await user.click(within(menu).getByRole('menuitem', { name: 'Remisiones Audi' }));
 
-      expect(screen.getByText('Automations page')).toBeInTheDocument();
+      expect(await screen.findByText('Audi page')).toBeInTheDocument();
+    });
+
+    it('clicking the icon again closes the submenu (toggle behavior)', async () => {
+      const user = userEvent.setup();
+      mockWideViewport(false);
+      renderShell();
+
+      const trigger = screen.getByRole('button', { name: 'Automatizaciones' });
+      await user.click(trigger);
+      await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
+
+      await user.click(trigger);
+      await waitFor(() => expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument());
     });
 
     it('opens via keyboard Enter', async () => {
@@ -758,14 +913,16 @@ describe('AppShell Automatizaciones submenu', () => {
       await waitFor(() => expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument());
     });
 
-    it('also opens via hover as an enhancement', async () => {
+    // Phase 12A.4g: hover-to-open was removed entirely, including in the collapsed icon.
+    it('hovering the icon does NOT open the submenu', async () => {
       const user = userEvent.setup();
       mockWideViewport(false);
       renderShell();
 
       await user.hover(screen.getByRole('button', { name: 'Automatizaciones' }));
 
-      expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(screen.queryByRole('menu', { name: 'Submenú de Automatizaciones' })).not.toBeInTheDocument();
     });
 
     it('navigates to Remisiones Audi and Notificaciones de pago from the collapsed submenu', async () => {
@@ -778,30 +935,22 @@ describe('AppShell Automatizaciones submenu', () => {
       expect(await screen.findByText('Audi page')).toBeInTheDocument();
     });
   });
-
-  it('still opens the submenu via hover as a convenience enhancement (not the only mechanism)', async () => {
-    const user = userEvent.setup();
-    mockWideViewport(true);
-    renderShell();
-
-    await user.hover(screen.getByRole('link', { name: 'Automatizaciones' }));
-
-    expect(await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' })).toBeInTheDocument();
-  });
 });
 
 describe('AppShell Automatizaciones submenu — current-route awareness', () => {
   async function openSubmenu(user: ReturnType<typeof userEvent.setup>) {
-    const trigger = screen.queryByRole('button', { name: 'Mostrar submenú de Automatizaciones' }) ?? screen.getByRole('button', { name: 'Automatizaciones' });
+    // Exact labels only — a loose /automatizaciones/i match also catches the main link's own
+    // "Automatizaciones" text button in expanded mode, which is a different control entirely.
+    const trigger = screen.queryByRole('button', { name: 'Mostrar automatizaciones' }) ?? screen.getByRole('button', { name: 'Automatizaciones' });
     await user.click(trigger);
     return screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
   }
 
   it.each([
-    ['/automations', 'Panel general'],
-    ['/automations/remissions/audi', 'Remisiones Audi'],
-    ['/automations/payment-notifications', 'Notificaciones de pago']
-  ] as const)('marks %s as the current, non-navigable destination (%s)', async (path, label) => {
+    ['/automations/remissions/audi', 'Remisiones Audi', 'Audi page'],
+    ['/automations/payment-notifications', 'Notificaciones de pago', 'Payment Notifications page'],
+    ['/automations/remissions/caterpillar', 'Remisiones Caterpillar', 'Caterpillar page']
+  ] as const)('marks %s as the current, non-navigable destination (%s)', async (path, label, pageText) => {
     const user = userEvent.setup();
     mockWideViewport(true);
     renderShell(path);
@@ -816,7 +965,20 @@ describe('AppShell Automatizaciones submenu — current-route awareness', () => 
     expect(currentItem).not.toHaveAttribute('aria-disabled');
 
     await user.click(currentItem);
-    expect(screen.getByText(path === '/automations' ? 'Automations page' : path === '/automations/remissions/audi' ? 'Audi page' : 'Payment Notifications page')).toBeInTheDocument();
+    expect(screen.getByText(pageText)).toBeInTheDocument();
+  });
+
+  // /automations itself has no submenu item representing it any more — the parent control is the
+  // one marked active (see the test below), and no child should be selected.
+  it('marks no submenu child as current when the path is exactly /automations', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell('/automations');
+
+    const menu = await openSubmenu(user);
+    for (const label of ['Remisiones Audi', 'Notificaciones de pago', 'Remisiones Caterpillar']) {
+      expect(within(menu).getByRole('menuitem', { name: label })).not.toHaveAttribute('aria-current');
+    }
   });
 
   it('treats a Payment Notifications execution detail route as still Notificaciones de pago current', async () => {
@@ -834,30 +996,39 @@ describe('AppShell Automatizaciones submenu — current-route awareness', () => 
   it('keeps the other, non-current destinations navigable as ordinary links', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
-    renderShell('/automations');
+    renderShell('/automations/remissions/audi');
 
     const menu = await openSubmenu(user);
-    const audiItem = within(menu).getByRole('menuitem', { name: 'Remisiones Audi' });
+    const paymentItem = within(menu).getByRole('menuitem', { name: 'Notificaciones de pago' });
 
-    expect(audiItem.tagName).toBe('A');
-    expect(audiItem).not.toHaveAttribute('aria-current');
-    await user.click(audiItem);
-    expect(await screen.findByText('Audi page')).toBeInTheDocument();
+    expect(paymentItem.tagName).toBe('A');
+    expect(paymentItem).not.toHaveAttribute('aria-current');
+    await user.click(paymentItem);
+    expect(await screen.findByText('Payment Notifications page')).toBeInTheDocument();
   });
 
-  it('keeps Remisiones Caterpillar disabled/unavailable regardless of current route, distinct from the current-page state', async () => {
+  it('keeps Remisiones Caterpillar navigable (not disabled, not current) from another automations page', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
-    renderShell('/automations');
+    renderShell('/automations/remissions/audi');
 
     const menu = await openSubmenu(user);
-    const caterpillarItem = within(menu).getByRole('menuitem', { name: /Remisiones Caterpillar/ });
+    const caterpillarItem = within(menu).getByRole('menuitem', { name: 'Remisiones Caterpillar' });
 
-    expect(caterpillarItem).toHaveAttribute('aria-disabled', 'true');
+    expect(caterpillarItem).not.toHaveAttribute('aria-disabled', 'true');
     expect(caterpillarItem).not.toHaveAttribute('aria-current');
+    expect(caterpillarItem.tagName).toBe('A');
+    await user.click(caterpillarItem);
+    expect(await screen.findByText('Caterpillar page')).toBeInTheDocument();
   });
 
-  it('the parent Automatizaciones item stays visually active for every /automations/* route', () => {
+  it('the parent Automatizaciones item stays visually active for every /automations/* route, including exactly /automations', () => {
+    mockWideViewport(true);
+    renderShell('/automations');
+    expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('the parent Automatizaciones item stays visually active for a nested automation route', () => {
     mockWideViewport(true);
     renderShell('/automations/payment-notifications/123');
     expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('aria-current', 'page');

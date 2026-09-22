@@ -180,6 +180,14 @@ describe('AutomationsPage', () => {
     expect(link).toHaveAttribute('href', '/automations/remissions/audi');
   });
 
+  it('shows the Ver automatización link for Caterpillar once hasDashboard is true, even while still IN_PREPARATION (Phase 12A.4)', async () => {
+    overviewMock.mockResolvedValue([caterpillar({ integrationStatus: 'IN_PREPARATION', capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true } })]);
+    renderPage();
+    const card = await cardFor('Remisiones Caterpillar');
+    const link = await within(card).findByRole('link', { name: 'Ver automatización' });
+    expect(link).toHaveAttribute('href', '/automations/remissions/caterpillar');
+  });
+
   it('shows the Ver automatización link for Payment Notifications routed to its dashboard', async () => {
     overviewMock.mockResolvedValue([paymentNotifications()]);
     renderPage();

@@ -5,14 +5,8 @@ import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
+import { AUTOMATION_ROUTE_BY_CODE } from './automationRoutes';
 import { automationHealthAccent, automationHealthTexts, formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel } from './automationOverviewPresentation';
-
-// The only automation codes with an actual Hub route today (Phase 10E §16/§20) — Caterpillar has
-// none, and none should ever be invented for it.
-const ROUTE_BY_CODE: Record<string, string> = {
-  REMISIONES_AUDI: '/automations/remissions/audi',
-  PAYMENT_NOTIFICATIONS: '/automations/payment-notifications'
-};
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -33,7 +27,10 @@ function Row({ label, value }: { label: string; value: string }) {
 // problem now lives on the automation's own processing-history table (AudiRemissionsPage /
 // PaymentNotificationsPage), not here.
 function AutomationCard({ automation }: { automation: AutomationOverview }) {
-  const route = ROUTE_BY_CODE[automation.code];
+  // Gated by capabilities.hasDashboard, not merely by the code appearing in AUTOMATION_ROUTE_BY_CODE
+  // — a route existing here but the backend not yet reporting hasDashboard=true would otherwise
+  // show a link the catalog doesn't consider ready (Phase 12A.4 §E).
+  const route = automation.capabilities.hasDashboard ? AUTOMATION_ROUTE_BY_CODE[automation.code] : undefined;
   const lifecycleLabel = lifecycleStatusLabel(automation.lifecycleStatus);
   const accent = automationHealthAccent(automation);
   const healthTexts = automationHealthTexts(automation);

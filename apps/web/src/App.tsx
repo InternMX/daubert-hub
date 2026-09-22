@@ -16,6 +16,7 @@ import { ClientsPage } from './clients/ClientsPage';
 import { ContactsPage } from './contacts/ContactsPage';
 import { AutomationsPage } from './automations/AutomationsPage';
 import { AudiRemissionsPage } from './automations/AudiRemissionsPage';
+import { CaterpillarRemissionsPage } from './automations/CaterpillarRemissionsPage';
 import { PaymentNotificationsPage } from './automations/PaymentNotificationsPage';
 import { PaymentNotificationExecutionDetailPage } from './automations/PaymentNotificationExecutionDetailPage';
 import { UsersPage } from './users/UsersPage';
@@ -70,6 +71,7 @@ export function App() {
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
+        <Route path="/automations/remissions/caterpillar" element={<CaterpillarRemissionsPage />} />
         <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />
         <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
