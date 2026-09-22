@@ -133,13 +133,13 @@ describe('AutomationsOverviewService', () => {
   });
 
   describe('Remisiones Caterpillar', () => {
-    it('reports NOT_INTEGRATED with no fabricated runtime state', async () => {
+    it('reports IN_PREPARATION with no fabricated runtime state (Phase 12A.2)', async () => {
       const { service } = setup();
       const { data } = await service.getOverview();
       expect(data[2]).toMatchObject({
         code: 'REMISIONES_CATERPILLAR',
         name: 'Remisiones Caterpillar',
-        integrationStatus: 'NOT_INTEGRATED',
+        integrationStatus: 'IN_PREPARATION',
         lifecycleStatus: null,
         lastCheckAt: null,
         lastProcessing: null,

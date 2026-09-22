@@ -91,6 +91,12 @@ export class AutomationsOverviewService {
     };
   }
 
+  // Phase 12A.2: Caterpillar is IN_PREPARATION, not NOT_INTEGRATED (see automation-catalog.ts) —
+  // but this task does not yet wire a repository query for it, so lifecycleStatus/lastCheckAt/
+  // lastProcessing/nextCheckAt stay null here exactly as before (never fabricated, never a stand-in
+  // for real PostgreSQL state). lifecycleStatus in particular must eventually come from
+  // ops.automatizaciones.estatus independently of integrationStatus — null is "not wired up yet",
+  // never a false ACTIVA/INACTIVA.
   private mapCaterpillar(entry: AutomationCatalogEntry, environment: AutomationEnvironment): AutomationOverview {
     return {
       ...this.base(entry, environment),
@@ -98,7 +104,7 @@ export class AutomationsOverviewService {
       lastCheckAt: null,
       lastProcessing: null,
       nextCheckAt: null,
-      // NOT_INTEGRATED: never generates a review acknowledgement (Phase 10I §2), and a healthy
+      // Never INTEGRATED: never generates a review acknowledgement (Phase 10I §2), and a healthy
       // review state is never fabricated for it either — same "no fabricated processing state"
       // rule as lastProcessing above.
       review: NO_REVIEW_PROBLEM

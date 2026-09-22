@@ -51,6 +51,13 @@ describe('listAutomationsOverview', () => {
     }
   });
 
+  it('accepts every integrationStatus value: INTEGRATED, IN_PREPARATION, NOT_INTEGRATED (Phase 12A.2)', async () => {
+    for (const integrationStatus of ['INTEGRATED', 'IN_PREPARATION', 'NOT_INTEGRATED'] as const) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: [overview({ integrationStatus })] })));
+      await expect(listAutomationsOverview()).resolves.toEqual([overview({ integrationStatus })]);
+    }
+  });
+
   it('accepts every lastProcessing.outcome value, including null', async () => {
     for (const outcome of ['COMPLETED', 'PARTIAL', 'FAILED', 'PROCESSING', 'CANCELLED', null] as const) {
       const item = overview({ lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome } });

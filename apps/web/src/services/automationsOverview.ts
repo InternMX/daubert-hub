@@ -1,7 +1,11 @@
 import { apiBaseUrl as baseUrl } from './api';
 
 export type AutomationEnvironment = 'TEST' | 'PRODUCTION' | 'UNKNOWN';
-export type AutomationIntegrationStatus = 'INTEGRATED' | 'NOT_INTEGRATED';
+// Product/integration lifecycle — distinct from lifecycleStatus (ACTIVA/INACTIVA), which is the
+// independent operational DB state (Phase 12A.2). NOT_INTEGRATED: no usable Hub integration exists.
+// IN_PREPARATION: Hub integration exists/is being exposed, but operational production validation is
+// still pending. INTEGRATED: operationally validated and active/available.
+export type AutomationIntegrationStatus = 'INTEGRATED' | 'IN_PREPARATION' | 'NOT_INTEGRATED';
 export type AutomationLifecycleStatus = 'ACTIVE' | 'INACTIVE' | null;
 export type AutomationProcessingOutcome = 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'PROCESSING' | 'CANCELLED' | null;
 export type AutomationReviewOutcome = 'PARTIAL' | 'FAILED' | 'CANCELLED' | null;
@@ -44,7 +48,7 @@ export class AutomationsOverviewApiError extends Error {
 }
 
 const environments = new Set<AutomationEnvironment>(['TEST', 'PRODUCTION', 'UNKNOWN']);
-const integrationStatuses = new Set<AutomationIntegrationStatus>(['INTEGRATED', 'NOT_INTEGRATED']);
+const integrationStatuses = new Set<AutomationIntegrationStatus>(['INTEGRATED', 'IN_PREPARATION', 'NOT_INTEGRATED']);
 const processingOutcomes = new Set<Exclude<AutomationProcessingOutcome, null>>(['COMPLETED', 'PARTIAL', 'FAILED', 'PROCESSING', 'CANCELLED']);
 const reviewOutcomes = new Set<Exclude<AutomationReviewOutcome, null>>(['PARTIAL', 'FAILED', 'CANCELLED']);
 

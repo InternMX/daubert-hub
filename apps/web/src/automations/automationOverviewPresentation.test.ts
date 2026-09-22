@@ -87,6 +87,14 @@ describe('automationHealthAccent (Phase 10I UX refinement §2)', () => {
     }))).toBeNull();
   });
 
+  it('never returns an accent for an IN_PREPARATION automation, regardless of its fields (Phase 12A.2)', () => {
+    expect(automationHealthAccent(automation({
+      integrationStatus: 'IN_PREPARATION',
+      lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' },
+      review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+    }))).toBeNull();
+  });
+
   it('never returns "success" — no healthy accent exists', () => {
     const accent = automationHealthAccent(automation());
     expect(accent).not.toBe('success');
@@ -128,6 +136,14 @@ describe('automationHealthTexts (Phase 10I UX refinement §2)', () => {
   it('never shows text for a NOT_INTEGRATED automation, regardless of its fields', () => {
     expect(automationHealthTexts(automation({
       integrationStatus: 'NOT_INTEGRATED',
+      lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' },
+      review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
+    }))).toEqual([]);
+  });
+
+  it('never shows text for an IN_PREPARATION automation, regardless of its fields (Phase 12A.2)', () => {
+    expect(automationHealthTexts(automation({
+      integrationStatus: 'IN_PREPARATION',
       lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'FAILED' },
       review: { required: true, problemOccurredAt: '2026-08-27T22:40:01.933Z', problemOutcome: 'FAILED' }
     }))).toEqual([]);

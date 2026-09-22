@@ -54,6 +54,7 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
         <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>{automation.name}</Typography>
         {lifecycleLabel && <Chip label={lifecycleLabel} color={lifecycleLabel === 'Activa' ? 'success' : 'default'} size="small" />}
         {automation.integrationStatus === 'NOT_INTEGRATED' && <Chip label="Sin integración con Hub" color="default" size="small" />}
+        {automation.integrationStatus === 'IN_PREPARATION' && <Chip label="Integración en preparación" color="default" size="small" />}
       </Stack>
       <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75 }}>{automation.description}</Typography>
       <Stack sx={{ mt: 2 }}>
@@ -71,7 +72,7 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
           ))}
         </Stack>
       )}
-      {automation.integrationStatus === 'NOT_INTEGRATED' && (
+      {automation.integrationStatus !== 'INTEGRATED' && (
         <Typography color="text.secondary" variant="body2" sx={{ mt: 2 }}>Daubert Hub todavía no recibe información operacional de esta automatización.</Typography>
       )}
       <Box sx={{ mt: 'auto', pt: route ? 2.5 : 0 }}>

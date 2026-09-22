@@ -1,5 +1,10 @@
 export type AutomationEnvironment = 'TEST' | 'PRODUCTION' | 'UNKNOWN';
-export type AutomationIntegrationStatus = 'INTEGRATED' | 'NOT_INTEGRATED';
+// Product/integration lifecycle — distinct from ops.automatizaciones.estatus (ACTIVA/INACTIVA),
+// which is the independent operational DB state surfaced separately as AutomationOverview.lifecycleStatus
+// (Phase 12A.2). NOT_INTEGRATED: no usable Hub integration exists. IN_PREPARATION: Hub integration
+// exists/is being exposed, but operational production validation/cutover is still pending — never
+// implies the automation itself is ACTIVA. INTEGRATED: operationally validated and active/available.
+export type AutomationIntegrationStatus = 'INTEGRATED' | 'IN_PREPARATION' | 'NOT_INTEGRATED';
 export type AutomationLifecycleStatus = 'ACTIVE' | 'INACTIVE' | null;
 export type AutomationProcessingOutcome = 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'PROCESSING' | 'CANCELLED' | null;
 export type AutomationReviewOutcome = 'PARTIAL' | 'FAILED' | 'CANCELLED' | null;

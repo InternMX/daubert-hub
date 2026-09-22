@@ -34,9 +34,10 @@ export function processingOutcomeSeverity(outcome: AutomationProcessingOutcome):
 
 // Automation Center card operational accent (Phase 10I UX refinement §2). Deliberately restrained:
 // no traffic-light circle, no green "healthy" state ever (silence already communicates health).
-// RED beats WARNING — the two accents are never shown simultaneously, and Caterpillar
-// (NOT_INTEGRATED) never gets a fabricated accent regardless of its (always-null) review/processing
-// fields. Semantic MUI theme tokens only (error.main / warning.main) — see AutomationsPage.tsx.
+// RED beats WARNING — the two accents are never shown simultaneously, and any non-INTEGRATED
+// automation (NOT_INTEGRATED or IN_PREPARATION — e.g. Caterpillar, Phase 12A.2) never gets a
+// fabricated accent regardless of its (always-null) review/processing fields. Semantic MUI theme
+// tokens only (error.main / warning.main) — see AutomationsPage.tsx.
 export type AutomationHealthAccent = 'error' | 'warning' | null;
 
 export function automationHealthAccent(automation: AutomationOverview): AutomationHealthAccent {

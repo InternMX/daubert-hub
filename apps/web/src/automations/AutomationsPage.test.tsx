@@ -117,6 +117,19 @@ describe('AutomationsPage', () => {
     expect(screen.getByText('Daubert Hub todavía no recibe información operacional de esta automatización.')).toBeInTheDocument();
   });
 
+  it('shows "Integración en preparación" for an IN_PREPARATION automation, distinct from "Sin integración con Hub" (Phase 12A.2)', async () => {
+    overviewMock.mockResolvedValue([audi(), paymentNotifications(), caterpillar({ integrationStatus: 'IN_PREPARATION' })]);
+    renderPage();
+    await screen.findByText('Remisiones Caterpillar');
+
+    const caterpillarCard = await cardFor('Remisiones Caterpillar');
+    expect(within(caterpillarCard).getByText('Integración en preparación')).toBeInTheDocument();
+    expect(within(caterpillarCard).queryByText('Sin integración con Hub')).not.toBeInTheDocument();
+    expect(within(await cardFor('Remisiones Audi')).queryByText('Integración en preparación')).not.toBeInTheDocument();
+    expect(within(await cardFor('Notificaciones de pago')).queryByText('Integración en preparación')).not.toBeInTheDocument();
+    expect(screen.getByText('Daubert Hub todavía no recibe información operacional de esta automatización.')).toBeInTheDocument();
+  });
+
   it('shows "Último procesamiento" (not "Última ejecución") and the translated outcome', async () => {
     overviewMock.mockResolvedValue([audi()]);
     renderPage();
@@ -446,6 +459,15 @@ describe('AutomationsPage', () => {
       renderPage();
       const card = await cardFor('Remisiones Caterpillar');
       await within(card).findByText('Sin integración con Hub');
+      expect(statusText(card)).toEqual({ failed: false, required: false });
+      expect(getComputedStyle(card).borderLeftWidth).toBe('1px');
+    });
+
+    it('never shows a fabricated accent or health text for an IN_PREPARATION automation (Phase 12A.2)', async () => {
+      overviewMock.mockResolvedValue([caterpillar({ integrationStatus: 'IN_PREPARATION' })]);
+      renderPage();
+      const card = await cardFor('Remisiones Caterpillar');
+      await within(card).findByText('Integración en preparación');
       expect(statusText(card)).toEqual({ failed: false, required: false });
       expect(getComputedStyle(card).borderLeftWidth).toBe('1px');
     });

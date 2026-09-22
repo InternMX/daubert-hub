@@ -136,7 +136,7 @@ describe('ReviewAcknowledgementsService', () => {
       await expect(service.acknowledge('NOT_A_REAL_AUTOMATION', 'req-4', identity)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('throws BadRequestException for REMISIONES_CATERPILLAR (NOT_INTEGRATED)', async () => {
+    it('throws BadRequestException for REMISIONES_CATERPILLAR (IN_PREPARATION, not INTEGRATED)', async () => {
       const { service, audiExecutions, paymentNotifications } = setup();
       await expect(service.acknowledge('REMISIONES_CATERPILLAR', 'req-5', identity)).rejects.toBeInstanceOf(BadRequestException);
       expect(audiExecutions.findLatestProblem).not.toHaveBeenCalled();
