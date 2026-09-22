@@ -1,8 +1,10 @@
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useEffect, useState, type ReactNode } from 'react';
+import { useAuth } from '../auth/authContext.core';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
+import type { AutomationSeriesConfiguration } from '../services/automations';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import {
   getCaterpillarExecution,
@@ -13,6 +15,7 @@ import {
   type CaterpillarProcessRoute,
   type ListCaterpillarExecutions
 } from '../services/caterpillarRemissions';
+import { AdjustNextFolioDialog } from './AdjustNextFolioDialog';
 import {
   caterpillarFolioRangeLabel,
   caterpillarOutcomeLabel,
@@ -30,6 +33,10 @@ import { lifecycleStatusLabel } from './automationOverviewPresentation';
 
 const automationCode = 'REMISIONES_CATERPILLAR';
 const EXECUTIONS_PAGE_SIZE = 25;
+
+// Keep the operational columns visible in constrained desktop windows; route identifiers and
+// series codes return once the viewport reaches the theme's full-desktop breakpoint.
+export const wideOnlyProcessColumnSx = { display: { xs: 'none', lg: 'table-cell' } } as const;
 
 function SectionSpinner({ label }: { label: string }) {
   return <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress aria-label={label} size={28} /></Box>;
@@ -118,14 +125,21 @@ function OperationalStatusSection() {
   );
 }
 
-// §3: one row per configured route — never deduplicated by seriesId/seriesCode, so Torreón and
-// Torreón Planta 2 (which share one series) both render (Phase 12A.4 §A3). routeStatus and
-// seriesStatus are always two separate columns/chips, never collapsed into one flag.
+// §3: one row per configured route — never deduplicated, so Torreón and Torreón Planta 2 both
+// render (Phase 12A.4 §A3). Routes are grouped only for presentation by stable seriesId so shared
+// folio/action cells can use a semantic rowSpan; all process, route, and series cells remain per row.
+// Phase 12B.2 §K: "Ajustar folio" is ADMIN-only — GENERAL still sees the current siguiente_folio
+// value in the table (unchanged), but never an adjustment action, enabled or disabled. Reuses the
+// same AdjustNextFolioDialog as Audi rather than a Caterpillar-specific form.
 function ProcessesSection() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [routes, setRoutes] = useState<CaterpillarProcessRoute[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [adjustingRoute, setAdjustingRoute] = useState<CaterpillarProcessRoute | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -137,6 +151,13 @@ function ProcessesSection() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [retry]);
+
+  // On success, re-fetch from the API rather than optimistically patching local state — the
+  // displayed siguiente_folio always reflects the actual committed value (Phase 12B.2 §K).
+  function handleAdjusted(_configuration: AutomationSeriesConfiguration) {
+    setFeedback('El siguiente folio se actualizó correctamente.');
+    setRetry((value) => value + 1);
+  }
 
   if (loading) return <SectionSpinner label="Cargando procesos y series" />;
   if (error) {
@@ -150,35 +171,65 @@ function ProcessesSection() {
     return <Paper variant="outlined" sx={{ mt: 2, p: 3 }}><Typography color="text.secondary">Aún no hay procesos configurados.</Typography></Paper>;
   }
 
+  const routesBySeries = new Map<string, CaterpillarProcessRoute[]>();
+  for (const route of routes) {
+    const seriesRoutes = routesBySeries.get(route.seriesId);
+    if (seriesRoutes) seriesRoutes.push(route);
+    else routesBySeries.set(route.seriesId, [route]);
+  }
+
   return (
-    <Paper variant="outlined" sx={{ mt: 2, overflow: 'hidden' }}>
-      <Box sx={{ overflowX: 'auto' }}>
-        <Table aria-label="Procesos y series de Caterpillar">
-          <TableHead>
-            <TableRow>
-              <TableCell>Proceso</TableCell>
-              <TableCell>Ruta</TableCell>
-              <TableCell>Estado de ruta</TableCell>
-              <TableCell>Serie</TableCell>
-              <TableCell>Estado de serie</TableCell>
-              <TableCell align="right">Siguiente folio</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {routes.map((route) => (
-              <TableRow key={route.routeId}>
-                <TableCell>{route.processLabel}</TableCell>
-                <TableCell><Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: '0.8125rem' }}>{route.processKey}</Typography></TableCell>
-                <TableCell><CaterpillarStatusChip status={route.routeStatus} /></TableCell>
-                <TableCell>{route.seriesCode}</TableCell>
-                <TableCell><CaterpillarStatusChip status={route.seriesStatus} /></TableCell>
-                <TableCell align="right">{route.nextFolio}</TableCell>
+    <>
+      <Paper variant="outlined" sx={{ mt: 2, overflow: 'hidden' }}>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table aria-label="Procesos y series de Caterpillar">
+            <TableHead>
+              <TableRow>
+                <TableCell>Proceso</TableCell>
+                <TableCell sx={wideOnlyProcessColumnSx}>Ruta</TableCell>
+                <TableCell>Estado de ruta</TableCell>
+                <TableCell sx={wideOnlyProcessColumnSx}>Serie</TableCell>
+                <TableCell>Estado de serie</TableCell>
+                <TableCell align="right">Siguiente folio</TableCell>
+                {isAdmin && <TableCell align="right">Acciones</TableCell>}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Box>
-    </Paper>
+            </TableHead>
+            <TableBody>
+              {[...routesBySeries.values()].flatMap((seriesRoutes) => seriesRoutes.map((route, seriesRouteIndex) => {
+                const rendersSharedCells = seriesRouteIndex === 0;
+                return (
+                  <TableRow key={route.routeId}>
+                    <TableCell>{route.processLabel}</TableCell>
+                    <TableCell sx={wideOnlyProcessColumnSx}><Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{route.processKey}</Typography></TableCell>
+                    <TableCell><CaterpillarStatusChip status={route.routeStatus} /></TableCell>
+                    <TableCell sx={wideOnlyProcessColumnSx}>{route.seriesCode}</TableCell>
+                    <TableCell><CaterpillarStatusChip status={route.seriesStatus} /></TableCell>
+                    {rendersSharedCells && <TableCell align="right" rowSpan={seriesRoutes.length}>{route.nextFolio}</TableCell>}
+                    {isAdmin && rendersSharedCells && (
+                      <TableCell align="right" rowSpan={seriesRoutes.length}>
+                        <Button size="small" onClick={() => setAdjustingRoute(route)}>Ajustar folio</Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              }))}
+            </TableBody>
+          </Table>
+        </Box>
+      </Paper>
+      {isAdmin && adjustingRoute && (
+        <AdjustNextFolioDialog
+          open
+          automationCode={automationCode}
+          seriesCode={adjustingRoute.seriesCode}
+          seriesLabel={adjustingRoute.seriesCode}
+          currentFolio={adjustingRoute.nextFolio}
+          onClose={() => setAdjustingRoute(null)}
+          onAdjusted={handleAdjusted}
+        />
+      )}
+      <Snackbar open={Boolean(feedback)} autoHideDuration={4000} onClose={() => setFeedback(null)} message={feedback} />
+    </>
   );
 }
 

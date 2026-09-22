@@ -10,6 +10,8 @@ const configuration = {
   ]
 };
 
+const forwardInput = { expectedCurrentFolio: 994, nextFolio: 1000, reason: 'Motivo' };
+
 describe('AutomationsService', () => {
   it('maps only the Audi automation, series, and newest-first adjustment fields', async () => {
     const service = new AutomationsService({ findConfiguration: vi.fn().mockResolvedValue(configuration) } as never);
@@ -23,9 +25,72 @@ describe('AutomationsService', () => {
     } });
   });
 
+  it('passes the full input object (expectedCurrentFolio, nextFolio, reason, backwardFilesystemAcknowledged) through to the repository', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockResolvedValue(undefined), findConfiguration: vi.fn().mockResolvedValue(configuration) };
+    const service = new AutomationsService(repository as never);
+    const input = { expectedCurrentFolio: 994, nextFolio: 990, reason: 'Corrección', backwardFilesystemAcknowledged: true };
+    await service.adjustDocumentSeries('REMISIONES_AUDI', 'REMISION_AUDI', input, 'request-0', { userId: '5', userEmail: 'admin@daubert.mx' });
+    expect(repository.adjustNextFolio).toHaveBeenCalledWith('REMISIONES_AUDI', 'REMISION_AUDI', input, 'request-0', { userId: '5', userEmail: 'admin@daubert.mx' });
+  });
+
+  it('maps an unknown automation/series (including an ownership mismatch) to 404', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'DOCUMENT_SERIES_NOT_FOUND' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('REMISIONES_CATERPILLAR', 'REMISION_AUDI', forwardInput, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 404 });
+  });
+
   it('maps an unchanged folio to a clear conflict', async () => {
     const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'DOCUMENT_SERIES_FOLIO_UNCHANGED' }) };
     const service = new AutomationsService(repository as never);
-    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', { nextFolio: 994, reason: 'Motivo' }, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'DOCUMENT_SERIES_FOLIO_UNCHANGED' } });
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', { expectedCurrentFolio: 994, nextFolio: 994, reason: 'Motivo' }, 'request-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'DOCUMENT_SERIES_FOLIO_UNCHANGED' } });
+  });
+
+  it('maps a stale expectedCurrentFolio to 409 SERIES_FOLIO_STALE', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'SERIES_FOLIO_STALE' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', forwardInput, 'request-2', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'SERIES_FOLIO_STALE' } });
+  });
+
+  it('maps a missing backward acknowledgement to 400 BACKWARD_ACKNOWLEDGEMENT_REQUIRED', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'BACKWARD_ACKNOWLEDGEMENT_REQUIRED' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', forwardInput, 'request-3', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400, response: { code: 'BACKWARD_ACKNOWLEDGEMENT_REQUIRED' } });
+  });
+
+  it('maps an unconfigured floor to 409 SERIES_FOLIO_FLOOR_UNCONFIGURED', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'SERIES_FOLIO_FLOOR_UNCONFIGURED' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', forwardInput, 'request-4', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'SERIES_FOLIO_FLOOR_UNCONFIGURED' } });
+  });
+
+  it('maps a forward below-floor target to 409 SERIES_FOLIO_BELOW_FLOOR', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'SERIES_FOLIO_BELOW_FLOOR' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', { expectedCurrentFolio: 1, nextFolio: 100, reason: 'Motivo' }, 'request-5', { userId: null, userEmail: null })).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'SERIES_FOLIO_BELOW_FLOOR',
+        message: 'El nuevo folio está por debajo del límite histórico seguro configurado para esta serie.'
+      }
+    });
+  });
+
+  it('maps a remission-range conflict to 409 SERIES_FOLIO_REMISSION_CONFLICT', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'SERIES_FOLIO_REMISSION_CONFLICT' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', forwardInput, 'request-6', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'SERIES_FOLIO_REMISSION_CONFLICT' } });
+  });
+
+  it('maps a reservation-range conflict to 409 SERIES_FOLIO_RESERVATION_CONFLICT', async () => {
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue({ code: 'SERIES_FOLIO_RESERVATION_CONFLICT' }) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', forwardInput, 'request-7', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 409, response: { code: 'SERIES_FOLIO_RESERVATION_CONFLICT' } });
+  });
+
+  it('propagates an unmapped error unchanged (consistent-failure convention)', async () => {
+    const failure = new Error('unexpected');
+    const repository = { adjustNextFolio: vi.fn().mockRejectedValue(failure) };
+    const service = new AutomationsService(repository as never);
+    await expect(service.adjustDocumentSeries('AUTO', 'SERIES', forwardInput, 'request-8', { userId: null, userEmail: null })).rejects.toBe(failure);
   });
 });

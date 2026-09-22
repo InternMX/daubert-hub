@@ -23,6 +23,7 @@
     "test:integration:security-phase8a": "npm run build && node test/security-phase8a-login-rate-limit.integration.runner.cjs",
     "test:integration:security-phase8b": "npm run build && node test/security-phase8b-csrf-origin.integration.runner.cjs",
     "test:integration:payment-notifications": "npm run build && node test/payment-notifications.integration.runner.cjs",
+    "test:integration:document-series-folio-adjustment": "npm run build && node test/document-series-folio-adjustment.integration.runner.cjs",
     "test:integration:caterpillar-model": "node test/caterpillar-model.integration.runner.cjs",
     "test:integration:caterpillar-execution-finalization": "node test/caterpillar-execution-finalization.integration.runner.cjs",
     "test:integration:caterpillar-remision-persistence": "node test/caterpillar-remision-persistence.integration.runner.cjs",

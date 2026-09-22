@@ -1,7 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { adjustDocumentSeries, AutomationApiError, type AutomationSeriesConfiguration } from '../services/automations';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import {
   getCaterpillarExecution,
@@ -12,8 +13,13 @@ import {
   type CaterpillarProcessRoute,
   type ListCaterpillarExecutions
 } from '../services/caterpillarRemissions';
-import { CaterpillarRemissionsPage } from './CaterpillarRemissionsPage';
+import { testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
+import { CaterpillarRemissionsPage, wideOnlyProcessColumnSx } from './CaterpillarRemissionsPage';
 
+vi.mock('../services/automations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/automations')>()),
+  adjustDocumentSeries: vi.fn()
+}));
 vi.mock('../services/automationsOverview', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/automationsOverview')>()),
   listAutomationsOverview: vi.fn()
@@ -29,6 +35,7 @@ const overviewMock = vi.mocked(listAutomationsOverview);
 const seriesMock = vi.mocked(listCaterpillarSeries);
 const executionsMock = vi.mocked(listCaterpillarExecutions);
 const detailMock = vi.mocked(getCaterpillarExecution);
+const adjustMock = vi.mocked(adjustDocumentSeries);
 
 function caterpillarOverview(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
   return {
@@ -125,8 +132,10 @@ function executionsResponse(data: CaterpillarExecutionSummary[], meta: Partial<L
   return { data, meta: { page: 1, pageSize: 25, total: data.length, totalPages: data.length > 0 ? 1 : 0, ...meta } };
 }
 
-function renderPage() {
-  return render(<MemoryRouter><CaterpillarRemissionsPage /></MemoryRouter>);
+// Phase 12B.2 §F: folio adjustment is ADMIN-only — ADMIN is the default here (most existing tests
+// don't care about the action at all), with a dedicated describe block covering GENERAL/ADMIN.
+function renderPage(user = testAdminUser) {
+  return render(<MemoryRouter><TestAuthProvider value={{ user }}><CaterpillarRemissionsPage /></TestAuthProvider></MemoryRouter>);
 }
 
 describe('CaterpillarRemissionsPage', () => {
@@ -225,6 +234,38 @@ describe('CaterpillarRemissionsPage', () => {
       expect(within(table).getAllByRole('row')).toHaveLength(10); // header + 9 data rows
     });
 
+    it('shows Ruta and Serie at the lg wide-layout breakpoint and hides both below lg', async () => {
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      const routeHeader = within(table).getByRole('columnheader', { name: 'Ruta' });
+      const seriesHeader = within(table).getByRole('columnheader', { name: 'Serie' });
+      const p2Row = within(table).getByText('P2').closest('tr')!;
+      const routeCell = within(p2Row).getByText('CATERPILLAR_P2|P2|').closest('td')!;
+      const seriesCell = within(p2Row).getByText('REMISION_CAT_P2').closest('td')!;
+
+      expect(wideOnlyProcessColumnSx).toEqual({ display: { xs: 'none', lg: 'table-cell' } });
+      // JSDOM does not evaluate media queries, so verify the generated MUI CSS contract directly.
+      const stylesheetRules = Array.from(document.styleSheets)
+        .flatMap((sheet) => {
+          try { return Array.from(sheet.cssRules).map((rule) => rule.cssText); }
+          catch { return []; }
+        });
+      for (const cell of [routeHeader, seriesHeader, routeCell, seriesCell]) {
+        const responsiveClass = Array.from(cell.classList).find((className) => className.startsWith('css-'))!;
+        const responsiveCss = stylesheetRules.filter((rule) => rule.includes(`.${responsiveClass}`)).join('\n');
+        expect(responsiveCss).toMatch(/display:\s*none/);
+        expect(responsiveCss).toMatch(/@media[^\n]*min-width:\s*1200px[^\n]*display:\s*table-cell/);
+      }
+    });
+
+    it('keeps the reduced-layout operational columns visible for ADMIN', async () => {
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      for (const label of ['Proceso', 'Estado de ruta', 'Estado de serie', 'Siguiente folio', 'Acciones']) {
+        expect(getComputedStyle(within(table).getByRole('columnheader', { name: label })).display).not.toBe('none');
+      }
+    });
+
     // Column order: Proceso(0), Ruta(1), Estado de ruta(2), Serie(3), Estado de serie(4), Siguiente folio(5).
     // Every route is also Activa (routeStatus), so "Estado de serie" must be read from its own
     // cell rather than a bare text search — a P2/P5/P6 row legitimately contains "Activa" twice.
@@ -259,12 +300,23 @@ describe('CaterpillarRemissionsPage', () => {
       expect(chips.map((chip) => chip.textContent)).toEqual(['Activa', 'Inactiva']);
     });
 
-    it('renders Torreón and Torreón Planta 2 as two distinct rows despite sharing one series, never deduplicated', async () => {
+    it('keeps both Torreón routes while merging only their shared folio and ADMIN action cells by seriesId', async () => {
       renderPage();
       const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
-      expect(within(table).getByText('Torreón')).toBeInTheDocument();
-      expect(within(table).getByText('Torreón Planta 2')).toBeInTheDocument();
+      const torreonRow = within(table).getByText('Torreón').closest('tr')!;
+      const planta2Row = within(table).getByText('Torreón Planta 2').closest('tr')!;
+      expect(torreonRow).not.toBe(planta2Row);
+      expect(within(torreonRow).getByText('CAT_TORREON|TORREON|')).toBeInTheDocument();
+      expect(within(planta2Row).getByText('CAT_TORREON|TORREON|PLANTA_2')).toBeInTheDocument();
       expect(within(table).getAllByText('REMISION_CAT_TORREON')).toHaveLength(2);
+      expect(within(table).getAllByText('778')).toHaveLength(1);
+
+      const folioCell = within(table).getByText('778').closest('td')!;
+      const torreonAction = within(torreonRow).getByRole('button', { name: 'Ajustar folio' });
+      expect(folioCell).toHaveAttribute('rowspan', '2');
+      expect(torreonAction.closest('td')).toHaveAttribute('rowspan', '2');
+      expect(within(planta2Row).queryByText('778')).not.toBeInTheDocument();
+      expect(within(planta2Row).queryByRole('button', { name: 'Ajustar folio' })).not.toBeInTheDocument();
     });
 
     it('shows the raw processKey as secondary text alongside the resolved label', async () => {
@@ -284,6 +336,111 @@ describe('CaterpillarRemissionsPage', () => {
       renderPage();
       expect(await screen.findByText('No fue posible cargar las ejecuciones recientes.')).toBeInTheDocument();
       expect(await screen.findByText('P2')).toBeInTheDocument();
+    });
+  });
+
+  // Phase 12B.2/12B.4: one "Ajustar folio" per unique seriesId, ADMIN-only, reusing the same
+  // AdjustNextFolioDialog Audi uses (Phase 12B.2 §L: one shared backend contract, one shared form).
+  describe('folio adjustment (§K)', () => {
+    it('GENERAL sees the current siguiente_folio but no adjustment action', async () => {
+      renderPage(testGeneralUser);
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      expect(within(table).getByText('85')).toBeInTheDocument(); // P2's nextFolio, still visible
+      expect(within(table).getAllByText('778')).toHaveLength(1);
+      expect(within(table).getByText('778').closest('td')).toHaveAttribute('rowspan', '2');
+      expect(screen.queryByRole('button', { name: 'Ajustar folio' })).not.toBeInTheDocument();
+    });
+
+    it('ADMIN sees one adjustment action per unique series while single-route series remain unchanged', async () => {
+      renderPage(testAdminUser);
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      expect(within(table).getAllByRole('button', { name: 'Ajustar folio' })).toHaveLength(8);
+      for (const label of ['P2', 'P3', 'P4', 'P5', 'P6', 'Nuevo Laredo FINSA 1', 'Nuevo Laredo FINSA 3']) {
+        const row = within(table).getByText(label).closest('tr')!;
+        expect(within(row).getByRole('button', { name: 'Ajustar folio' })).toBeInTheDocument();
+        expect(within(row).getAllByRole('cell')).toHaveLength(7);
+      }
+    });
+
+    it('opens the single shared Torreón action with the shared series and current server folio', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      const torreonRow = within(table).getByText('Torreón').closest('tr')!;
+      await user.click(within(torreonRow).getByRole('button', { name: 'Ajustar folio' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'Ajustar siguiente folio' });
+      expect(within(dialog).getByRole('textbox', { name: 'Serie' })).toHaveValue('REMISION_CAT_TORREON');
+      expect(within(dialog).getByRole('textbox', { name: 'Folio actual' })).toHaveValue('778');
+    });
+
+    it('opens the dialog pre-filled with the row\'s own series code and current folio', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      const p2Row = within(table).getByText('P2').closest('tr')!;
+      await user.click(within(p2Row).getByRole('button', { name: 'Ajustar folio' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Ajustar siguiente folio' });
+      expect(within(dialog).getByRole('textbox', { name: 'Serie' })).toHaveValue('REMISION_CAT_P2');
+      expect(within(dialog).getByRole('textbox', { name: 'Folio actual' })).toHaveValue('85');
+    });
+
+    it('sends expectedCurrentFolio bound to the exact row and refreshes the series list on success', async () => {
+      const user = userEvent.setup();
+      const updatedConfiguration: AutomationSeriesConfiguration = {
+        automation: { code: 'REMISIONES_CATERPILLAR', name: 'Remisiones Caterpillar', status: 'ACTIVA' },
+        series: { code: 'REMISION_CAT_P2', name: 'Remision Caterpillar Planta 2', nextFolio: 90, status: 'ACTIVA' },
+        adjustments: []
+      };
+      adjustMock.mockResolvedValue(updatedConfiguration);
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      const p2Row = within(table).getByText('P2').closest('tr')!;
+      await user.click(within(p2Row).getByRole('button', { name: 'Ajustar folio' }));
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '90' } });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Corrección' } });
+      await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
+
+      expect(adjustMock).toHaveBeenCalledWith('REMISIONES_CATERPILLAR', 'REMISION_CAT_P2', { expectedCurrentFolio: 85, nextFolio: 90, reason: 'Corrección' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      // Re-fetched from the API (listCaterpillarSeries called again), never optimistically patched.
+      expect(seriesMock.mock.calls.length).toBeGreaterThan(1);
+      expect(await screen.findByText('El siguiente folio se actualizó correctamente.')).toBeInTheDocument();
+    });
+
+    it('shows the exceptional backward warning with the exact reused range for a Caterpillar series', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      const p5Row = within(table).getByText('P5').closest('tr')!;
+      await user.click(within(p5Row).getByRole('button', { name: 'Ajustar folio' }));
+      const dialog = await screen.findByRole('dialog');
+      // P5's fixture nextFolio is 119.
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '110' } });
+      expect(within(dialog).getByText('Corrección excepcional hacia atrás')).toBeInTheDocument();
+      expect(within(dialog).getByText('Folios potencialmente reutilizados: 110–118')).toBeInTheDocument();
+      expect(within(dialog).getByRole('checkbox', { name: /Confirmo que revisé los archivos de salida/ })).toBeInTheDocument();
+    });
+
+    it('leaves the displayed folio unchanged and shows the backend-sanitized message on failure', async () => {
+      const user = userEvent.setup();
+      adjustMock.mockRejectedValue(new AutomationApiError(409, 'SERIES_FOLIO_BELOW_FLOOR', 'El nuevo folio está por debajo del límite histórico seguro configurado para esta serie.'));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Procesos y series de Caterpillar' });
+      const p2Row = within(table).getByText('P2').closest('tr')!;
+      await user.click(within(p2Row).getByRole('button', { name: 'Ajustar folio' }));
+      const dialog = await screen.findByRole('dialog');
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '10' } });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Corrección' } });
+      await user.click(within(dialog).getByRole('checkbox', { name: /Confirmo que revisé los archivos de salida/ }));
+      await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
+
+      expect(await within(dialog).findByText('El nuevo folio está por debajo del límite histórico seguro configurado para esta serie.')).toBeInTheDocument();
+      // The dialog (still open, showing the error) makes the background table aria-hidden to
+      // screen readers — re-querying by role would incorrectly fail to find it; the already-held
+      // element reference is still the live DOM node and reflects any (here: absent) update.
+      expect(within(p2Row).getByText('85')).toBeInTheDocument();
     });
   });
 
@@ -437,11 +594,15 @@ describe('CaterpillarRemissionsPage', () => {
   });
 
   describe('no write actions (§H)', () => {
-    it('renders no action buttons beyond pagination/retry/close — no Reprocesar, Activar, Desactivar, Editar folio, or Cancelar', async () => {
+    // Phase 12B.2 §K: "Ajustar folio" is the one deliberate, newly-authorized ADMIN-only write
+    // action (series next-folio adjustment) — a separate, explicit product decision, not a
+    // regression of this rule. Execution monitoring itself remains fully read-only: no
+    // Reprocesar/Activar/Desactivar/Cambiar serie/Cancelar action exists anywhere on this page.
+    it('renders no execution-monitoring write actions — no Reprocesar, Activar, Desactivar, Cambiar serie, or Cancelar', async () => {
       executionsMock.mockResolvedValue(executionsResponse([executionSummary()]));
       renderPage();
       await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
-      for (const forbidden of ['Reprocesar', 'Activar', 'Desactivar', 'Editar próximo folio', 'Cambiar serie', 'Cancelar']) {
+      for (const forbidden of ['Reprocesar', 'Activar', 'Desactivar', 'Cambiar serie', 'Cancelar']) {
         expect(screen.queryByRole('button', { name: forbidden })).not.toBeInTheDocument();
       }
     });

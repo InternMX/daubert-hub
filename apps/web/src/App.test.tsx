@@ -256,11 +256,15 @@ describe('Automations overview navigation', () => {
   it.each([
     ['ADMIN', testAdminUser],
     ['GENERAL', testGeneralUser]
-  ] as const)('renders the exact same Remisiones Audi dashboard for %s', async (_role, user) => {
+  ] as const)('renders the same Remisiones Audi dashboard for %s, but folio adjustment stays ADMIN-only (Phase 12B.2 §F)', async (role, user) => {
     renderApp('/automations/remissions/audi', user);
     expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Audi' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 2, name: 'Estado operacional' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Editar próximo folio' })).toBeInTheDocument();
+    if (role === 'ADMIN') {
+      expect(screen.getByRole('button', { name: 'Editar próximo folio' })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Editar próximo folio' })).not.toBeInTheDocument();
+    }
   });
 });
 

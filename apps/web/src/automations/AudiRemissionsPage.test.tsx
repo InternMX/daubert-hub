@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { adjustDocumentSeries, getDocumentSeries, type AutomationSeriesConfiguration } from '../services/automations';
+import { adjustDocumentSeries, AutomationApiError, getDocumentSeries, type AutomationSeriesConfiguration } from '../services/automations';
 import { listAudiExecutions, type AudiProcessingSummary, type ListAudiExecutions } from '../services/audiExecutions';
 import { acknowledgeAutomationReview, listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
+import { testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
 import { AudiRemissionsPage } from './AudiRemissionsPage';
 
 vi.mock('../services/automations', async (importOriginal) => ({
@@ -68,7 +69,11 @@ function executionsResponse(data: AudiProcessingSummary[], meta: Partial<ListAud
   return { data, meta: { page: 1, pageSize: 25, total: data.length, totalPages: 1, ...meta } };
 }
 
-function renderPage() { return render(<MemoryRouter><AudiRemissionsPage /></MemoryRouter>); }
+// Phase 12B.2 §F: folio adjustment is now ADMIN-only — every existing test in this file exercises
+// the adjustment flow, so ADMIN is the default here; a dedicated describe block covers GENERAL.
+function renderPage(user = testAdminUser) {
+  return render(<MemoryRouter><TestAuthProvider value={{ user }}><AudiRemissionsPage /></TestAuthProvider></MemoryRouter>);
+}
 function displayedFolio() { return screen.getByText('Próxima remisión').previousElementSibling; }
 
 describe('AudiRemissionsPage', () => {
@@ -131,7 +136,7 @@ describe('AudiRemissionsPage', () => {
   });
 
   describe('Serie documental', () => {
-    it('renders the current next folio, adjustment history, and preserves the edit action', async () => {
+    it('renders the current next folio, adjustment history, and preserves the edit action for ADMIN', async () => {
       renderPage();
       expect(await screen.findByRole('heading', { level: 2, name: 'Serie documental' })).toBeInTheDocument();
       expect(displayedFolio()).toHaveTextContent('994');
@@ -147,27 +152,49 @@ describe('AudiRemissionsPage', () => {
       expect(await screen.findByText('Aún no hay ajustes manuales.')).toBeInTheDocument();
     });
 
-    it('opens the dialog with a read-only current folio and requires a reason', async () => {
+    it('opens the dialog with a read-only current folio and keeps Guardar disabled until a reason is entered', async () => {
       const user = userEvent.setup(); renderPage();
       await user.click(await screen.findByRole('button', { name: 'Editar próximo folio' }));
       const dialog = screen.getByRole('dialog');
-      expect(within(dialog).getByRole('textbox', { name: 'Próximo folio actual' })).toHaveAttribute('readonly');
-      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo próximo folio' }), { target: { value: '1000' } });
-      await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
-      expect(within(dialog).getByText('El motivo es obligatorio.')).toBeInTheDocument();
+      expect(within(dialog).getByRole('textbox', { name: 'Folio actual' })).toHaveAttribute('readonly');
+      expect(within(dialog).getByRole('textbox', { name: 'Serie' })).toHaveValue('REMISION_AUDI');
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '1000' } });
+      // A valid folio alone is not enough — Guardar stays disabled with no reason.
+      expect(within(dialog).getByRole('button', { name: 'Guardar ajuste' })).toBeDisabled();
       expect(adjustMock).not.toHaveBeenCalled();
+
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Remisión incorrecta' } });
+      expect(within(dialog).getByRole('button', { name: 'Guardar ajuste' })).not.toBeDisabled();
     });
 
-    it('warns for a lower folio but still submits it', async () => {
+    it('shows the exceptional backward-correction warning, reused range, and requires the acknowledgement checkbox before submitting', async () => {
       const user = userEvent.setup(); renderPage();
       await user.click(await screen.findByRole('button', { name: 'Editar próximo folio' }));
       const dialog = screen.getByRole('dialog');
-      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo próximo folio' }), { target: { value: '993' } });
-      expect(within(dialog).getByText(/Estás estableciendo un folio menor/)).toBeInTheDocument();
-      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: ' Remisión incorrecta ' } });
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '993' } });
+      expect(within(dialog).getByText('Corrección excepcional hacia atrás')).toBeInTheDocument();
+      expect(within(dialog).getByText(/Estás cambiando el siguiente folio de 994 a 993/)).toBeInTheDocument();
+      expect(within(dialog).getByText('Folios potencialmente reutilizados: 993–993')).toBeInTheDocument();
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Remisión incorrecta' } });
+      // Guardar stays disabled until the mandatory acknowledgement is checked.
+      expect(within(dialog).getByRole('button', { name: 'Guardar ajuste' })).toBeDisabled();
+
       adjustMock.mockResolvedValue({ ...configuration, series: { ...configuration.series, nextFolio: 993 }, adjustments: [{ previousFolio: 994, newFolio: 993, reason: 'Remisión incorrecta', userEmail: null, createdAt: '2026-08-27T13:00:00.000Z' }, ...configuration.adjustments] });
+      await user.click(within(dialog).getByRole('checkbox', { name: /Confirmo que revisé los archivos de salida/ }));
       await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
-      await waitFor(() => expect(adjustMock).toHaveBeenCalledWith('REMISIONES_AUDI', 'REMISION_AUDI', { nextFolio: 993, reason: 'Remisión incorrecta' }));
+      await waitFor(() => expect(adjustMock).toHaveBeenCalledWith('REMISIONES_AUDI', 'REMISION_AUDI', { expectedCurrentFolio: 994, nextFolio: 993, reason: 'Remisión incorrecta', backwardFilesystemAcknowledged: true }));
+    });
+
+    it('never requires the acknowledgement checkbox for a forward adjustment and never sends backwardFilesystemAcknowledged', async () => {
+      const user = userEvent.setup();
+      adjustMock.mockResolvedValue({ ...configuration, series: { ...configuration.series, nextFolio: 1000 } });
+      renderPage(); await user.click(await screen.findByRole('button', { name: 'Editar próximo folio' }));
+      const dialog = screen.getByRole('dialog');
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '1000' } });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Salto autorizado' } });
+      expect(within(dialog).queryByText('Corrección excepcional hacia atrás')).not.toBeInTheDocument();
+      await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
+      await waitFor(() => expect(adjustMock).toHaveBeenCalledWith('REMISIONES_AUDI', 'REMISION_AUDI', { expectedCurrentFolio: 994, nextFolio: 1000, reason: 'Salto autorizado' }));
     });
 
     it('closes the dialog and refreshes the displayed folio and history after saving', async () => {
@@ -175,13 +202,41 @@ describe('AudiRemissionsPage', () => {
       adjustMock.mockResolvedValue({ ...configuration, series: { ...configuration.series, nextFolio: 1000 }, adjustments: [{ previousFolio: 994, newFolio: 1000, reason: 'Salto autorizado', userEmail: 'admin@example.test', createdAt: '2026-08-27T13:00:00.000Z' }, ...configuration.adjustments] });
       renderPage(); await user.click(await screen.findByRole('button', { name: 'Editar próximo folio' }));
       const dialog = screen.getByRole('dialog');
-      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo próximo folio' }), { target: { value: '1000' } });
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '1000' } });
       fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Salto autorizado' } });
       await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(displayedFolio()).toHaveTextContent('1000');
       expect(screen.getByText('Salto autorizado')).toBeInTheDocument();
       expect(screen.getByText('El próximo folio se actualizó correctamente.')).toBeInTheDocument();
+    });
+
+    it('shows the backend-sanitized error message and leaves the current folio unchanged on failure', async () => {
+      const user = userEvent.setup();
+      adjustMock.mockRejectedValue(new AutomationApiError(409, 'SERIES_FOLIO_STALE', 'El folio actual cambió desde que se cargó esta pantalla. Actualiza la información e intenta de nuevo.'));
+      renderPage(); await user.click(await screen.findByRole('button', { name: 'Editar próximo folio' }));
+      const dialog = screen.getByRole('dialog');
+      fireEvent.change(within(dialog).getByRole('spinbutton', { name: 'Nuevo siguiente folio' }), { target: { value: '1000' } });
+      fireEvent.change(within(dialog).getByRole('textbox', { name: 'Motivo' }), { target: { value: 'Salto autorizado' } });
+      await user.click(within(dialog).getByRole('button', { name: 'Guardar ajuste' }));
+      expect(await within(dialog).findByText('El folio actual cambió desde que se cargó esta pantalla. Actualiza la información e intenta de nuevo.')).toBeInTheDocument();
+      expect(displayedFolio()).toHaveTextContent('994');
+    });
+  });
+
+  // Phase 12B.2 §F: read-only for GENERAL — the current folio is still visible, but there is no
+  // enabled (or disabled) adjustment action at all.
+  describe('authorization', () => {
+    it('GENERAL sees the current folio but no adjustment action', async () => {
+      renderPage(testGeneralUser);
+      expect(await screen.findByRole('heading', { level: 2, name: 'Serie documental' })).toBeInTheDocument();
+      expect(displayedFolio()).toHaveTextContent('994');
+      expect(screen.queryByRole('button', { name: 'Editar próximo folio' })).not.toBeInTheDocument();
+    });
+
+    it('ADMIN sees the adjustment action', async () => {
+      renderPage(testAdminUser);
+      expect(await screen.findByRole('button', { name: 'Editar próximo folio' })).toBeInTheDocument();
     });
   });
 
