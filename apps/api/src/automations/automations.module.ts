@@ -14,6 +14,11 @@ import { PaymentNotificationsWebhookClient } from './payment-notifications/payme
 import { AudiExecutionsController } from './remisiones-audi/audi-executions.controller';
 import { AudiExecutionsRepository } from './remisiones-audi/audi-executions.repository';
 import { AudiExecutionsService } from './remisiones-audi/audi-executions.service';
+import { CaterpillarController } from './remisiones-caterpillar/caterpillar.controller';
+import { CaterpillarExecutionsRepository } from './remisiones-caterpillar/caterpillar-executions.repository';
+import { CaterpillarExecutionsService } from './remisiones-caterpillar/caterpillar-executions.service';
+import { CaterpillarRoutingRepository } from './remisiones-caterpillar/caterpillar-routing.repository';
+import { CaterpillarRoutingService } from './remisiones-caterpillar/caterpillar-routing.service';
 import { ReviewAcknowledgementsController } from './review/review-acknowledgements.controller';
 import { ReviewAcknowledgementsRepository } from './review/review-acknowledgements.repository';
 import { ReviewAcknowledgementsService } from './review/review-acknowledgements.service';
@@ -21,12 +26,14 @@ import { AutomationTriggerRequestsRepository } from './trigger-requests/automati
 
 @Module({
   imports: [DatabaseModule, HealthModule],
-  controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, ReviewAcknowledgementsController],
+  controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, CaterpillarController, ReviewAcknowledgementsController],
   providers: [
     AutomationsService, DocumentSeriesRepository,
     PaymentNotificationsService, PaymentNotificationsRepository, PaymentNotificationsWebhookClient,
     AutomationsOverviewService, AutomationsOverviewRepository,
     AudiExecutionsService, AudiExecutionsRepository,
+    CaterpillarExecutionsService, CaterpillarExecutionsRepository,
+    CaterpillarRoutingService, CaterpillarRoutingRepository,
     ReviewAcknowledgementsService, ReviewAcknowledgementsRepository,
     AutomationTriggerRequestsRepository
   ]

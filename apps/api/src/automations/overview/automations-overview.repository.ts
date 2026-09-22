@@ -34,4 +34,27 @@ export class AutomationsOverviewRepository {
       WHERE automation.codigo = 'REMISIONES_AUDI'`);
     return row ?? null;
   }
+
+  // Phase 12A.3 §A: identical shape/query to findAudiOverview above (AudiOverviewRow is reused
+  // as-is — the row shape is generic to any ops.automatizaciones/ops.ejecuciones_automatizacion
+  // pair despite its name), scoped to REMISIONES_CATERPILLAR instead. There may be zero Caterpillar
+  // executions in production (confirmed true today) — the LEFT JOIN LATERAL already makes that a
+  // normal null `execution`, not an error, exactly as it already does for a newly-onboarded automation.
+  async findCaterpillarOverview(): Promise<AudiOverviewRow | null> {
+    const [row] = await this.database.query<AudiOverviewRow>(`
+      SELECT
+        automation.estatus AS lifecycle_status,
+        execution.estado AS execution_state,
+        COALESCE(execution.finalizada_en, execution.iniciada_en) AS occurred_at
+      FROM ops.automatizaciones automation
+      LEFT JOIN LATERAL (
+        SELECT estado, finalizada_en, iniciada_en
+        FROM ops.ejecuciones_automatizacion e
+        WHERE e.automatizacion_id = automation.automatizacion_id
+        ORDER BY e.ejecucion_id DESC
+        LIMIT 1
+      ) execution ON TRUE
+      WHERE automation.codigo = 'REMISIONES_CATERPILLAR'`);
+    return row ?? null;
+  }
 }

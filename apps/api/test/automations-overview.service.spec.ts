@@ -23,8 +23,13 @@ function paymentSummary(overrides: Partial<{
 
 const NO_REVIEW = { required: false, problemOccurredAt: null, problemOutcome: null };
 
-function setup(options: { audiRow?: unknown; paymentData?: unknown[]; environment?: 'TEST' | 'PRODUCTION' | 'UNKNOWN'; audiReview?: unknown; paymentReview?: unknown } = {}) {
-  const repository = { findAudiOverview: vi.fn().mockResolvedValue(options.audiRow ?? null) };
+function setup(options: { audiRow?: unknown; caterpillarRow?: unknown; paymentData?: unknown[]; environment?: 'TEST' | 'PRODUCTION' | 'UNKNOWN'; audiReview?: unknown; paymentReview?: unknown } = {}) {
+  const repository = {
+    findAudiOverview: vi.fn().mockResolvedValue(options.audiRow ?? null),
+    findCaterpillarOverview: vi.fn().mockResolvedValue(
+      'caterpillarRow' in options ? options.caterpillarRow : { lifecycle_status: 'INACTIVA', execution_state: null, occurred_at: null }
+    )
+  };
   const paymentNotifications = { list: vi.fn().mockResolvedValue({ data: options.paymentData ?? [], meta: { page: 1, pageSize: 1, total: options.paymentData?.length ?? 0, totalPages: 1 } }) };
   const healthService = { getHealth: vi.fn().mockResolvedValue(health(options.environment)) };
   const review = { getReviewState: vi.fn().mockImplementation((code: string) => Promise.resolve(code === 'REMISIONES_AUDI' ? (options.audiReview ?? NO_REVIEW) : (options.paymentReview ?? NO_REVIEW))) };
@@ -132,15 +137,15 @@ describe('AutomationsOverviewService', () => {
     });
   });
 
-  describe('Remisiones Caterpillar', () => {
-    it('reports IN_PREPARATION with no fabricated runtime state (Phase 12A.2)', async () => {
+  describe('Remisiones Caterpillar (Phase 12A.3 §A)', () => {
+    it('reports the real production truth: IN_PREPARATION integration status alongside an independently INACTIVA automation', async () => {
       const { service } = setup();
       const { data } = await service.getOverview();
       expect(data[2]).toMatchObject({
         code: 'REMISIONES_CATERPILLAR',
         name: 'Remisiones Caterpillar',
         integrationStatus: 'IN_PREPARATION',
-        lifecycleStatus: null,
+        lifecycleStatus: 'INACTIVE',
         lastCheckAt: null,
         lastProcessing: null,
         nextCheckAt: null,
@@ -148,17 +153,65 @@ describe('AutomationsOverviewService', () => {
       });
     });
 
-    it('still reports the confirmed polling frequency despite having no integration', async () => {
+    it.each([
+      ['ACTIVA', 'ACTIVE'],
+      ['INACTIVA', 'INACTIVE']
+    ] as const)('maps lifecycle_status %s to %s from the real repository row, independently of integrationStatus', async (lifecycleStatus, expected) => {
+      const { service } = setup({ caterpillarRow: { lifecycle_status: lifecycleStatus, execution_state: null, occurred_at: null } });
+      const { data } = await service.getOverview();
+      expect(data[2]).toMatchObject({ lifecycleStatus: expected, integrationStatus: 'IN_PREPARATION' });
+    });
+
+    it('reports lifecycleStatus=null when the automation is not registered at all (repository returns null)', async () => {
+      const { service } = setup({ caterpillarRow: null });
+      const { data } = await service.getOverview();
+      expect(data[2]).toMatchObject({ lifecycleStatus: null, lastProcessing: null, integrationStatus: 'IN_PREPARATION' });
+    });
+
+    it('treats zero executions as a normal valid state, never an error, with lastProcessing=null', async () => {
+      const { service } = setup({ caterpillarRow: { lifecycle_status: 'INACTIVA', execution_state: null, occurred_at: null } });
+      await expect(service.getOverview()).resolves.not.toThrow();
+      const { data } = await service.getOverview();
+      expect(data[2]?.lastProcessing).toBeNull();
+    });
+
+    it.each([
+      ['COMPLETADA', 'COMPLETED'],
+      ['ERROR', 'FAILED'],
+      ['PROCESANDO', 'PROCESSING'],
+      ['CANCELADA', 'CANCELLED']
+    ] as const)('maps a real latest execution_state %s to outcome %s once executions exist', async (executionState, expected) => {
+      const { service } = setup({ caterpillarRow: { lifecycle_status: 'INACTIVA', execution_state: executionState, occurred_at: '2026-09-20T10:00:00.000Z' } });
+      const { data } = await service.getOverview();
+      expect(data[2]?.lastProcessing).toEqual({ occurredAt: '2026-09-20T10:00:00.000Z', outcome: expected });
+    });
+
+    it('never reports a lastCheckAt or nextCheckAt value (no-work polling cycles are not persisted, same as Audi)', async () => {
+      const { service } = setup({ caterpillarRow: { lifecycle_status: 'ACTIVA', execution_state: 'COMPLETADA', occurred_at: '2026-09-20T10:00:00.000Z' } });
+      const { data } = await service.getOverview();
+      expect(data[2]?.lastCheckAt).toBeNull();
+      expect(data[2]?.nextCheckAt).toBeNull();
+    });
+
+    it('still reports the confirmed polling frequency', async () => {
       const { service } = setup();
       const { data } = await service.getOverview();
       expect(data[2]?.polling).toEqual({ intervalMinutes: 15, label: 'Cada 15 minutos' });
     });
 
-    it('is never queried against the database (no repository call made for it)', async () => {
+    it('is now queried against the database exactly once per overview request (Phase 12A.3, unlike the prior 12A.1/12A.2 stub)', async () => {
       const { service, repository, paymentNotifications } = setup();
       await service.getOverview();
       expect(repository.findAudiOverview).toHaveBeenCalledTimes(1);
+      expect(repository.findCaterpillarOverview).toHaveBeenCalledTimes(1);
       expect(paymentNotifications.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('never infers ACTIVA from integrationStatus: IN_PREPARATION with an INACTIVA automation stays INACTIVE, never ACTIVE', async () => {
+      const { service } = setup({ caterpillarRow: { lifecycle_status: 'INACTIVA', execution_state: null, occurred_at: null } });
+      const { data } = await service.getOverview();
+      expect(data[2]?.integrationStatus).toBe('IN_PREPARATION');
+      expect(data[2]?.lifecycleStatus).toBe('INACTIVE');
     });
   });
 
@@ -179,12 +232,21 @@ describe('AutomationsOverviewService', () => {
     });
 
     it('propagates a repository failure instead of fabricating a healthy card (consistent-failure convention)', async () => {
-      const repository = { findAudiOverview: vi.fn().mockRejectedValue(new Error('db down')) };
+      const repository = { findAudiOverview: vi.fn().mockRejectedValue(new Error('db down')), findCaterpillarOverview: vi.fn().mockResolvedValue(null) };
       const paymentNotifications = { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 1, total: 0, totalPages: 0 } }) };
       const healthService = { getHealth: vi.fn().mockResolvedValue(health()) };
       const review = { getReviewState: vi.fn().mockResolvedValue(NO_REVIEW) };
       const service = new AutomationsOverviewService(repository as never, paymentNotifications as never, healthService as never, review as never);
       await expect(service.getOverview()).rejects.toThrow('db down');
+    });
+
+    it('propagates a Caterpillar repository failure the same way, instead of fabricating a healthy card for it', async () => {
+      const repository = { findAudiOverview: vi.fn().mockResolvedValue(null), findCaterpillarOverview: vi.fn().mockRejectedValue(new Error('cat db down')) };
+      const paymentNotifications = { list: vi.fn().mockResolvedValue({ data: [], meta: { page: 1, pageSize: 1, total: 0, totalPages: 0 } }) };
+      const healthService = { getHealth: vi.fn().mockResolvedValue(health()) };
+      const review = { getReviewState: vi.fn().mockResolvedValue(NO_REVIEW) };
+      const service = new AutomationsOverviewService(repository as never, paymentNotifications as never, healthService as never, review as never);
+      await expect(service.getOverview()).rejects.toThrow('cat db down');
     });
   });
 

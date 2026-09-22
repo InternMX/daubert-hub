@@ -14,6 +14,15 @@ const AUDI_LIFECYCLE_MAP: Record<string, AutomationLifecycleStatus> = {
   INACTIVA: 'INACTIVE'
 };
 
+// Same ACTIVA/INACTIVA vocabulary as ops.automatizaciones.estatus generally (AUDI_LIFECYCLE_MAP
+// above) — a separate constant only because it is Caterpillar's own independent DB read
+// (findCaterpillarOverview), never derived from or tied to integrationStatus (Phase 12A.3: the
+// automation is INACTIVA today while integrationStatus is IN_PREPARATION — two independent facts).
+const CATERPILLAR_LIFECYCLE_MAP: Record<string, AutomationLifecycleStatus> = {
+  ACTIVA: 'ACTIVE',
+  INACTIVA: 'INACTIVE'
+};
+
 @Injectable()
 export class AutomationsOverviewService {
   constructor(
@@ -29,10 +38,11 @@ export class AutomationsOverviewService {
   // missing data (Phase 10E §12). Review state (Phase 10I) is fetched the same way: it is a
   // distinct read from lastProcessing, never derived from it.
   async getOverview(): Promise<AutomationsOverviewResponse> {
-    const [health, audiRow, paymentList, audiReview, paymentReview] = await Promise.all([
+    const [health, audiRow, paymentList, caterpillarRow, audiReview, paymentReview] = await Promise.all([
       this.health.getHealth(),
       this.repository.findAudiOverview(),
       this.paymentNotifications.list({ page: 1, pageSize: 1 }),
+      this.repository.findCaterpillarOverview(),
       this.review.getReviewState('REMISIONES_AUDI'),
       this.review.getReviewState('PAYMENT_NOTIFICATIONS')
     ]);
@@ -40,7 +50,7 @@ export class AutomationsOverviewService {
     const data = AUTOMATION_CATALOG.map((entry) => {
       if (entry.code === 'REMISIONES_AUDI') return this.mapAudi(entry, environment, audiRow, audiReview);
       if (entry.code === 'PAYMENT_NOTIFICATIONS') return this.mapPaymentNotifications(entry, environment, paymentList.data[0] ?? null, paymentReview);
-      return this.mapCaterpillar(entry, environment);
+      return this.mapCaterpillar(entry, environment, caterpillarRow);
     });
     return { data };
   }
@@ -91,22 +101,29 @@ export class AutomationsOverviewService {
     };
   }
 
-  // Phase 12A.2: Caterpillar is IN_PREPARATION, not NOT_INTEGRATED (see automation-catalog.ts) —
-  // but this task does not yet wire a repository query for it, so lifecycleStatus/lastCheckAt/
-  // lastProcessing/nextCheckAt stay null here exactly as before (never fabricated, never a stand-in
-  // for real PostgreSQL state). lifecycleStatus in particular must eventually come from
-  // ops.automatizaciones.estatus independently of integrationStatus — null is "not wired up yet",
-  // never a false ACTIVA/INACTIVA.
-  private mapCaterpillar(entry: AutomationCatalogEntry, environment: AutomationEnvironment): AutomationOverview {
+  // Phase 12A.3 §A: real DB-backed summary via findCaterpillarOverview, same shape/derivation as
+  // mapAudi below. lifecycleStatus comes exclusively from ops.automatizaciones.estatus — never
+  // inferred from entry.integrationStatus (IN_PREPARATION today; the automation itself is
+  // independently INACTIVA in production — two separate facts, never collapsed, per Phase 12A.3's
+  // explicit status-semantics requirement).
+  private mapCaterpillar(entry: AutomationCatalogEntry, environment: AutomationEnvironment, row: AudiOverviewRow | null): AutomationOverview {
+    const lifecycleStatus = row ? (CATERPILLAR_LIFECYCLE_MAP[row.lifecycle_status] ?? null) : null;
+    const lastProcessing = row?.execution_state && row.occurred_at
+      ? { occurredAt: new Date(row.occurred_at).toISOString(), outcome: mapAudiExecutionState(row.execution_state) }
+      : null;
     return {
       ...this.base(entry, environment),
-      lifecycleStatus: null,
+      lifecycleStatus,
+      // ops.ejecuciones_automatizacion.documento_origen_id is NOT NULL, same reasoning as Audi
+      // above: a row only exists once a source document was found, so this table cannot represent
+      // a no-work polling cycle. Última revisión is therefore never derivable from it either. Zero
+      // Caterpillar executions today (confirmed) is simply row === null, a normal valid state.
       lastCheckAt: null,
-      lastProcessing: null,
+      lastProcessing,
       nextCheckAt: null,
-      // Never INTEGRATED: never generates a review acknowledgement (Phase 10I §2), and a healthy
-      // review state is never fabricated for it either — same "no fabricated processing state"
-      // rule as lastProcessing above.
+      // Never INTEGRATED (IN_PREPARATION here): never generates a review acknowledgement (Phase
+      // 10I §2), and a healthy review state is never fabricated for it either — same "no
+      // fabricated processing state" rule as lastProcessing above.
       review: NO_REVIEW_PROBLEM
     };
   }
