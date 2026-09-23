@@ -16,8 +16,8 @@ function audi(overrides: Partial<{ execution_id: string; automation_name: string
   return { execution_id: '1', automation_name: 'Remisiones Audi', execution_state: 'COMPLETADA' as const, run_name: null, occurred_at: at, error_node: null, error_message: null, generated_count: 1, minimum_folio: '969', maximum_folio: '969', ...overrides };
 }
 
-function caterpillar(overrides: Partial<{ execution_id: string; automation_name: string; execution_state: 'COMPLETADA' | 'PROCESANDO' | 'ERROR' | 'CANCELADA'; occurred_at: string; source_filename: string; process_key: string | null }> = {}) {
-  return { execution_id: 'activity-test-1', automation_name: 'Remisiones Caterpillar', execution_state: 'COMPLETADA' as const, occurred_at: at, source_filename: 'remision.pdf', process_key: 'CAT_P3_P4_P5_P6|P5|', ...overrides };
+function caterpillar(overrides: Partial<{ execution_id: string; automation_name: string; execution_state: 'COMPLETADA' | 'PROCESANDO' | 'ERROR' | 'CANCELADA'; occurred_at: string; source_filename: string; process_key: string | null; generated_count: number; minimum_folio: string | null; maximum_folio: string | null }> = {}) {
+  return { execution_id: 'activity-test-1', automation_name: 'Remisiones Caterpillar', execution_state: 'COMPLETADA' as const, occurred_at: at, source_filename: 'remision.pdf', process_key: 'CAT_P3_P4_P5_P6|P5|', generated_count: 1, minimum_folio: '119', maximum_folio: '119', ...overrides };
 }
 
 function series(overrides: Partial<{ id: string; series_name: string; folio_before: string; folio_after: string; actor_id: string | null; actor_email: string | null; occurred_at: string }> = {}) {
@@ -473,19 +473,27 @@ describe('RecentActivityService', () => {
     const result = await setup([], [], [], [], [audi({ run_name: 'internal-run', error_node: 'Node 1', error_message: 'raw failure' })]).service.list({ limit: 6 });
 
     expect(result.data).toEqual([{
-      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Remisión 969 generada',
-      entity: 'Remisiones Audi', context: null, occurredAt: at, actor: null
+      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '1 remisión generada',
+      entity: 'Remisiones Audi', context: 'Folio 969', occurredAt: at, actor: null
     }]);
     expect(JSON.stringify(result)).not.toMatch(/internal-run|Node 1|raw failure|execution_id/i);
   });
 
-  it.each([
-    [970, 974, 'Folios 970–974'],
-    [970, 980, null]
-  ] as const)('maps multiple Audi remissions and includes only a contiguous range %#', async (minimum, maximum, context) => {
-    const result = await setup([], [], [], [], [audi({ generated_count: 5, minimum_folio: String(minimum), maximum_folio: String(maximum) })]).service.list({ limit: 6 });
+  it('maps a contiguous multi-remission Audi execution to a truthful folio range', async () => {
+    const result = await setup([], [], [], [], [audi({ generated_count: 5, minimum_folio: '970', maximum_folio: '974' })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '5 remisiones generadas', entity: 'Remisiones Audi', context: 'Folios 970–974' });
+  });
 
-    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '5 remisiones generadas', entity: 'Remisiones Audi', context });
+  it('never states a folio range for a non-contiguous Audi aggregate (gaps between min and max)', async () => {
+    // Folios 969, 970, 973 generated: count=3, min=969, max=973 — must NOT render "Folios 969–973",
+    // which would wrongly imply 971 and 972 were also generated (Phase 12A.6a).
+    const result = await setup([], [], [], [], [audi({ generated_count: 3, minimum_folio: '969', maximum_folio: '973' })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '3 remisiones generadas', entity: 'Remisiones Audi', context: null });
+  });
+
+  it('degrades gracefully with no folio context when an older/incomplete Audi event lacks folio data', async () => {
+    const result = await setup([], [], [], [], [audi({ generated_count: 3, minimum_folio: null, maximum_folio: null })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '3 remisiones generadas', context: null });
   });
 
   it('maps a completed Audi execution without generated remissions', async () => {
@@ -508,31 +516,50 @@ describe('RecentActivityService', () => {
     expect(result.data).toEqual([]);
   });
 
-  it.each([
-    ['COMPLETADA', 'AUTOMATION_COMPLETED', 'Completada'],
-    ['PROCESANDO', 'AUTOMATION_PROCESSING', 'Procesando'],
-    ['ERROR', 'AUTOMATION_FAILED', 'Error'],
-    ['CANCELADA', 'AUTOMATION_CANCELLED', 'Cancelada']
-  ] as const)('maps Caterpillar state %s with process and source filename metadata', async (executionState, type, title) => {
-    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ execution_state: executionState })]).service.list({ limit: 6 });
-
+  it('maps a completed P6-style Caterpillar execution to the singular remission wording', async () => {
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ process_key: 'CAT_P3_P4_P5_P6|P6|', generated_count: 1, minimum_folio: '200', maximum_folio: '200' })]).service.list({ limit: 6 });
     expect(result.data).toEqual([{
-      type, category: 'AUTOMATION', title, entity: 'Remisiones Caterpillar',
-      context: 'P5 · remision.pdf', occurredAt: at, actor: null
+      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '1 remisión generada',
+      entity: 'Remisiones Caterpillar', context: 'P6 · Folio 200', occurredAt: at, actor: null
     }]);
-    expect(JSON.stringify(result)).not.toMatch(/activity-test-1|execution_id/i);
+    expect(JSON.stringify(result)).not.toMatch(/activity-test-1|execution_id|remision\.pdf/i);
+  });
+
+  it('maps a completed P5-style Caterpillar execution with a folio range to the plural remission wording', async () => {
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ generated_count: 5, minimum_folio: '119', maximum_folio: '123' })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '5 remisiones generadas', entity: 'Remisiones Caterpillar', context: 'P5 · Folios 119–123' });
+  });
+
+  it('never states a folio range for a non-contiguous completed Caterpillar aggregate, but still shows the process label', async () => {
+    // Folios 969, 970, 973 generated: count=3, min=969, max=973 — must NOT render "969–973".
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ generated_count: 3, minimum_folio: '969', maximum_folio: '973' })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ type: 'AUTOMATION_COMPLETED', title: '3 remisiones generadas', entity: 'Remisiones Caterpillar', context: 'P5' });
   });
 
   it('uses the explicit undetermined-process label when Caterpillar routing is ambiguous', async () => {
-    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ process_key: null, source_filename: 'ambiguous.pdf' })]).service.list({ limit: 6 });
-    expect(result.data[0]).toMatchObject({ entity: 'Remisiones Caterpillar', context: 'Proceso no determinado · ambiguous.pdf' });
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ process_key: null })]).service.list({ limit: 6 });
+    expect(result.data[0]).toMatchObject({ entity: 'Remisiones Caterpillar', context: 'Proceso no determinado · Folio 119' });
+  });
+
+  it.each([
+    ['PROCESANDO', 'AUTOMATION_PROCESSING', 'Procesando'],
+    ['ERROR', 'AUTOMATION_FAILED', 'Error'],
+    ['CANCELADA', 'AUTOMATION_CANCELLED', 'Cancelada']
+  ] as const)('never uses the generated-remission title for a non-completed Caterpillar execution (%s)', async (executionState, type, title) => {
+    const result = await setup([], [], [], [], [], [], [], [], [caterpillar({ execution_state: executionState, generated_count: 5, minimum_folio: '119', maximum_folio: '123' })]).service.list({ limit: 6 });
+
+    expect(result.data).toEqual([{
+      type, category: 'AUTOMATION', title,
+      entity: 'Remisiones Caterpillar', context: 'P5', occurredAt: at, actor: null
+    }]);
+    expect(result.data[0]?.title).not.toMatch(/remisi(ó|o)n/i);
   });
 
   it('treats zero Caterpillar rows as valid and safely omits malformed rows', async () => {
     await expect(setup([]).service.list({ limit: 6 })).resolves.toEqual({ data: [] });
     const result = await setup([], [], [], [], [], [], [], [], [
-      caterpillar({ automation_name: ' ', source_filename: 'invalid.pdf' }),
-      caterpillar({ source_filename: ' ', occurred_at: 'not-a-date' })
+      caterpillar({ automation_name: ' ' }),
+      caterpillar({ occurred_at: 'not-a-date' })
     ]).service.list({ limit: 6 });
     expect(result.data).toEqual([]);
   });
@@ -543,13 +570,13 @@ describe('RecentActivityService', () => {
       [audi({ occurred_at: '2026-08-25T11:30:00Z' })],
       [], [], [],
       [
-        caterpillar({ execution_id: 'new-cat', occurred_at: '2026-08-25T12:00:00Z', source_filename: 'new.pdf' }),
-        caterpillar({ execution_id: 'old-cat', occurred_at: '2026-08-25T10:00:00Z', source_filename: 'old.pdf' })
+        caterpillar({ execution_id: 'new-cat', occurred_at: '2026-08-25T12:00:00Z', minimum_folio: '200', maximum_folio: '200' }),
+        caterpillar({ execution_id: 'old-cat', occurred_at: '2026-08-25T10:00:00Z', minimum_folio: '100', maximum_folio: '100' })
       ]);
 
     const ordered = await sources.service.list({ limit: 4 });
     expect(ordered.data.map((item) => item.entity)).toEqual(['Remisiones Caterpillar', 'Remisiones Audi', 'Notificaciones de pago', 'Remisiones Caterpillar']);
-    expect(ordered.data.map((item) => item.context)).toEqual(['P5 · new.pdf', null, '1 listo', 'P5 · old.pdf']);
+    expect(ordered.data.map((item) => item.context)).toEqual(['P5 · Folio 200', 'Folio 969', '1 listo', 'P5 · Folio 100']);
 
     const limited = await sources.service.list({ limit: 2 });
     expect(limited.data.map((item) => item.entity)).toEqual(['Remisiones Caterpillar', 'Remisiones Audi']);

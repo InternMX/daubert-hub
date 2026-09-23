@@ -5,7 +5,8 @@ describe('RemisionesCaterpillarActivityRepository', () => {
   it('returns a bounded chronological Caterpillar feed in one query', async () => {
     const rows = [{
       execution_id: '42', automation_name: 'Remisiones Caterpillar', execution_state: 'COMPLETADA',
-      occurred_at: '2026-09-22T20:07:00.000Z', source_filename: 'source.pdf', process_key: 'CAT_P3_P4_P5_P6|P5|'
+      occurred_at: '2026-09-22T20:07:00.000Z', source_filename: 'source.pdf', process_key: 'CAT_P3_P4_P5_P6|P5|',
+      generated_count: 5, minimum_folio: '119', maximum_folio: '123'
     }];
     const query = vi.fn().mockResolvedValue(rows);
     const repository = new RemisionesCaterpillarActivityRepository({ query } as never);
@@ -36,7 +37,7 @@ describe('RemisionesCaterpillarActivityRepository', () => {
     expect(sql).not.toMatch(/REMISION_CAT_|ruta_archivo|Dropbox/i);
   });
 
-  it('does not introduce per-execution detail or remission queries', async () => {
+  it('derives the generated remission count and folio range with one bounded aggregate, no per-execution queries', async () => {
     const query = vi.fn().mockResolvedValue([]);
     const repository = new RemisionesCaterpillarActivityRepository({ query } as never);
 
@@ -44,7 +45,15 @@ describe('RemisionesCaterpillarActivityRepository', () => {
 
     expect(query).toHaveBeenCalledOnce();
     const sql = query.mock.calls[0]?.[0] as string;
+    expect(sql).toContain("count(*) FILTER (WHERE remission.estatus = 'GENERADA')::int AS generated_count");
+    expect(sql).toContain("min(remission.folio) FILTER (WHERE remission.estatus = 'GENERADA') AS minimum_folio");
+    expect(sql).toContain("max(remission.folio) FILTER (WHERE remission.estatus = 'GENERADA') AS maximum_folio");
+    expect(sql).toContain('GROUP BY remission.ejecucion_id');
+    expect(sql).toContain('LEFT JOIN remission_summary summary');
+    expect(sql).toContain('COALESCE(summary.generated_count, 0) AS generated_count');
     expect(sql).not.toContain('remision_detalle');
-    expect(sql).not.toContain('operacion.remisiones ');
+    // Never scoped by parsing operacion.series_documentales.codigo (Phase 12A.3 §B) — the join to
+    // the already-scoped execution rows by ejecucion_id is what keeps this safe.
+    expect(sql).not.toMatch(/JOIN\s+operacion\.series_documentales/);
   });
 });

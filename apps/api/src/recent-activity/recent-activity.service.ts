@@ -6,6 +6,7 @@ import { RecentActivityCategoryFilter, type ListRecentActivityDto } from './dto/
 import { DocumentSeriesActivityRepository, type DocumentSeriesActivityRow } from './document-series-activity.repository';
 import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
 import { RecentActivityRepository, type RecentActivitySource } from './recent-activity.repository';
+import { formatGeneratedFolioRange, formatGeneratedRemissionsTitle } from './remission-activity-presentation';
 import { RemisionesAudiActivityRepository, type RemisionesAudiActivityRow } from './remisiones-audi-activity.repository';
 import { RemisionesCaterpillarActivityRepository, type RemisionesCaterpillarActivityRow } from './remisiones-caterpillar-activity.repository';
 
@@ -220,40 +221,54 @@ export class RecentActivityService {
     if (row.generated_count === 0) {
       return { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Ejecución completada sin remisiones generadas', entity, context: null, occurredAt: occurredAt.toISOString(), actor: null };
     }
-    const minimum = this.positiveBigInt(row.minimum_folio);
-    const maximum = this.positiveBigInt(row.maximum_folio);
-    if (row.generated_count === 1) {
-      const title = minimum !== null && minimum === maximum ? `Remisión ${minimum} generada` : '1 remisión generada';
-      return { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title, entity, context: null, occurredAt: occurredAt.toISOString(), actor: null };
-    }
-    const contiguous = minimum !== null && maximum !== null && maximum >= minimum && BigInt(row.generated_count) === maximum - minimum + 1n;
     return {
       type: 'AUTOMATION_COMPLETED',
       category: 'AUTOMATION',
-      title: `${row.generated_count} remisiones generadas`,
+      title: formatGeneratedRemissionsTitle(row.generated_count),
       entity,
-      context: contiguous ? `Folios ${minimum}–${maximum}` : null,
+      context: formatGeneratedFolioRange(row.generated_count, row.minimum_folio, row.maximum_folio),
       occurredAt: occurredAt.toISOString(),
       actor: null
     };
   }
 
+  // Caterpillar mirrors the Audi title/context convention (Phase 12A.6): a trustworthy completed
+  // aggregate reads "N remisiones generadas" with "{proceso} · {folios}" context, exactly like
+  // Audi's "{folios}" context. Non-completed states keep status-oriented wording and never claim
+  // a remission count from partial/failed rows. The source filename is intentionally dropped from
+  // this presentation — folio/process is more operationally useful and the common activity shape
+  // has no clean secondary slot for it without widening the API contract.
   private caterpillarActivity(row: RemisionesCaterpillarActivityRow): RecentActivityItem | null {
     const occurredAt = new Date(row.occurred_at);
     const entity = row.automation_name?.trim();
-    const filename = row.source_filename?.trim();
     const outcome = mapAudiExecutionState(row.execution_state);
-    if (!entity || !filename || !outcome || !Number.isFinite(occurredAt.getTime())) return null;
+    if (!entity || !outcome || !Number.isFinite(occurredAt.getTime()) || !Number.isInteger(row.generated_count) || row.generated_count < 0) return null;
 
     const processLabel = row.process_key?.trim() ? caterpillarProcessLabel(row.process_key) : 'Proceso no determinado';
-    const presentation = {
-      COMPLETED: { type: 'AUTOMATION_COMPLETED', title: 'Completada' },
-      PROCESSING: { type: 'AUTOMATION_PROCESSING', title: 'Procesando' },
-      FAILED: { type: 'AUTOMATION_FAILED', title: 'Error' },
-      CANCELLED: { type: 'AUTOMATION_CANCELLED', title: 'Cancelada' }
-    } as const;
-    const { type, title } = presentation[outcome];
-    return { type, category: 'AUTOMATION', title, entity, context: `${processLabel} · ${filename}`, occurredAt: occurredAt.toISOString(), actor: null };
+
+    if (outcome !== 'COMPLETED') {
+      const presentation = {
+        PROCESSING: { type: 'AUTOMATION_PROCESSING', title: 'Procesando' },
+        FAILED: { type: 'AUTOMATION_FAILED', title: 'Error' },
+        CANCELLED: { type: 'AUTOMATION_CANCELLED', title: 'Cancelada' }
+      } as const;
+      const { type, title } = presentation[outcome];
+      return { type, category: 'AUTOMATION', title, entity, context: processLabel, occurredAt: occurredAt.toISOString(), actor: null };
+    }
+
+    if (row.generated_count === 0) {
+      return { type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Ejecución completada sin remisiones generadas', entity, context: processLabel, occurredAt: occurredAt.toISOString(), actor: null };
+    }
+    const folioRange = formatGeneratedFolioRange(row.generated_count, row.minimum_folio, row.maximum_folio);
+    return {
+      type: 'AUTOMATION_COMPLETED',
+      category: 'AUTOMATION',
+      title: formatGeneratedRemissionsTitle(row.generated_count),
+      entity,
+      context: folioRange ? `${processLabel} · ${folioRange}` : processLabel,
+      occurredAt: occurredAt.toISOString(),
+      actor: null
+    };
   }
 
   // operacion.ajustes_series is a real human-actor ledger (unlike the two
@@ -267,16 +282,6 @@ export class RecentActivityService {
     if (!entity || !Number.isFinite(occurredAt.getTime())) return null;
     const actor = row.actor_id ? { id: row.actor_id, displayName: actorNames.get(row.actor_id) ?? null, email: row.actor_email } : null;
     return this.item('DOCUMENT_SERIES_ADJUSTED', entity, `${row.folio_before} → ${row.folio_after}`, occurredAt.toISOString(), actor);
-  }
-
-  private positiveBigInt(value: string | null): bigint | null {
-    if (!value) return null;
-    try {
-      const parsed = BigInt(value);
-      return parsed > 0n ? parsed : null;
-    } catch {
-      return null;
-    }
   }
 
   private paymentContext(row: PaymentNotificationActivityRow): string {
