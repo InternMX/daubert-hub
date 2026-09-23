@@ -149,31 +149,43 @@ describe('RecentActivity', () => {
     expect(screen.getAllByText('Remisiones Audi')).toHaveLength(3);
   });
 
+  it('renders a completed Caterpillar execution with the harmonized remission title/context', async () => {
+    listMock.mockResolvedValue([{
+      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '5 remisiones generadas', entity: 'Remisiones Caterpillar',
+      context: 'P5 · Folios 119–123', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
+    }]);
+    renderActivity('/?activityCategory=AUTOMATION');
+
+    const heading = await screen.findByText('5 remisiones generadas');
+    expect(screen.getByText('Remisiones Caterpillar')).toBeInTheDocument();
+    expect(screen.getByText('P5 · Folios 119–123')).toBeInTheDocument();
+    expect(heading.closest('a, button')).toBeNull();
+  });
+
   it.each([
-    ['AUTOMATION_COMPLETED', 'Completada'],
     ['AUTOMATION_PROCESSING', 'Procesando'],
     ['AUTOMATION_FAILED', 'Error'],
     ['AUTOMATION_CANCELLED', 'Cancelada']
-  ] as const)('renders Caterpillar %s with existing metadata and noninteractive behavior', async (type, title) => {
+  ] as const)('renders a non-completed Caterpillar %s state with status wording, never the remission title', async (type, title) => {
     listMock.mockResolvedValue([{
       type, category: 'AUTOMATION', title, entity: 'Remisiones Caterpillar',
-      context: 'P5 · remision.pdf', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
+      context: 'P5', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
     }]);
     renderActivity('/?activityCategory=AUTOMATION');
 
     const heading = await screen.findByText(title);
     expect(screen.getByText('Remisiones Caterpillar')).toBeInTheDocument();
-    expect(screen.getByText('P5 · remision.pdf')).toBeInTheDocument();
+    expect(screen.getByText('P5')).toBeInTheDocument();
     expect(heading.closest('a, button')).toBeNull();
   });
 
   it('renders the Caterpillar undetermined-process fallback without inventing a process', async () => {
     listMock.mockResolvedValue([{
-      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: 'Completada', entity: 'Remisiones Caterpillar',
-      context: 'Proceso no determinado · unknown.pdf', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
+      type: 'AUTOMATION_COMPLETED', category: 'AUTOMATION', title: '1 remisión generada', entity: 'Remisiones Caterpillar',
+      context: 'Proceso no determinado · Folio 200', occurredAt: '2026-09-22T20:07:00.000Z', actor: null
     }]);
     renderActivity('/?activityCategory=AUTOMATION');
-    expect(await screen.findByText('Proceso no determinado · unknown.pdf')).toBeInTheDocument();
+    expect(await screen.findByText('Proceso no determinado · Folio 200')).toBeInTheDocument();
   });
 
   it.each([
