@@ -113,9 +113,11 @@ PostgreSQL and n8n currently remain outside Docker in the pilot architecture.
 ## Database Migrations
 
 Structural schema changes and permission grants are stored externally (in
-`/mnt/c/Users/06/Documents/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES`) and are
-not part of the Git repository. No migrations are run by `npm run dev` or
-`npm run build`.
+`/mnt/c/Users/06/Documents/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES`). Only
+the Caterpillar 12C PROD migration (`20260923_009`, with its read-only
+pre/postchecks) is also versioned, under `database/migrations/daubert_global/`;
+see `docs/deployments/2026-09-24-caterpillar-12c-prod.md`. No migrations are
+run by `npm run dev` or `npm run build`.
 
 ## Basic Testing / Validation Commands
 
