@@ -20,6 +20,14 @@ services:
       DB_USER: "${DB_USER:?DB_USER is required}"
       DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD is required}"
       API_PORT: "${API_PORT:-3000}"
+      # Phase 12C: Hub -> n8n server-to-server webhook for the Caterpillar manual "Reprocesar"
+      # control (apps/api/src/config/environment.ts, caterpillarReprocessWebhook). Required, not
+      # defaulted: an environment running this stack without a real reprocess URL/token should
+      # fail to start rather than silently boot with the endpoint reporting UPSTREAM_UNAVAILABLE
+      # for every request. Values come only from the env file passed via --env-file (see
+      # deploy/README.md) — never hardcoded here, never committed.
+      CATERPILLAR_REPROCESS_WEBHOOK_URL: "${CATERPILLAR_REPROCESS_WEBHOOK_URL:?CATERPILLAR_REPROCESS_WEBHOOK_URL is required}"
+      CATERPILLAR_REPROCESS_WEBHOOK_TOKEN: "${CATERPILLAR_REPROCESS_WEBHOOK_TOKEN:?CATERPILLAR_REPROCESS_WEBHOOK_TOKEN is required}"
     expose:
       - "3000"
     extra_hosts:
