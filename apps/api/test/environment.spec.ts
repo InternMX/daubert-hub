@@ -80,4 +80,32 @@ describe('validateEnvironment', () => {
       expect((result.paymentNotificationsWebhooks as Record<string, unknown>)).not.toHaveProperty('runWebhookUrl');
     });
   });
+
+  describe('caterpillarReprocessWebhook (Phase 12C)', () => {
+    it('defaults every field to null when unset, and never fails validation solely because they are missing', () => {
+      expect(() => validateEnvironment(valid)).not.toThrow();
+      expect(validateEnvironment(valid)).toMatchObject({
+        caterpillarReprocessWebhook: { url: null, token: null }
+      });
+    });
+
+    it('reads the two variables when provided and trims whitespace', () => {
+      expect(validateEnvironment({
+        ...valid,
+        CATERPILLAR_REPROCESS_WEBHOOK_URL: 'http://localhost:5678/webhook-test/cat-test-reprocess',
+        CATERPILLAR_REPROCESS_WEBHOOK_TOKEN: '  secret  '
+      })).toMatchObject({
+        caterpillarReprocessWebhook: {
+          url: 'http://localhost:5678/webhook-test/cat-test-reprocess',
+          token: 'secret'
+        }
+      });
+    });
+
+    it('treats a whitespace-only value as unset', () => {
+      expect(validateEnvironment({ ...valid, CATERPILLAR_REPROCESS_WEBHOOK_TOKEN: '   ' })).toMatchObject({
+        caterpillarReprocessWebhook: { token: null }
+      });
+    });
+  });
 });

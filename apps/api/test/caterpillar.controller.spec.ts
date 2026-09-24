@@ -40,27 +40,106 @@ describe('CaterpillarController', () => {
     await expect(controller.getExecutionDetail('9223372036854775807')).resolves.toEqual({ data: {} });
   });
 
-  // Phase 12A.3 §F: no @Roles(...) anywhere on this controller — every authenticated route with
-  // no declared roles stays open to both ADMIN and GENERAL (RolesGuard), and this module is
-  // read-only operational monitoring, not automation administration.
-  it('declares no @Roles(...) restriction on the controller class or any handler — open to both ADMIN and GENERAL', () => {
+  // Phase 12A.3 §F, refined by Phase 12C: no @Roles(...) at the class level, and the three GET
+  // routes stay open to both ADMIN and GENERAL (RolesGuard) — this module is still read-only
+  // operational monitoring for consultation. Only the new reprocess route is administrative.
+  it('declares no @Roles(...) restriction on the controller class or any GET handler — open to both ADMIN and GENERAL', () => {
     expect(Reflect.getMetadata(ROLES_KEY, CaterpillarController)).toBeUndefined();
     expect(Reflect.getMetadata(ROLES_KEY, CaterpillarController.prototype.listSeries)).toBeUndefined();
     expect(Reflect.getMetadata(ROLES_KEY, CaterpillarController.prototype.listExecutions)).toBeUndefined();
     expect(Reflect.getMetadata(ROLES_KEY, CaterpillarController.prototype.getExecutionDetail)).toBeUndefined();
   });
 
-  // Phase 12A.3 §E: read-only module — every @Get/@Post/etc-decorated route handler on this
-  // controller is GET, and there are exactly three of them (assertExecutionId is a private helper,
-  // not a route, so it deliberately carries no METHOD_METADATA at all).
-  it('exposes no write route (POST/PATCH/PUT/DELETE) — every declared route handler is GET', () => {
+  // Phase 12C: the one mutating route (manual reprocess) is ADMIN-only, mirroring
+  // AutomationsController.adjustDocumentSeries' method-level @Roles('ADMIN') precedent.
+  it('declares @Roles(\'ADMIN\') on the reprocess handler only', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, CaterpillarController.prototype.reprocess)).toEqual(['ADMIN']);
+  });
+
+  // Phase 12A.3 §E, refined by Phase 12C: the three original GET routes remain read-only; the one
+  // new write route (POST executions/:executionId/reprocess) is the sole exception, and is ADMIN-only.
+  it('exposes exactly one write route (POST reprocess); every other declared route handler is GET', () => {
     const proto = CaterpillarController.prototype as unknown as Record<string, object>;
     const routeHandlers = Object.getOwnPropertyNames(proto)
       .filter((name) => name !== 'constructor')
       .filter((name) => Reflect.getMetadata(METHOD_METADATA, proto[name]!) !== undefined);
-    expect(routeHandlers.sort()).toEqual(['getExecutionDetail', 'listExecutions', 'listSeries'].sort());
+    expect(routeHandlers.sort()).toEqual(['getExecutionDetail', 'listExecutions', 'listSeries', 'reprocess'].sort());
     for (const name of routeHandlers) {
-      expect(Reflect.getMetadata(METHOD_METADATA, proto[name]!)).toBe(RequestMethod.GET);
+      const expected = name === 'reprocess' ? RequestMethod.POST : RequestMethod.GET;
+      expect(Reflect.getMetadata(METHOD_METADATA, proto[name]!)).toBe(expected);
     }
+  });
+
+  describe('reprocess', () => {
+    function mockResponse() {
+      return { status: vi.fn() };
+    }
+
+    it.each(['0', '-1', '01', '1.0', 'abc', '', '9223372036854775808'])('rejects invalid executionId %s before calling the service', async (executionId) => {
+      const reprocess = vi.fn();
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      await expect(controller.reprocess(executionId, { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 400 });
+      expect(reprocess).not.toHaveBeenCalled();
+    });
+
+    it('delegates to the service with executionId, reason, requestId, and the identity derived from the request', async () => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      const request = { requestId: 'req-1', user: { id: '9', email: 'admin@test.mx' } } as never;
+      await controller.reprocess('153', { reason: 'motivo' }, request, mockResponse() as never);
+      expect(reprocess).toHaveBeenCalledWith('153', 'motivo', 'req-1', { userId: '9', userEmail: 'admin@test.mx' });
+    });
+
+    it.each([
+      ['REPROCESS_CREATED'],
+      ['ALREADY_PROCESSING']
+    ] as const)('returns the default 202 status and a stable response body for %s', async (status) => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome: status, originalExecutionId: '153', executionId: '154' });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      const response = mockResponse();
+      const result = await controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, response as never);
+      expect(result).toEqual({ accepted: true, originalExecutionId: '153', executionId: '154', status });
+      expect(response.status).not.toHaveBeenCalled();
+    });
+
+    it('sets the response status to 200 for ALREADY_REPROCESSED, overriding the 202 default', async () => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome: 'ALREADY_REPROCESSED', originalExecutionId: '153', executionId: '154' });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      const response = mockResponse();
+      const result = await controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, response as never);
+      expect(response.status).toHaveBeenCalledWith(200);
+      expect(result).toEqual({ accepted: true, originalExecutionId: '153', executionId: '154', status: 'ALREADY_REPROCESSED' });
+    });
+
+    it('throws NotFoundException for NOT_FOUND', async () => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome: 'NOT_FOUND', originalExecutionId: '153', executionId: null });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 404 });
+    });
+
+    it.each([
+      ['NOT_ELIGIBLE_STATE'],
+      ['SOURCE_FILE_MISSING'],
+      ['OUTSIDE_TEST_SCOPE']
+    ] as const)('throws ConflictException (409) for %s', async (outcome) => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '153', executionId: null });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('throws GatewayTimeoutException (504) for UPSTREAM_TIMEOUT', async () => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome: 'UPSTREAM_TIMEOUT', originalExecutionId: '153', executionId: null });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 504 });
+    });
+
+    it.each([
+      ['UPSTREAM_UNAVAILABLE'],
+      ['UPSTREAM_INVALID_RESPONSE']
+    ] as const)('throws BadGatewayException (502) for %s', async (outcome) => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '153', executionId: null });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 502 });
+    });
   });
 });

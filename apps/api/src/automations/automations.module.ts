@@ -17,6 +17,7 @@ import { AudiExecutionsService } from './remisiones-audi/audi-executions.service
 import { CaterpillarController } from './remisiones-caterpillar/caterpillar.controller';
 import { CaterpillarExecutionsRepository } from './remisiones-caterpillar/caterpillar-executions.repository';
 import { CaterpillarExecutionsService } from './remisiones-caterpillar/caterpillar-executions.service';
+import { CaterpillarReprocessWebhookClient } from './remisiones-caterpillar/caterpillar-reprocess-webhook.client';
 import { CaterpillarRoutingRepository } from './remisiones-caterpillar/caterpillar-routing.repository';
 import { CaterpillarRoutingService } from './remisiones-caterpillar/caterpillar-routing.service';
 import { ReviewAcknowledgementsController } from './review/review-acknowledgements.controller';
@@ -32,7 +33,7 @@ import { AutomationTriggerRequestsRepository } from './trigger-requests/automati
     PaymentNotificationsService, PaymentNotificationsRepository, PaymentNotificationsWebhookClient,
     AutomationsOverviewService, AutomationsOverviewRepository,
     AudiExecutionsService, AudiExecutionsRepository,
-    CaterpillarExecutionsService, CaterpillarExecutionsRepository,
+    CaterpillarExecutionsService, CaterpillarExecutionsRepository, CaterpillarReprocessWebhookClient,
     CaterpillarRoutingService, CaterpillarRoutingRepository,
     ReviewAcknowledgementsService, ReviewAcknowledgementsRepository,
     AutomationTriggerRequestsRepository

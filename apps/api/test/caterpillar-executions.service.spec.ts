@@ -22,6 +22,7 @@ function setup(options: {
   remissions?: unknown[];
   details?: unknown[];
   routes?: CaterpillarProcessRoute[];
+  webhookResult?: unknown;
 } = {}) {
   const repository = {
     list: vi.fn().mockResolvedValue(options.listResult ?? { total: 0, executions: [] }),
@@ -31,9 +32,13 @@ function setup(options: {
     findDetailsByRemisionIds: vi.fn().mockResolvedValue(options.details ?? [])
   };
   const routing = { listRoutes: vi.fn().mockResolvedValue(options.routes ?? [p2Route, torreonRoute, torreonPlanta2Route]) };
-  const service = new CaterpillarExecutionsService(repository as never, routing as never);
-  return { service, repository, routing };
+  const webhookClient = { triggerReprocess: vi.fn().mockResolvedValue(options.webhookResult ?? { kind: 'NOT_CONFIGURED' }) };
+  const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
+  const service = new CaterpillarExecutionsService(repository as never, routing as never, webhookClient as never, triggerRequests as never);
+  return { service, repository, routing, webhookClient, triggerRequests };
 }
+
+const identity = { userId: '1', userEmail: 'admin@test.mx' };
 
 describe('CaterpillarExecutionsService', () => {
   describe('list', () => {
@@ -161,6 +166,72 @@ describe('CaterpillarExecutionsService', () => {
       const { service } = setup({ findByIdResult: execution, remissions });
       const { data } = await service.getDetail('5');
       expect(typeof data.remittances[0]?.pdfPath).toBe('string');
+    });
+  });
+
+  describe('reprocess', () => {
+    it('throws BadRequestException when the identity has no resolvable email, before ever calling the webhook', async () => {
+      const { service, webhookClient } = setup();
+      await expect(service.reprocess('153', 'motivo', 'req-1', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
+    });
+
+    it('forwards only executionId and reason to the webhook client, nothing else', async () => {
+      const { service, webhookClient } = setup({ webhookResult: { kind: 'ACCEPTED', status: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' } });
+      await service.reprocess('153', 'motivo del reproceso', 'req-1', identity);
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('153', 'motivo del reproceso');
+    });
+
+    it.each([
+      ['REPROCESS_CREATED'],
+      ['ALREADY_PROCESSING'],
+      ['ALREADY_REPROCESSED']
+    ] as const)('maps an ACCEPTED webhook result with status %s straight through, recording a TRIGGERED audit row', async (status) => {
+      const { service, triggerRequests } = setup({ webhookResult: { kind: 'ACCEPTED', status, originalExecutionId: '153', executionId: '154' } });
+      const result = await service.reprocess('153', 'motivo', 'req-1', identity);
+      expect(result).toEqual({ outcome: status, originalExecutionId: '153', executionId: '154' });
+      expect(triggerRequests.record).toHaveBeenCalledWith('REMISIONES_CATERPILLAR', 'REPROCESS', 'TRIGGERED', 'req-1', identity, '153');
+    });
+
+    it.each([
+      ['NOT_FOUND'],
+      ['NOT_ELIGIBLE_STATE'],
+      ['SOURCE_FILE_MISSING'],
+      ['OUTSIDE_TEST_SCOPE']
+    ] as const)('maps a known REJECTED reason %s through unchanged, recording a NOTHING_TO_REPROCESS audit row and no child executionId', async (reason) => {
+      const { service, triggerRequests } = setup({ webhookResult: { kind: 'REJECTED', reason } });
+      const result = await service.reprocess('153', 'motivo', 'req-1', identity);
+      expect(result).toEqual({ outcome: reason, originalExecutionId: '153', executionId: null });
+      expect(triggerRequests.record).toHaveBeenCalledWith('REMISIONES_CATERPILLAR', 'REPROCESS', 'NOTHING_TO_REPROCESS', 'req-1', identity, '153');
+    });
+
+    it('maps a TIMEOUT webhook result to UPSTREAM_TIMEOUT, recording an UPSTREAM_ERROR audit row', async () => {
+      const { service, triggerRequests } = setup({ webhookResult: { kind: 'TIMEOUT' } });
+      const result = await service.reprocess('153', 'motivo', 'req-1', identity);
+      expect(result).toEqual({ outcome: 'UPSTREAM_TIMEOUT', originalExecutionId: '153', executionId: null });
+      expect(triggerRequests.record).toHaveBeenCalledWith('REMISIONES_CATERPILLAR', 'REPROCESS', 'UPSTREAM_ERROR', 'req-1', identity, '153');
+    });
+
+    it.each([
+      ['NOT_CONFIGURED'],
+      ['NETWORK_ERROR']
+    ] as const)('maps webhook kind %s to UPSTREAM_UNAVAILABLE', async (kind) => {
+      const { service } = setup({ webhookResult: { kind } });
+      const result = await service.reprocess('153', 'motivo', 'req-1', identity);
+      expect(result.outcome).toBe('UPSTREAM_UNAVAILABLE');
+    });
+
+    it('maps an INVALID_RESPONSE webhook result to UPSTREAM_INVALID_RESPONSE', async () => {
+      const { service } = setup({ webhookResult: { kind: 'INVALID_RESPONSE' } });
+      const result = await service.reprocess('153', 'motivo', 'req-1', identity);
+      expect(result.outcome).toBe('UPSTREAM_INVALID_RESPONSE');
+    });
+
+    it('never lets an audit-write failure surface as a failed reprocess request (best-effort, swallowed)', async () => {
+      const { service, triggerRequests } = setup({ webhookResult: { kind: 'ACCEPTED', status: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' } });
+      triggerRequests.record.mockRejectedValueOnce(new Error('db unavailable'));
+      const result = await service.reprocess('153', 'motivo', 'req-1', identity);
+      expect(result).toEqual({ outcome: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' });
     });
   });
 });

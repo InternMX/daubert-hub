@@ -36,6 +36,15 @@ export interface EnvironmentConfig {
     reprocessWebhookUrl: string | null;
     webhookToken: string | null;
   };
+  // Phase 12C: Hub -> n8n server-to-server webhook config for Caterpillar's manual "Reprocesar"
+  // control (mirrors paymentNotificationsWebhooks exactly — see that field's comment for the
+  // rationale: deliberately optional, never required() at boot, missing config simply reports a
+  // sanitized upstream-unavailable outcome at call time). Never read anywhere else, never logged,
+  // never returned in any API response.
+  caterpillarReprocessWebhook: {
+    url: string | null;
+    token: string | null;
+  };
 }
 
 function required(value: string | undefined, name: string): string {
@@ -93,6 +102,10 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
     paymentNotificationsWebhooks: {
       reprocessWebhookUrl: env.PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL?.trim() || null,
       webhookToken: env.PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN?.trim() || null
+    },
+    caterpillarReprocessWebhook: {
+      url: env.CATERPILLAR_REPROCESS_WEBHOOK_URL?.trim() || null,
+      token: env.CATERPILLAR_REPROCESS_WEBHOOK_TOKEN?.trim() || null
     }
   };
 }

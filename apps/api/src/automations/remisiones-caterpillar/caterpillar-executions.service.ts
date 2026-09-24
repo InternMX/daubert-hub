@@ -1,5 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { AuditIdentity } from '../../common/authenticated-request';
 import { mapAudiExecutionState, type AudiProcessingOutcome } from '../audi-processing-status';
+import { AutomationTriggerRequestsRepository } from '../trigger-requests/automation-trigger-requests.repository';
+import { CaterpillarReprocessWebhookClient } from './caterpillar-reprocess-webhook.client';
 import type { ListCaterpillarExecutionsDto } from './dto/list-caterpillar-executions.dto';
 import {
   CaterpillarExecutionsRepository,
@@ -10,6 +13,32 @@ import {
   type CaterpillarReservationRow
 } from './caterpillar-executions.repository';
 import { CaterpillarRoutingService, resolveCaterpillarProcessLabel, type CaterpillarProcessRoute } from './caterpillar-routing.service';
+
+const AUTOMATION_CODE = 'REMISIONES_CATERPILLAR';
+
+// The Hub-facing outcome vocabulary for a reprocess request. Superset of
+// CaterpillarReprocessAcceptedStatus/CaterpillarReprocessRejectionReason (both of which pass
+// through unchanged) plus the Hub's own upstream-failure classification — see
+// CaterpillarController.reprocess for the exact HTTP status each one maps to.
+export type CaterpillarReprocessOutcome =
+  | 'REPROCESS_CREATED'
+  | 'ALREADY_PROCESSING'
+  | 'ALREADY_REPROCESSED'
+  | 'NOT_FOUND'
+  | 'NOT_ELIGIBLE_STATE'
+  | 'SOURCE_FILE_MISSING'
+  | 'OUTSIDE_TEST_SCOPE'
+  | 'UPSTREAM_TIMEOUT'
+  | 'UPSTREAM_UNAVAILABLE'
+  | 'UPSTREAM_INVALID_RESPONSE';
+
+export interface CaterpillarReprocessResult {
+  outcome: CaterpillarReprocessOutcome;
+  originalExecutionId: string;
+  // Only ever set alongside an ACCEPTED-class outcome (REPROCESS_CREATED/ALREADY_PROCESSING/
+  // ALREADY_REPROCESSED) — n8n never hands back a child execution id for a rejected/failed request.
+  executionId: string | null;
+}
 
 export interface CaterpillarExecutionSummary {
   executionId: string;
@@ -97,9 +126,13 @@ export interface CaterpillarExecutionDetailResponse {
 
 @Injectable()
 export class CaterpillarExecutionsService {
+  private readonly logger = new Logger(CaterpillarExecutionsService.name);
+
   constructor(
     private readonly repository: CaterpillarExecutionsRepository,
-    private readonly routing: CaterpillarRoutingService
+    private readonly routing: CaterpillarRoutingService,
+    private readonly webhookClient: CaterpillarReprocessWebhookClient,
+    private readonly triggerRequests: AutomationTriggerRequestsRepository
   ) {}
 
   // Zero Caterpillar executions in production today is a normal, valid state (Phase 12A.3 §C) —
@@ -147,6 +180,72 @@ export class CaterpillarExecutionsService {
         remittances: remissions.map((remission) => this.mapRemittance(remission, details))
       }
     };
+  }
+
+  // Phase 12C: React never calls n8n directly — this is the one path from an authenticated ADMIN
+  // request (CaterpillarController, @Roles('ADMIN')) to the n8n manual-reprocess webhook. The Hub
+  // sends only executionId + reason; n8n/PostgreSQL resolve the source document, path,
+  // automation, plant, and series entirely on their own side (Phase 12C.2/12C.2a) — this method
+  // never derives or forwards any of that itself.
+  //
+  // Idempotency is NOT reimplemented here: n8n/PostgreSQL already guarantee first request ->
+  // REPROCESS_CREATED, repeat while processing -> ALREADY_PROCESSING, repeat after -> already
+  // has a child) -> ALREADY_REPROCESSED (Phase 12C.2a §B). This method only translates that
+  // existing contract into the Hub's own response shape — never a second idempotency key, lock,
+  // or operational record of its own.
+  async reprocess(executionId: string, reason: string, requestId: string, identity: AuditIdentity): Promise<CaterpillarReprocessResult> {
+    this.assertIdentity(identity);
+    const webhookResult = await this.webhookClient.triggerReprocess(executionId, reason);
+
+    if (webhookResult.kind === 'ACCEPTED') {
+      await this.recordTriggerRequestSafely('TRIGGERED', requestId, identity, executionId);
+      return { outcome: webhookResult.status, originalExecutionId: webhookResult.originalExecutionId, executionId: webhookResult.executionId };
+    }
+
+    if (webhookResult.kind === 'REJECTED') {
+      // webhookResult.reason is exactly one of the four known domain rejections here — the
+      // webhook client itself refuses to construct a REJECTED with anything else (an
+      // unrecognized error code is INVALID_RESPONSE, handled below, never a fabricated domain
+      // rejection). No further mapping/fallback needed.
+      await this.recordTriggerRequestSafely('NOTHING_TO_REPROCESS', requestId, identity, executionId);
+      return { outcome: webhookResult.reason, originalExecutionId: executionId, executionId: null };
+    }
+
+    // NOT_CONFIGURED, TIMEOUT, NETWORK_ERROR, INVALID_RESPONSE — all upstream contract
+    // breaks/failures, never a business outcome (an unrecognized accepted/error shape from n8n
+    // is INVALID_RESPONSE, not guessed at as a known rejection). Distinguish only timeout (504)
+    // from every other upstream failure (502), matching CaterpillarController's HTTP mapping.
+    await this.recordTriggerRequestSafely('UPSTREAM_ERROR', requestId, identity, executionId);
+    const outcome: CaterpillarReprocessOutcome = webhookResult.kind === 'TIMEOUT'
+      ? 'UPSTREAM_TIMEOUT'
+      : webhookResult.kind === 'INVALID_RESPONSE'
+        ? 'UPSTREAM_INVALID_RESPONSE'
+        : 'UPSTREAM_UNAVAILABLE';
+    return { outcome, originalExecutionId: executionId, executionId: null };
+  }
+
+  private assertIdentity(identity: AuditIdentity): void {
+    if (!identity.userEmail) throw new BadRequestException('No se pudo determinar el usuario autenticado.');
+  }
+
+  // Best-effort audit trail, written AFTER the webhook call has already resolved — a failure here
+  // must never surface as if the reprocess request itself failed (mirrors
+  // PaymentNotificationsService.recordTriggerRequestSafely exactly). ops.automation_trigger_requests'
+  // outcome column is CHECK-constrained to ('TRIGGERED','NOTHING_TO_REPROCESS','UPSTREAM_ERROR') —
+  // the richer n8n/Hub outcome vocabulary above is intentionally collapsed to that existing
+  // 3-value enum rather than widening the table (Phase 12C §15 — see final report for the
+  // pending-migration note this implies).
+  private async recordTriggerRequestSafely(
+    outcome: 'TRIGGERED' | 'NOTHING_TO_REPROCESS' | 'UPSTREAM_ERROR',
+    requestId: string,
+    identity: AuditIdentity,
+    targetReference: string
+  ): Promise<void> {
+    try {
+      await this.triggerRequests.record(AUTOMATION_CODE, 'REPROCESS', outcome, requestId, identity, targetReference);
+    } catch (error) {
+      this.logger.error(`Failed to record automation trigger request audit row (automationCode=${AUTOMATION_CODE}, actionType=REPROCESS, outcome=${outcome}, requestId=${requestId})`, error instanceof Error ? error.stack : error);
+    }
   }
 
   private mapSummary(execution: CaterpillarExecutionRow, routes: CaterpillarProcessRoute[]): CaterpillarExecutionSummary {
