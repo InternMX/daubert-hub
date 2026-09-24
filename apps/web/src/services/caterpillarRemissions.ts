@@ -300,3 +300,61 @@ export async function getCaterpillarExecution(executionId: string): Promise<Cate
   }
   return body.data;
 }
+
+// Phase 12C: manual reprocess. Mirrors AutomationApiError's shape (status + the backend's own
+// sanitized message) rather than the plain CaterpillarApiError above — the Hub's 409 responses
+// carry three genuinely different domain reasons (NOT_ELIGIBLE_STATE/SOURCE_FILE_MISSING/
+// OUTSIDE_TEST_SCOPE) as distinct, correctly-worded Spanish messages, and this displays those
+// directly instead of a second hardcoded status->text table that could drift from the backend.
+export class CaterpillarReprocessApiError extends Error {
+  constructor(public readonly status: number, public readonly serverMessage: string | undefined = undefined) {
+    super('Caterpillar reprocess request failed');
+  }
+}
+
+export type CaterpillarReprocessStatus = 'REPROCESS_CREATED' | 'ALREADY_PROCESSING' | 'ALREADY_REPROCESSED';
+
+export interface CaterpillarReprocessResult {
+  originalExecutionId: string;
+  executionId: string;
+  status: CaterpillarReprocessStatus;
+}
+
+const reprocessStatuses = new Set<CaterpillarReprocessStatus>(['REPROCESS_CREATED', 'ALREADY_PROCESSING', 'ALREADY_REPROCESSED']);
+
+// Mirrors only what the frontend actually needs to branch on — not a re-implementation of the
+// Hub's own strict upstream-contract validation (that already happened server-side). Rejects
+// arbitrary/malformed JSON rather than trusting it blindly, consistent with every other response
+// parser in this file.
+function isReprocessResult(value: unknown): value is CaterpillarReprocessResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return item.accepted === true
+    && isNonEmptyString(item.originalExecutionId)
+    && isNonEmptyString(item.executionId)
+    && typeof item.status === 'string' && reprocessStatuses.has(item.status as CaterpillarReprocessStatus);
+}
+
+// The Hub never accepts (and this never sends) a file path, documento_origen_id, plant, series,
+// or automation code from the browser — only executionId (in the path, exactly as received,
+// never Number()) and reason. n8n/PostgreSQL resolve everything else server-side (Phase 12C).
+export async function reprocessCaterpillarExecution(executionId: string, reason: string): Promise<CaterpillarReprocessResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/automations/remissions/caterpillar/executions/${encodeURIComponent(executionId)}/reprocess`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason })
+    });
+  } catch { throw new CaterpillarReprocessApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : null;
+    const message = record && typeof record.message === 'string' ? record.message : undefined;
+    throw new CaterpillarReprocessApiError(response.status, message);
+  }
+  if (!isReprocessResult(body)) throw new CaterpillarReprocessApiError(response.status, undefined);
+  // Only the fields this app actually uses — never the raw `accepted` envelope field or anything
+  // else the Hub's response might carry.
+  return { originalExecutionId: body.originalExecutionId, executionId: body.executionId, status: body.status };
+}

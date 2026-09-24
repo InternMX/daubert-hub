@@ -4,7 +4,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../auth/authContext.core';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
-import type { AutomationSeriesConfiguration } from '../services/automations';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import {
   getCaterpillarExecution,
@@ -16,27 +15,26 @@ import {
   type ListCaterpillarExecutions
 } from '../services/caterpillarRemissions';
 import { AdjustNextFolioDialog } from './AdjustNextFolioDialog';
+import { CaterpillarReprocessDialog } from './CaterpillarReprocessDialog';
 import {
   caterpillarFolioRangeLabel,
   caterpillarOutcomeLabel,
   caterpillarOutcomeSeverity,
   caterpillarProcessLabelOrUndetermined,
+  caterpillarReprocessSuccessMessage,
   caterpillarStatusLabel,
   caterpillarStatusSeverity,
   formatCaterpillarDate,
   formatCaterpillarTimestamp,
   integrationStatusLabel,
   remittanceStatusLabel,
-  reservationStatusLabel
+  reservationStatusLabel,
+  wideOnlyProcessColumnSx
 } from './caterpillarPresentation';
 import { lifecycleStatusLabel } from './automationOverviewPresentation';
 
 const automationCode = 'REMISIONES_CATERPILLAR';
 const EXECUTIONS_PAGE_SIZE = 25;
-
-// Keep the operational columns visible in constrained desktop windows; route identifiers and
-// series codes return once the viewport reaches the theme's full-desktop breakpoint.
-export const wideOnlyProcessColumnSx = { display: { xs: 'none', lg: 'table-cell' } } as const;
 
 function SectionSpinner({ label }: { label: string }) {
   return <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress aria-label={label} size={28} /></Box>;
@@ -153,8 +151,11 @@ function ProcessesSection() {
   }, [retry]);
 
   // On success, re-fetch from the API rather than optimistically patching local state — the
-  // displayed siguiente_folio always reflects the actual committed value (Phase 12B.2 §K).
-  function handleAdjusted(_configuration: AutomationSeriesConfiguration) {
+  // displayed siguiente_folio always reflects the actual committed value (Phase 12B.2 §K). The
+  // updated configuration itself is never needed here (AdjustNextFolioDialog's onAdjusted passes
+  // it, but this handler always re-fetches instead of reading it), so it is not declared as a
+  // parameter — a function with fewer parameters remains assignable to the callback's type.
+  function handleAdjusted() {
     setFeedback('El siguiente folio se actualizó correctamente.');
     setRetry((value) => value + 1);
   }
@@ -237,11 +238,17 @@ interface ExecutionsSectionProps {
   page: number;
   onPageChange: (page: number) => void;
   onSelect: (executionId: string) => void;
+  // Phase 12C: bumped by the page after a successful reprocess so the new (initially PROCESANDO,
+  // later COMPLETADA) child execution eventually appears here. This is the existing manual-refresh
+  // mechanism already used for folio adjustment (ProcessesSection's own `retry`) — no polling, no
+  // websocket: an immediate refetch right after the request, plus the section's own "Reintentar"
+  // control for anything later.
+  refreshKey: number;
 }
 
 // §4: zero executions today is an intentional, useful empty state — never an error illustration
 // (Phase 12A.4 §F: this exact current production state must render well).
-function ExecutionsSection({ page, onPageChange, onSelect }: ExecutionsSectionProps) {
+function ExecutionsSection({ page, onPageChange, onSelect, refreshKey }: ExecutionsSectionProps) {
   const [result, setResult] = useState<ListCaterpillarExecutions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -256,7 +263,7 @@ function ExecutionsSection({ page, onPageChange, onSelect }: ExecutionsSectionPr
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [page, retry]);
+  }, [page, retry, refreshKey]);
 
   if (loading) return <SectionSpinner label="Cargando ejecuciones recientes" />;
   if (error) {
@@ -333,10 +340,45 @@ function DetailSectionHeading({ children }: { children: ReactNode }) {
   return <Typography variant="h3" sx={{ fontSize: '0.9375rem', fontWeight: 700, mt: 3, mb: 1 }}>{children}</Typography>;
 }
 
+// Phase 12C §D: ADMIN-only, and only presented when the displayed outcome is FAILED (ERROR) or
+// CANCELLED (CANCELADA). This is UX guidance, never security — @Roles('ADMIN') on the backend
+// route is the real enforcement, and the backend/n8n remains free to reject an apparently-eligible
+// execution (e.g. its state changed since this dialog opened, or its source file went missing);
+// that rejection is always surfaced via caterpillarReprocessErrorMessage, never hidden.
+function CaterpillarReprocessAction({ executionId, outcome, sourceFilename, onReprocessed }: {
+  executionId: string;
+  outcome: CaterpillarExecutionDetail['outcome'];
+  sourceFilename: string;
+  onReprocessed: (message: string) => void;
+}) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const [open, setOpen] = useState(false);
+
+  if (!isAdmin || (outcome !== 'FAILED' && outcome !== 'CANCELLED')) return null;
+
+  return (
+    <>
+      <Button size="small" variant="outlined" onClick={() => setOpen(true)}>Reprocesar</Button>
+      <CaterpillarReprocessDialog
+        open={open}
+        executionId={executionId}
+        outcome={outcome}
+        sourceFilename={sourceFilename}
+        onClose={() => setOpen(false)}
+        onReprocessed={(result) => {
+          setOpen(false);
+          onReprocessed(caterpillarReprocessSuccessMessage(result));
+        }}
+      />
+    </>
+  );
+}
+
 // §5: a Dialog, not a new full page — the closest existing Hub interaction pattern for
 // supplementary read-only information triggered from a table row (Phase 12A.4 §5 explicitly
 // prefers Dialog/Drawer over a new route for this).
-function ExecutionDetailDialog({ executionId, onClose }: { executionId: string | null; onClose: () => void }) {
+function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { executionId: string | null; onClose: () => void; onReprocessed: (message: string) => void }) {
   const [detail, setDetail] = useState<CaterpillarExecutionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -370,7 +412,15 @@ function ExecutionDetailDialog({ executionId, onClose }: { executionId: string |
         )}
         {!loading && !error && detail && (
           <>
-            <DetailSectionHeading>General</DetailSectionHeading>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+              <DetailSectionHeading>General</DetailSectionHeading>
+              <CaterpillarReprocessAction
+                executionId={detail.executionId}
+                outcome={detail.outcome}
+                sourceFilename={detail.sourceDocument.filename}
+                onReprocessed={onReprocessed}
+              />
+            </Box>
             <MetaRow label="ID ejecución" value={<Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{detail.executionId}</Typography>} />
             <MetaRow label="Estado" value={<OutcomeChip outcome={detail.outcome} />} />
             <MetaRow label="Inicio" value={<Typography variant="body2">{formatCaterpillarTimestamp(detail.startedAt)}</Typography>} />
@@ -456,6 +506,16 @@ function ExecutionDetailDialog({ executionId, onClose }: { executionId: string |
 export function CaterpillarRemissionsPage() {
   const [executionsPage, setExecutionsPage] = useState(1);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [executionsRefreshKey, setExecutionsRefreshKey] = useState(0);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Phase 12C: the original execution is never mutated by a reprocess request (its detail stays
+  // exactly as loaded — nothing to refetch there), so this only bumps the executions list's
+  // refresh key. The dialog itself already closed via onReprocessed before this runs.
+  function handleReprocessed(message: string) {
+    setFeedback(message);
+    setExecutionsRefreshKey((value) => value + 1);
+  }
 
   return (
     <>
@@ -478,11 +538,12 @@ export function CaterpillarRemissionsPage() {
 
         <Box component="section" aria-labelledby="caterpillar-executions-title">
           <Typography id="caterpillar-executions-title" variant="h2">Ejecuciones recientes</Typography>
-          <ExecutionsSection page={executionsPage} onPageChange={setExecutionsPage} onSelect={setSelectedExecutionId} />
+          <ExecutionsSection page={executionsPage} onPageChange={setExecutionsPage} onSelect={setSelectedExecutionId} refreshKey={executionsRefreshKey} />
         </Box>
       </Stack>
 
-      <ExecutionDetailDialog executionId={selectedExecutionId} onClose={() => setSelectedExecutionId(null)} />
+      <ExecutionDetailDialog executionId={selectedExecutionId} onClose={() => setSelectedExecutionId(null)} onReprocessed={handleReprocessed} />
+      <Snackbar open={Boolean(feedback)} autoHideDuration={5000} onClose={() => setFeedback(null)} message={feedback} />
     </>
   );
 }

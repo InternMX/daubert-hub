@@ -5,16 +5,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { adjustDocumentSeries, AutomationApiError, type AutomationSeriesConfiguration } from '../services/automations';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import {
+  CaterpillarReprocessApiError,
   getCaterpillarExecution,
   listCaterpillarExecutions,
   listCaterpillarSeries,
+  reprocessCaterpillarExecution,
   type CaterpillarExecutionDetail,
   type CaterpillarExecutionSummary,
   type CaterpillarProcessRoute,
   type ListCaterpillarExecutions
 } from '../services/caterpillarRemissions';
 import { testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
-import { CaterpillarRemissionsPage, wideOnlyProcessColumnSx } from './CaterpillarRemissionsPage';
+import { wideOnlyProcessColumnSx } from './caterpillarPresentation';
+import { CaterpillarRemissionsPage } from './CaterpillarRemissionsPage';
 
 vi.mock('../services/automations', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/automations')>()),
@@ -28,7 +31,8 @@ vi.mock('../services/caterpillarRemissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/caterpillarRemissions')>()),
   listCaterpillarSeries: vi.fn(),
   listCaterpillarExecutions: vi.fn(),
-  getCaterpillarExecution: vi.fn()
+  getCaterpillarExecution: vi.fn(),
+  reprocessCaterpillarExecution: vi.fn()
 }));
 
 const overviewMock = vi.mocked(listAutomationsOverview);
@@ -36,6 +40,7 @@ const seriesMock = vi.mocked(listCaterpillarSeries);
 const executionsMock = vi.mocked(listCaterpillarExecutions);
 const detailMock = vi.mocked(getCaterpillarExecution);
 const adjustMock = vi.mocked(adjustDocumentSeries);
+const reprocessMock = vi.mocked(reprocessCaterpillarExecution);
 
 function caterpillarOverview(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
   return {
@@ -594,11 +599,13 @@ describe('CaterpillarRemissionsPage', () => {
   });
 
   describe('no write actions (§H)', () => {
-    // Phase 12B.2 §K: "Ajustar folio" is the one deliberate, newly-authorized ADMIN-only write
-    // action (series next-folio adjustment) — a separate, explicit product decision, not a
-    // regression of this rule. Execution monitoring itself remains fully read-only: no
-    // Reprocesar/Activar/Desactivar/Cambiar serie/Cancelar action exists anywhere on this page.
-    it('renders no execution-monitoring write actions — no Reprocesar, Activar, Desactivar, Cambiar serie, or Cancelar', async () => {
+    // Phase 12B.2 §K: "Ajustar folio" is one deliberate, newly-authorized ADMIN-only write action
+    // (series next-folio adjustment). Phase 12C adds a second, narrowly-scoped one: "Reprocesar",
+    // only ever rendered inside the execution detail dialog once it's open, for ADMIN, and only for
+    // an ERROR/CANCELADA execution (see the dedicated "reprocess (Phase 12C)" describe block below)
+    // — never in this list view itself. Activar/Desactivar/Cambiar serie/Cancelar remain entirely
+    // absent everywhere on this page.
+    it('renders no Activar, Desactivar, Cambiar serie, or Cancelar action, and no Reprocesar in the list view (no dialog open)', async () => {
       executionsMock.mockResolvedValue(executionsResponse([executionSummary()]));
       renderPage();
       await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
@@ -622,6 +629,142 @@ describe('CaterpillarRemissionsPage', () => {
       // this page performs zero raw fetch calls of its own.
       expect(fetchSpy).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
+    });
+  });
+
+  // Phase 12C: manual reprocess. The ERROR/CANCELADA (FAILED/CANCELLED) + ADMIN gate is UX only —
+  // real enforcement is the backend's @Roles('ADMIN'); the backend/n8n can still reject an
+  // apparently-eligible execution, and that rejection is always surfaced (never hidden or retried
+  // automatically).
+  describe('reprocess (Phase 12C)', () => {
+    async function openDetailDialog(user: ReturnType<typeof userEvent.setup>) {
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      await user.click(within(table).getByText('remision_p2.pdf'));
+      return screen.findByRole('dialog');
+    }
+
+    function setupExecution(outcome: CaterpillarExecutionDetail['outcome']) {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome })]));
+      detailMock.mockResolvedValue(executionDetail({ outcome }));
+    }
+
+    it('ADMIN + ERROR (FAILED) sees Reprocesar', async () => {
+      setupExecution('FAILED');
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).getByRole('button', { name: 'Reprocesar' })).toBeInTheDocument();
+    });
+
+    it('ADMIN + CANCELADA (CANCELLED) sees Reprocesar', async () => {
+      setupExecution('CANCELLED');
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).getByRole('button', { name: 'Reprocesar' })).toBeInTheDocument();
+    });
+
+    it('ADMIN + COMPLETADA (COMPLETED) does not see Reprocesar', async () => {
+      setupExecution('COMPLETED');
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+    });
+
+    it('ADMIN + PROCESANDO (PROCESSING) does not see Reprocesar', async () => {
+      setupExecution('PROCESSING');
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+    });
+
+    it('GENERAL + ERROR does not see Reprocesar', async () => {
+      setupExecution('FAILED');
+      const user = userEvent.setup();
+      renderPage(testGeneralUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+    });
+
+    it('REPROCESS_CREATED: shows the success snackbar, closes the reprocess dialog, and refreshes the executions list', async () => {
+      setupExecution('FAILED');
+      reprocessMock.mockResolvedValue({ originalExecutionId: '9007199254740993', executionId: '154', status: 'REPROCESS_CREATED' });
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const detailDialog = await openDetailDialog(user);
+      const callsBeforeReprocess = executionsMock.mock.calls.length;
+
+      await user.click(within(detailDialog).getByRole('button', { name: 'Reprocesar' }));
+      const reprocessDialog = await screen.findByRole('dialog', { name: 'Reprocesar ejecución' });
+      await user.type(within(reprocessDialog).getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo de prueba');
+      await user.click(within(reprocessDialog).getByRole('button', { name: 'Reprocesar' }));
+
+      expect(await screen.findByText('Reproceso iniciado correctamente. Nueva ejecución: #154')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Reprocesar ejecución' })).not.toBeInTheDocument());
+      // The original execution's own detail dialog stays open (never mutated/closed) while the
+      // executions list refetches in the background to eventually reveal the new child.
+      expect(screen.getByRole('dialog', { name: 'Detalle de ejecución' })).toBeInTheDocument();
+      await waitFor(() => expect(executionsMock.mock.calls.length).toBeGreaterThan(callsBeforeReprocess));
+    });
+
+    it('ALREADY_PROCESSING: shows the correct message and refreshes, without mentioning an executionId', async () => {
+      setupExecution('FAILED');
+      reprocessMock.mockResolvedValue({ originalExecutionId: '9007199254740993', executionId: '154', status: 'ALREADY_PROCESSING' });
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const detailDialog = await openDetailDialog(user);
+      await user.click(within(detailDialog).getByRole('button', { name: 'Reprocesar' }));
+      const reprocessDialog = await screen.findByRole('dialog', { name: 'Reprocesar ejecución' });
+      await user.type(within(reprocessDialog).getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo');
+      await user.click(within(reprocessDialog).getByRole('button', { name: 'Reprocesar' }));
+      expect(await screen.findByText('El reproceso ya está en curso.')).toBeInTheDocument();
+    });
+
+    it('ALREADY_REPROCESSED: shows the informative message with the existing executionId, never as an error', async () => {
+      setupExecution('FAILED');
+      reprocessMock.mockResolvedValue({ originalExecutionId: '9007199254740993', executionId: '154', status: 'ALREADY_REPROCESSED' });
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const detailDialog = await openDetailDialog(user);
+      await user.click(within(detailDialog).getByRole('button', { name: 'Reprocesar' }));
+      const reprocessDialog = await screen.findByRole('dialog', { name: 'Reprocesar ejecución' });
+      await user.type(within(reprocessDialog).getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo');
+      await user.click(within(reprocessDialog).getByRole('button', { name: 'Reprocesar' }));
+      expect(await screen.findByText('Esta ejecución ya fue reprocesada. Reproceso existente: #154')).toBeInTheDocument();
+    });
+
+    it.each([
+      [404, undefined, 'La ejecución ya no existe o no está disponible.'],
+      [409, 'Esta ejecución no está en un estado elegible para reproceso.', 'Esta ejecución no está en un estado elegible para reproceso.'],
+      [502, undefined, 'No fue posible comunicarse correctamente con la automatización.'],
+      [504, undefined, 'La automatización tardó demasiado en responder.']
+    ] as const)('HTTP %d shows the mapped error message inside the reprocess dialog', async (status, serverMessage, expectedMessage) => {
+      setupExecution('FAILED');
+      reprocessMock.mockRejectedValue(new CaterpillarReprocessApiError(status, serverMessage));
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const detailDialog = await openDetailDialog(user);
+      await user.click(within(detailDialog).getByRole('button', { name: 'Reprocesar' }));
+      const reprocessDialog = await screen.findByRole('dialog', { name: 'Reprocesar ejecución' });
+      await user.type(within(reprocessDialog).getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo');
+      await user.click(within(reprocessDialog).getByRole('button', { name: 'Reprocesar' }));
+      expect(await within(reprocessDialog).findByText(expectedMessage)).toBeInTheDocument();
+    });
+
+    it('never exposes the n8n token or webhook URL anywhere in the rendered page after an error', async () => {
+      setupExecution('FAILED');
+      reprocessMock.mockRejectedValue(new Error('fetch failed http://host.docker.internal:5678/webhook-test/cat-test-reprocess token=secret-value'));
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const detailDialog = await openDetailDialog(user);
+      await user.click(within(detailDialog).getByRole('button', { name: 'Reprocesar' }));
+      const reprocessDialog = await screen.findByRole('dialog', { name: 'Reprocesar ejecución' });
+      await user.type(within(reprocessDialog).getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo');
+      await user.click(within(reprocessDialog).getByRole('button', { name: 'Reprocesar' }));
+      await screen.findByRole('alert');
+      expect(document.body.textContent).not.toMatch(/token|webhook|5678/i);
     });
   });
 });

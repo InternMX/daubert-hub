@@ -1,6 +1,15 @@
 import type { AutomationIntegrationStatus } from '../services/automationsOverview';
-import type { CaterpillarStatus } from '../services/caterpillarRemissions';
+import { CaterpillarReprocessApiError, type CaterpillarReprocessResult, type CaterpillarStatus } from '../services/caterpillarRemissions';
 import { lifecycleStatusLabel, processingOutcomeLabel, processingOutcomeSeverity, type ProcessingOutcomeSeverity } from './automationOverviewPresentation';
+
+// Moved here from CaterpillarRemissionsPage.tsx (lint fix, no behavior change): that file exports
+// the CaterpillarRemissionsPage component, and react-refresh/only-export-components requires a
+// component file to export only components — a plain style-threshold constant living there broke
+// Fast Refresh. This file already exports only non-components, so it's the correct home.
+//
+// Keep the operational columns visible in constrained desktop windows; route identifiers and
+// series codes return once the viewport reaches the theme's full-desktop breakpoint.
+export const wideOnlyProcessColumnSx = { display: { xs: 'none', lg: 'table-cell' } } as const;
 
 // Reuses the automation-overview ACTIVE/INACTIVE -> Activa/Inactiva translation and the
 // COMPLETED/FAILED/PROCESSING/CANCELLED outcome vocabulary (Phase 12A.4 §C/§D — same backend
@@ -93,4 +102,30 @@ export function formatCaterpillarTimestamp(value: string | null): string {
 export function caterpillarFolioRangeLabel(minimumFolio: string | null, maximumFolio: string | null): string {
   if (!minimumFolio || !maximumFolio) return '—';
   return minimumFolio === maximumFolio ? minimumFolio : `${minimumFolio}–${maximumFolio}`;
+}
+
+// Phase 12C: a 202 does not always mean REPROCESS_CREATED — ALREADY_PROCESSING shares that same
+// HTTP status, and ALREADY_REPROCESSED is a 200. The Hub's parsed `status` field (never the raw
+// HTTP code) is the only thing this ever branches on. Neither ALREADY_PROCESSING nor
+// ALREADY_REPROCESSED is ever presented as an error — both are legitimate, informative outcomes.
+export function caterpillarReprocessSuccessMessage(result: CaterpillarReprocessResult): string {
+  if (result.status === 'REPROCESS_CREATED') return `Reproceso iniciado correctamente. Nueva ejecución: #${result.executionId}`;
+  if (result.status === 'ALREADY_PROCESSING') return 'El reproceso ya está en curso.';
+  return `Esta ejecución ya fue reprocesada. Reproceso existente: #${result.executionId}`;
+}
+
+// 409 covers three genuinely different domain reasons (NOT_ELIGIBLE_STATE/SOURCE_FILE_MISSING/
+// OUTSIDE_TEST_SCOPE) — the backend already produces a distinct, correctly-worded Spanish message
+// for each (CaterpillarController.rejectIfError), so that message is shown directly rather than
+// re-deriving it from the HTTP status alone, which cannot tell the three apart. Infrastructure
+// failures (502/504) and anything else always use fixed, generic copy — never raw upstream/network
+// detail, a stack trace, or any internal variable, regardless of what the backend's message says.
+export function caterpillarReprocessErrorMessage(error: unknown): string {
+  if (error instanceof CaterpillarReprocessApiError) {
+    if (error.status === 404) return 'La ejecución ya no existe o no está disponible.';
+    if (error.status === 409) return error.serverMessage ?? 'Esta ejecución ya no es elegible para reproceso.';
+    if (error.status === 502) return 'No fue posible comunicarse correctamente con la automatización.';
+    if (error.status === 504) return 'La automatización tardó demasiado en responder.';
+  }
+  return 'No fue posible solicitar el reproceso. Intenta nuevamente.';
 }

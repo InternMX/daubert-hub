@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CaterpillarApiError,
+  CaterpillarReprocessApiError,
   getCaterpillarExecution,
   listCaterpillarExecutions,
   listCaterpillarSeries,
+  reprocessCaterpillarExecution,
   type CaterpillarExecutionDetail,
   type CaterpillarExecutionSummary,
   type CaterpillarProcessRoute
@@ -200,5 +202,69 @@ describe('getCaterpillarExecution', () => {
   ])('rejects malformed responses: %s', async (_label, body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)));
     await expect(getCaterpillarExecution('5')).rejects.toBeInstanceOf(CaterpillarApiError);
+  });
+});
+
+describe('reprocessCaterpillarExecution', () => {
+  it('POSTs to the reprocess endpoint with the exact executionId, a body containing only reason, and returns the parsed result', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: '161', executionId: '162', status: 'REPROCESS_CREATED' }, 202));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await reprocessCaterpillarExecution('161', 'Motivo de prueba');
+
+    expect(result).toEqual({ originalExecutionId: '161', executionId: '162', status: 'REPROCESS_CREATED' });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain('/automations/remissions/caterpillar/executions/161/reprocess');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'Motivo de prueba' });
+  });
+
+  it('never sends a file path, documento_origen_id, plant, series, or automation code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: '161', executionId: '162', status: 'REPROCESS_CREATED' }, 202));
+    vi.stubGlobal('fetch', fetchMock);
+    await reprocessCaterpillarExecution('161', 'Motivo');
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(Object.keys(JSON.parse(init.body as string))).toEqual(['reason']);
+  });
+
+  it('keeps a BIGINT executionId beyond Number.MAX_SAFE_INTEGER as a string in the URL, never coerced', async () => {
+    const bigIntId = '9223372036854775807';
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: bigIntId, executionId: '2', status: 'REPROCESS_CREATED' }, 202));
+    vi.stubGlobal('fetch', fetchMock);
+    await reprocessCaterpillarExecution(bigIntId, 'Motivo');
+    expect(fetchMock.mock.calls[0]![0]).toContain(bigIntId);
+  });
+
+  it.each([
+    ['ALREADY_PROCESSING', 202],
+    ['ALREADY_REPROCESSED', 200]
+  ] as const)('parses a valid %s response at HTTP %d', async (status, httpStatus) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: '161', executionId: '162', status }, httpStatus)));
+    const result = await reprocessCaterpillarExecution('161', 'Motivo');
+    expect(result.status).toBe(status);
+  });
+
+  it('rejects a 404 as CaterpillarReprocessApiError carrying the backend message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: 404, message: 'Ejecución de Caterpillar no encontrada.' }, 404)));
+    await expect(reprocessCaterpillarExecution('999999', 'Motivo')).rejects.toMatchObject({ status: 404, serverMessage: 'Ejecución de Caterpillar no encontrada.' });
+  });
+
+  it.each([409, 502, 504])('rejects an HTTP %d as CaterpillarReprocessApiError', async (status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ statusCode: status, message: 'mensaje' }, status)));
+    const error = await reprocessCaterpillarExecution('161', 'Motivo').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CaterpillarReprocessApiError);
+    expect((error as CaterpillarReprocessApiError).status).toBe(status);
+  });
+
+  it('rejects a malformed accepted body (unrecognized status) as CaterpillarReprocessApiError, never trusting it blindly', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: '161', executionId: '162', status: 'NOT_A_REAL_STATUS' }, 202)));
+    await expect(reprocessCaterpillarExecution('161', 'Motivo')).rejects.toBeInstanceOf(CaterpillarReprocessApiError);
+  });
+
+  it('propagates a network failure as CaterpillarReprocessApiError without leaking the underlying error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down at http://internal-n8n-host/secret-token')));
+    const error = await reprocessCaterpillarExecution('161', 'Motivo').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CaterpillarReprocessApiError);
+    expect(JSON.stringify(error)).not.toMatch(/secret-token|internal-n8n-host/i);
   });
 });
