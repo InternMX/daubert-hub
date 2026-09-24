@@ -70,7 +70,8 @@ describe('CaterpillarReprocessWebhookClient', () => {
       ['NOT_FOUND', 404],
       ['NOT_ELIGIBLE_STATE', 409],
       ['SOURCE_FILE_MISSING', 409],
-      ['OUTSIDE_TEST_SCOPE', 409]
+      ['OUTSIDE_TEST_SCOPE', 409],
+      ['OUTSIDE_ALLOWED_SCOPE', 409]
     ] as const)('parses a rejected %s response at HTTP %d', async (reason, status) => {
       global.fetch = vi.fn().mockResolvedValue(jsonResponse(status, { accepted: false, error: reason })) as never;
       const client = new CaterpillarReprocessWebhookClient(configWith() as never);
@@ -79,6 +80,12 @@ describe('CaterpillarReprocessWebhookClient', () => {
 
     it('treats an unrecognized rejection error code as an upstream contract break (INVALID_RESPONSE), never a fabricated domain rejection', async () => {
       global.fetch = vi.fn().mockResolvedValue(jsonResponse(400, { accepted: false, error: 'SOME_NEW_ERROR' })) as never;
+      const client = new CaterpillarReprocessWebhookClient(configWith() as never);
+      await expect(client.triggerReprocess('153', 'motivo')).resolves.toEqual({ kind: 'INVALID_RESPONSE' });
+    });
+
+    it.each(['OUTSIDE_SCOPE', 'OUTSIDE_ALLOWED_SCOPE_2', 'outside_allowed_scope', 'OUTSIDE_PROD_SCOPE'])('treats the near-miss scope code %s at HTTP 409 as INVALID_RESPONSE, not a rejection', async (error) => {
+      global.fetch = vi.fn().mockResolvedValue(jsonResponse(409, { accepted: false, error })) as never;
       const client = new CaterpillarReprocessWebhookClient(configWith() as never);
       await expect(client.triggerReprocess('153', 'motivo')).resolves.toEqual({ kind: 'INVALID_RESPONSE' });
     });

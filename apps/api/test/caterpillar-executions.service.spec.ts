@@ -197,7 +197,8 @@ describe('CaterpillarExecutionsService', () => {
       ['NOT_FOUND'],
       ['NOT_ELIGIBLE_STATE'],
       ['SOURCE_FILE_MISSING'],
-      ['OUTSIDE_TEST_SCOPE']
+      ['OUTSIDE_TEST_SCOPE'],
+      ['OUTSIDE_ALLOWED_SCOPE']
     ] as const)('maps a known REJECTED reason %s through unchanged, recording a NOTHING_TO_REPROCESS audit row and no child executionId', async (reason) => {
       const { service, triggerRequests } = setup({ webhookResult: { kind: 'REJECTED', reason } });
       const result = await service.reprocess('153', 'motivo', 'req-1', identity);

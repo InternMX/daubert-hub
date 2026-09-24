@@ -10,7 +10,14 @@ import type { EnvironmentConfig } from '../../config/environment';
 // accepted/error) that n8n itself validates server-side — so this client also validates that
 // body's shape before trusting it. Arbitrary/malformed JSON from n8n is never passed through.
 export type CaterpillarReprocessAcceptedStatus = 'REPROCESS_CREATED' | 'ALREADY_PROCESSING' | 'ALREADY_REPROCESSED';
-export type CaterpillarReprocessRejectionReason = 'NOT_FOUND' | 'NOT_ELIGIBLE_STATE' | 'SOURCE_FILE_MISSING' | 'OUTSIDE_TEST_SCOPE';
+// OUTSIDE_TEST_SCOPE is what the TEST n8n workflow returns; OUTSIDE_ALLOWED_SCOPE is its production
+// counterpart. Both mean the same thing to the Hub (a valid domain rejection, HTTP 409).
+export type CaterpillarReprocessRejectionReason =
+  | 'NOT_FOUND'
+  | 'NOT_ELIGIBLE_STATE'
+  | 'SOURCE_FILE_MISSING'
+  | 'OUTSIDE_TEST_SCOPE'
+  | 'OUTSIDE_ALLOWED_SCOPE';
 
 export type CaterpillarReprocessWebhookResult =
   | { kind: 'ACCEPTED'; status: CaterpillarReprocessAcceptedStatus; originalExecutionId: string; executionId: string }
@@ -24,7 +31,7 @@ const WEBHOOK_TIMEOUT_MS = 10_000;
 const WEBHOOK_HEADER_NAME = 'X-Daubert-Automation-Token';
 
 const ACCEPTED_STATUSES = new Set<string>(['REPROCESS_CREATED', 'ALREADY_PROCESSING', 'ALREADY_REPROCESSED']);
-const KNOWN_REJECTION_REASONS = new Set<string>(['NOT_FOUND', 'NOT_ELIGIBLE_STATE', 'SOURCE_FILE_MISSING', 'OUTSIDE_TEST_SCOPE']);
+const KNOWN_REJECTION_REASONS = new Set<string>(['NOT_FOUND', 'NOT_ELIGIBLE_STATE', 'SOURCE_FILE_MISSING', 'OUTSIDE_TEST_SCOPE', 'OUTSIDE_ALLOWED_SCOPE']);
 
 @Injectable()
 export class CaterpillarReprocessWebhookClient {
@@ -103,7 +110,7 @@ export class CaterpillarReprocessWebhookClient {
     // An error code this client does not recognize (e.g. a future n8n rejection it hasn't been
     // taught about yet) is a contract break, not a domain outcome — it must never be surfaced as
     // a REJECTED (which the Hub maps to a 404/409-class response implying "we understood your
-    // request and it's not eligible"). Only the four known reasons above are ever REJECTED;
+    // request and it's not eligible"). Only the known reasons above are ever REJECTED;
     // anything else is INVALID_RESPONSE, which the Hub maps to 502.
     return { kind: 'INVALID_RESPONSE' };
   }

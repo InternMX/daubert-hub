@@ -120,11 +120,20 @@ describe('CaterpillarController', () => {
     it.each([
       ['NOT_ELIGIBLE_STATE'],
       ['SOURCE_FILE_MISSING'],
-      ['OUTSIDE_TEST_SCOPE']
+      ['OUTSIDE_TEST_SCOPE'],
+      ['OUTSIDE_ALLOWED_SCOPE']
     ] as const)('throws ConflictException (409) for %s', async (outcome) => {
       const reprocess = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '153', executionId: null });
       const controller = new CaterpillarController({} as never, { reprocess } as never);
       await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 409 });
+    });
+
+    it.each([['OUTSIDE_TEST_SCOPE'], ['OUTSIDE_ALLOWED_SCOPE']] as const)('uses the same generic public message for %s, exposing neither the code nor any internal detail', async (outcome) => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '153', executionId: null });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      const rejection = controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never);
+      await expect(rejection).rejects.toMatchObject({ status: 409, message: 'La ejecución no pertenece al ámbito permitido para este entorno.' });
+      await expect(rejection).rejects.not.toThrow(/SCOPE|TEST|n8n|webhook/i);
     });
 
     it('throws GatewayTimeoutException (504) for UPSTREAM_TIMEOUT', async () => {

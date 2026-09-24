@@ -93,7 +93,7 @@ export class CaterpillarController {
     if (outcome === 'NOT_FOUND') throw new NotFoundException('Ejecución de Caterpillar no encontrada.');
     if (outcome === 'NOT_ELIGIBLE_STATE') throw new ConflictException('Esta ejecución no está en un estado elegible para reproceso.');
     if (outcome === 'SOURCE_FILE_MISSING') throw new ConflictException('El archivo origen ya no está disponible para reprocesar.');
-    if (outcome === 'OUTSIDE_TEST_SCOPE') throw new ConflictException('Esta ejecución no puede reprocesarse en este entorno.');
+    if (outcome === 'OUTSIDE_TEST_SCOPE' || outcome === 'OUTSIDE_ALLOWED_SCOPE') throw new ConflictException('La ejecución no pertenece al ámbito permitido para este entorno.');
     if (outcome === 'UPSTREAM_TIMEOUT') throw new GatewayTimeoutException('El servicio de automatización no respondió a tiempo.');
     if (outcome === 'UPSTREAM_UNAVAILABLE' || outcome === 'UPSTREAM_INVALID_RESPONSE') throw new BadGatewayException('No se pudo iniciar el reproceso en este momento.');
   }
