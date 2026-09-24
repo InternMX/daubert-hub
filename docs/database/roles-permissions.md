@@ -42,6 +42,8 @@ Nota de implementación: el bloqueo de fila del ajuste usa `FOR UPDATE OF series
 | `ops.fn_resolver_ejecucion_para_reproceso` | `EXECUTE` (009) |
 | Tablas (heredado de Remisiones Audi, `20260827_004`) | `SELECT, INSERT` en `core.documentos`; `SELECT` en `ops.automatizaciones`; `SELECT, INSERT, UPDATE` en `ops.ejecuciones_automatizacion`; `SELECT, UPDATE` en `operacion.series_documentales`; `SELECT, INSERT, UPDATE` en `operacion.remisiones`; `SELECT, INSERT` en `operacion.remision_detalle` (+ secuencias) |
 
+> **Verificado en D2:** el workflow de Audi usa efectivamente SQL directo (INSERT/UPDATE sobre `core.documentos`, `ops.ejecuciones_automatizacion`, `operacion.remisiones`, `operacion.remision_detalle` y `SELECT` sobre series/automatizaciones/empresas) más `operacion.reservar_folios`; el workflow de Notificaciones de pago usa SQL directo sobre `core.correos_notificacion_pago`, `core.borradores_notificacion_pago`, `core.resultados_notificacion_pago` y la vista `core.vw_catalogo_notificacion_pago_n8n`; Caterpillar usa sólo funciones. Ver los `database-contract.md` de cada automatización. Qué rol respalda cada credencial n8n (`Postgres produccion`, `Postgres pruebas`, `cat_test`) no es demostrable desde los JSON: tarea de D3.
+
 ⚠️ **Riesgo conocido:** por ser un rol compartido y heredar los grants directos de Audi, `n8n_app` tiene `UPDATE` directo sobre `operacion.series_documentales` (puede alterar `siguiente_folio` fuera de las funciones). En TEST, `n8n_cat_test` **no** tiene ningún grant directo. El paquete de despliegue declara que **no** se redujeron los privilegios previos de `n8n_app`. Endurecer esto es candidato a Fase D2/seguridad (ver [ADR-002](../decisions/ADR-002-n8n-app-rol-compartido-prod.md)).
 
 ## `n8n_cat_test` (TEST)

@@ -1,6 +1,6 @@
 # Caterpillar — Reproceso manual
 
-Fuentes: `caterpillar.controller.ts`, `caterpillar-executions.service.ts`, `caterpillar-reprocess-webhook.client.ts`, `reprocess-caterpillar-execution.dto.ts`, `CaterpillarReprocessDialog.tsx`, migración 009, nota de despliegue 12C. Los puntos que dependen del workflow n8n se marcan como *Descripción de proyecto*.
+Fuentes: `caterpillar.controller.ts`, `caterpillar-executions.service.ts`, `caterpillar-reprocess-webhook.client.ts`, `reprocess-caterpillar-execution.dto.ts`, `CaterpillarReprocessDialog.tsx`, migración 009, nota de despliegue 12C y (Fase D2) el export real del workflow: [prod/workflow.json](../../../n8n/workflows/remisiones-caterpillar/prod/workflow.json). Flujo detallado: [workflow.md](workflow.md#flujo-de-reproceso-webhook).
 
 ## Qué es y por qué existe
 
@@ -59,7 +59,23 @@ Lista **cerrada** (`KNOWN_REJECTION_REASONS`):
 
 n8n devuelve los rechazos con HTTP 400/404/409/422; el Hub sólo intenta interpretar como rechazo esos cuatro códigos HTTP.
 
-> **`SOURCE_DOCUMENT_MISSING` no existe en el código.** Aparece en el brief de la Fase D1 pero **no** en `KNOWN_REJECTION_REASONS`. Un `error` desconocido se trata como *ruptura de contrato* → `INVALID_RESPONSE` → **502**, nunca como un rechazo de dominio inventado. Si se desea soportarlo, hay que añadirlo en el cliente, el servicio, el controlador, la UI y los tests.
+> **`SOURCE_DOCUMENT_MISSING` no está soportado por el Hub**, pero **sí existe en el workflow n8n** (PROD y TEST): `Validar elegibilidad reproceso CAT` lo devuelve (HTTP 409) cuando la fila resuelta no trae `documento_origen_id`, ruta o nombre. Como no está en `KNOWN_REJECTION_REASONS`, el Hub lo trata como *ruptura de contrato* → `INVALID_RESPONSE` → **502**. En la práctica es casi inalcanzable (el resolver hace `JOIN` interno con `core.documentos`, así que un documento inexistente ya produce `NOT_FOUND`), pero es una inconsistencia real: ver la sección siguiente.
+
+### Discrepancias Hub ↔ n8n (verificadas en D2)
+
+Comparación del contrato del Hub (`caterpillar-reprocess-webhook.client.ts`) con las respuestas reales del workflow (`Responder …` en el export):
+
+| Respuesta real de n8n | HTTP n8n | ¿Soportada por el Hub? | Qué ve el Hub |
+| --- | --- | --- | --- |
+| `accepted:true` + `REPROCESS_CREATED` / `ALREADY_PROCESSING` / `ALREADY_REPROCESSED` | **202** (los tres) | Sí (acepta cualquier 2xx) | 202 (o 200 para `ALREADY_REPROCESSED`, decidido por el Hub) |
+| `NOT_FOUND`, `NOT_ELIGIBLE_STATE`, `SOURCE_FILE_MISSING`, `OUTSIDE_ALLOWED_SCOPE` (`OUTSIDE_TEST_SCOPE` en TEST) | **409** | Sí | 404 / 409 / 409 / 409 |
+| `SOURCE_DOCUMENT_MISSING` | 409 | **No** | 502 (`INVALID_RESPONSE`) |
+| `SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING` (falla de `Detectar archivo REPROCESS CAT1`) | 422 | **No** | 502 (`INVALID_RESPONSE`) |
+| `INVALID_EXECUTION_ID` / `INVALID_REASON` | 400 | **No** (el Hub ya valida antes, prácticamente inalcanzable) | 502 |
+| `INTERNAL_ERROR` (falla de `Resolver ejecución original PG`) | 500 | No (5xx = upstream) | 502 |
+| `UNEXPECTED_EXECUTION_STATE` | 500 | No | 502 |
+
+Notas: (1) `SOURCE_FILE_MISSING` lo detecta `Validar elegibilidad…` (archivo ausente al momento de validar); si el archivo desaparece **después**, lo captura `Detectar archivo REPROCESS CAT1` y el resultado es `SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING` (422), no `SOURCE_FILE_MISSING`. (2) El texto de la respuesta 202 llega **antes** de que termine el pipeline. (3) No se corrigió nada: son hallazgos para una fase de código.
 
 ### Fallos que el Hub genera (no vienen de n8n)
 
@@ -92,7 +108,7 @@ Si la escritura de auditoría falla, **no** hace fallar el reproceso (se registr
 | Repetida después de que la hija existe | `ALREADY_REPROCESSED` | Índice único por padre + rama `ALREADY_REPROCESSED` (009) — nunca se propaga un `23505` crudo |
 | Doble clic / concurrentes | Una sola hija | El índice único es la garantía; el Hub **no** tiene lock ni clave de idempotencia propios |
 
-Nada en PostgreSQL impide que una hija que termine en `ERROR` sea a su vez reprocesada (nieta, `reproceso_de_id` = la hija). Si n8n lo permite o no es lógica del workflow: PENDIENTE de confirmar.
+Nada en PostgreSQL impide que una hija que termine en `ERROR` sea a su vez reprocesada (nieta, `reproceso_de_id` = la hija). El workflow **tampoco lo impide**: `Validar elegibilidad reproceso CAT` sólo exige estado `ERROR`/`CANCELADA`, ruta real, proceso habilitado y archivo existente; una hija en `ERROR` es reprocesable (crea una nieta con `reproceso_de_id` = la hija).
 
 ## Seguridad
 
@@ -105,7 +121,7 @@ Nada en PostgreSQL impide que una hija que termine en `ERROR` sea a su vez repro
 | `SECURITY DEFINER` + `REVOKE PUBLIC` | El resolver y `fn_crear_ejecucion_automatizacion` tienen `search_path` fijo y no son ejecutables por `PUBLIC`; el Hub (`daubert_hub_app`) **no** tiene `EXECUTE` sobre el resolver. |
 | **PostgreSQL es la fuente de verdad** | Estado, ownership e idempotencia se deciden en la BD, no en el Hub ni en el frontend. |
 | **Scope por rutas reales** | El resolver sólo ve ejecuciones `REMISIONES_CATERPILLAR`; el ámbito de rutas/procesos lo aplica el workflow (`OUTSIDE_*_SCOPE`). |
-| `PROCESOS_HABILITADOS_PROD` | Lista de procesos permitidos en el workflow PROD (P2, P5, P6 hoy). *Descripción de proyecto*; no está en el repo. |
+| `PROCESOS_HABILITADOS_PROD` | Lista de procesos permitidos en el workflow PROD (P2, P5, P6 hoy): constante en dos nodos Code del workflow ([workflow.md](workflow.md#puntos-verificados)); no está en el Hub ni en PostgreSQL. |
 | Series inactivas | Aunque una ruta existiera, `reservar_folios_para_ejecucion` rechaza series `INACTIVA` (`55000`). |
 | **Fail closed** | Cualquier respuesta desconocida, ruta inactiva, serie inactiva, ámbito no permitido o resolución ambigua termina en rechazo/502, nunca en una acción "adivinada". |
 | Respuestas sanitizadas | El Hub nunca reenvía el cuerpo crudo de n8n, la URL ni el token; los 5xx llevan mensaje genérico. |

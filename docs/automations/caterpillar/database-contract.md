@@ -68,3 +68,28 @@ Traducción en API/Web: `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED`.
 | `documentos.*` | `sourceDocument` |
 | `reservas_folios` | `reservations` |
 | `remisiones` + `remision_detalle` | `remittances[].details` |
+
+## Contrato desde n8n (verificado en el export, Fase D2)
+
+Workflow PROD `Remisiones CAT Produccion PG` — credencial `Postgres produccion`; TEST `MANUAL TEST REMISIONES CAT` — credencial `cat_test`. D3 documentará PostgreSQL objeto por objeto; aquí sólo lo que el workflow usa.
+
+| Nodo `postgres` | Función / consulta | Argumentos |
+| --- | --- | --- |
+| `Resolver documento origen PG` | `SELECT * FROM core.fn_crear_o_resolver_documento($1::bigint,$2::text,$3::text,$4::text,$5::text,$6::date,$7::text)` | empresa (**constante en el nodo**: distinta en TEST y PROD), `PROGRAMACION_ENTREGA`, nombre, ruta, `DROPBOX`, fecha, hash SHA-256 |
+| `Crear o recuperar ejecución PG` | `ops.fn_crear_ejecucion_automatizacion($1::text,$2::bigint,$3::text,$4::text,$5::bigint)` | `REMISIONES_CATERPILLAR`, documento, id de ejecución n8n, `run_name`, `reproceso_de_id` o `null` |
+| `Reservar folios PG` | `operacion.reservar_folios_para_ejecucion($1::bigint,$2::text,$3::integer)` | ejecución, serie, cantidad |
+| `Registrar remisión PG` | `operacion.fn_registrar_remision_generada($1::bigint,$2::text,$3::bigint,$4::date,$5::text,$6::jsonb)` | ejecución, serie, folio, fecha, `pdf_path`, detalles |
+| `Finalizar ejecución PG` | `ops.fn_finalizar_ejecucion_automatizacion($1::bigint,$2::text,$3::text,$4::text)` | ejecución, `COMPLETADA`, `null`, `null` |
+| `Registrar fallo PG` | `ops.fn_registrar_fallo_ejecucion($1::bigint,$2::text,$3::text,$4::text)` | ejecución, id de ejecución n8n, nodo, mensaje |
+| `Resolver ejecución original PG` | `ops.fn_resolver_ejecucion_para_reproceso($1::bigint)` | `executionId` |
+
+| Concepto | Resultado |
+| --- | --- |
+| Tablas leídas directamente | **Ninguna** (todo por funciones) |
+| Tablas escritas directamente | **Ninguna** |
+| Consultas directas (`SELECT` sobre tablas) | Ninguna |
+| Funciones llamadas | Las 7 de arriba |
+| `ops.fn_resolver_ruta_automatizacion` | **No se usa**: el ruteo planta → serie está **hardcodeado** en `Preparar reserva folios PG` (el catálogo de rutas de PostgreSQL no es consultado por el workflow) |
+| Base TEST / PROD | `daubert_hub_test` (credencial `cat_test`) / `daubert_global` (`Postgres produccion`); el JSON no contiene el nombre de la base, se infiere del nombre de la credencial |
+
+> **Observación:** como el workflow no consulta `ops.automatizacion_series_proceso`, agregar/activar una ruta en PostgreSQL **no** basta para habilitar un proceso: hay que editar el workflow (detector, `PROCESOS_HABILITADOS_PROD`, mapeo de serie). Por el contrario, PostgreSQL sigue rechazando reservar de una serie `INACTIVA` o que no sea ruta activa de la automatización.

@@ -89,11 +89,11 @@ ROLLBACK;
 
 ## 8. `source document missing`
 
-- **Síntoma:** el brief de la fase menciona `SOURCE_DOCUMENT_MISSING`, pero el Hub no lo conoce.
-- **Causa probable:** **ese código no existe en el Hub.** En la práctica, si el documento origen no existe, `ops.fn_resolver_ejecucion_para_reproceso` devuelve `encontrada = false` y el resultado es `NOT_FOUND` (404). Si algún workflow devolviera literalmente `SOURCE_DOCUMENT_MISSING`, el Hub lo trataría como respuesta inválida (502).
-- **Qué revisar:** que la ejecución sea de Caterpillar; que exista la fila en `core.documentos` para su `documento_origen_id` (sólo lectura); el cuerpo real que devuelve el workflow (log de n8n).
-- **Qué NO hacer:** no insertar documentos a mano.
-- **Acción segura:** escalar como problema de integridad de datos; si se decide soportar el código, cambiar cliente, servicio, controlador, UI y tests, y actualizar [reprocessing](reprocessing.md#contrato).
+- **Síntoma:** el reproceso devuelve 502 y en n8n el rechazo fue `SOURCE_DOCUMENT_MISSING` (HTTP 409).
+- **Causa probable:** ese código **sí lo emite el workflow** (`Validar elegibilidad reproceso CAT`, cuando la fila resuelta no trae `documento_origen_id`, ruta o nombre) pero **el Hub no lo soporta** y lo trata como respuesta inválida (502). Si el documento origen no existe en `core.documentos`, el resolver (`JOIN` interno) devuelve `encontrada = false` y el resultado es `NOT_FOUND` (404).
+- **Qué revisar:** el log de la ejecución del webhook en n8n (el cuerpo devuelto); que la ejecución sea de Caterpillar; la fila de `core.documentos` de su `documento_origen_id` (sólo lectura).
+- **Qué NO hacer:** no insertar ni editar documentos a mano.
+- **Acción segura:** escalar como problema de integridad de datos. Corregir la discrepancia requiere cambio de código (añadir el rechazo en cliente, servicio, controlador, UI y tests): ver [reprocessing](reprocessing.md#discrepancias-hub--n8n-verificadas-en-d2).
 
 ## 9. El workflow responde pero el Hub muestra error
 
@@ -125,7 +125,7 @@ ROLLBACK;
 - **Causa probable:** **no es un error.** El padre ya tiene su hijo directo (límite de uno por índice único); se pidió reprocesar de nuevo (doble clic, otro admin, reintento tras timeout).
 - **Qué revisar:** abrir la ejecución `#N` (la hija) y ver su estado.
 - **Qué NO hacer:** no intentar forzar otra hija ni eliminar la existente.
-- **Acción segura:** trabajar con la hija. Si la hija terminó en `ERROR`, evaluar reprocesarla a ella (si el workflow lo permite: PENDIENTE de confirmar).
+- **Acción segura:** trabajar con la hija. Si la hija terminó en `ERROR`, reprocesarla a ella es posible (el workflow sólo exige estado `ERROR`/`CANCELADA`; crea una nieta).
 
 ## 13. API *healthy* pero el webhook no responde
 
@@ -150,3 +150,35 @@ ROLLBACK;
 - **Qué revisar:** lista de workflows activos en n8n; en el log de n8n, dos runs por ciclo; en el Hub, ejecuciones del mismo archivo cercanas en el tiempo.
 - **Qué NO hacer:** no borrar workflows ni filas de la BD; no "limpiar" reservas a mano.
 - **Acción segura:** **desactivar el que no corresponda** (normalmente el pre-12C), esperar un ciclo, y auditar las últimas ejecuciones: PostgreSQL impide duplicar folios (única `PROCESANDO`, `ALREADY_COMPLETED`, reservas idempotentes), pero revisa que no queden ejecuciones `PROCESANDO` huérfanas ni PDFs inconsistentes (checklist de [testing](testing.md#validación-de-pdfs-manual)).
+
+## 16. Reproceso responde 502 pero n8n devolvió 422 `SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING`
+
+- **Síntoma:** el Hub muestra 502 ("No fue posible comunicarse correctamente con la automatización"); en n8n la respuesta fue 422.
+- **Causa probable:** `Detectar archivo REPROCESS CAT1` falló: el archivo dejó de existir entre la validación y la detección, no es un Excel válido, o el ítem no llegó validado. El Hub no reconoce ese código.
+- **Qué revisar:** el error del nodo en la ejecución de n8n; la ruta `sourceDocument.path` del detalle.
+- **Qué NO hacer:** no editar `ruta_archivo`; no crear un archivo con otro nombre.
+- **Acción segura:** restaurar el archivo original en su ruta y reintentar.
+
+## 17. Una ejecución falla en un nodo distinto de `Normalizar datos CAT` / `Convertir PDF CAT`
+
+- **Síntoma:** ejecución n8n en error pero la ejecución de PostgreSQL queda `PROCESANDO` sin `intentos_fallidos` ni `error_nodo`.
+- **Causa probable:** sólo esos dos nodos tienen salida de error hacia `Registrar fallo PG`; **no hay Error Workflow**. Un fallo en otro nodo (p. ej. `Renderizar HTML`, `Registrar remisión PG`, un nodo de lectura de archivo) aborta la ejecución sin registrar el fallo. El siguiente ciclo recibirá `ALREADY_PROCESSING` y **reintentará** el archivo sobre la misma ejecución.
+- **Qué revisar:** historial de ejecuciones de n8n (nodo en rojo); si el reintento del siguiente ciclo tuvo éxito.
+- **Qué NO hacer:** no marcar la ejecución como `ERROR` por SQL; no borrar reservas.
+- **Acción segura:** corregir la causa (plantilla ausente, archivo bloqueado por Dropbox, script PowerShell) y dejar que el ciclo reintente.
+
+## 18. Se editó `PROCESOS_HABILITADOS_PROD` y el reproceso no coincide con el escaneo
+
+- **Síntoma:** un proceso se procesa automáticamente pero su reproceso responde `OUTSIDE_ALLOWED_SCOPE` (o al revés).
+- **Causa probable:** la lista (y `RUTAS_REALES`) está **copiada** en `Detectar archivos CAT1` y en `Validar elegibilidad reproceso CAT`; sólo se editó una.
+- **Qué revisar:** ambas constantes en el workflow.
+- **Qué NO hacer:** no dejar copias distintas.
+- **Acción segura:** editar las dos copias en el mismo cambio y versionar el nuevo export.
+
+## 19. Un archivo nuevo de Programación de Entrega no se procesa
+
+- **Síntoma:** el archivo está en la carpeta pero no genera ejecución.
+- **Causa probable (verificada en el detector):** el nombre no contiene `PROGRAMACION DE ENTREGA`; no es Excel o es temporal (`~$`); el proceso no está habilitado (P3, P4, Nuevo Laredo, Torreón); FINSA distinta de 1/3 o planta no detectada en el nombre; el archivo es anterior al corte (2026-09-22) o su fecha de modificación no es confiable; está en una carpeta de año que no se escanea (sólo el año actual; en enero también el anterior); está en una subcarpeta (el escaneo no es recursivo).
+- **Qué revisar:** el nombre y la carpeta contra las reglas de [workflow.md](workflow.md#puntos-verificados).
+- **Qué NO hacer:** no renombrar/mover masivamente archivos históricos: se procesarían si cumplen el patrón y son posteriores al corte.
+- **Acción segura:** corregir el nombre/ubicación de ese archivo y esperar el siguiente ciclo (10 min).

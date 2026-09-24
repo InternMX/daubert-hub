@@ -1,43 +1,41 @@
 # Notificaciones de pago
 
-> **Estado documental: PENDIENTE (esqueleto).** En la Fase D1 no se documenta a profundidad. Sólo se registran hechos verificados en el repositorio y lo que falta.
-
-## Resumen (verificado)
+Documentado en la Fase D2 **a partir de los exports reales**. Los JSON **no están versionados** (DO_NOT_VERSION por contener correos y firma corporativa: [n8n/security-notes](../../../n8n/security-notes.md)); la lectura se hizo directamente sobre los originales de Dropbox (sin modificarlos): `HERRAMIENTAS AUTOMATIZACION\NOTIFICACIONES DE PAGO\Produccion Notificacion de pagos a Proveedores.json` (PROD) y `PRUEBAS\NOTIFICACIONES DE PAGO\Test Notificacion de pagos a Proveedores.json` (TEST). **Manda el export.**
 
 | | |
 | --- | --- |
-| Código | `PAYMENT_NOTIFICATIONS` |
-| Nombre en el Hub | Notificaciones de pago — "Revisa periódicamente nuevas notificaciones de pago." |
-| Polling en el catálogo del Hub | 5 minutos |
-| `integrationStatus` | `INTEGRATED`; capacidades: dashboard, historial y detalle |
-| Modelo de datos (lo que lee el Hub) | `core.correos_notificacion_pago` y `core.resultados_notificacion_pago` (con `core.empresas` para el nombre); **no** usa el modelo de series/folios de las remisiones |
-| Hub | `GET /api/automations/payment-notifications`, `GET …/:executionId`, `POST …/:executionId/reprocess` (**sin** restricción de rol: ADMIN y GENERAL), acuses de revisión |
-| Reproceso | El Hub llama a un webhook n8n (`PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL`) con header `X-Daubert-Automation-Token` (`PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN`). Este cliente es deliberadamente más simple que el de Caterpillar: **no interpreta el cuerpo** de la respuesta de n8n; todo fallo se colapsa en un resultado saneado (`UPSTREAM_ERROR`). Resultados del Hub: `TRIGGERED`, `NOT_FOUND`, `NOT_ELIGIBLE`, `UPSTREAM_ERROR`. |
-| Auditoría | `ops.automation_trigger_requests` (`action_type = REPROCESS`; el control "Ejecutar ahora" (`RUN`) se retiró porque el workflow ya hace polling por sí mismo) |
-| Variables (sólo nombres) | `PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL`, `PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN` — opcionales; si faltan, el reproceso devuelve un resultado saneado de "upstream no disponible". ⚠️ `compose.pilot.yaml` **no** las pasa al contenedor ([inconsistencia #13](../../00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración)) |
+| Código de automatización | `PAYMENT_NOTIFICATIONS` |
+| Workflow PROD | `Produccion Notificacion de pagos a Proveedores` — activo, 100 nodos |
+| Workflow TEST | `Test Notificacion de pagos a Proveedores` — inactivo al exportar, 100 nodos |
+| Disparos | **Automático:** `Schedule Trigger` → `Obtener correos Outlook` (sondeo del buzón; intervalo sin valor explícito en el export) · **Manual:** `Reprocesar correo manual` · **Hub:** webhook `POST daubert-hub/notificaciones-pago/reprocesar` |
+| Credenciales | `Postgres produccion` / `Postgres pruebas`; `Outlook LOGIN OAUT2` (**la misma en TEST y PROD**); `Daubert Hub - n8n PROD` / `… TEST` (Header Auth del webhook) |
+| Error Workflow | PROD: referencia un workflow **sin export** (dependencia ausente). TEST: ninguno |
+| Hub | Dashboard, detalle, **reproceso** (`POST /api/automations/payment-notifications/:executionId/reprocess`, sin restricción de rol), acuses de revisión |
 
-## Estado actual
+## Propósito
 
-Módulo del Hub implementado (dashboard, detalle, reproceso con controles seguros: commit `a2e21f4`). **Estado operativo, flujo del workflow, reglas de elegibilidad de reproceso (las decide n8n) y credenciales n8n: no verificados en esta fase.**
+Lee correos de Outlook que traen **comprobantes de pago en un ZIP** (del administrador de pagos), extrae cada PDF, lo **clasifica por proveedor** con un catálogo en PostgreSQL, guarda el PDF en la **carpeta del proveedor** en Dropbox, cruza con la **programación semanal de CXP** y **crea en Outlook un borrador** de notificación por proveedor (con comprobantes y facturas adjuntos y la firma corporativa). Al terminar envía un **correo resumen** interno. **No envía nada a los proveedores automáticamente**: sólo crea borradores; sólo el resumen se envía.
 
-## Fuentes a revisar en Fase D2
+## Trigger actual (verificado)
 
-| Fuente | Ubicación |
+- **Sí existe** un disparador automático: el `Schedule Trigger` sondea la carpeta configurada del buzón de Outlook (`getAll`, límite 10 en PROD y 4 en TEST) — **no** es un trigger por evento de correo de n8n. El valor del intervalo no está explícito en el export (`{"field":"minutes"}`); el catálogo del Hub indica 5 min. **Sin verificar en n8n.**
+- Procesa **un correo por ejecución** (`Tomar un correo por ejecución`).
+- Existe además el disparo manual y el webhook del Hub para **reprocesar**.
+
+## Mapa de documentos
+
+| Documento | Contenido |
 | --- | --- |
-| Código Hub | `apps/api/src/automations/payment-notifications/`, `apps/api/src/recent-activity/payment-notification-activity.repository.ts`, `apps/web/src/automations/PaymentNotifications*.tsx` |
-| Reglas de estado/elegibilidad | `payment-notification-status.ts`, `payment-notification-reason.ts` |
-| Tests | `payment-notifications.*.spec.ts`, `payment-notifications.integration.runner.cjs` (incluido en `test:integration`) |
-| Migraciones | Directorio externo (tablas `core.correos_notificacion_pago`/`resultados_notificacion_pago` y permisos del Hub): por localizar |
-| Workflow n8n | No versionado: export pendiente |
+| [architecture.md](architecture.md) | Componentes y responsabilidades |
+| [workflow.md](workflow.md) | Flujo principal, reproceso y errores (Mermaid); reglas verificadas |
+| [nodes-reference.md](nodes-reference.md) | Referencia de nodos |
+| [database-contract.md](database-contract.md) | Contrato PostgreSQL |
+| [reprocessing.md](reprocessing.md) | Reproceso, contrato con el Hub, **seguridad** |
+| [testing.md](testing.md) | Pruebas y promoción |
+| [production-runbook.md](production-runbook.md) | Operación en PROD |
+| [troubleshooting.md](troubleshooting.md) | Guía de fallos |
+| Comparación TEST/PROD | [n8n-test-prod-drift](../n8n-test-prod-drift.md#notificaciones-de-pago) |
 
-## Documentos pendientes (plantilla basada en Caterpillar)
+## Categorías de proveedor
 
-- [ ] `architecture.md`
-- [ ] `workflow.md` (flujo lógico, cuándo se marca correo/resultado, envío de resumen)
-- [ ] `database-contract.md` (tablas propias; sin folios)
-- [ ] `reprocessing.md` (elegibilidad y contrato real del webhook; hoy sólo se conoce el lado Hub)
-- [ ] `testing.md`
-- [ ] `production-runbook.md`
-- [ ] `troubleshooting.md`
-
-Plantilla: [automations/README.md](../README.md#plantilla-de-documentación-por-automatización).
+Las categorías **FLETES**, **PROVEEDORES** y **PROVEEDOR DE SERVICIOS** **no están escritas en el workflow**: llegan del catálogo de PostgreSQL (vista `core.vw_catalogo_notificacion_pago_n8n`, campo `tipo_empresa`) junto con alias del PDF, plantilla de ruta destino, destinatarios PARA/CC/CCO y el indicador `notificaciones_activas`. En TEST existen carpetas `FLETES`, `PROVEEDORES` y `PROVEEDOR DE SERVICIOS` bajo `Pruebas\NOTIFICACIONES DE PAGO`. Tratamiento especial visible en el workflow: importes de **DHL** (`IMPORTES_DHL`, `SIN_IMPORTES_DHL`).

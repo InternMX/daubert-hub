@@ -4,16 +4,24 @@ Las automatizaciones las **ejecuta n8n**; el estado y las reglas de integridad v
 
 | Automatización | Código | Estado documental | Documento |
 | --- | --- | --- | --- |
-| Remisiones Caterpillar | `REMISIONES_CATERPILLAR` | **Completo** (módulo piloto) | [caterpillar/](caterpillar/README.md) |
-| Remisiones Audi | `REMISIONES_AUDI` | Esqueleto (PENDIENTE) | [audi/README.md](audi/README.md) |
-| Notificaciones de pago | `PAYMENT_NOTIFICATIONS` | Esqueleto (PENDIENTE) | [payment-notifications/README.md](payment-notifications/README.md) |
+| Remisiones Caterpillar | `REMISIONES_CATERPILLAR` | **Completo**, verificado contra el export | [caterpillar/](caterpillar/README.md) |
+| Remisiones Audi | `REMISIONES_AUDI` | **Completo** (D2) | [audi/README.md](audi/README.md) |
+| Notificaciones de pago | `PAYMENT_NOTIFICATIONS` | **Completo** (D2; export no versionado) | [payment-notifications/README.md](payment-notifications/README.md) |
 
-## Patrón común (observado en Caterpillar y Audi)
+Documentos transversales de n8n (D2): [n8n-test-prod-drift](n8n-test-prod-drift.md) · [n8n-dependencies](n8n-dependencies.md) · [n8n-paths](n8n-paths.md) · exports e inventario en [`../../n8n/`](../../n8n/README.md).
 
-- Modelo compartido: `ops.automatizaciones` → `ops.ejecuciones_automatizacion` → reservas de folios y remisiones ([database/architecture](../database/architecture.md)).
-- n8n opera con un rol de mínimo privilegio y funciones `SECURITY DEFINER`.
-- Idempotencia garantizada en PostgreSQL, no en el workflow.
+## Patrón común y diferencias (verificado contra los exports, D2)
+
+- Modelo compartido de remisiones: `ops.automatizaciones` → `ops.ejecuciones_automatizacion` → folios y remisiones ([database/architecture](../database/architecture.md)).
 - El Hub lee estado y ofrece acciones administrativas acotadas.
+
+| Aspecto | Caterpillar | Audi | Notificaciones de pago |
+| --- | --- | --- | --- |
+| Acceso a PostgreSQL desde n8n | **Sólo funciones** `SECURITY DEFINER` | **SQL directo** + allocator legado `reservar_folios` | **SQL directo** sobre `core.*` (sin funciones) |
+| Idempotencia | En PostgreSQL (funciones, índices únicos) | Parcial en PostgreSQL (`NOT EXISTS`, estado `COMPLETADA`) y en el workflow | Claves únicas por correo/proveedor **y** un JSON de duplicados de PDF |
+| Registro de fallos | `fn_registrar_fallo_ejecucion` (reintentos) | Sólo log en carpeta (ejecución queda `PROCESANDO`) | Estados `ERROR` en correo/borrador/resultado |
+| Reproceso desde el Hub | Sí (`ADMIN`) | No | Sí (cualquier usuario autenticado) |
+| Error Workflow | Ninguno | Compartido con TEST (sólo log) | Referenciado, **sin export** |
 
 ## Plantilla de documentación por automatización
 
@@ -32,4 +40,4 @@ Toda automatización nueva o pendiente debe seguir la estructura de [caterpillar
 
 ## Regla de honestidad documental
 
-Los workflows n8n **no están versionados en este repositorio**. Cualquier descripción de su lógica interna se etiqueta como *Descripción de proyecto* hasta verificarse contra el export del workflow ([pendiente Fase D2](../README.md#pendientes-transversales-candidatos-a-fase-d2)).
+Desde la Fase D2 los exports sanitizados están en [`n8n/`](../../n8n/README.md) (excepto Notificaciones de pago: no versionado por contener correos reales; su documentación se derivó del original en Dropbox, sin modificarlo). **El JSON real manda**: si un documento y el export discrepan, se corrige el documento. Lo que no pudo verificarse (p. ej. el Error Workflow de Notificaciones) se marca explícitamente.

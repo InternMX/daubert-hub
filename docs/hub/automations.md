@@ -8,9 +8,9 @@ Principio ([ADR-005](../decisions/ADR-005-hub-consume-estado-automatizaciones.md
 
 | Código | Polling en catálogo | Nota |
 | --- | --- | --- |
-| `REMISIONES_AUDI` | 10 min | |
+| `REMISIONES_AUDI` | 10 min | ⚠️ El workflow real corre cada **15 min** (export, D2). |
 | `PAYMENT_NOTIFICATIONS` | 5 min | |
-| `REMISIONES_CATERPILLAR` | **15 min** | ⚠️ Difiere del intervalo real de 10 min documentado en la nota 12C. Ver [inconsistencia #1](../00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración). |
+| `REMISIONES_CATERPILLAR` | **15 min** | ⚠️ Difiere del intervalo real de **10 min** (export y nota 12C). Ver [inconsistencia #1](../00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración). |
 
 ## Funcionalidades
 

@@ -27,7 +27,7 @@ Fuentes: [nota de despliegue 12C](../../deployments/2026-09-24-caterpillar-12c-p
 | NL FINSA 3 | No habilitado | `REMISION_CAT_NL_FINSA_3` |
 | Torreón (y Planta 2) | No habilitado | `REMISION_CAT_TORREON` |
 
-> **Esto refleja el estado actual, no una regla permanente.** Habilitar más procesos es una decisión operativa que involucra (a) la lista `PROCESOS_HABILITADOS_PROD` del workflow (*Descripción de proyecto*), (b) el `estatus` de la serie en PostgreSQL (`ACTIVA`/`INACTIVA`; el seed de PROD dejó activas sólo P2, P5 y P6) y (c) un `folio_minimo_ajustable`/contador verificados. El reproceso sigue **el mismo gating** que el pipeline automático: procesos no habilitados no se pueden reprocesar.
+> **Esto refleja el estado actual, no una regla permanente.** Habilitar más procesos es una decisión operativa que involucra (a) la lista `PROCESOS_HABILITADOS_PROD` del workflow (verificada en el export; está **duplicada** en `Detectar archivos CAT1` y `Validar elegibilidad reproceso CAT`, y ambas copias deben editarse juntas), (b) el `estatus` de la serie en PostgreSQL (`ACTIVA`/`INACTIVA`; el seed de PROD dejó activas sólo P2, P5 y P6) y (c) un `folio_minimo_ajustable`/contador verificados. El reproceso sigue **el mismo gating** que el pipeline automático: procesos no habilitados no se pueden reprocesar.
 
 ## Migración 009
 
@@ -81,3 +81,37 @@ El primer `REPROCESS_CREATED` real en PROD se **difiere** hasta que exista una e
 - Hub → Caterpillar: sin ejecuciones `PROCESANDO` viejas ni `ERROR` sin atender.
 - Folios de P2/P5/P6 avanzando sólo cuando hay remisiones nuevas.
 - Un solo workflow activo.
+
+## Operación (Fase D2, verificada contra el export)
+
+Workflow: `Remisiones CAT Produccion PG` ([export](../../../n8n/workflows/remisiones-caterpillar/prod/workflow.json)). Instancia n8n **compartida con TEST** (mismo `instanceId` en todos los exports): distingue siempre el nombre del workflow y su credencial.
+
+| Tarea | Cómo |
+| --- | --- |
+| **Revisar salud** | Hub → Caterpillar: última ejecución reciente (ciclo de 10 min), sin `PROCESANDO` viejas ni `ERROR` sin atender. En n8n: el workflow `Remisiones CAT Produccion PG` está **Active** y tiene ejecuciones cada 10 min. |
+| **Identificar la ejecución** | Hub → detalle: `n8nExecutionId` enlaza con el editor de n8n; `latestErrorNode` = nodo que falló. |
+| **Verificar el input** | Carpeta del cliente (`…\Dropbox\CLIENTES\<planta>\…\SOLICITUD DE MATERIAL[\<año>]`): nombre con `PROGRAMACION DE ENTREGA`, Excel, posterior al corte 2026-09-22, proceso habilitado ([troubleshooting #19](troubleshooting.md#19-un-archivo-nuevo-de-programación-de-entrega-no-se-procesa)). Copia de trabajo en `01_ENTRADA`. |
+| **Verificar el output** | PDFs en `…\REMISIONES CAT\02_SALIDAS\<cliente_grupo>[\<planta/subplanta>]`; coinciden con `remisiones.pdf_path` (Hub → detalle) y con [testing → PDFs](testing.md#validación-de-pdfs-manual). Logs de error en `04_ERRORES`. |
+| **Revisar n8n** | Historial de ejecuciones del workflow (nodo con error), y el webhook `cat-reprocess` sólo responde si el workflow está activo. |
+| **Revisar PostgreSQL** | Consultas de sólo lectura sobre `ops.ejecuciones_automatizacion`, reservas y remisiones ([troubleshooting](troubleshooting.md#reglas-generales)). |
+| **Reprocesar** | Hub → detalle de la ejecución en `ERROR`/`CANCELADA` → **Reprocesar** (`ADMIN`). Ver [reprocessing](reprocessing.md). |
+| **Detener de forma segura** | Desactivar el workflow en n8n **entre ciclos** (sin ejecución en curso). Una ejecución en curso que se interrumpe queda `PROCESANDO` y se retomará al reactivar (ver troubleshooting #11 y #17). Al desactivar también se deshabilita el webhook de reproceso (el Hub devolverá 502). |
+| **Reactivar** | Activar el workflow; confirmar que corre en el siguiente ciclo y que no hay `PROCESANDO` huérfanas. |
+| **Rollback de workflow** | Ver abajo. |
+| **Comprobar que sólo un PROD está activo** | En n8n, filtrar por "Active" y verificar que **sólo un** workflow de Caterpillar (nombre `Remisiones CAT …`) está activo. Los exports muestran que `MANUAL TEST REMISIONES CAT` y el candidato PG están inactivos. |
+
+### Rollback: aclaración importante (D2)
+
+La nota 12C habla de un "workflow previo a 12C, inactivo, como rollback". En los exports hay **dos** candidatos que encajan y **ninguno se puede confirmar como el que está en n8n**:
+
+1. `Remisiones CAT Produccion PG CANDIDATE` — PostgreSQL **sin** rama de reproceso; usa la credencial `Postgres produccion`; inactivo; sin `id` (carpeta `PROMOCION_PROD` de pruebas). Versionado como [histórico](../../../n8n/workflows/remisiones-caterpillar/historical/pg-pre-reprocess-candidate.json).
+2. `Remisiones CAT Produccion` — versión **anterior a PostgreSQL** (contadores JSON), con el **mismo `id`** que el workflow PROD actual (es una versión previa del mismo workflow, no un segundo workflow).
+
+⚠️ **No usar (2) como rollback**: los folios están controlados por PostgreSQL y esa versión usa contadores JSON obsoletos: emitiría folios que colisionan con los de la base. Antes de cualquier rollback, confirmar en n8n cuál es el workflow inactivo real.
+
+### Riesgos operativos específicos (de los nodos)
+
+- `PROCESOS_HABILITADOS_PROD` y `RUTAS_REALES` duplicados en dos nodos.
+- Sin Error Workflow: los fallos fuera de los dos nodos con salida de error no se registran en PostgreSQL.
+- El mapeo planta → serie está hardcodeado; PostgreSQL sólo lo valida (ruta activa, serie activa).
+- Los scripts PowerShell se ejecutan con `-ExecutionPolicy Bypass` desde `05_ARCHIVOS AUXILIARES\SCRIPTS` (sincronizada por Dropbox): quien pueda escribir ahí ejecuta código en el servidor.

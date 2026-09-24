@@ -1,0 +1,238 @@
+{
+  "name": "Generación PDFs",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const templateItems = $input.all();\nconst remisiones = $(\"Clasificar template\").all();\n\nif (templateItems.length === 0) {\n  throw new Error(\"No llegó ningún template para renderizar.\");\n}\n\nif (remisiones.length === 0) {\n  throw new Error(\"No hay remisiones desde el nodo 'Clasificar template'.\");\n}\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction escapeHtml(value) {\n  return String(value ?? \"\")\n    .replaceAll(\"&\", \"&amp;\")\n    .replaceAll(\"<\", \"&lt;\")\n    .replaceAll(\">\", \"&gt;\")\n    .replaceAll('\"', \"&quot;\")\n    .replaceAll(\"'\", \"&#039;\");\n}\n\nfunction nl2br(value) {\n  return escapeHtml(value).replace(/\\r?\\n/g, \"<br>\");\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \" \");\n}\n\nfunction toFileUri(windowsPath) {\n  const normalized = cleanText(windowsPath).replace(/\\\\/g, \"/\");\n  return encodeURI(\"file:///\" + normalized.replace(/^\\/+/, \"\"));\n}\n\nfunction getLogoUri(datos) {\n  if (datos.templates_dir) {\n    return toFileUri(`${datos.templates_dir}\\\\images\\\\DC_logo.jpg`);\n  }\n\n  if (datos.template_path) {\n    const templateDir = String(datos.template_path).replace(/[\\\\/][^\\\\/]+$/, \"\");\n    return toFileUri(`${templateDir}\\\\images\\\\DC_logo.jpg`);\n  }\n\n  throw new Error(\"No se pudo construir la ruta del logo porque falta templates_dir o template_path.\");\n}\n\nfunction replaceLogoPath(html, logoUri) {\n  /*\n    Reemplaza únicamente cuando la ruta está dentro de src=\"\"\n    Soporta:\n    src=\"./images/DC_logo.jpg\"\n    src=\"images/DC_logo.jpg\"\n    src='./images/DC_logo.jpg'\n    src='images/DC_logo.jpg'\n  */\n  return html.replace(\n    /src=([\"'])(?:\\.\\/)?images\\/DC_logo\\.jpg\\1/gi,\n    `src=\"${\n      logoUri\n    }\"`\n  );\n}\n\nconst fields = [\n  \"numero_remision\",\n  \"id_transport\",\n  \"fecha_envio\",\n  \"proveedor_no\",\n  \"duns_no\",\n  \"pde\",\n  \"ref_pedido\"\n];\n\nfunction renderBolsaRows(items) {\n  return items.map((item) => `\n        <tr>\n          <td>${nl2br(item.total_qty)}</td>\n          <td>${nl2br(item.qty_per_packaging)}</td>\n          <td class=\"description-cell\">${nl2br(item.descripcion)}</td>\n          <td>${nl2br(item.part_number)}</td>\n          <td>${nl2br(item.packing_code)}</td>\n          <td>${nl2br(item.number_of_bags)}</td>\n          <td>${nl2br(item.discharge_point)}</td>\n        </tr>\n`).join(\"\");\n}\n\nfunction renderTuboRows(items) {\n  return items.map((item) => `\n        <tr>\n          <td>${nl2br(item.total_qty)}</td>\n          <td>${nl2br(item.qty_per_packaging)}</td>\n          <td class=\"description-cell\">${nl2br(item.descripcion)}</td>\n          <td>${nl2br(item.part_number)}</td>\n          <td>${nl2br(item.number_of_bags)}</td>\n          <td>${nl2br(item.discharge_point)}</td>\n        </tr>\n`).join(\"\");\n}\n\nconst output = [];\n\nfor (let i = 0; i < templateItems.length; i++) {\n  const templateItem = templateItems[i];\n\n  const datos = {\n    ...(remisiones[i]?.json || {}),\n    ...(templateItem.json || {})\n  };\n\n  if (!datos.output_name) {\n    throw new Error(`Falta output_name en la remisión índice ${i}. Revisa 'Asignar no.Rem'.`);\n  }\n\n  if (!datos.formato_audi) {\n    throw new Error(`Falta formato_audi en la remisión índice ${i}. Revisa 'Clasificar template'.`);\n  }\n\n  const binaryField = Object.keys(templateItem.binary || {})[0] || \"data\";\n\n  if (!templateItem.binary || !templateItem.binary[binaryField]) {\n    throw new Error(`No se encontró el template HTML en binario para la remisión índice ${i}.`);\n  }\n\n  const templateBuffer = await this.helpers.getBinaryDataBuffer(i, binaryField);\n\n  let html = templateBuffer.toString(\"utf8\");\n\n  const items = Array.isArray(datos.items) ? datos.items : [];\n\n  if (items.length === 0) {\n    throw new Error(`La remisión ${datos.numero_remision || i + 1} no tiene items.`);\n  }\n\n  const itemsRows = datos.formato_audi === \"tubos\"\n    ? renderTuboRows(items)\n    : renderBolsaRows(items);\n\n  html = html.replace(/<!--\\s*{{items_rows}}\\s*-->/g, itemsRows);\n\n  // Compatibilidad con templates viejos que todavía tengan Mustache\n  html = html.replace(/{{#items}}[\\s\\S]*?{{\\/items}}/g, itemsRows);\n\n  const logoUri = getLogoUri(datos);\n\n  html = replaceLogoPath(html, logoUri);\n\n  for (const field of fields) {\n    html = html.replaceAll(`{{${field}}}`, escapeHtml(datos[field]));\n  }\n\n  const safeName = safeFileText(datos.output_name || `REM-Audi-${i + 1}.html`);\n\n  const binaryData = await this.helpers.prepareBinaryData(\n    Buffer.from(html, \"utf8\"),\n    safeName,\n    \"text/html\"\n  );\n\n  output.push({\n    json: {\n      ...datos,\n      output_name: safeName,\n      html_generado: true,\n      logo_uri: logoUri\n    },\n    binary: {\n      data: binaryData\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        528
+      ],
+      "id": "5b1757d9-a6c1-4b38-96a6-e83add11d065",
+      "name": "Renderizar HTML"
+    },
+    {
+      "parameters": {
+        "jsCode": "const TUBOS_FALLBACK = new Set([\n  \"A15MEAW\",\n  \"A15MEAV\"\n]);\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction normalizePartNumber(value) {\n  return cleanText(value)\n    .toUpperCase()\n    .replace(/\\s+/g, \"\");\n}\n\nfunction normalizeFormatoAudi(value) {\n  const text = cleanText(value).toLowerCase();\n\n  if ([\"tubo\", \"tubos\", \"rollo\", \"rollos\", \"kg\"].includes(text)) {\n    return \"tubos\";\n  }\n\n  if ([\"bolsa\", \"bolsas\", \"bag\", \"bags\", \"pack\", \"packs\", \"paquete\", \"paquetes\"].includes(text)) {\n    return \"bolsas\";\n  }\n\n  return \"\";\n}\n\nreturn $input.all().map((item) => {\n  const json = { ...item.json };\n\n  const partNumber =\n    json.part_number ||\n    json.items?.[0]?.part_number ||\n    \"\";\n\n  const normalizedPart = normalizePartNumber(partNumber);\n\n  /*\n    Prioridad:\n    1. formato_audi desde catálogo, asignado en \"Normalizar datos\"\n    2. formato_audi_catalogo, por seguridad\n    3. regla fallback para A15MEAW / A15MEAV\n    4. bolsas por defecto\n  */\n  const formatoDesdeCatalogo =\n    normalizeFormatoAudi(json.formato_audi) ||\n    normalizeFormatoAudi(json.formato_audi_catalogo) ||\n    normalizeFormatoAudi(json.items?.[0]?.formato_audi_catalogo);\n\n  const formatoAudi = formatoDesdeCatalogo ||\n    (TUBOS_FALLBACK.has(normalizedPart) ? \"tubos\" : \"bolsas\");\n\n  if (!json.templates_dir) {\n    throw new Error(\"No se encontró templates_dir. Revisa que venga desde 'Preparar archivo trigger' y 'Normalizar datos'.\");\n  }\n\n  if (!json.output_name) {\n    throw new Error(\"No se encontró output_name. Revisa que 'Asignar no.Rem' haya asignado el nombre final.\");\n  }\n\n  json.formato_audi = formatoAudi;\n\n  json.formato_audi_origen = formatoDesdeCatalogo\n    ? \"catalogo\"\n    : TUBOS_FALLBACK.has(normalizedPart)\n      ? \"fallback_part_number\"\n      : \"default_bolsas\";\n\n  json.template_path = formatoAudi === \"tubos\"\n    ? `${json.templates_dir}\\\\REM-Template-Audi-Tubos.html`\n    : `${json.templates_dir}\\\\REM-Template-Audi-Bolsas.html`;\n\n  return {\n    json\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -656,
+        528
+      ],
+      "id": "943a4e94-b0d6-4ed4-a2cf-f2cab8003331",
+      "name": "Clasificar template"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.template_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -432,
+        528
+      ],
+      "id": "8ad2055f-c925-4609-b0df-01fe4c219f05",
+      "name": "Lectura de templates"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{$json.html_path}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        528
+      ],
+      "id": "d2b023b4-b271-401a-95a6-52c8c45787ae",
+      "name": "Guardado temporal HTML"
+    },
+    {
+      "parameters": {
+        "jsCode": "function cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeFileName(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \" \");\n}\n\nreturn $input.all().map((item, index) => {\n  const json = { ...item.json };\n\n  if (!json.temp_dir) {\n    throw new Error(`Falta temp_dir en el item ${index}. Revisa 'Preparar archivo trigger' y 'Normalizar datos'.`);\n  }\n\n  if (!json.output_dir) {\n    throw new Error(`Falta output_dir en el item ${index}. Revisa 'Preparar archivo trigger' y 'Normalizar datos'.`);\n  }\n\n  if (!json.output_name) {\n    throw new Error(`Falta output_name en el item ${index}. Revisa 'Asignar no.Rem'.`);\n  }\n\n  const htmlName = safeFileName(json.output_name);\n  const pdfName = htmlName.replace(/\\.html?$/i, \".pdf\");\n\n  const htmlPath = `${json.temp_dir}\\\\${htmlName}`;\n  const pdfPath = `${json.output_dir}\\\\${pdfName}`;\n\n  return {\n    json: {\n      ...json,\n\n      html_name: htmlName,\n      html_path: htmlPath,\n\n      pdf_name: pdfName,\n      pdf_path: pdfPath\n    },\n    binary: item.binary\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        528
+      ],
+      "id": "5d955b27-9fb3-4ccd-95e7-b2bdd0b9661d",
+      "name": "Preparar rutas PDF"
+    },
+    {
+      "parameters": {
+        "command": "={{ \n'powershell -NoProfile -ExecutionPolicy Bypass -File \"' \n+ $('Preparar rutas PDF').first().json.pdf_script_path \n+ '\" -TempDir \"' \n+ $('Preparar rutas PDF').first().json.temp_dir \n+ '\" -OutDir \"' \n+ $('Preparar rutas PDF').first().json.output_dir \n+ '\"' \n}}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        464,
+        528
+      ],
+      "id": "2713c6b5-ce66-4c9f-9917-8975ecab38f8",
+      "name": "Convertir PDF"
+    },
+    {
+      "parameters": {
+        "command": "=powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ $('Preparar rutas PDF').first().json.clean_script_path }}\" -TempDir \"{{ $('Preparar rutas PDF').first().json.temp_dir }}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        688,
+        528
+      ],
+      "id": "d8c6c0db-5634-4145-9aa4-85394ef52df9",
+      "name": "Eliminar html temporal"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "10729284-ab6f-4cdd-902f-4779ffb4df97",
+      "typeVersion": 1.1,
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -864,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Clasificar template\nSirve para definir qué plantilla es necesaria según el item. \nSi es una bolsa se usa el template\n- REM-Template-Audi-Bolsas.\n\nSi es un tubo se usa\n- REM-Template-Audi-Tubos\n",
+        "height": 288,
+        "width": 304,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -736,
+        672
+      ],
+      "typeVersion": 1,
+      "id": "2a65925d-97dd-44c7-9db3-6a3024c2225d",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Renderizar HTML": {
+      "main": [
+        [
+          {
+            "node": "Preparar rutas PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clasificar template": {
+      "main": [
+        [
+          {
+            "node": "Lectura de templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lectura de templates": {
+      "main": [
+        [
+          {
+            "node": "Renderizar HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardado temporal HTML": {
+      "main": [
+        [
+          {
+            "node": "Convertir PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar rutas PDF": {
+      "main": [
+        [
+          {
+            "node": "Guardado temporal HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convertir PDF": {
+      "main": [
+        [
+          {
+            "node": "Eliminar html temporal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Clasificar template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "4efd21da-e5c2-47d5-9439-08b09d64b5ee",
+  "meta": {},
+  "nodeGroups": [],
+  "id": "RlQNjedYDlgdS3dC",
+  "tags": [
+    {
+      "updatedAt": "2026-07-15T18:14:06.800Z",
+      "createdAt": "2026-07-15T18:14:06.800Z",
+      "id": "eYGjWweetlbn79aY",
+      "name": "Subflujo"
+    },
+    {
+      "updatedAt": "2026-07-02T18:20:45.128Z",
+      "createdAt": "2026-07-02T18:20:45.128Z",
+      "id": "fma05lhgcWzEzDuT",
+      "name": "Remisiones"
+    },
+    {
+      "updatedAt": "2026-07-02T18:20:45.133Z",
+      "createdAt": "2026-07-02T18:20:45.133Z",
+      "id": "xgmfEYF3AEuJ6w3Q",
+      "name": "Automatización"
+    }
+  ]
+}

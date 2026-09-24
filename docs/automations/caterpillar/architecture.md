@@ -11,7 +11,7 @@ Vista general del sistema: [00-overview/architecture](../../00-overview/architec
 | **PostgreSQL** | **Fuente de verdad**: ejecuciones, reservas, remisiones, series/rutas, reglas de idempotencia, ownership e integridad (funciones `SECURITY DEFINER`, índices únicos). | — |
 | **n8n** | Orquestación: detectar archivos, clasificar, invocar funciones de PostgreSQL, generar remisiones y PDF, mover/escribir archivos, exponer el webhook de reproceso. | No usa `postgres`. Por diseño opera el modelo Caterpillar a través de las funciones de PostgreSQL (aunque `n8n_app` conserva grants directos heredados: ver [roles-permissions](../../database/roles-permissions.md)). |
 | **Dropbox** | Almacén de los archivos de Programación de Entrega (origen) y de los PDFs generados (destino). | El Hub no lo lee ni escribe. |
-| **Generación de PDF** | Parte del workflow n8n (produce el PDF de cada remisión; su ruta se guarda en `remisiones.pdf_path`). Mecanismo exacto: *Descripción de proyecto*, PENDIENTE de documentar desde el workflow. | — |
+| **Generación de PDF** | Dentro del workflow n8n: `Renderizar HTML` llena una plantilla HTML (`REM-Plantilla-CAT.html` / `…-TORREON.html`), la escribe como HTML temporal y `Convertir PDF CAT` ejecuta un **script PowerShell externo** (`convertir-cat-pdf.ps1`) que produce el PDF; la ruta queda en `remisiones.pdf_path`. El script y las plantillas **no están versionados** ([n8n-dependencies](../n8n-dependencies.md)). | — |
 | **Daubert Hub** | Conjunto Web + API que muestra el estado y ofrece las acciones administrativas. | No es el motor de la automatización ([ADR-005](../../decisions/ADR-005-hub-consume-estado-automatizaciones.md)). |
 
 ## Flujo de una solicitud de reproceso (vista de componentes)

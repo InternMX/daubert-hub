@@ -53,7 +53,8 @@ Leyenda de fuentes usada en todo el árbol:
 - **Código/SQL** — verificado contra el repositorio (`apps/`, `database/`, `deploy/`, `compose*.yaml`, `docker/`).
 - **Nota de despliegue** — respaldado por [`deployments/2026-09-24-caterpillar-12c-prod.md`](deployments/2026-09-24-caterpillar-12c-prod.md).
 - **Paquetes de migración externos** — respaldado por los `.sql` del directorio de migraciones externo al repositorio (ver [database/migrations.md](database/migrations.md)); no verificable desde el repo.
-- **Descripción de proyecto** — información aportada por el responsable del proyecto que **no** puede comprobarse en el repositorio (principalmente la lógica interna de los workflows n8n, que no están versionados aquí). Se marca explícitamente en cada punto.
+- **Export n8n** — verificado contra los JSON reales de los workflows (Fase D2). Los exports sanitizados están en [`../n8n/`](../n8n/README.md), salvo Notificaciones de pago (no versionado, ver [n8n/security-notes](../n8n/security-notes.md)). **Si el export y un documento discrepan, manda el export.**
+- **Descripción de proyecto** — información aportada por el responsable del proyecto que no puede comprobarse en ninguna fuente. Tras la Fase D2 sólo queda en puntos aislados.
 - **PENDIENTE** — no puede documentarse con calidad todavía.
 
 | Área | Estado | Notas |
@@ -61,18 +62,20 @@ Leyenda de fuentes usada en todo el árbol:
 | Visión general y entornos | Completo (Fase D1) | Ver inconsistencias abiertas en [00-overview/environments.md](00-overview/environments.md) |
 | Hub (API/Web/auth/roles) | Completo a nivel general | Módulos de negocio (proveedores, clientes, contactos, direcciones) sólo listados, no detallados |
 | Base de datos | Completo a nivel de arquitectura, roles y series | Catálogo completo de tablas y DDL: PENDIENTE (los DDL viven fuera del repo) |
-| Caterpillar | Completo (módulo piloto) | Lógica interna de n8n: **Descripción de proyecto**, pendiente verificar contra el export del workflow |
-| Audi | Esqueleto | PENDIENTE — ver [automations/audi/README.md](automations/audi/README.md) |
-| Notificaciones de pago | Esqueleto | PENDIENTE — ver [automations/payment-notifications/README.md](automations/payment-notifications/README.md) |
+| n8n (inventario, seguridad, drift, dependencias, rutas) | Completo (Fase D2) | [../n8n/](../n8n/README.md) · [n8n-test-prod-drift](automations/n8n-test-prod-drift.md) · [n8n-dependencies](automations/n8n-dependencies.md) · [n8n-paths](automations/n8n-paths.md) |
+| Caterpillar | Completo, **verificado contra el export** (D2) | [automations/caterpillar/](automations/caterpillar/README.md) |
+| Audi | Completo (D2) | [automations/audi/README.md](automations/audi/README.md) |
+| Notificaciones de pago | Completo (D2); export **no versionado** | [automations/payment-notifications/README.md](automations/payment-notifications/README.md) |
 | Operaciones | Parcial | Deploy Docker documentado; backup/restore exacto: PENDIENTE |
 | ADRs | 5 creados | Sólo con evidencia en código/documentos |
 
-## Pendientes transversales (candidatos a Fase D2)
+## Pendientes transversales (candidatos a Fase D3 y posteriores)
 
-- Versionar (o referenciar formalmente) los exports de los workflows n8n y documentar su verificación.
+- **D3:** documentar PostgreSQL objeto por objeto (tablas, vistas como `core.vw_catalogo_notificacion_pago_n8n`, funciones, grants por rol/credencial) a partir de los contratos por workflow.
+- Decidir el versionado de los exports de Notificaciones de pago ([n8n/security-notes](../n8n/security-notes.md)) y localizar el Error Workflow ausente.
 - Versionar en el repo el resto de migraciones de `daubert_global` (hoy sólo la 009 está en `database/migrations/daubert_global/`).
 - Procedimiento exacto de backup/restore de PostgreSQL: [operations/backup-restore.md](operations/backup-restore.md).
-- Documentar en profundidad Audi y Notificaciones de pago usando la plantilla de Caterpillar.
+- Corregir las discrepancias Hub ↔ n8n y el drift detectados en D2 ([n8n-test-prod-drift](automations/n8n-test-prod-drift.md), [caterpillar/reprocessing](automations/caterpillar/reprocessing.md#discrepancias-hub--n8n-verificadas-en-d2)).
 - Resolver las inconsistencias listadas en [00-overview/environments.md](00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración).
 
 ## Regla de mantenimiento

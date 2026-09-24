@@ -9,6 +9,8 @@ source of truth for the Hub and its n8n automations: architecture, environments
 (TEST/PROD), database, migrations, Caterpillar automation, operations runbooks and
 architecture decisions (ADRs). Start at [`docs/README.md`](docs/README.md).
 Database migrations are documented in [`docs/database/migrations.md`](docs/database/migrations.md).
+Sanitized n8n workflow exports and their inventory live in [`n8n/`](n8n/README.md); the
+documentation of each automation is under [`docs/automations/`](docs/automations/README.md).
 
 ## Project Purpose
 

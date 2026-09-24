@@ -1,0 +1,1166 @@
+{
+  "name": "Remisiones AUDI PRUEBAS",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# Pendiente",
+        "height": 176,
+        "width": 720,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -640,
+        720
+      ],
+      "typeVersion": 1,
+      "id": "efb5ad6c-ac6b-40fb-a15f-326e79d0d775",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Posibles mejoras\n- Enviar archivos directo a la carpeta de remisiones\n- Generar borrador por correo\n- Vincular a dropbox de ser necesario (?)\n- Que vaya guardando la remisión según el año, se hace mas robusto el sistema.\n- Mejora o revisión del catálogo\n- Actualizar catálogo si un objeto es nuevo\n- Gestionar fechas/ficheros",
+        "height": 272,
+        "width": 720
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1472,
+        720
+      ],
+      "id": "b9a0e54f-ad06-4720-9035-73e5ccea3118",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeReadJson(filePath, fallback) {\n  try {\n    if (!fs.existsSync(filePath)) return fallback;\n    return JSON.parse(fs.readFileSync(filePath, \"utf8\"));\n  } catch (error) {\n    return fallback;\n  }\n}\n\nfunction saveJson(filePath, data) {\n  fs.mkdirSync(path.dirname(filePath), { recursive: true });\n  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), \"utf8\");\n}\n\nconst archivo = $(\"Buscar programaciones Audi\").first().json;\nconst contexto = $(\"Preparar archivo trigger\").first().json;\nconst remisiones = $(\"Asignar no.Rem PG\").all();\n\nconst estadoPath = cleanText(archivo.estado_procesados_path);\nconst processedKey = cleanText(archivo.processed_key);\n\nif (!estadoPath) {\n  throw new Error(\"No se encontró estado_procesados_path desde 'Buscar programaciones Audi'.\");\n}\n\nif (!processedKey) {\n  throw new Error(\"No se encontró processed_key desde 'Buscar programaciones Audi'.\");\n}\n\nconst estadoDefault = {\n  cliente: \"AUDI\",\n  updated_at: \"\",\n  procesados: {}\n};\n\nconst estado = safeReadJson(estadoPath, estadoDefault);\n\nif (!estado.procesados || typeof estado.procesados !== \"object\") {\n  estado.procesados = {};\n}\n\nestado.procesados[processedKey] = {\n  file_path: archivo.file_path || archivo.fullPath || archivo.path || \"\",\n  file_name: archivo.file_name || archivo.fileName || \"\",\n  size_bytes: archivo.size_bytes || \"\",\n  modified_at: archivo.modified_at || \"\",\n\n  processed_at: new Date().toISOString(),\n  status: \"procesado_correctamente\",\n\n  run_name: contexto.run_name || \"\",\n  copied_file: contexto.copy_file_path || \"\",\n\n  remisiones_generadas: remisiones.length,\n  primera_remision: remisiones[0]?.json?.numero_remision || \"\",\n  ultima_remision: remisiones[remisiones.length - 1]?.json?.numero_remision || \"\",\n\n  hojas_identificacion_generadas: remisiones.length,\n\n  postgres: {\n    ejecucion_id: remisiones[0]?.json?.ejecucion_id || \"\",\n    folios_pg: remisiones[0]?.json?.pg_folios === true,\n    folio_inicial_reservado: remisiones[0]?.json?.folio_inicial_reservado || \"\",\n    folio_final_reservado: remisiones[0]?.json?.folio_final_reservado || \"\"\n  }\n};\n\nestado.updated_at = new Date().toISOString();\nestado.total_procesados = Object.keys(estado.procesados).length;\n\nsaveJson(estadoPath, estado);\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        944
+      ],
+      "id": "b15bd9b6-ec73-491f-b6b2-136c4d4e9839",
+      "name": "Registrar archivo procesado Audi",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\n\n// ===============================\n// CONFIGURACIÓN\n// ===============================\nconst BASE_CLIENTE_AUDI = String.raw`C:\\Users\\06\\Documents\\Dropbox\\Pruebas\\REMISIONES AUDI\\00_ARCHIVOS A PROCESAR`;\n\nconst BASE_HERRAMIENTA = String.raw`C:\\Users\\06\\Documents\\Dropbox\\Pruebas\\REMISIONES AUDI`;\n\nconst ESTADO_PATH = `${BASE_HERRAMIENTA}\\\\05_ARCHIVOS AUXILIARES\\\\ESTADO\\\\archivos_procesados_audi.json`;\n\n// Para evitar leer un archivo que Dropbox todavía está copiando\nconst MIN_AGE_MINUTES = 2;\n\n// Para no tomar programaciones viejas por accidente.\n// Si algún día necesitas buscar más atrás, sube este número.\nconst MAX_AGE_DAYS = 60;\n\n// IMPORTANTE:\n// Ponlo en true solo una vez si quieres marcar todos los archivos actuales como ya procesados.\n// Después vuelve a ponerlo en false antes de publicar.\nconst MODO_INICIALIZAR_ESTADO = false;\n\n// Procesamos solo 1 archivo por corrida para evitar problemas con contador.\nconst MAX_FILES_PER_RUN = 1;\n\n// ===============================\n// FUNCIONES\n// ===============================\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction removeAccents(value) {\n  return cleanText(value)\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\");\n}\n\nfunction normalizeText(value) {\n  return removeAccents(value)\n    .toLowerCase()\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction normalizePath(value) {\n  return normalizeText(value)\n    .replace(/\\//g, \"\\\\\")\n    .replace(/\\\\+/g, \"\\\\\");\n}\n\nfunction safeReadJson(filePath, fallback) {\n  try {\n    if (!fs.existsSync(filePath)) return fallback;\n    const content = fs.readFileSync(filePath, \"utf8\");\n    return JSON.parse(content);\n  } catch (error) {\n    return fallback;\n  }\n}\n\nfunction saveJson(filePath, data) {\n  fs.mkdirSync(path.dirname(filePath), { recursive: true });\n  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), \"utf8\");\n}\n\nfunction isYearFolder(name) {\n  return /^20\\d{2}$/.test(cleanText(name));\n}\n\nfunction shouldCheckYear(yearText) {\n  const year = Number(yearText);\n  const currentYear = new Date().getFullYear();\n\n  // Revisa año anterior, actual y siguiente.\n  // Esto ayuda cuando estamos en transición de año.\n  return year >= currentYear - 1 && year <= currentYear + 1;\n}\n\nfunction isInfoAdicionalFolder(folderName) {\n  const name = normalizeText(folderName);\n\n  const hasInfo =\n    name.includes(\"inf\") ||\n    name.includes(\"info\") ||\n    name.includes(\"informacion\") ||\n    name.includes(\"informacion\");\n\n  const hasAdicional =\n    name.includes(\"adicional\") ||\n    name.includes(\"adic\");\n\n  return hasInfo && hasAdicional;\n}\n\nfunction isValidProgramacionFile(filePath) {\n  const fileName = path.basename(filePath);\n  const lowerName = normalizeText(fileName);\n\n  const isExcel = lowerName.endsWith(\".xlsx\");\n  const isTemp = lowerName.startsWith(\"~$\");\n\n  const isProgramacion =\n    lowerName.includes(\"programacion de entrega\") ||\n    lowerName.includes(\"programacion_de_entrega\");\n\n  const isAudi =\n    lowerName.includes(\"audi\") ||\n    normalizePath(filePath).includes(\"\\\\clientes\\\\audi\\\\\");\n\n  return isExcel && !isTemp && isProgramacion && isAudi;\n}\n\nfunction getFileAgeMinutes(stats) {\n  return (Date.now() - stats.mtimeMs) / 1000 / 60;\n}\n\nfunction getFileAgeDays(stats) {\n  return getFileAgeMinutes(stats) / 60 / 24;\n}\n\nfunction getProcessedKey(filePath) {\n  // Usamos ruta como llave para evitar reprocesar el mismo archivo cada 15 min.\n  // Si algún día se quiere reprocesar, se puede borrar esta entrada del JSON.\n  return normalizePath(path.resolve(filePath));\n}\n\nfunction walkForExcelFiles(dir, results = []) {\n  if (!fs.existsSync(dir)) return results;\n\n  let entries = [];\n\n  try {\n    entries = fs.readdirSync(dir, { withFileTypes: true });\n  } catch (error) {\n    return results;\n  }\n\n  for (const entry of entries) {\n    const fullPath = path.join(dir, entry.name);\n\n    if (entry.isDirectory()) {\n      const folderName = normalizeText(entry.name);\n\n      // Evita meterse en carpetas claramente irrelevantes\n      if (\n        folderName.includes(\"remisiones\") ||\n        folderName.includes(\"facturas\") ||\n        folderName.includes(\"recibida\") ||\n        folderName.includes(\"recibidas\")\n      ) {\n        continue;\n      }\n\n      walkForExcelFiles(fullPath, results);\n      continue;\n    }\n\n    if (!entry.isFile()) continue;\n\n    if (isValidProgramacionFile(fullPath)) {\n      try {\n        const stats = fs.statSync(fullPath);\n\n        const ageMinutes = getFileAgeMinutes(stats);\n        const ageDays = getFileAgeDays(stats);\n\n        if (ageMinutes < MIN_AGE_MINUTES) continue;\n        if (ageDays > MAX_AGE_DAYS) continue;\n\n        results.push({\n          file_path: fullPath,\n          file_name: path.basename(fullPath),\n          size_bytes: stats.size,\n          modified_at: stats.mtime.toISOString(),\n          modified_time_ms: stats.mtimeMs,\n          processed_key: getProcessedKey(fullPath)\n        });\n      } catch (error) {\n        continue;\n      }\n    }\n  }\n\n  return results;\n}\n\n// ===============================\n// BUSCAR CANDIDATOS\n// ===============================\nif (!fs.existsSync(BASE_CLIENTE_AUDI)) {\n  throw new Error(`No existe la carpeta base de Audi: ${BASE_CLIENTE_AUDI}`);\n}\n\nconst estadoDefault = {\n  cliente: \"AUDI\",\n  updated_at: \"\",\n  procesados: {}\n};\n\nconst estado = safeReadJson(ESTADO_PATH, estadoDefault);\n\nif (!estado.procesados || typeof estado.procesados !== \"object\") {\n  estado.procesados = {};\n}\n\nconst yearFolders = fs.readdirSync(BASE_CLIENTE_AUDI, { withFileTypes: true })\n  .filter(entry => entry.isDirectory())\n  .map(entry => entry.name)\n  .filter(name => isYearFolder(name))\n  .filter(name => shouldCheckYear(name));\n\nconst candidatos = [];\n\nfor (const yearFolder of yearFolders) {\n  const yearPath = path.join(BASE_CLIENTE_AUDI, yearFolder);\n\n  let subfolders = [];\n\n  try {\n    subfolders = fs.readdirSync(yearPath, { withFileTypes: true })\n      .filter(entry => entry.isDirectory())\n      .map(entry => entry.name);\n  } catch (error) {\n    continue;\n  }\n\n  const infoFolders = subfolders.filter(isInfoAdicionalFolder);\n\n  for (const infoFolder of infoFolders) {\n    const infoPath = path.join(yearPath, infoFolder);\n    walkForExcelFiles(infoPath, candidatos);\n  }\n}\n\n// Ordena del más antiguo al más reciente\ncandidatos.sort((a, b) => a.modified_time_ms - b.modified_time_ms);\n\n// ===============================\n// MODO INICIALIZAR ESTADO\n// ===============================\nif (MODO_INICIALIZAR_ESTADO) {\n  for (const file of candidatos) {\n    estado.procesados[file.processed_key] = {\n      file_path: file.file_path,\n      file_name: file.file_name,\n      size_bytes: file.size_bytes,\n      modified_at: file.modified_at,\n      processed_at: new Date().toISOString(),\n      status: \"marcado_como_existente\"\n    };\n  }\n\n  estado.updated_at = new Date().toISOString();\n  estado.total_procesados = Object.keys(estado.procesados).length;\n\n  saveJson(ESTADO_PATH, estado);\n\n  return [];\n}\n\n// ===============================\n// FILTRAR NO PROCESADOS\n// ===============================\nconst nuevos = candidatos.filter(file => !estado.procesados[file.processed_key]);\n\nconst seleccionados = nuevos.slice(0, MAX_FILES_PER_RUN);\n\nreturn seleccionados.map(file => ({\n  json: {\n    path: file.file_path,\n    filePath: file.file_path,\n    fullPath: file.file_path,\n    file_name: file.file_name,\n    fileName: file.file_name,\n\n    size_bytes: file.size_bytes,\n    modified_at: file.modified_at,\n\n    processed_key: file.processed_key,\n    estado_procesados_path: ESTADO_PATH,\n\n    archivo_valido: true,\n    deteccion_modo: \"schedule_audi\",\n    candidatos_encontrados: candidatos.length,\n    archivos_nuevos_pendientes: nuevos.length\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        -32
+      ],
+      "id": "9a2eb7e0-defe-46ea-a27d-561172cd8870",
+      "name": "Buscar programaciones Audi"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1744,
+        -128
+      ],
+      "id": "5ef9ed26-be46-47f2-a960-1aa50f767624",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $(\"Asignar no.Rem PG\").all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        448
+      ],
+      "id": "7efb6c75-7ebb-4f03-a00e-70cf28c18549",
+      "name": "Recuperar datos para HI"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "RZHzdlnfWUbXLqC5",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/RZHzdlnfWUbXLqC5",
+          "cachedResultName": "Generación Hojas Identificación"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        64,
+        448
+      ],
+      "id": "6a7b5bc8-4ea0-4840-8acf-0367754e50ca",
+      "name": "Generación Hojas Identificación"
+    },
+    {
+      "parameters": {
+        "command": "=={{ `powershell -NoProfile -ExecutionPolicy Bypass -Command \"New-Item -ItemType Directory -Force -Path '${$('Preparar archivo trigger').first().json.copy_dir}' | Out-Null; Copy-Item -LiteralPath '${$('Preparar archivo trigger').first().json.file_path}' -Destination '${$('Preparar archivo trigger').first().json.copy_file_path}' -Force\"` }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -624,
+        208
+      ],
+      "id": "f980f17d-8390-4eac-a3db-f53f06c7a7f0",
+      "name": "Guardar copia en entrada"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "RlQNjedYDlgdS3dC",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/RlQNjedYDlgdS3dC",
+          "cachedResultName": "Generación PDFs"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -832,
+        448
+      ],
+      "name": "Call Generación PDFs",
+      "id": "aff040b4-c8de-4a35-a78c-43251bb4655f"
+    },
+    {
+      "parameters": {
+        "jsCode": "function cleanText(value) {\n  return String(value ?? \"\")\n    .replace(/\\t/g, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction normalizeHeader(value) {\n  return cleanText(value)\n    .toLowerCase()\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction normalizePartNumber(value) {\n  return cleanText(value)\n    .toUpperCase()\n    .replace(/\\s+/g, \"\");\n}\n\nfunction rowToArray(row) {\n  if (Array.isArray(row)) return row;\n  if (Array.isArray(row.row)) return row.row;\n  if (Array.isArray(row.data)) return row.data;\n  if (Array.isArray(row.values)) return row.values;\n\n  const letters = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\".split(\"\");\n\n  if (Object.keys(row).some(key => /^[A-Z]+$/.test(key))) {\n    return letters.map(letter => row[letter] ?? \"\");\n  }\n\n  return Object.values(row);\n}\n\nfunction isUnit(value) {\n  const text = cleanText(value).toLowerCase();\n\n  return [\n    \"bag\",\n    \"bags\",\n    \"kg\",\n    \"kgs\",\n    \"kilo\",\n    \"kilos\",\n    \"roll\",\n    \"rolls\",\n    \"rollo\",\n    \"rollos\",\n    \"pack\",\n    \"packs\",\n    \"paquete\",\n    \"paquetes\"\n  ].includes(text);\n}\n\nfunction normalizeUnit(value) {\n  const text = cleanText(value).toLowerCase();\n\n  if ([\"bag\", \"bags\", \"bolsa\", \"bolsas\"].includes(text)) return \"bags\";\n  if ([\"kg\", \"kgs\", \"kilo\", \"kilos\"].includes(text)) return \"kg\";\n  if ([\"roll\", \"rolls\", \"rollo\", \"rollos\"].includes(text)) return \"Roll\";\n  if ([\"pack\", \"packs\", \"paquete\", \"paquetes\"].includes(text)) return \"packs\";\n\n  return cleanText(value);\n}\n\nfunction isExcelDateSerial(value) {\n  const number = Number(value);\n  return Number.isFinite(number) && number >= 30000 && number <= 60000;\n}\n\nfunction excelSerialToISODate(serial) {\n  const excelEpoch = Date.UTC(1899, 11, 30);\n  const ms = excelEpoch + Math.floor(Number(serial)) * 86400 * 1000;\n  const date = new Date(ms);\n\n  const year = date.getUTCFullYear();\n  const month = String(date.getUTCMonth() + 1).padStart(2, \"0\");\n  const day = String(date.getUTCDate()).padStart(2, \"0\");\n\n  return `${year}-${month}-${day}`;\n}\n\nconst rawRows = $input.all().map(item => rowToArray(item.json));\n\nlet headerIndex = -1;\nlet headers = [];\n\nfor (let i = 0; i < rawRows.length; i++) {\n  const normalized = rawRows[i].map(normalizeHeader);\n\n  const hasActivo = normalized.includes(\"activo\");\n  const hasPartNumber = normalized.includes(\"part_number\");\n\n  if (hasActivo && hasPartNumber) {\n    headerIndex = i;\n    headers = normalized;\n    break;\n  }\n}\n\nif (headerIndex === -1) {\n  throw new Error(\"No se encontró la fila de encabezados del catálogo. Debe existir una fila con columnas 'activo' y 'part_number'.\");\n}\n\nfunction getByHeader(row, name) {\n  const index = headers.indexOf(name);\n  if (index === -1) return \"\";\n  return row[index] ?? \"\";\n}\n\nconst catalogo = {};\n\nfor (let i = headerIndex + 1; i < rawRows.length; i++) {\n  const row = rawRows[i];\n\n  const activo = cleanText(getByHeader(row, \"activo\")).toUpperCase();\n\n  if (!activo) continue;\n  if (activo !== \"SI\") continue;\n\n  const partNumber = cleanText(getByHeader(row, \"part_number\"));\n\n  const partNumberNormalizado = normalizePartNumber(\n    getByHeader(row, \"part_number_normalizado\") || partNumber\n  );\n\n  if (!partNumberNormalizado) continue;\n\n  let packingCode = cleanText(getByHeader(row, \"packing_code\"));\n  let unidadBase = cleanText(getByHeader(row, \"unidad_base\"));\n  let qtyPerPackagingDefault = cleanText(getByHeader(row, \"qty_per_packaging_default\"));\n  let observaciones = cleanText(getByHeader(row, \"observaciones\"));\n  let fechaActualizacion = cleanText(getByHeader(row, \"fecha_actualizacion\"));\n\n  /*\n    Corrección automática para casos donde las columnas quedaron corridas:\n    packing_code = bags\n    unidad_base = 40\n    qty_per_packaging_default = 46210\n  */\n  if (isUnit(packingCode)) {\n    const unidadDetectada = normalizeUnit(packingCode);\n\n    packingCode = \"\";\n\n    if (!isUnit(unidadBase)) {\n      const posibleQty = unidadBase;\n      unidadBase = unidadDetectada;\n\n      if (posibleQty && !qtyPerPackagingDefault) {\n        qtyPerPackagingDefault = posibleQty;\n      } else if (posibleQty && isExcelDateSerial(qtyPerPackagingDefault)) {\n        fechaActualizacion = excelSerialToISODate(qtyPerPackagingDefault);\n        qtyPerPackagingDefault = posibleQty;\n      }\n    } else {\n      unidadBase = normalizeUnit(unidadBase);\n    }\n  } else {\n    unidadBase = normalizeUnit(unidadBase);\n  }\n\n  if (isExcelDateSerial(fechaActualizacion)) {\n    fechaActualizacion = excelSerialToISODate(fechaActualizacion);\n  }\n\n  if (isExcelDateSerial(qtyPerPackagingDefault) && !fechaActualizacion) {\n    fechaActualizacion = excelSerialToISODate(qtyPerPackagingDefault);\n    qtyPerPackagingDefault = \"\";\n  }\n\n  catalogo[partNumberNormalizado] = {\n    activo,\n    part_number: partNumber,\n    part_number_normalizado: partNumberNormalizado,\n\n    codigo_interno: cleanText(getByHeader(row, \"codigo_interno\")),\n    descripcion_catalogo: cleanText(getByHeader(row, \"descripcion_catalogo\")),\n    formato_audi: cleanText(getByHeader(row, \"formato_audi\")).toLowerCase(),\n\n    pde: cleanText(getByHeader(row, \"pde\")),\n    ref_pedido: cleanText(getByHeader(row, \"ref_pedido\")),\n\n    discharge_point: cleanText(getByHeader(row, \"discharge_point\")),\n    packing_code: packingCode,\n    unidad_base: unidadBase,\n    qty_per_packaging_default: qtyPerPackagingDefault,\n    observaciones,\n    fecha_actualizacion: fechaActualizacion\n  };\n}\n\nreturn [\n  {\n    json: {\n      catalogo_productos: catalogo,\n      total_productos_catalogo: Object.keys(catalogo).length,\n      catalogo_productos_path: $(\"Preparar archivo trigger\").first().json.catalogo_productos_path\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        208
+      ],
+      "id": "afcff61f-207f-44bc-b66c-f5b000a9670d",
+      "name": "Preparar catalogo productos"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "Catalogo_Productos"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        208
+      ],
+      "id": "570a1bef-16a5-414f-8ffd-e3cd5c658744",
+      "name": "Extracción catalogo productos"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Preparar archivo trigger').first().json.catalogo_productos_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        208
+      ],
+      "id": "8f2e24f7-121d-4014-a900-9e76e6631f22",
+      "name": "Leer catálogo productos"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Preparar archivo trigger').first().json.copy_file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -400,
+        208
+      ],
+      "id": "555bbd67-4a54-4def-aacd-b63219667e0e",
+      "name": "Leer copia en entrada"
+    },
+    {
+      "parameters": {
+        "jsCode": "const remisiones = $(\"Normalizar datos\").all();\n\nif (remisiones.length === 0) {\n  throw new Error(\"No hay remisiones generadas por el nodo 'Normalizar datos'.\");\n}\n\nconst counterItem = $input.first();\n\nif (!counterItem) {\n  throw new Error(\"No llegó ningún item con el archivo contador.\");\n}\n\nconst binaryField = Object.keys(counterItem.binary || {})[0] || \"data\";\n\nif (!counterItem.binary || !counterItem.binary[binaryField]) {\n  throw new Error(\"No se encontró el archivo contador en binario. Revisa el nodo que lee contador_remisiones_audi.json.\");\n}\n\nconst counterBuffer = await this.helpers.getBinaryDataBuffer(0, binaryField);\n\nlet counter;\n\ntry {\n  counter = JSON.parse(counterBuffer.toString(\"utf8\"));\n} catch (error) {\n  throw new Error(\"No se pudo leer contador_remisiones_audi.json como JSON válido.\");\n}\n\nconst lastRemision = Number(counter.last_remision);\n\nif (!Number.isInteger(lastRemision) || lastRemision < 1) {\n  throw new Error(\"El contador last_remision no es válido: \" + counter.last_remision);\n}\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction formatRemisionNumber(value) {\n  return String(value).padStart(4, \"0\");\n}\n\nfunction normalizePartNumber(partNumber) {\n  return cleanText(partNumber)\n    .toUpperCase()\n    .replace(/\\s+/g, \"\");\n}\n\nfunction shortPartName(partNumber) {\n  const normalized = normalizePartNumber(partNumber);\n\n  const manualNames = {\n    \"A156729\": \"156729\",\n    \"A156730\": \"156730\",\n    \"A15M3M6\": \"M3M6\",\n    \"A15M1M7\": \"M1M7\",\n    \"A15MEAW\": \"15MEAW\",\n    \"A15MEAV\": \"15MEAV\"\n  };\n\n  if (manualNames[normalized]) {\n    return manualNames[normalized];\n  }\n\n  // Fallback genérico:\n  // A 123456 -> 123456\n  // A ABC123 -> ABC123\n  const withoutA = normalized.replace(/^A/, \"\");\n\n  return withoutA || safeFileText(partNumber);\n}\n\nconst newLastRemision = lastRemision + remisiones.length;\n\nreturn remisiones.map((item, index) => {\n  const json = { ...item.json };\n\n  const folioNumber = lastRemision + index + 1;\n  const folioText = formatRemisionNumber(folioNumber);\n\n  const partNumber =\n    json.part_number ||\n    json.items?.[0]?.part_number ||\n    \"\";\n\n  const partShort = shortPartName(partNumber);\n\n  json.remision_folio_numero = folioNumber;\n  json.numero_remision = folioText;\n\n  // Nombre final del HTML. El PDF tomará el mismo nombre cambiando .html por .pdf.\n  json.output_name = `Rem ${folioText} ${safeFileText(partShort)}.html`;\n\n  // Usa la ruta que viene desde Preparar archivo trigger / Normalizar datos.\n  json.counter_path =\n    json.counter_path ||\n    \"C:\\\\Users\\\\06\\\\Documents\\\\Dropbox\\\\Herramientas\\\\Remisiones Audi\\\\05_Archivos auxiliares\\\\Estado\\\\contador_remisiones_audi.json\";\n\n  json.counter_previous = lastRemision;\n  json.counter_new_last = newLastRemision;\n\n  json.counter_cliente = counter.cliente || \"AUDI\";\n  json.counter_updated_at_previous = counter.updated_at || \"\";\n\n  return { json };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        1152
+      ],
+      "id": "2a6fa63b-6c8c-4642-9853-c45532969c73",
+      "name": "Asignar no.Rem",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.counter_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        992,
+        1152
+      ],
+      "id": "040e6ec5-d3a2-43a7-b70a-d83da5baec05",
+      "name": "Guardar contador actualizado",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const remisiones = $(\"Asignar no.Rem\").all();\n\nif (remisiones.length === 0) {\n  throw new Error(\"No hay remisiones para actualizar contador.\");\n}\n\nconst first = remisiones[0].json;\n\nconst counterPath = first.counter_path;\nconst newLast = Number(first.counter_new_last);\nconst previousLast = Number(first.counter_previous);\n\nif (!counterPath) {\n  throw new Error(\"No se encontró counter_path. Revisa que venga desde 'Preparar archivo trigger' y 'Asignar no.Rem'.\");\n}\n\nif (!Number.isInteger(newLast) || newLast < 1) {\n  throw new Error(\"counter_new_last no es válido: \" + first.counter_new_last);\n}\n\nif (!Number.isInteger(previousLast) || previousLast < 1) {\n  throw new Error(\"counter_previous no es válido: \" + first.counter_previous);\n}\n\nconst remisionesGeneradas = remisiones.map(item => {\n  const json = item.json;\n\n  return {\n    numero_remision: json.numero_remision,\n    remision_folio_numero: json.remision_folio_numero,\n    part_number: json.part_number,\n    codigo_interno: json.codigo_interno,\n    output_name: json.output_name || \"\",\n    pdf_name: json.pdf_name || \"\"\n  };\n});\n\nconst counter = {\n  cliente: \"AUDI\",\n  last_remision: newLast,\n  previous_last_remision: previousLast,\n  remisiones_generadas: remisiones.length,\n  updated_at: new Date().toISOString(),\n  last_run_name: first.run_name || \"\",\n  last_source_file: first.archivo_origen || first.file_path || \"\",\n  last_copied_file: first.archivo_copiado || \"\",\n  remisiones: remisionesGeneradas\n};\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(counter, null, 2), \"utf8\"),\n  \"contador_remisiones_audi.json\",\n  \"application/json\"\n);\n\nreturn [\n  {\n    json: {\n      counter_path: counterPath,\n      last_remision: newLast,\n      previous_last_remision: previousLast,\n      remisiones_generadas: remisiones.length,\n      run_name: first.run_name || \"\",\n      archivo_origen: first.archivo_origen || first.file_path || \"\",\n      archivo_copiado: first.archivo_copiado || \"\"\n    },\n    binary: {\n      data: binaryData\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        1152
+      ],
+      "id": "f2d90fb5-35f4-4eca-87b5-af2565623d59",
+      "name": "Preparar contador actualizado",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Preparar archivo trigger').first().json.counter_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        1152
+      ],
+      "id": "b2a5f546-f4b5-4b21-ba68-041c5f94e618",
+      "name": "Leer contador remisiones",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -848,
+        208
+      ],
+      "id": "614312a0-1ebf-4a13-b085-6a504d1d4aeb",
+      "name": "Leer archivo disparador"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BASE_HERRAMIENTA = String.raw`C:\\Users\\06\\Documents\\Dropbox\\Pruebas\\REMISIONES AUDI`;\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/\\.[^.]+$/i, \"\")\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction pad(value) {\n  return String(value).padStart(2, \"0\");\n}\n\nfunction getTimestamp() {\n  const now = new Date();\n\n  return (\n    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +\n    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`\n  );\n}\n\nfunction getFileNameFromPath(filePath) {\n  return cleanText(filePath).split(/[\\\\/]/).pop();\n}\n\nconst timestamp = getTimestamp();\n\n// ===============================\n// Carpetas principales\n// ===============================\nconst copyDir = `${BASE_HERRAMIENTA}\\\\01_ENTRADA`;\n\nconst salidasDir = `${BASE_HERRAMIENTA}\\\\02_SALIDAS`;\nconst remisionesDir = `${salidasDir}\\\\REMISIONES`;\nconst hojasIdentificacionDir = `${salidasDir}\\\\HOJAS_IDENTIFICACION`;\n\nconst logsDir = `${BASE_HERRAMIENTA}\\\\03_LOGS`;\nconst errorDir = `${BASE_HERRAMIENTA}\\\\04_ERRORES`;\n\nconst auxiliaresDir = `${BASE_HERRAMIENTA}\\\\05_ARCHIVOS AUXILIARES`;\nconst templatesDir = `${auxiliaresDir}\\\\TEMPLATES`;\nconst scriptsDir = `${auxiliaresDir}\\\\SCRIPTS`;\nconst estadoDir = `${auxiliaresDir}\\\\ESTADO`;\nconst catalogoDir = `${auxiliaresDir}\\\\CATALOGO`;\n\nconst tempBaseDir = `${BASE_HERRAMIENTA}\\\\06_ARCHIVOS TEMPORALES`;\nconst tempDir = `${tempBaseDir}\\\\html`;\nconst tempHojasIdentificacionDir = `${tempBaseDir}\\\\html_hojas_identificacion`;\n\n// ===============================\n// Archivos auxiliares\n// ===============================\nconst pdfScriptPath = `${scriptsDir}\\\\convertir-audi-pdf.ps1`;\nconst cleanScriptPath = `${scriptsDir}\\\\limpiar-temp-audi.ps1`;\nconst counterPath = `${estadoDir}\\\\contador_remisiones_audi.json`;\nconst catalogoProductosPath = `${catalogoDir}\\\\Catalogo_Productos_Audi.xlsx`;\nconst hiTemplatePath = `${templatesDir}\\\\HI-Template-Audi.html`;\n\nconst output = [];\n\nfor (const item of $input.all()) {\n  const json = item.json;\n\n  let rawPath = cleanText(\n    json.path ||\n    json.filePath ||\n    json.fullPath ||\n    json.file ||\n    json.directory ||\n    \"\"\n  );\n\n  let fileName = cleanText(\n    json.fileName ||\n    json.filename ||\n    json.name ||\n    getFileNameFromPath(rawPath)\n  );\n\n  let filePath = rawPath;\n\n  /*\n    Algunos outputs del Local File Trigger pueden venir como:\n    - path = ruta completa del archivo\n    - path = carpeta\n    - fileName/name = nombre del archivo\n\n    Esta parte intenta resolver ambos casos.\n  */\n  const rawPathLastPart = getFileNameFromPath(rawPath);\n  const rawPathLooksLikeFile = /\\.[a-z0-9]+$/i.test(rawPathLastPart);\n\n  if (!rawPathLooksLikeFile && rawPath && fileName) {\n    filePath = rawPath.replace(/[\\\\/]$/, \"\") + \"\\\\\" + fileName;\n  }\n\n  if (!fileName && rawPathLooksLikeFile) {\n    fileName = rawPathLastPart;\n  }\n\n  const sourceBaseName = fileName.replace(/\\.[^.]+$/i, \"\");\n  const runName = `${safeFileText(sourceBaseName)}_${timestamp}`;\n\n  /*\n    No creamos subcarpetas por ejecución.\n    Para evitar choques, la copia del Excel sí lleva runName.\n    Los PDF finales de remisión serán únicos por número de remisión:\n    Rem 0952 156729.pdf, etc.\n  */\n  const extension = fileName.match(/\\.[^.]+$/i)?.[0] || \".xlsx\";\n  const uniqueId = Math.random().toString(36).slice(2, 8).toUpperCase();\n  \n  const copiedFileName = `COPIA_AUDI_${timestamp}_${uniqueId}${extension}`;\n  const copyFilePath = `${copyDir}\\\\${copiedFileName}`;\n\n  \n  const logFilePath = `${logsDir}\\\\log_${runName}.csv`;\n  const errorFilePath = `${errorDir}\\\\error_${runName}.txt`;\n\n  output.push({\n    json: {\n      ...json,\n\n      // ===============================\n      // Archivo original detectado\n      // ===============================\n      file_path: filePath,\n      file_name: fileName,\n      source_base_name: sourceBaseName,\n\n      // ===============================\n      // Identificador de ejecución\n      // ===============================\n      run_name: runName,\n      timestamp,\n\n      // ===============================\n      // Carpetas base\n      // ===============================\n      base_herramienta: BASE_HERRAMIENTA,\n\n      copy_dir: copyDir,\n\n      salidas_dir: salidasDir,\n\n      // Remisiones\n      output_dir: remisionesDir,\n      remisiones_dir: remisionesDir,\n\n      // Hojas de identificación\n      hojas_identificacion_dir: hojasIdentificacionDir,\n\n      // Temporales\n      temp_base_dir: tempBaseDir,\n      temp_dir: tempDir,\n      temp_hojas_identificacion_dir: tempHojasIdentificacionDir,\n\n      // Alias por compatibilidad, por si algún nodo lo usa camelCase\n      tempHojasIdentificacionDir: tempHojasIdentificacionDir,\n\n      // Auxiliares\n      auxiliares_dir: auxiliaresDir,\n      templates_dir: templatesDir,\n      scripts_dir: scriptsDir,\n      logs_dir: logsDir,\n      error_dir: errorDir,\n      estado_dir: estadoDir,\n      catalogo_dir: catalogoDir,\n\n      // ===============================\n      // Archivos específicos\n      // ===============================\n      copy_file_name: copiedFileName,\n      copy_file_path: copyFilePath,\n\n      log_file_path: logFilePath,\n      error_file_path: errorFilePath,\n\n      catalogo_productos_path: catalogoProductosPath,\n      hi_template_path: hiTemplatePath,\n\n      // Scripts\n      pdf_script_path: pdfScriptPath,\n      clean_script_path: cleanScriptPath,\n\n      // Contador\n      counter_path: counterPath\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        -32
+      ],
+      "id": "16382af8-d868-44d8-83af-03657b0a8835",
+      "name": "Preparar archivo trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validItems = [];\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction normalizePath(value) {\n  return cleanText(value).replace(/\\//g, \"\\\\\").toLowerCase();\n}\n\nfor (const item of $input.all()) {\n  const json = item.json;\n\n  const filePath = cleanText(\n    json.file_path ||\n    json.path ||\n    json.filePath ||\n    json.fullPath ||\n    \"\"\n  );\n\n  const normalizedPath = normalizePath(filePath);\n\n  const fileName = cleanText(\n    json.file_name ||\n    json.fileName ||\n    json.filename ||\n    json.name ||\n    filePath.split(/[\\\\/]/).pop()\n  );\n\n  const lowerName = fileName.toLowerCase();\n\n  const isExcel = lowerName.endsWith(\".xlsx\");\n  const isTemporaryExcel = lowerName.startsWith(\"~$\");\n\n  const isProgramacionEntrega =\n    lowerName.includes(\"programacion de entrega\") ||\n    lowerName.includes(\"programacion_de_entrega\");\n\n  const isInsideToolFolder =\n    normalizedPath.includes(\"\\\\remisiones audi\\\\01_entrada\\\\\") ||\n    normalizedPath.includes(\"\\\\remisiones audi\\\\02_salidas\\\\\") ||\n    normalizedPath.includes(\"\\\\remisiones audi\\\\03_logs\\\\\") ||\n    normalizedPath.includes(\"\\\\remisiones audi\\\\04_errores\\\\\") ||\n    normalizedPath.includes(\"\\\\remisiones audi\\\\05_archivos auxiliares\\\\\") ||\n    normalizedPath.includes(\"\\\\remisiones audi\\\\06_archivos temporales\\\\\");\n\n  const isValid =\n    filePath &&\n    fileName &&\n    isExcel &&\n    !isTemporaryExcel &&\n    isProgramacionEntrega &&\n    !isInsideToolFolder;\n\n  if (isValid) {\n    validItems.push({\n      json: {\n        ...json,\n        archivo_valido: true,\n        validacion_archivo: \"Archivo válido para remisiones Audi\"\n      }\n    });\n  }\n}\n\nreturn validItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        -32
+      ],
+      "id": "75399a2c-049e-409b-a57d-2cb4674a67e6",
+      "name": "Ignorar archivos temporales"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "headerRow": false,
+          "includeEmptyCells": true,
+          "rawData": true
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        208
+      ],
+      "id": "3a735821-999d-4958-8cdd-d42ecc363340",
+      "name": "Extraccion de informacion de excel"
+    },
+    {
+      "parameters": {
+        "jsCode": "const excelItems = $(\"Extraccion de informacion de excel\").all();\nconst contexto = $(\"Preparar archivo trigger\").first().json;\n\nconst catalogoNode = $(\"Preparar catalogo productos\").first().json;\nconst catalogoProductos = catalogoNode.catalogo_productos || {};\n\nif (excelItems.length === 0) {\n  throw new Error(\"No hay filas del Excel desde 'Extraccion de informacion de excel'.\");\n}\n\nif (Object.keys(catalogoProductos).length === 0) {\n  throw new Error(\"El catálogo de productos está vacío. Revisa 'Preparar catalogo productos'.\");\n}\n\nconst inputRows = excelItems.map(item => item.json);\n\nfunction rowToArray(row) {\n  if (Array.isArray(row)) return row;\n  if (Array.isArray(row.row)) return row.row;\n  if (Array.isArray(row.data)) return row.data;\n  if (Array.isArray(row.values)) return row.values;\n\n  const letters = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\".split(\"\");\n\n  if (Object.keys(row).some(key => /^[A-Z]+$/.test(key))) {\n    return letters.map(letter => row[letter] ?? \"\");\n  }\n\n  const columnKeys = Object.keys(row)\n    .filter(key => /(\\d+)$/.test(key))\n    .sort((a, b) => {\n      const na = Number(a.match(/(\\d+)$/)?.[1] ?? 0);\n      const nb = Number(b.match(/(\\d+)$/)?.[1] ?? 0);\n      return na - nb;\n    });\n\n  if (columnKeys.length) {\n    return columnKeys.map(key => row[key] ?? \"\");\n  }\n\n  return Object.values(row);\n}\n\nconst rows = inputRows.map(rowToArray);\n\nconst meses = [\n  \"Enero\", \"Febrero\", \"Marzo\", \"Abril\", \"Mayo\", \"Junio\",\n  \"Julio\", \"Agosto\", \"Septiembre\", \"Octubre\", \"Noviembre\", \"Diciembre\"\n];\n\nfunction excelSerialToDateParts(serial) {\n  const excelEpoch = Date.UTC(1899, 11, 30);\n  const ms = excelEpoch + Math.floor(Number(serial)) * 86400 * 1000;\n  const date = new Date(ms);\n\n  return {\n    day: date.getUTCDate(),\n    month: date.getUTCMonth(),\n    year: date.getUTCFullYear()\n  };\n}\n\nfunction formatDateSpanish(value) {\n  if (value === null || value === undefined || value === \"\") return \"\";\n\n  if (typeof value === \"number\") {\n    const { day, month, year } = excelSerialToDateParts(value);\n    return `${day} de ${meses[month]} de ${year}`;\n  }\n\n  if (value instanceof Date) {\n    return `${value.getUTCDate()} de ${meses[value.getUTCMonth()]} de ${value.getUTCFullYear()}`;\n  }\n\n  const text = String(value).trim();\n\n  const match = text.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/);\n  if (match) {\n    const [, dd, mm, yyyy] = match;\n    return `${Number(dd)} de ${meses[Number(mm) - 1]} de ${Number(yyyy)}`;\n  }\n\n  return text;\n}\n\nfunction cleanText(value) {\n  return String(value ?? \"\")\n    .replace(/\\t/g, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction normalizePartNumber(value) {\n  return cleanText(value)\n    .toUpperCase()\n    .replace(/\\s+/g, \"\");\n}\n\nfunction cleanDescription(description, partNumber) {\n  let text = String(description ?? \"\")\n    .replace(/\\s*COD SAP:\\s*\\d+/gi, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n\n  const part = cleanText(partNumber)\n    .replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\");\n\n  if (part) {\n    text = text.replace(new RegExp(`^${part}\\\\s*-?\\\\s*`, \"i\"), \"\").trim();\n  }\n\n  return text;\n}\n\nfunction normalizeFormatoAudi(value) {\n  const text = cleanText(value).toLowerCase();\n\n  if ([\"tubo\", \"tubos\", \"rollo\", \"rollos\", \"kg\"].includes(text)) return \"tubos\";\n\n  if ([\"bolsa\", \"bolsas\", \"bag\", \"bags\", \"pack\", \"packs\", \"paquete\", \"paquetes\"].includes(text)) {\n    return \"bolsas\";\n  }\n\n  return \"\";\n}\n\nconst NUMBER_PATTERN = String.raw`\\d+(?:[.,]\\d+)*`;\n\nfunction numberUnitRegex(unitPattern) {\n  return new RegExp(`(${NUMBER_PATTERN})\\\\s*(?:${unitPattern})`, \"i\");\n}\n\nfunction parseFlexibleNumber(value) {\n  const text = String(value ?? \"\").trim();\n\n  if (!text) return NaN;\n\n  if (text.includes(\",\") && text.includes(\".\")) {\n    return text.lastIndexOf(\",\") > text.lastIndexOf(\".\")\n      ? Number(text.replace(/\\./g, \"\").replace(\",\", \".\"))\n      : Number(text.replace(/,/g, \"\"));\n  }\n\n  if (text.includes(\",\")) {\n    const parts = text.split(\",\");\n\n    if (parts.length === 2 && parts[1].length === 3) {\n      return Number(parts[0] + parts[1]);\n    }\n\n    return Number(text.replace(\",\", \".\"));\n  }\n\n  if (text.includes(\".\")) {\n    const parts = text.split(\".\");\n\n    if (parts.length === 2 && parts[1].length === 3) {\n      return Number(parts[0] + parts[1]);\n    }\n\n    return Number(text);\n  }\n\n  return Number(text);\n}\n\nfunction formatCalculatedNumber(value) {\n  if (!Number.isFinite(value)) return \"\";\n\n  const rounded = Math.round((value + Number.EPSILON) * 1000) / 1000;\n\n  if (Number.isInteger(rounded)) return String(rounded);\n\n  return rounded.toFixed(3).replace(/\\.?0+$/, \"\");\n}\n\nfunction parseCantidadNumerica(value) {\n  const text = cleanText(value);\n\n  const result = {\n    total_numeros: 0,\n    total_valor: 0\n  };\n\n  if (!text) return result;\n\n  if (/^0+(?:[.,]0+)?$/i.test(text)) {\n    return {\n      total_numeros: 1,\n      total_valor: 0\n    };\n  }\n\n  const regex = /([\\d.,]+)\\s*(bolsas?|bags?|rollos?|rolls?|paquetes?|packs?|kg|kgs|kilo|kilos)/gi;\n\n  let match;\n\n  while ((match = regex.exec(text)) !== null) {\n    const number = parseFlexibleNumber(match[1]);\n\n    if (!Number.isFinite(number)) continue;\n\n    result.total_numeros += 1;\n    result.total_valor += number;\n  }\n\n  return result;\n}\n\nfunction isCantidadCero(value) {\n  const parsed = parseCantidadNumerica(value);\n  return parsed.total_numeros > 0 && parsed.total_valor === 0;\n}\n\nfunction parseCantidad(value) {\n  const text = cleanText(value);\n\n  const parts = text.split(\"=\").map(p => cleanText(p));\n  const left = parts[0] || \"\";\n  const right = parts[1] || \"\";\n\n  const bolsasMatch = text.match(numberUnitRegex(\"bolsas?\"));\n  const rollLeftMatch = left.match(numberUnitRegex(\"rolls?|rollos?\"));\n  const rollRightMatch = right.match(numberUnitRegex(\"rolls?|rollos?\"));\n  const packRightMatch = right.match(numberUnitRegex(\"packs?|paquetes?\"));\n  const kgRightMatch = right.match(numberUnitRegex(\"kg|kgs|kilo|kilos\"));\n\n  if (bolsasMatch && rollRightMatch) {\n    return {\n      total_qty: `${rollRightMatch[1]} Roll`,\n      entrega_text: `${rollRightMatch[1]} rollos`,\n      number_of_bags: `${bolsasMatch[1]} bags`\n    };\n  }\n\n  if (bolsasMatch && packRightMatch) {\n    return {\n      total_qty: `${packRightMatch[1]} packs`,\n      entrega_text: `${packRightMatch[1]} packs`,\n      number_of_bags: `${bolsasMatch[1]} bags`\n    };\n  }\n\n  if (rollLeftMatch && kgRightMatch) {\n    return {\n      total_qty: `${rollLeftMatch[1]} Roll`,\n      entrega_text: `${rollLeftMatch[1]} rollos`,\n      number_of_bags: `${kgRightMatch[1]} Kg`\n    };\n  }\n\n  return {\n    total_qty: text,\n    entrega_text: text,\n    number_of_bags: \"\"\n  };\n}\n\nfunction getQtyPerPackaging(description, cantidadRaw, productoCatalogo) {\n  const desc = cleanText(description);\n  const cantidad = cleanText(cantidadRaw);\n\n  let match = desc.match(new RegExp(`(?:rolls?|rollos?)\\\\s*c\\\\/\\\\s*(${NUMBER_PATTERN})\\\\s*bolsas?`, \"i\"));\n  if (match) return `${match[1]} bags per roll`;\n\n  match = desc.match(new RegExp(`(?:packs?|paquetes?)\\\\s*c\\\\/\\\\s*(${NUMBER_PATTERN})\\\\s*bolsas?`, \"i\"));\n  if (match) return `${match[1]} bags per pack`;\n\n  const bolsasMatch = cantidad.match(numberUnitRegex(\"bolsas?\"));\n\n  const rollCantidadMatch = cantidad.match(new RegExp(`=\\\\s*(${NUMBER_PATTERN})\\\\s*(?:rolls?|rollos?)`, \"i\"));\n  const packCantidadMatch = cantidad.match(new RegExp(`=\\\\s*(${NUMBER_PATTERN})\\\\s*(?:packs?|paquetes?)`, \"i\"));\n\n  if (bolsasMatch && rollCantidadMatch) {\n    const bolsas = parseFlexibleNumber(bolsasMatch[1]);\n    const rollos = parseFlexibleNumber(rollCantidadMatch[1]);\n    return `${formatCalculatedNumber(bolsas / rollos)} bags per roll`;\n  }\n\n  if (bolsasMatch && packCantidadMatch) {\n    const bolsas = parseFlexibleNumber(bolsasMatch[1]);\n    const packs = parseFlexibleNumber(packCantidadMatch[1]);\n    return `${formatCalculatedNumber(bolsas / packs)} bags per pack`;\n  }\n\n  const rollKgMatch = cantidad.match(\n    new RegExp(`(${NUMBER_PATTERN})\\\\s*(?:rolls?|rollos?).*=\\\\s*(${NUMBER_PATTERN})\\\\s*(?:kg|kgs|kilo|kilos)`, \"i\")\n  );\n\n  if (rollKgMatch) {\n    const rollos = parseFlexibleNumber(rollKgMatch[1]);\n    const kg = parseFlexibleNumber(rollKgMatch[2]);\n    return `${formatCalculatedNumber(kg / rollos)} Kg per roll`;\n  }\n\n  return cleanText(productoCatalogo?.qty_per_packaging_default);\n}\n\nfunction getPedidoFromNotas(notas) {\n  const text = cleanText(notas);\n\n  const pedidoMatch = text.match(/(?:pedido|ref)[^\\d]*(\\d{8,})/i);\n  if (pedidoMatch) return pedidoMatch[1];\n\n  const anyLongNumber = text.match(/\\b(7\\d{8,})\\b/);\n  if (anyLongNumber) return anyLongNumber[1];\n\n  return \"\";\n}\n\nfunction getPdeFromNotas(notas) {\n  const text = cleanText(notas);\n\n  const pdeMatch = text.match(/PDE[^\\d]*(\\d{8,})/i);\n  if (pdeMatch) return pdeMatch[1];\n\n  return \"\";\n}\n\nconst cliente = cleanText(rows[4]?.[3]);\nconst fechaDocumento = formatDateSpanish(rows[4]?.[11]);\nconst fechaEntrega = formatDateSpanish(rows[16]?.[4]);\nconst solicitadoPor = cleanText(rows[18]?.[2]);\n\nconst productRows = rows.slice(7, 13).filter(row => {\n  const codigoInterno = cleanText(row[0]);\n  const descripcion = cleanText(row[3]);\n  const partNumber = cleanText(row[8]);\n  const cantidad = cleanText(row[10]);\n\n  return (\n    codigoInterno &&\n    descripcion &&\n    partNumber &&\n    cantidad &&\n    !isCantidadCero(cantidad)\n  );\n});\n\nif (productRows.length === 0) {\n  throw new Error(\"No se encontraron productos válidos con cantidad mayor a cero en la programación de entrega Audi.\");\n}\n\nconst remisiones = productRows.map((row, index) => {\n  const codigoInternoExcel = cleanText(row[0]);\n  const descripcionRaw = row[3];\n  const partNumber = cleanText(row[8]);\n  const fechaItem = formatDateSpanish(row[9]);\n  const cantidadRaw = row[10];\n  const notas = cleanText(row[14]);\n\n  const partNumberNormalizado = normalizePartNumber(partNumber);\n  const productoCatalogo = catalogoProductos[partNumberNormalizado] || null;\n  const articuloEnCatalogo = Boolean(productoCatalogo);\n\n  const cantidad = parseCantidad(cantidadRaw);\n  const descripcionBase = cleanDescription(descripcionRaw, partNumber);\n\n  const pedidoNotas = getPedidoFromNotas(notas);\n  const pdeNotas = getPdeFromNotas(notas);\n\n  const pdeFinal =\n    pdeNotas ||\n    cleanText(productoCatalogo?.pde) ||\n    \"2800001704\";\n\n  const refPedidoFinal =\n    pedidoNotas ||\n    cleanText(productoCatalogo?.ref_pedido) ||\n    \"\";\n\n  const formatoAudiCatalogo =\n    normalizeFormatoAudi(productoCatalogo?.formato_audi);\n\n  const codigoInternoFinal =\n    codigoInternoExcel ||\n    cleanText(productoCatalogo?.codigo_interno);\n\n  const packingCodeFinal =\n    cleanText(productoCatalogo?.packing_code) || \"\";\n\n  const dischargePointFinal =\n    cleanText(productoCatalogo?.discharge_point) || \"IVH_CS1-s\";\n\n  const qtyPerPackagingFinal =\n    getQtyPerPackaging(descripcionRaw, cantidadRaw, productoCatalogo);\n\n  const item = {\n    codigo_interno: codigoInternoFinal,\n    codigo_interno_excel: codigoInternoExcel,\n    codigo_interno_catalogo: cleanText(productoCatalogo?.codigo_interno),\n\n    fecha_item: fechaItem,\n    notas,\n    cantidad_excel: cleanText(cantidadRaw),\n\n    total_qty: cantidad.total_qty,\n    qty_per_packaging: qtyPerPackagingFinal,\n\n    descripcion: `${descripcionBase}\\n(${partNumber})\\nSe entregan ${cantidad.entrega_text}`,\n    descripcion_catalogo: cleanText(productoCatalogo?.descripcion_catalogo),\n\n    part_number: partNumber,\n    part_number_normalizado: partNumberNormalizado,\n\n    packing_code: packingCodeFinal,\n    number_of_bags: cantidad.number_of_bags,\n    discharge_point: dischargePointFinal,\n\n    articulo_en_catalogo: articuloEnCatalogo,\n    formato_audi_catalogo: formatoAudiCatalogo,\n    unidad_base_catalogo: cleanText(productoCatalogo?.unidad_base)\n  };\n\n  return {\n    json: {\n      cliente,\n      fecha_documento: fechaDocumento,\n      solicitado_por: solicitadoPor,\n\n      archivo_origen: contexto.file_path,\n      archivo_copiado: contexto.copy_file_path,\n      file_name: contexto.file_name,\n      source_base_name: contexto.source_base_name,\n      run_name: contexto.run_name,\n      timestamp: contexto.timestamp,\n\n      base_herramienta: contexto.base_herramienta,\n      copy_dir: contexto.copy_dir,\n\n      salidas_dir: contexto.salidas_dir,\n      output_dir: contexto.output_dir,\n      remisiones_dir: contexto.remisiones_dir,\n      hojas_identificacion_dir: contexto.hojas_identificacion_dir,\n\n      temp_base_dir: contexto.temp_base_dir,\n      temp_dir: contexto.temp_dir,\n      temp_hojas_identificacion_dir: contexto.temp_hojas_identificacion_dir,\n      tempHojasIdentificacionDir: contexto.tempHojasIdentificacionDir,\n\n      templates_dir: contexto.templates_dir,\n      scripts_dir: contexto.scripts_dir,\n      logs_dir: contexto.logs_dir,\n      error_dir: contexto.error_dir,\n      estado_dir: contexto.estado_dir,\n\n      catalogo_dir: contexto.catalogo_dir,\n      catalogo_productos_path: contexto.catalogo_productos_path,\n      total_productos_catalogo: catalogoNode.total_productos_catalogo || 0,\n      articulo_en_catalogo: articuloEnCatalogo,\n\n      copy_file_name: contexto.copy_file_name,\n      log_file_path: contexto.log_file_path,\n      error_file_path: contexto.error_file_path,\n\n      hi_template_path: contexto.hi_template_path,\n\n      pdf_script_path: contexto.pdf_script_path,\n      clean_script_path: contexto.clean_script_path,\n      counter_path: contexto.counter_path,\n\n      numero_remision: String(index + 1).padStart(2, \"0\"),\n\n      id_transport: \"\",\n      fecha_envio: fechaEntrega,\n\n      proveedor_no: \"00X7293700\",\n      duns_no: \"812759337\",\n\n      pde: pdeFinal,\n      ref_pedido: refPedidoFinal,\n\n      pde_origen: pdeNotas\n        ? \"notas_excel\"\n        : articuloEnCatalogo && cleanText(productoCatalogo?.pde)\n          ? \"catalogo\"\n          : \"default\",\n\n      ref_pedido_origen: pedidoNotas\n        ? \"notas_excel\"\n        : articuloEnCatalogo && cleanText(productoCatalogo?.ref_pedido)\n          ? \"catalogo\"\n          : \"vacio\",\n\n      articulo_index: index + 1,\n\n      codigo_interno: codigoInternoFinal,\n      codigo_interno_excel: codigoInternoExcel,\n      codigo_interno_catalogo: cleanText(productoCatalogo?.codigo_interno),\n\n      part_number: partNumber,\n      part_number_normalizado: partNumberNormalizado,\n\n      notas,\n      cantidad_excel: cleanText(cantidadRaw),\n\n      formato_audi: formatoAudiCatalogo || \"\",\n\n      formato_audi_catalogo: formatoAudiCatalogo,\n      descripcion_catalogo: cleanText(productoCatalogo?.descripcion_catalogo),\n      unidad_base_catalogo: cleanText(productoCatalogo?.unidad_base),\n      packing_code_catalogo: cleanText(productoCatalogo?.packing_code),\n      discharge_point_catalogo: cleanText(productoCatalogo?.discharge_point),\n\n      output_name: `TEMP Rem ${String(index + 1).padStart(2, \"0\")} ${safeFileText(partNumber)}.html`,\n\n      items: [item]\n    }\n  };\n});\n\nreturn remisiones;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1728,
+        448
+      ],
+      "id": "fd472663-fa2f-4fdd-ab93-de1185415e03",
+      "name": "Normalizar datos"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1744,
+        64
+      ],
+      "id": "99536786-a1db-4b17-a804-cdeed16ddc26",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  a.automatizacion_id,\n  a.codigo AS automatizacion_codigo,\n  a.nombre AS automatizacion_nombre,\n  a.estatus AS automatizacion_estatus,\n\n  s.serie_id,\n  s.codigo AS serie_codigo,\n  s.nombre AS serie_nombre,\n  s.siguiente_folio,\n  s.estatus AS serie_estatus\nFROM ops.automatizaciones a\nCROSS JOIN operacion.series_documentales s\nWHERE a.codigo = 'REMISIONES_AUDI'\n  AND s.codigo = 'REMISION_AUDI';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1520,
+        -32
+      ],
+      "id": "5d6be719-0707-4fc6-992b-17ebd7e1b46d",
+      "name": "Leer automatización Audi",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nif (row.automatizacion_codigo !== \"REMISIONES_AUDI\") {\n  throw new Error(\"Automatización incorrecta: \" + row.automatizacion_codigo);\n}\n\nif (row.automatizacion_estatus !== \"ACTIVA\") {\n  throw new Error(\"Automatización inactiva: \" + row.automatizacion_estatus);\n}\n\nif (row.serie_codigo !== \"REMISION_AUDI\") {\n  throw new Error(\"Serie incorrecta: \" + row.serie_codigo);\n}\n\nif (row.serie_estatus !== \"ACTIVA\") {\n  throw new Error(\"Serie inactiva: \" + row.serie_estatus);\n}\n\nif (!Number.isInteger(Number(row.siguiente_folio)) || Number(row.siguiente_folio) <= 0) {\n  throw new Error(\"siguiente_folio inválido: \" + row.siguiente_folio);\n}\n\nreturn [\n  {\n    json: {\n      postgres_ok: true,\n      automatizacion_id: Number(row.automatizacion_id),\n      automatizacion_codigo: row.automatizacion_codigo,\n      serie_id: Number(row.serie_id),\n      serie_codigo: row.serie_codigo,\n      siguiente_folio: Number(row.siguiente_folio)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1296,
+        -32
+      ],
+      "id": "90760462-c3eb-4dc7-9906-c680214648e6",
+      "name": "Validar configuración PostgreSQL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const remisiones = $(\"Normalizar datos\").all();\nconst pg = $(\"Validar configuración PostgreSQL\").first().json;\n\nif (!remisiones.length) {\n  throw new Error(\"No hay remisiones normalizadas para contar.\");\n}\n\nreturn [\n  {\n    json: {\n      postgres_ok: pg.postgres_ok,\n      automatizacion_id: Number(pg.automatizacion_id),\n      automatizacion_codigo: pg.automatizacion_codigo,\n      serie_id: Number(pg.serie_id),\n      serie_codigo: pg.serie_codigo,\n      siguiente_folio_actual: Number(pg.siguiente_folio),\n\n      cantidad_remisiones: remisiones.length,\n      folio_inicial_simulado: Number(pg.siguiente_folio),\n      folio_final_simulado: Number(pg.siguiente_folio) + remisiones.length - 1,\n      siguiente_folio_simulado: Number(pg.siguiente_folio) + remisiones.length\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        448
+      ],
+      "id": "a8d32af6-184f-495a-a5b1-17b440591e80",
+      "name": "Preparar conteo remisiones PG"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM operacion.reservar_folios('REMISION_AUDI', {{ $json.cantidad_remisiones }});",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1280,
+        448
+      ],
+      "id": "bc261e2e-28aa-4633-9660-1c3efe12f5c0",
+      "name": "Reservar folios PostgreSQL",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const remisiones = $(\"Normalizar datos\").all();\nconst reserva = $(\"Reservar folios PostgreSQL\").first().json;\n\nconst folioInicial = Number(reserva.folio_inicial);\nconst folioFinal = Number(reserva.folio_final);\nconst cantidad = Number(reserva.cantidad);\n\nif (!remisiones.length) {\n  throw new Error(\"No hay remisiones normalizadas.\");\n}\n\nif (!Number.isInteger(folioInicial) || folioInicial <= 0) {\n  throw new Error(\"folio_inicial inválido: \" + reserva.folio_inicial);\n}\n\nif (cantidad !== remisiones.length) {\n  throw new Error(`La reserva de folios no coincide. PostgreSQL reservó ${cantidad}, pero hay ${remisiones.length} remisiones.`);\n}\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction formatRemisionNumber(value) {\n  return String(value).padStart(4, \"0\");\n}\n\nfunction normalizePartNumber(partNumber) {\n  return cleanText(partNumber)\n    .toUpperCase()\n    .replace(/\\s+/g, \"\");\n}\n\nfunction shortPartName(partNumber) {\n  const normalized = normalizePartNumber(partNumber);\n\n  const manualNames = {\n    \"A156729\": \"156729\",\n    \"A156730\": \"156730\",\n    \"A15M3M6\": \"M3M6\",\n    \"A15M1M7\": \"M1M7\",\n    \"A15MEAW\": \"15MEAW\",\n    \"A15MEAV\": \"15MEAV\"\n  };\n\n  if (manualNames[normalized]) return manualNames[normalized];\n\n  return normalized.replace(/^A/, \"\") || safeFileText(partNumber);\n}\n\nreturn remisiones.map((item, index) => {\n  const json = { ...item.json };\n\n  const folioNumber = folioInicial + index;\n  const folioText = formatRemisionNumber(folioNumber);\n\n  const partNumber =\n    json.part_number ||\n    json.items?.[0]?.part_number ||\n    \"\";\n\n  const partShort = shortPartName(partNumber);\n\n  json.remision_folio_numero = folioNumber;\n  json.numero_remision = folioText;\n  json.output_name = `Rem ${folioText} ${safeFileText(partShort)}.html`;\n\n  json.pg_folios = true;\n  json.serie_codigo = \"REMISION_AUDI\";\n  json.folio_inicial_reservado = folioInicial;\n  json.folio_final_reservado = folioFinal;\n  json.cantidad_folios_reservados = cantidad;\n\n  return { json };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        448
+      ],
+      "id": "99a0a5da-5987-495c-b059-0b964deeec2e",
+      "name": "Asignar no.Rem PG"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\n\nif (rows.length === 0) {\n  throw new Error(\"No se encontró cliente Audi en core.empresas.\");\n}\n\nif (rows.length > 1) {\n  throw new Error(\"Se encontró más de una empresa relacionada con Audi. Se necesita una búsqueda más exacta.\");\n}\n\nconst base = $(\"Preparar archivo trigger\").first().json;\nconst pg = $(\"Validar configuración PostgreSQL\").first().json;\nconst empresa = rows[0].json;\n\nreturn [\n  {\n    json: {\n      ...base,\n      ...pg,\n      empresa_cliente_id: Number(empresa.empresa_id),\n      empresa_cliente_data: empresa.empresa_data\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -32
+      ],
+      "id": "d55a0a07-e305-4361-a59b-2d19eaa608f0",
+      "name": "Validar cliente Audi PG"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql_documento_origen }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        272,
+        -32
+      ],
+      "id": "b244850e-10d0-4be0-8196-1cc9d6425eb8",
+      "name": "Registrar documento origen PG",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $(\"Validar cliente Audi PG\").first().json;\nconst doc = $input.first().json;\n\nif (!doc.documento_id) {\n  throw new Error(\"No se obtuvo documento_id desde core.documentos.\");\n}\n\nreturn [\n  {\n    json: {\n      ...base,\n      documento_origen_id: Number(doc.documento_id),\n      documento_nombre_archivo: doc.nombre_archivo,\n      documento_ruta_archivo: doc.ruta_archivo,\n      documento_estatus: doc.estatus\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        -32
+      ],
+      "id": "9c30a0f9-7663-484f-8afc-edaf520cf7a2",
+      "name": "Propagar documento PG"
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\n\nfunction sqlText(value) {\n  return \"'\" + String(value ?? \"\").replace(/'/g, \"''\") + \"'\";\n}\n\nconst empresaId = Number(j.empresa_cliente_id);\nconst nombreArchivo = j.file_name;\nconst rutaArchivo = j.file_path;\n\nif (!empresaId) {\n  throw new Error(\"empresa_cliente_id inválido.\");\n}\n\nif (!nombreArchivo) {\n  throw new Error(\"No se encontró file_name.\");\n}\n\nif (!rutaArchivo) {\n  throw new Error(\"No se encontró file_path.\");\n}\n\nconst sql = `\nWITH existente AS (\n  SELECT\n    documento_id,\n    empresa_id,\n    tipo_documento,\n    nombre_archivo,\n    ruta_archivo,\n    estatus\n  FROM core.documentos\n  WHERE empresa_id = ${empresaId}\n    AND lower(btrim(ruta_archivo)) = lower(btrim(${sqlText(rutaArchivo)}))\n  LIMIT 1\n),\ninsertado AS (\n  INSERT INTO core.documentos (\n    empresa_id,\n    tipo_documento,\n    nombre_archivo,\n    ruta_archivo,\n    origen,\n    estatus,\n    observaciones,\n    created_at,\n    updated_at\n  )\n  SELECT\n    ${empresaId},\n    'PROGRAMACION_ENTREGA',\n    ${sqlText(nombreArchivo)},\n    ${sqlText(rutaArchivo)},\n    'DROPBOX',\n    'ACTIVO',\n    'Documento fuente registrado por n8n Remisiones Audi V1 pruebas',\n    now(),\n    now()\n  WHERE NOT EXISTS (SELECT 1 FROM existente)\n  RETURNING\n    documento_id,\n    empresa_id,\n    tipo_documento,\n    nombre_archivo,\n    ruta_archivo,\n    estatus\n)\nSELECT * FROM insertado\nUNION ALL\nSELECT * FROM existente\nLIMIT 1;\n`;\n\nreturn [\n  {\n    json: {\n      ...j,\n      sql_documento_origen: sql\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        -32
+      ],
+      "id": "9ee2ab8b-e756-4c45-8753-05c34d696f7d",
+      "name": "Preparar documento origen PG"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  {{ $json.automatizacion_id }}::bigint AS automatizacion_id,\n  {{ $json.documento_origen_id }}::bigint AS documento_origen_id,\n\n  EXISTS (\n    SELECT 1\n    FROM ops.ejecuciones_automatizacion ea\n    WHERE ea.automatizacion_id = {{ $json.automatizacion_id }}\n      AND ea.documento_origen_id = {{ $json.documento_origen_id }}\n      AND ea.estado = 'COMPLETADA'\n  ) AS ya_completado,\n\n  (\n    SELECT ea.ejecucion_id\n    FROM ops.ejecuciones_automatizacion ea\n    WHERE ea.automatizacion_id = {{ $json.automatizacion_id }}\n      AND ea.documento_origen_id = {{ $json.documento_origen_id }}\n      AND ea.estado = 'COMPLETADA'\n    ORDER BY ea.finalizada_en DESC NULLS LAST, ea.ejecucion_id DESC\n    LIMIT 1\n  ) AS ejecucion_completada_id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1744,
+        208
+      ],
+      "id": "a691eff4-109e-4b25-9a69-7a07a2537ab6",
+      "name": "Validar idempotencia PG",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  e.empresa_id,\n  to_jsonb(e) AS empresa_data\nFROM core.empresas e\nWHERE to_jsonb(e)::text ILIKE '%AUDI%'\nORDER BY e.empresa_id\nLIMIT 2;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -400,
+        -32
+      ],
+      "id": "7b264dee-1c52-43b1-bdc2-8a4498b41a88",
+      "name": "Leer cliente Audi PG",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $(\"Propagar documento PG\").first().json;\nconst check = $input.first().json;\n\nif (check.ya_completado === true || check.ya_completado === \"true\") {\n  return [];\n}\n\nreturn [\n  {\n    json: {\n      ...base,\n      ya_completado_pg: false,\n      ejecucion_completada_id: check.ejecucion_completada_id || null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        208
+      ],
+      "id": "e5440ec0-0ccc-4c8f-9d9e-5b1d1894af89",
+      "name": "Control idempotencia PG"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ops.ejecuciones_automatizacion (\n  automatizacion_id,\n  documento_origen_id,\n  n8n_execution_id,\n  run_name,\n  estado,\n  iniciada_en,\n  created_at,\n  updated_at\n)\nVALUES (\n  {{ $json.automatizacion_id }},\n  {{ $json.documento_origen_id }},\n  NULLIF('{{ $execution.id }}', ''),\n  '{{ $json.run_name.replace(/'/g, \"''\") }}',\n  'PROCESANDO',\n  now(),\n  now(),\n  now()\n)\nRETURNING\n  ejecucion_id,\n  automatizacion_id,\n  documento_origen_id,\n  n8n_execution_id,\n  run_name,\n  estado,\n  iniciada_en;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1296,
+        208
+      ],
+      "id": "74f115dc-ac55-4917-af55-15e9ef7ffae9",
+      "name": "Crear ejecución PG",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $(\"Control idempotencia PG\").first().json;\nconst ejecucion = $input.first().json;\n\nif (!ejecucion.ejecucion_id) {\n  throw new Error(\"No se obtuvo ejecucion_id desde ops.ejecuciones_automatizacion.\");\n}\n\nreturn [\n  {\n    json: {\n      ...base,\n      ejecucion_id: Number(ejecucion.ejecucion_id),\n      n8n_execution_id: ejecucion.n8n_execution_id || \"\",\n      ejecucion_estado: ejecucion.estado,\n      ejecucion_iniciada_en: ejecucion.iniciada_en\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        208
+      ],
+      "id": "218afe4f-f7fc-4dc5-86f4-4a1ca4380542",
+      "name": "Propagar ejecución PG"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE ops.ejecuciones_automatizacion\nSET\n  estado = 'COMPLETADA',\n  finalizada_en = now(),\n  error_nodo = NULL,\n  error_mensaje = NULL,\n  updated_at = now()\nWHERE ejecucion_id = {{ $(\"Crear ejecución PG\").first().json.ejecucion_id }}\n  AND estado = 'PROCESANDO'\nRETURNING\n  ejecucion_id,\n  estado,\n  iniciada_en,\n  finalizada_en;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        288,
+        448
+      ],
+      "id": "7c9040ac-646f-4ab8-b384-6de7480b1af7",
+      "name": "Cerrar ejecución COMPLETADA PG",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction getNowIso() {\n  return new Date().toISOString();\n}\n\nfunction getNodeJson(nodeName) {\n  try {\n    return $(nodeName).first().json || {};\n  } catch (error) {\n    return {};\n  }\n}\n\nfunction getNodeItems(nodeName) {\n  try {\n    return $(nodeName).all() || [];\n  } catch (error) {\n    return [];\n  }\n}\n\nfunction pdfNameFromOutputName(outputName) {\n  const name = cleanText(outputName);\n  if (!name) return \"\";\n  return name.replace(/\\.html?$/i, \".pdf\");\n}\n\nfunction joinPath(dir, file) {\n  if (!dir || !file) return \"\";\n  return cleanText(dir).replace(/[\\\\/]$/, \"\") + \"\\\\\" + cleanText(file);\n}\n\nfunction parseNumber(value) {\n  const text = cleanText(value);\n  if (!text) return NaN;\n\n  if (text.includes(\",\") && text.includes(\".\")) {\n    return text.lastIndexOf(\",\") > text.lastIndexOf(\".\")\n      ? Number(text.replace(/\\./g, \"\").replace(\",\", \".\"))\n      : Number(text.replace(/,/g, \"\"));\n  }\n\n  if (text.includes(\",\")) {\n    const parts = text.split(\",\");\n    return parts.length === 2 && parts[1].length === 3\n      ? Number(parts[0] + parts[1])\n      : Number(text.replace(\",\", \".\"));\n  }\n\n  return Number(text);\n}\n\nfunction getKgFromCantidad(text) {\n  const match = cleanText(text).match(/([\\d.,]+)\\s*(kg|kgs|kilo|kilos)/i);\n  if (!match) return 0;\n\n  const kg = parseNumber(match[1]);\n  return Number.isFinite(kg) ? kg : 0;\n}\n\nfunction countHojasIdentificacion(remisiones) {\n  let total = 0;\n\n  for (const rem of remisiones) {\n    const kg = getKgFromCantidad(rem.cantidad_excel);\n\n    if (kg > 600) {\n      total += Math.ceil(kg / 600);\n    } else {\n      total += 1;\n    }\n  }\n\n  return total;\n}\n\nfunction fechaArchivoHI(base) {\n  const source = cleanText(\n    base.source_base_name ||\n    base.file_name ||\n    base.run_name ||\n    \"\"\n  );\n\n  const matchAudiDate = source.match(/AUDI[_\\s-]*(\\d{6})/i);\n\n  if (matchAudiDate) {\n    const value = matchAudiDate[1];\n    return `20${value.slice(0, 2)}${value.slice(2, 4)}${value.slice(4, 6)}`;\n  }\n\n  const timestamp = cleanText(base.timestamp);\n  if (/^\\d{8}/.test(timestamp)) return timestamp.slice(0, 8);\n\n  const now = new Date();\n\n  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, \"0\")}${String(now.getDate()).padStart(2, \"0\")}`;\n}\n\nconst busqueda = getNodeJson(\"Buscar programaciones Audi\");\nconst contexto = getNodeJson(\"Preparar archivo trigger\");\nconst pgConfig = getNodeJson(\"Validar configuración PostgreSQL\");\nconst pgRun = getNodeJson(\"Propagar ejecución PG\");\nconst reserva = getNodeJson(\"Reservar folios PostgreSQL\");\nconst cierrePg = getNodeJson(\"Cerrar ejecución COMPLETADA PG\");\nconst hiJson = getNodeJson(\"Generación Hojas Identificación\");\n\nconst remisionesItems = getNodeItems(\"Asignar no.Rem PG\");\nconst remisionesPgItems = getNodeItems(\"Registrar remisiones generadas PG\");\n\nif (!remisionesItems.length) {\n  throw new Error(\"No se encontraron remisiones desde 'Asignar no.Rem PG'.\");\n}\n\nconst remisionesPgByFolio = new Map(\n  remisionesPgItems.map((item) => {\n    const json = item.json || {};\n    return [String(json.folio ?? \"\"), json];\n  })\n);\n\nconst firstRemision = remisionesItems[0].json || {};\n\nconst runName =\n  pgRun.run_name ||\n  contexto.run_name ||\n  busqueda.run_name ||\n  firstRemision.run_name ||\n  `AUDI_${Date.now()}`;\n\nconst logsDir =\n  contexto.logs_dir ||\n  `${contexto.base_herramienta}\\\\03_LOGS`;\n\nconst remisionesDir =\n  contexto.remisiones_dir ||\n  contexto.output_dir ||\n  firstRemision.remisiones_dir ||\n  firstRemision.output_dir ||\n  \"\";\n\nconst hojasDir =\n  contexto.hojas_identificacion_dir ||\n  firstRemision.hojas_identificacion_dir ||\n  \"\";\n\nconst logFileName = `LOG_${safeFileText(runName)}.json`;\nconst logFilePath = `${logsDir}\\\\${logFileName}`;\n\nconst remisiones = remisionesItems.map((item) => {\n  const json = item.json || {};\n\n  const outputName = cleanText(json.output_name);\n  const pdfName = cleanText(json.pdf_name) || pdfNameFromOutputName(outputName);\n  const pdfPath = cleanText(json.pdf_path) || joinPath(remisionesDir, pdfName);\n\n  const folioKey = String(json.remision_folio_numero || json.numero_remision || \"\");\n  const pgRemision = remisionesPgByFolio.get(folioKey) || {};\n\n  return {\n    numero_remision: json.numero_remision || \"\",\n    remision_folio_numero: json.remision_folio_numero || \"\",\n\n    remision_id_pg: pgRemision.remision_id ? Number(pgRemision.remision_id) : \"\",\n    detalle_id_pg: pgRemision.detalle_id ? Number(pgRemision.detalle_id) : \"\",\n    estatus_pg: pgRemision.estatus || \"\",\n    detalles_totales_pg: pgRemision.detalles_totales ?? \"\",\n    detalles_insertados_pg: pgRemision.detalles_insertados ?? \"\",\n\n    part_number: json.part_number || json.items?.[0]?.part_number || \"\",\n    codigo_interno: json.codigo_interno || json.items?.[0]?.codigo_interno || \"\",\n    descripcion_catalogo: json.descripcion_catalogo || json.items?.[0]?.descripcion_catalogo || \"\",\n    cantidad_excel: json.cantidad_excel || json.items?.[0]?.cantidad_excel || \"\",\n    output_name: outputName,\n    pdf_name: pdfName,\n    pdf_path: pdfPath\n  };\n});\n\nconst primeraRemision = remisiones[0]?.numero_remision || \"\";\nconst ultimaRemision = remisiones[remisiones.length - 1]?.numero_remision || \"\";\n\nconst folioInicial =\n  reserva.folio_inicial ||\n  firstRemision.folio_inicial_reservado ||\n  firstRemision.remision_folio_numero ||\n  \"\";\n\nconst folioFinal =\n  reserva.folio_final ||\n  firstRemision.folio_final_reservado ||\n  remisionesItems[remisionesItems.length - 1]?.json?.remision_folio_numero ||\n  \"\";\n\nconst hojasGeneradas =\n  Number(hiJson.hojas_identificacion_generadas) ||\n  countHojasIdentificacion(remisiones);\n\nconst hiPdfName =\n  cleanText(hiJson.hi_pdf_name) ||\n  `Hojas Identificacion Audi T N${hojasGeneradas} ${fechaArchivoHI(contexto)}.pdf`;\n\nconst hiPdfPath =\n  cleanText(hiJson.hi_pdf_path) ||\n  joinPath(hojasDir, hiPdfName);\n\nconst log = {\n  tipo_log: \"AUDI_REMISIONES_HI\",\n  status: \"procesado_correctamente\",\n\n  generated_at: getNowIso(),\n\n  workflow: {\n    run_name: runName,\n    deteccion_modo: busqueda.deteccion_modo || \"schedule_audi_pg\",\n    candidatos_encontrados: busqueda.candidatos_encontrados ?? \"\",\n    archivos_nuevos_pendientes: busqueda.archivos_nuevos_pendientes ?? \"\",\n    seleccionado_por_pg: busqueda.seleccionado_por_pg ?? \"\"\n  },\n\n  postgres: {\n    postgres_ok: pgConfig.postgres_ok ?? true,\n    automatizacion_id: pgRun.automatizacion_id ?? pgConfig.automatizacion_id ?? \"\",\n    automatizacion_codigo: pgRun.automatizacion_codigo ?? pgConfig.automatizacion_codigo ?? \"\",\n    serie_id: pgRun.serie_id ?? pgConfig.serie_id ?? \"\",\n    serie_codigo: pgRun.serie_codigo ?? pgConfig.serie_codigo ?? \"REMISION_AUDI\",\n    ejecucion_id: pgRun.ejecucion_id ?? cierrePg.ejecucion_id ?? \"\",\n    documento_origen_id: pgRun.documento_origen_id ?? \"\",\n    n8n_execution_id: pgRun.n8n_execution_id ?? \"\",\n    ejecucion_estado: cierrePg.estado ?? pgRun.ejecucion_estado ?? \"\",\n    iniciada_en: cierrePg.iniciada_en ?? pgRun.ejecucion_iniciada_en ?? \"\",\n    finalizada_en: cierrePg.finalizada_en ?? \"\",\n    folios_pg: firstRemision.pg_folios === true\n  },\n\n  archivo_origen: {\n    file_path:\n      busqueda.file_path ||\n      busqueda.fullPath ||\n      busqueda.path ||\n      contexto.file_path ||\n      \"\",\n    file_name:\n      busqueda.file_name ||\n      busqueda.fileName ||\n      contexto.file_name ||\n      \"\",\n    size_bytes: busqueda.size_bytes || \"\",\n    modified_at: busqueda.modified_at || \"\",\n    processed_key: busqueda.processed_key || \"\"\n  },\n\n  documento_origen_pg: {\n    documento_origen_id: pgRun.documento_origen_id || \"\",\n    documento_nombre_archivo: pgRun.documento_nombre_archivo || \"\",\n    documento_ruta_archivo: pgRun.documento_ruta_archivo || \"\",\n    documento_estatus: pgRun.documento_estatus || \"\"\n  },\n\n  copia_respaldo: {\n    copy_file_path: contexto.copy_file_path || \"\",\n    copy_file_name: contexto.copy_file_name || \"\"\n  },\n\n  salidas: {\n    remisiones_dir: remisionesDir,\n    hojas_identificacion_dir: hojasDir,\n    hoja_identificacion_pdf: hiPdfPath,\n    hoja_identificacion_pdf_name: hiPdfName\n  },\n\n  contador: {\n    origen: \"POSTGRESQL\",\n    serie_codigo: pgRun.serie_codigo || pgConfig.serie_codigo || \"REMISION_AUDI\",\n    folio_inicial: folioInicial,\n    folio_final: folioFinal,\n    remisiones_generadas: remisiones.length\n  },\n\n  resultados: {\n    total_articulos: remisiones.length,\n    primera_remision: primeraRemision,\n    ultima_remision: ultimaRemision,\n    hojas_identificacion_generadas: hojasGeneradas\n  },\n\n  registro_remisiones_pg: {\n    nodo_origen: \"Registrar remisiones generadas PG\",\n    filas_devueltas: remisionesPgItems.length,\n    remisiones_con_id: remisiones.filter((r) => r.remision_id_pg).length,\n    detalles_con_id: remisiones.filter((r) => r.detalle_id_pg).length\n  },\n\n  remisiones,\n\n  archivos_estado: {\n    contador_remisiones: \"REEMPLAZADO_POR_POSTGRESQL_EN_PRUEBAS\",\n    archivos_procesados: \"REEMPLAZADO_POR_POSTGRESQL\"\n  },\n\n  registro_archivo_procesado: {\n    status: \"NO_APLICA_REEMPLAZADO_POR_POSTGRESQL\",\n    estado_procesados_path: \"\"\n  }\n};\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(log, null, 2), \"utf8\"),\n  logFileName,\n  \"application/json\"\n);\n\nreturn [\n  {\n    json: {\n      ...($input.first()?.json || {}),\n      log_generado: true,\n      log_file_name: logFileName,\n      log_file_path: logFilePath,\n      run_name: runName\n    },\n    binary: {\n      data: binaryData\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        448
+      ],
+      "id": "daf2578a-82a9-4804-8ae9-8e41cc6c2c34",
+      "name": "Preparar log ejecución"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.log_file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        736,
+        448
+      ],
+      "id": "62a0dc33-91a3-4d41-bb45-fa91ca73e102",
+      "name": "Guardar log ejecución"
+    },
+    {
+      "parameters": {
+        "jsCode": "function cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction sqlText(value) {\n  return \"'\" + cleanText(value).replace(/'/g, \"''\") + \"'\";\n}\n\nfunction sqlNullableText(value) {\n  const text = cleanText(value);\n  return text ? sqlText(text) : \"NULL\";\n}\n\nfunction parseFechaDocumento(value) {\n  const text = cleanText(value);\n\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(text)) return text;\n\n  const matchIso = text.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);\n  if (matchIso) return `${matchIso[1]}-${matchIso[2]}-${matchIso[3]}`;\n\n  const meses = {\n    enero: \"01\",\n    febrero: \"02\",\n    marzo: \"03\",\n    abril: \"04\",\n    mayo: \"05\",\n    junio: \"06\",\n    julio: \"07\",\n    agosto: \"08\",\n    septiembre: \"09\",\n    setiembre: \"09\",\n    octubre: \"10\",\n    noviembre: \"11\",\n    diciembre: \"12\"\n  };\n\n  const lower = text.toLowerCase();\n  const matchEsp = lower.match(/(\\d{1,2})\\s+de\\s+([a-záéíóúñ]+)\\s+de\\s+(\\d{4})/i);\n\n  if (matchEsp) {\n    const dia = String(matchEsp[1]).padStart(2, \"0\");\n    const mes = meses[matchEsp[2].normalize(\"NFD\").replace(/[\\u0300-\\u036f]/g, \"\")];\n    const anio = matchEsp[3];\n\n    if (mes) return `${anio}-${mes}-${dia}`;\n  }\n\n  throw new Error(\"No se pudo convertir fecha_documento a DATE: \" + text);\n}\n\nfunction pdfNameFromOutputName(outputName) {\n  const name = cleanText(outputName);\n  if (!name) return \"\";\n  return name.replace(/\\.html?$/i, \".pdf\");\n}\n\nfunction joinPath(dir, file) {\n  if (!dir || !file) return \"\";\n  return cleanText(dir).replace(/[\\\\/]$/, \"\") + \"\\\\\" + cleanText(file);\n}\n\nconst remisionesItems = $(\"Asignar no.Rem PG\").all();\n\nif (!remisionesItems.length) {\n  throw new Error(\"No hay remisiones para registrar en PostgreSQL.\");\n}\n\nconst pgRun = $(\"Propagar ejecución PG\").first().json;\nconst pgConfig = $(\"Validar configuración PostgreSQL\").first().json;\nconst contexto = $(\"Preparar archivo trigger\").first().json;\n\nconst serieId = Number(pgConfig.serie_id || pgRun.serie_id);\nconst empresaClienteId = Number(pgRun.empresa_cliente_id);\nconst ejecucionId = Number(pgRun.ejecucion_id);\n\nif (!serieId) throw new Error(\"serie_id inválido.\");\nif (!empresaClienteId) throw new Error(\"empresa_cliente_id inválido.\");\nif (!ejecucionId) throw new Error(\"ejecucion_id inválido.\");\n\nconst remisionesDir =\n  contexto.remisiones_dir ||\n  contexto.output_dir ||\n  \"\";\n\nconst values = remisionesItems.map((item) => {\n  const j = item.json || {};\n\n  const folio = Number(j.remision_folio_numero);\n  if (!folio) throw new Error(\"remision_folio_numero inválido.\");\n\n  const fechaDocumento = parseFechaDocumento(\n    j.fecha_documento ||\n    j.fecha_envio ||\n    contexto.fecha_documento ||\n    contexto.fecha_envio\n  );\n\n  const outputName = cleanText(j.output_name);\n  const pdfName = cleanText(j.pdf_name) || pdfNameFromOutputName(outputName);\n  const pdfPath = cleanText(j.pdf_path) || joinPath(remisionesDir, pdfName);\n\n  const codigoInterno = j.codigo_interno || j.items?.[0]?.codigo_interno || \"\";\n  const partNumber = j.part_number || j.items?.[0]?.part_number || \"\";\n  const descripcion = j.descripcion_catalogo || j.descripcion || j.items?.[0]?.descripcion_catalogo || \"\";\n  const cantidadTexto = j.cantidad_excel || j.items?.[0]?.cantidad_excel || \"\";\n\n  if (!cantidadTexto) {\n    throw new Error(`cantidad_texto vacía para folio ${folio}.`);\n  }\n\n  return `(\n    ${folio},\n    ${sqlText(fechaDocumento)},\n    ${sqlNullableText(pdfPath)},\n    ${sqlNullableText(codigoInterno)},\n    ${sqlNullableText(partNumber)},\n    ${sqlNullableText(descripcion)},\n    ${sqlText(cantidadTexto)}\n  )`;\n}).join(\",\\n\");\n\nconst sql = `\nWITH input_data (\n  folio,\n  fecha_documento,\n  pdf_path,\n  codigo_interno,\n  part_number,\n  descripcion,\n  cantidad_texto\n) AS (\n  VALUES\n  ${values}\n),\nremisiones_insertadas AS (\n  INSERT INTO operacion.remisiones (\n    serie_id,\n    folio,\n    empresa_cliente_id,\n    ejecucion_id,\n    fecha_documento,\n    pdf_path,\n    estatus,\n    created_at,\n    updated_at\n  )\n  SELECT\n    ${serieId},\n    i.folio,\n    ${empresaClienteId},\n    ${ejecucionId},\n    i.fecha_documento::date,\n    i.pdf_path,\n    'GENERADA',\n    now(),\n    now()\n  FROM input_data i\n  WHERE NOT EXISTS (\n    SELECT 1\n    FROM operacion.remisiones r\n    WHERE r.serie_id = ${serieId}\n      AND r.folio = i.folio\n      AND r.estatus <> 'CANCELADA'\n  )\n  RETURNING\n    remision_id,\n    serie_id,\n    folio,\n    estatus,\n    pdf_path\n),\nremisiones_insertadas_detalle AS (\n  SELECT\n    ri.remision_id,\n    ri.serie_id,\n    ri.folio,\n    ri.estatus,\n    ri.pdf_path,\n    i.codigo_interno,\n    i.part_number,\n    i.descripcion,\n    i.cantidad_texto\n  FROM remisiones_insertadas ri\n  JOIN input_data i\n    ON i.folio = ri.folio\n),\nremisiones_existentes_detalle AS (\n  SELECT\n    r.remision_id,\n    r.serie_id,\n    r.folio,\n    r.estatus,\n    r.pdf_path,\n    i.codigo_interno,\n    i.part_number,\n    i.descripcion,\n    i.cantidad_texto\n  FROM input_data i\n  JOIN operacion.remisiones r\n    ON r.serie_id = ${serieId}\n   AND r.folio = i.folio\n   AND r.estatus <> 'CANCELADA'\n),\nremisiones_final AS (\n  SELECT * FROM remisiones_insertadas_detalle\n  UNION ALL\n  SELECT * FROM remisiones_existentes_detalle\n),\ndetalles_insertados AS (\n  INSERT INTO operacion.remision_detalle (\n    remision_id,\n    codigo_interno,\n    part_number,\n    descripcion,\n    cantidad_texto,\n    created_at\n  )\n  SELECT\n    rf.remision_id,\n    rf.codigo_interno,\n    rf.part_number,\n    rf.descripcion,\n    rf.cantidad_texto,\n    now()\n  FROM remisiones_final rf\n  WHERE NOT EXISTS (\n    SELECT 1\n    FROM operacion.remision_detalle d\n    WHERE d.remision_id = rf.remision_id\n  )\n  RETURNING\n    detalle_id,\n    remision_id\n),\ndetalle_final AS (\n  SELECT\n    d.remision_id,\n    MIN(d.detalle_id) AS detalle_id,\n    COUNT(*) AS detalles_totales\n  FROM operacion.remision_detalle d\n  JOIN remisiones_final rf\n    ON rf.remision_id = d.remision_id\n  GROUP BY d.remision_id\n)\nSELECT\n  rf.remision_id,\n  df.detalle_id,\n  rf.serie_id,\n  rf.folio,\n  rf.estatus,\n  rf.pdf_path,\n  rf.codigo_interno,\n  rf.part_number,\n  rf.descripcion,\n  rf.cantidad_texto,\n  COALESCE(df.detalles_totales, 0) AS detalles_totales,\n  (\n    SELECT COUNT(*)\n    FROM detalles_insertados di\n    WHERE di.remision_id = rf.remision_id\n  ) AS detalles_insertados\nFROM remisiones_final rf\nLEFT JOIN detalle_final df\n  ON df.remision_id = rf.remision_id\nORDER BY rf.folio;\n`;\n\nreturn [\n  {\n    json: {\n      sql_registrar_remisiones_pg: sql,\n      remisiones_a_registrar: remisionesItems.length,\n      ejecucion_id: ejecucionId,\n      serie_id: serieId,\n      empresa_cliente_id: empresaClienteId\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        448
+      ],
+      "id": "e375f6d2-1e4b-4b7c-a4fd-abf6294802c6",
+      "name": "Preparar remisiones generadas PG"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql_registrar_remisiones_pg }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -384,
+        448
+      ],
+      "id": "96519e76-39af-439a-ac36-c5cf4ed4e4f0",
+      "name": "Registrar remisiones generadas PG",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# LEGACY NODES\n",
+        "height": 96
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        432,
+        960
+      ],
+      "id": "843dbccc-c34d-4962-bc59-f8bb906fac26",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    current_database() AS database_name,\n    current_user AS database_user;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1312,
+        -480
+      ],
+      "id": "327d523e-83c7-4c6a-8bb7-cc074ca607b6",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "name": "Postgres pruebas"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Buscar programaciones Audi": {
+      "main": [
+        [
+          {
+            "node": "Preparar archivo trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Leer automatización Audi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuperar datos para HI": {
+      "main": [
+        [
+          {
+            "node": "Generación Hojas Identificación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generación Hojas Identificación": {
+      "main": [
+        [
+          {
+            "node": "Cerrar ejecución COMPLETADA PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar copia en entrada": {
+      "main": [
+        [
+          {
+            "node": "Leer copia en entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Generación PDFs": {
+      "main": [
+        [
+          {
+            "node": "Preparar remisiones generadas PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar catalogo productos": {
+      "main": [
+        [
+          {
+            "node": "Normalizar datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extracción catalogo productos": {
+      "main": [
+        [
+          {
+            "node": "Preparar catalogo productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer catálogo productos": {
+      "main": [
+        [
+          {
+            "node": "Extracción catalogo productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer copia en entrada": {
+      "main": [
+        [
+          {
+            "node": "Extraccion de informacion de excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asignar no.Rem": {
+      "main": [
+        [
+          {
+            "node": "Preparar contador actualizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar contador actualizado": {
+      "main": [
+        []
+      ]
+    },
+    "Preparar contador actualizado": {
+      "main": [
+        [
+          {
+            "node": "Guardar contador actualizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer contador remisiones": {
+      "main": [
+        [
+          {
+            "node": "Asignar no.Rem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer archivo disparador": {
+      "main": [
+        [
+          {
+            "node": "Guardar copia en entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar archivo trigger": {
+      "main": [
+        [
+          {
+            "node": "Ignorar archivos temporales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ignorar archivos temporales": {
+      "main": [
+        [
+          {
+            "node": "Leer cliente Audi PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraccion de informacion de excel": {
+      "main": [
+        [
+          {
+            "node": "Leer catálogo productos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar datos": {
+      "main": [
+        [
+          {
+            "node": "Preparar conteo remisiones PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Leer automatización Audi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer automatización Audi": {
+      "main": [
+        [
+          {
+            "node": "Validar configuración PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar configuración PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Buscar programaciones Audi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar conteo remisiones PG": {
+      "main": [
+        [
+          {
+            "node": "Reservar folios PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar folios PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Asignar no.Rem PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asignar no.Rem PG": {
+      "main": [
+        [
+          {
+            "node": "Call Generación PDFs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar cliente Audi PG": {
+      "main": [
+        [
+          {
+            "node": "Preparar documento origen PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar documento origen PG": {
+      "main": [
+        [
+          {
+            "node": "Propagar documento PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar documento origen PG": {
+      "main": [
+        [
+          {
+            "node": "Registrar documento origen PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propagar documento PG": {
+      "main": [
+        [
+          {
+            "node": "Validar idempotencia PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer cliente Audi PG": {
+      "main": [
+        [
+          {
+            "node": "Validar cliente Audi PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar idempotencia PG": {
+      "main": [
+        [
+          {
+            "node": "Control idempotencia PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Control idempotencia PG": {
+      "main": [
+        [
+          {
+            "node": "Crear ejecución PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear ejecución PG": {
+      "main": [
+        [
+          {
+            "node": "Propagar ejecución PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propagar ejecución PG": {
+      "main": [
+        [
+          {
+            "node": "Leer archivo disparador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerrar ejecución COMPLETADA PG": {
+      "main": [
+        [
+          {
+            "node": "Preparar log ejecución",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log ejecución": {
+      "main": [
+        [
+          {
+            "node": "Guardar log ejecución",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar archivo procesado Audi": {
+      "main": [
+        [
+          {
+            "node": "Leer contador remisiones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar remisiones generadas PG": {
+      "main": [
+        [
+          {
+            "node": "Registrar remisiones generadas PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar remisiones generadas PG": {
+      "main": [
+        [
+          {
+            "node": "Recuperar datos para HI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "America/Mexico_City",
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "Dbv7vVBpoy7uKQjD"
+  },
+  "versionId": "ab6597b3-b287-4534-b9d7-f833bd4c5c2e",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "id": "EcFao0zeQylpa3U0",
+  "tags": [
+    {
+      "updatedAt": "2026-07-02T18:20:45.128Z",
+      "createdAt": "2026-07-02T18:20:45.128Z",
+      "id": "fma05lhgcWzEzDuT",
+      "name": "Remisiones"
+    },
+    {
+      "updatedAt": "2026-07-06T17:59:31.367Z",
+      "createdAt": "2026-07-06T17:59:31.367Z",
+      "id": "sjO1jB7zPwNC8pH4",
+      "name": "Prueba"
+    },
+    {
+      "updatedAt": "2026-07-02T18:20:45.133Z",
+      "createdAt": "2026-07-02T18:20:45.133Z",
+      "id": "xgmfEYF3AEuJ6w3Q",
+      "name": "Automatización"
+    }
+  ]
+}

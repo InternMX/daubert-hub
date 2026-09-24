@@ -1,42 +1,50 @@
 # Remisiones Audi
 
-> **Estado documental: PENDIENTE (esqueleto).** En la Fase D1 no se documenta a profundidad. Sólo se registran hechos verificados en el repositorio y lo que falta.
-
-## Resumen (verificado)
+Documentado en la Fase D2 **a partir de los exports reales** ([PROD](../../../n8n/workflows/remisiones-audi/prod/workflow.json), [TEST](../../../n8n/workflows/remisiones-audi/test/workflow.json), [subworkflows y manejador de errores](../../../n8n/workflows/remisiones-audi/shared/)). Lo histórico no se asume vigente: **manda el export actual**.
 
 | | |
 | --- | --- |
-| Código | `REMISIONES_AUDI` |
-| Nombre en el Hub | Remisiones Audi — "Generación y control de remisiones." |
-| Polling en el catálogo del Hub | 10 minutos (`automation-catalog.ts`) |
-| `integrationStatus` en el catálogo | `INTEGRATED`; capacidades: dashboard e historial (sin detalle) |
-| Serie documental | `REMISION_AUDI` (piso `folio_minimo_ajustable` sembrado en 969 en la migración `20260922_003`) |
-| Rol n8n en PROD | `n8n_app` (rol ya usado por Remisiones Audi; Caterpillar lo comparte) |
-| Hub | `GET /api/automations/remissions/audi/executions` (historial), ajuste de folio (`ADMIN`), acuses de revisión, actividad reciente |
-| Modelo de datos | Mismo modelo `ops`/`operacion` que Caterpillar; propiedad serie↔automatización registrada en `ops.automatizacion_series_proceso` con `llave_proceso = 'AUDI'` (migración `20260922_004`) |
+| Código de automatización | `REMISIONES_AUDI` |
+| Serie documental | `REMISION_AUDI` |
+| Cliente | Audi (`core.empresas`, localizado en tiempo de ejecución por búsqueda de texto) |
+| Workflow PROD | `Remisiones AUDI PRODUCCION` — activo, **cada 15 minutos** |
+| Workflow TEST | `Remisiones AUDI PRUEBAS` — inactivo al exportar; **detrás de PROD** |
+| Subworkflows | `Generación PDFs`, `Generación Hojas Identificación` (compartidos TEST/PROD) |
+| Error Workflow | `Manejador de errores Audi Remisiones` (compartido; sólo escribe un log JSON) |
+| Credencial PostgreSQL | `Postgres produccion` (PROD) / `Postgres pruebas` (TEST) |
+| Hub | Historial (`GET /api/automations/remissions/audi/executions`), ajuste de folio (`ADMIN`), acuses de revisión, actividad reciente |
+| Reproceso manual desde el Hub | **No existe** (no hay webhook en el workflow) |
 
-## Estado actual
+## Propósito
 
-Automatización en operación en PROD según la existencia de sus migraciones (`20260827_002…005`) y del módulo del Hub. **Estado operativo actual, flujo del workflow, rutas de archivos y procedimientos de reproceso: no verificados en esta fase.**
+Genera **remisiones de Audi** (PDF) y **hojas de identificación** (PDF) a partir de cada Excel *Programación de Entrega* de Audi que aparece en la carpeta del cliente en Dropbox. Por cada archivo: registra el documento origen, crea una ejecución, reserva folios, genera una remisión por artículo y las hojas de identificación, y cierra la ejecución.
 
-## Fuentes a revisar en Fase D2
+## Mapa de documentos
 
-| Fuente | Ubicación |
+| Documento | Contenido |
 | --- | --- |
-| Código Hub | `apps/api/src/automations/remisiones-audi/`, `apps/api/src/recent-activity/remisiones-audi-activity.repository.ts`, `apps/web/src/automations/AudiRemissionsPage.tsx` |
-| Migraciones | Directorio externo: `20260826_001_remisiones_audi_v1` (TEST), `20260827_002…005_*_prod`, `20260828_002/003`, `20260922_002…004` |
-| Función de reserva legacy | `operacion.reservar_folios(text, integer)` (allocator específico de Audi; `n8n_cat_test` **no** puede ejecutarlo) |
-| Workflow n8n | No versionado: export pendiente |
-| Tests | `audi-executions.*.spec.ts`, `audi-processing-status.spec.ts`, `remisiones-audi-activity.repository.spec.ts` |
+| [architecture.md](architecture.md) | Componentes y responsabilidades |
+| [workflow.md](workflow.md) | Flujo principal y manejo de errores (Mermaid), reglas verificadas |
+| [nodes-reference.md](nodes-reference.md) | Referencia de nodos |
+| [database-contract.md](database-contract.md) | Contrato PostgreSQL desde el workflow |
+| [testing.md](testing.md) | Pruebas y promoción |
+| [production-runbook.md](production-runbook.md) | Operación en PROD |
+| [troubleshooting.md](troubleshooting.md) | Guía de fallos |
+| Comparación TEST/PROD | [n8n-test-prod-drift](../n8n-test-prod-drift.md#audi) |
 
-## Documentos pendientes (plantilla basada en Caterpillar)
+## Diferencias importantes frente a Caterpillar (verificadas)
 
-- [ ] `architecture.md` — componentes y responsabilidades
-- [ ] `workflow.md` — flujo lógico (Mermaid) y nodos clave
-- [ ] `database-contract.md` — tablas/funciones (incluido el allocator legacy y por qué difiere del de Caterpillar)
-- [ ] `testing.md` — pruebas y promoción TEST → PROD
-- [ ] `production-runbook.md` — estado y verificación en PROD
-- [ ] `troubleshooting.md` — síntoma / causa / revisar / NO hacer / acción segura
-- [ ] `reprocessing.md` — sólo si existe reproceso (no verificado)
+| Aspecto | Audi | Caterpillar |
+| --- | --- | --- |
+| Control en PostgreSQL | **SQL directo** desde nodos (INSERT/UPDATE sobre tablas) y el allocator legado `operacion.reservar_folios(text,int)` | Sólo **funciones** `SECURITY DEFINER` |
+| Ejecución | `INSERT` / `UPDATE ... 'COMPLETADA'` directo | `fn_crear_ejecucion…` / `fn_finalizar…` |
+| Reintentos / fallos | **Sin** registro de fallo en PostgreSQL: una falla tras crear la ejecución la deja `PROCESANDO` | `fn_registrar_fallo_ejecucion` con `max_intentos` |
+| Reproceso | No existe | Webhook + hija inmutable |
+| Ventana de detección | Sin fecha de corte: 60 días, hasta 20 candidatos | Corte 2026-09-22 |
+| Schedule | 15 min (el catálogo del Hub dice 10 min) | 10 min (el catálogo del Hub dice 15 min) |
 
-Plantilla: [automations/README.md](../README.md#plantilla-de-documentación-por-automatización).
+## Lo que NO está en el export (no se documenta como implementado)
+
+- **División por tarimas:** no aparece ninguna lógica de tarimas/pallets en los workflows de Audi. La hoja de identificación se genera **una por artículo**.
+- **Reproceso, reintentos y `max_intentos`:** no existen en Audi.
+- **Contador JSON:** la **configuración** sigue definida (`counterPath`) pero **no se usa** en PROD (los nodos de contador ya no existen en PROD; en TEST están deshabilitados).

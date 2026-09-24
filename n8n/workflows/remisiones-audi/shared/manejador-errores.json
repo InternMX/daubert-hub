@@ -1,0 +1,80 @@
+{
+  "name": "Manejador de errores Audi Remisiones",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c974a939-eb91-4dc4-8099-d27d45df17cd",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.log_file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "4f2f1683-b5a5-416d-9e10-6fba0251fcbd",
+      "name": "Guardar log error"
+    },
+    {
+      "parameters": {
+        "jsCode": "function cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction pad(value) {\n  return String(value).padStart(2, \"0\");\n}\n\nfunction getTimestamp() {\n  const now = new Date();\n\n  return (\n    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +\n    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`\n  );\n}\n\nconst data = $json || {};\n\nconst BASE_HERRAMIENTA = String.raw`C:\\Users\\06\\Documents\\Dropbox\\HERRAMIENTAS AUTOMATIZACION\\REMISIONES AUDI`;\n\nconst logsErrorDir = `${BASE_HERRAMIENTA}\\\\04_ERRORES`;\n\nconst workflowName =\n  data.workflow?.name ||\n  data.workflowName ||\n  \"workflow_desconocido\";\n\nconst executionId =\n  data.execution?.id ||\n  data.executionId ||\n  \"\";\n\nconst nodeName =\n  data.execution?.lastNodeExecuted ||\n  data.lastNodeExecuted ||\n  data.node?.name ||\n  data.nodeName ||\n  \"nodo_desconocido\";\n\nconst errorMessage =\n  data.error?.message ||\n  data.message ||\n  data.error ||\n  \"Error no especificado\";\n\nconst timestamp = getTimestamp();\n\nconst logFileName = `ERROR_${safeFileText(workflowName)}_${safeFileText(nodeName)}_${timestamp}.json`;\nconst logFilePath = `${logsErrorDir}\\\\${logFileName}`;\n\nconst log = {\n  tipo_log: \"AUDI_ERROR\",\n  status: \"error\",\n\n  generated_at: new Date().toISOString(),\n\n  workflow: {\n    name: workflowName,\n    id: data.workflow?.id || \"\",\n    execution_id: executionId,\n    execution_url: data.execution?.url || \"\"\n  },\n\n  error: {\n    node: nodeName,\n    message: errorMessage,\n    stack:\n      data.error?.stack ||\n      data.stack ||\n      \"\"\n  },\n\n  raw_error_data: data\n};\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  Buffer.from(JSON.stringify(log, null, 2), \"utf8\"),\n  logFileName,\n  \"application/json\"\n);\n\nreturn [\n  {\n    json: {\n      log_error_generado: true,\n      log_file_name: logFileName,\n      log_file_path: logFilePath,\n      workflow_name: workflowName,\n      node_name: nodeName,\n      error_message: errorMessage\n    },\n    binary: {\n      data: binaryData\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6751d80b-9f2f-44dd-9995-a082f2c0a0f7",
+      "name": "Preparar log error"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Preparar log error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar log error": {
+      "main": [
+        [
+          {
+            "node": "Guardar log error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "b9dc3f5d-274c-4c24-ac31-34a4734bd416",
+  "meta": {},
+  "nodeGroups": [],
+  "id": "Dbv7vVBpoy7uKQjD",
+  "tags": []
+}
