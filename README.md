@@ -2,6 +2,14 @@
 
 Workspace for the Daubert Hub API and web application.
 
+## Documentation
+
+The documentation portal lives in [`docs/`](docs/README.md) and is the documentary
+source of truth for the Hub and its n8n automations: architecture, environments
+(TEST/PROD), database, migrations, Caterpillar automation, operations runbooks and
+architecture decisions (ADRs). Start at [`docs/README.md`](docs/README.md).
+Database migrations are documented in [`docs/database/migrations.md`](docs/database/migrations.md).
+
 ## Project Purpose
 
 Generic company-address management that can be reused by Providers and Clients,
@@ -117,7 +125,9 @@ Structural schema changes and permission grants are stored externally (in
 the Caterpillar 12C PROD migration (`20260923_009`, with its read-only
 pre/postchecks) is also versioned, under `database/migrations/daubert_global/`;
 see `docs/deployments/2026-09-24-caterpillar-12c-prod.md`. No migrations are
-run by `npm run dev` or `npm run build`.
+run by `npm run dev` or `npm run build`. Location, naming, up/down, precheck/postcheck
+and the recommended apply process are documented in
+[`docs/database/migrations.md`](docs/database/migrations.md).
 
 ## Basic Testing / Validation Commands
 
