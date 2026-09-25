@@ -60,7 +60,7 @@ privilege on the table.
 
 Checked manually in the Hub after the final Web deployment:
 
-- The **Payment Notifications configuration** section is available from the provider detail in the Hub (mounted in `ProviderDetailPage`).
+- The **Payment Notifications configuration** section is available from the Hub for the corresponding company (in the code it is mounted in the provider detail page; the exact on-screen location was not recorded as part of this validation).
 - **Dropbox path** is editable, and the **path suggestion** is available.
 - The suggestion is **not saved nor does it overwrite** the current path automatically; it only
   applies after "Usar sugerencia" plus an explicit save.
