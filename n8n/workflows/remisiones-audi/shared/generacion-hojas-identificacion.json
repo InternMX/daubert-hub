@@ -1,0 +1,174 @@
+{
+  "name": "Generación Hojas Identificación",
+  "nodes": [
+    {
+      "parameters": {
+        "command": "={{ \n'powershell -NoProfile -ExecutionPolicy Bypass -File \"' \n+ $('Renderizar HTML HI').first().json.clean_script_path \n+ '\" -TempDir \"' \n+ $('Renderizar HTML HI').first().json.hi_temp_dir \n+ '\"' \n}}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1392,
+        352
+      ],
+      "id": "946cc271-214f-4a14-9329-40d4cfe8f843",
+      "name": "Eliminar html temporal"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.hi_template_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        352
+      ],
+      "id": "75121740-233d-4d90-9f82-58323d0e44aa",
+      "name": "Leer template HI"
+    },
+    {
+      "parameters": {
+        "jsCode": "const remisiones = $(\"Start\").all();\n\nif (remisiones.length === 0) {\n  throw new Error(\"No llegaron artículos desde el workflow principal.\");\n}\n\nconst templateItem = $input.first();\n\nif (!templateItem?.binary) {\n  throw new Error(\"No llegó el template HI en binario. Revisa el nodo 'Leer template HI'.\");\n}\n\nconst binaryField = Object.keys(templateItem.binary || {})[0] || \"data\";\nconst templateBuffer = await this.helpers.getBinaryDataBuffer(0, binaryField);\n\nlet html = templateBuffer.toString(\"utf8\");\n\nfunction cleanText(value) {\n  return String(value ?? \"\")\n    .replace(/\\t/g, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction escapeHtml(value) {\n  return String(value ?? \"\")\n    .replaceAll(\"&\", \"&amp;\")\n    .replaceAll(\"<\", \"&lt;\")\n    .replaceAll(\">\", \"&gt;\")\n    .replaceAll('\"', \"&quot;\")\n    .replaceAll(\"'\", \"&#039;\");\n}\n\nfunction nl2br(value) {\n  return escapeHtml(value).replace(/\\r?\\n/g, \"<br>\");\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nfunction toFileUri(windowsPath) {\n  const normalized = cleanText(windowsPath).replace(/\\\\/g, \"/\");\n  return encodeURI(\"file:///\" + normalized.replace(/^\\/+/, \"\"));\n}\n\nfunction parseFlexibleNumber(value) {\n  const text = String(value ?? \"\").trim();\n\n  if (!text) return NaN;\n\n  if (text.includes(\",\") && text.includes(\".\")) {\n    const lastComma = text.lastIndexOf(\",\");\n    const lastDot = text.lastIndexOf(\".\");\n\n    if (lastComma > lastDot) {\n      return Number(text.replace(/\\./g, \"\").replace(\",\", \".\"));\n    }\n\n    return Number(text.replace(/,/g, \"\"));\n  }\n\n  if (text.includes(\",\")) {\n    return Number(text.replace(\",\", \".\"));\n  }\n\n  return Number(text);\n}\n\nfunction formatNumber(value) {\n  const number = parseFlexibleNumber(value);\n\n  if (!Number.isFinite(number)) {\n    return cleanText(value);\n  }\n\n  if (Number.isInteger(number)) {\n    return String(number);\n  }\n\n  return String(number).replace(/\\.?0+$/, \"\");\n}\n\nfunction pluralUnit(numberText, singular, plural) {\n  const number = parseFlexibleNumber(numberText);\n  return number === 1 ? singular : plural;\n}\n\nfunction humanizeQty(value) {\n  const text = cleanText(value);\n\n  if (!text) return \"\";\n\n  const match = text.match(/^([\\d.,]+)\\s*(.*)$/i);\n\n  if (!match) return text;\n\n  const number = formatNumber(match[1]);\n  const unit = cleanText(match[2]).toLowerCase();\n\n  if ([\"bag\", \"bags\", \"bolsa\", \"bolsas\"].includes(unit)) {\n    return `${number} ${pluralUnit(number, \"Bolsa\", \"Bolsas\")}`;\n  }\n\n  if ([\"roll\", \"rolls\", \"rollo\", \"rollos\"].includes(unit)) {\n    return `${number} ${pluralUnit(number, \"Rollo\", \"Rollos\")}`;\n  }\n\n  if ([\"pack\", \"packs\", \"paquete\", \"paquetes\"].includes(unit)) {\n    return `${number} ${pluralUnit(number, \"Paquete\", \"Paquetes\")}`;\n  }\n\n  if ([\"kg\", \"kgs\", \"kilo\", \"kilos\"].includes(unit)) {\n    return `${number} Kg`;\n  }\n\n  return `${number} ${cleanText(match[2])}`.trim();\n}\n\nfunction quantityFromCantidadExcel(value) {\n  const text = cleanText(value);\n\n  if (!text) return \"\";\n\n  let match = text.match(/([\\d.,]+)\\s*bolsas?.*?=\\s*([\\d.,]+)\\s*(rollos?|rolls?)/i);\n  if (match) {\n    return `${formatNumber(match[1])} ${pluralUnit(match[1], \"Bolsa\", \"Bolsas\")} (${formatNumber(match[2])} ${pluralUnit(match[2], \"Rollo\", \"Rollos\")})`;\n  }\n\n  match = text.match(/([\\d.,]+)\\s*bolsas?.*?=\\s*([\\d.,]+)\\s*(paquetes?|packs?)/i);\n  if (match) {\n    return `${formatNumber(match[1])} ${pluralUnit(match[1], \"Bolsa\", \"Bolsas\")} (${formatNumber(match[2])} ${pluralUnit(match[2], \"Paquete\", \"Paquetes\")})`;\n  }\n\n  match = text.match(/([\\d.,]+)\\s*(rollos?|rolls?).*?=\\s*([\\d.,]+)\\s*(kg|kgs|kilo|kilos)/i);\n  if (match) {\n    return `${formatNumber(match[1])} ${pluralUnit(match[1], \"Rollo\", \"Rollos\")} (${formatNumber(match[3])} Kg)`;\n  }\n\n  return text.replace(/\\s*=\\s*/g, \" (\") + (text.includes(\"=\") ? \")\" : \"\");\n}\n\nfunction getDescripcionHI(json) {\n  const item = Array.isArray(json.items) ? json.items[0] : {};\n\n  const descripcionCatalogo =\n    cleanText(json.descripcion_catalogo) ||\n    cleanText(item.descripcion_catalogo);\n\n  if (descripcionCatalogo) {\n    return descripcionCatalogo;\n  }\n\n  let descripcion =\n    cleanText(item.descripcion) ||\n    cleanText(json.descripcion);\n\n  descripcion = descripcion\n    .replace(/\\s*\\([^)]*\\)\\s*/g, \" \")\n    .replace(/\\s*Se entregan\\s+.*$/i, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n\n  return descripcion;\n}\n\nfunction getCantidadHI(json) {\n  const item = Array.isArray(json.items) ? json.items[0] : {};\n\n  const cantidadExcel =\n    cleanText(json.cantidad_excel) ||\n    cleanText(item.cantidad_excel);\n\n  const desdeExcel = quantityFromCantidadExcel(cantidadExcel);\n  if (desdeExcel) return desdeExcel;\n\n  const numberOfBags =\n    cleanText(json.number_of_bags) ||\n    cleanText(item.number_of_bags);\n\n  const totalQty =\n    cleanText(json.total_qty) ||\n    cleanText(item.total_qty);\n\n  if (numberOfBags && totalQty) {\n    return `${humanizeQty(numberOfBags)} (${humanizeQty(totalQty)})`;\n  }\n\n  const qtyPerPackaging =\n    cleanText(json.qty_per_packaging) ||\n    cleanText(item.qty_per_packaging);\n\n  if (totalQty && qtyPerPackaging) {\n    return `${humanizeQty(totalQty)} (${humanizeQty(qtyPerPackaging)})`;\n  }\n\n  return humanizeQty(totalQty || cantidadExcel);\n}\n\nfunction getFechaDocumentoForFile(first) {\n  const fechaDocumento = cleanText(first.fecha_documento);\n\n  const meses = {\n    enero: \"01\",\n    febrero: \"02\",\n    marzo: \"03\",\n    abril: \"04\",\n    mayo: \"05\",\n    junio: \"06\",\n    julio: \"07\",\n    agosto: \"08\",\n    septiembre: \"09\",\n    setiembre: \"09\",\n    octubre: \"10\",\n    noviembre: \"11\",\n    diciembre: \"12\"\n  };\n\n  // Ejemplo: \"14 de Julio de 2026\" → 20260714\n  const fechaNormalizada = fechaDocumento\n    .toLowerCase()\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\");\n\n  const matchFechaTexto = fechaNormalizada.match(\n    /(\\d{1,2})\\s+de\\s+([a-z]+)\\s+de\\s+(\\d{4})/i\n  );\n\n  if (matchFechaTexto) {\n    const day = String(matchFechaTexto[1]).padStart(2, \"0\");\n    const month = meses[matchFechaTexto[2]] || \"00\";\n    const year = matchFechaTexto[3];\n\n    return `${year}${month}${day}`;\n  }\n\n  // Respaldo: tomar fecha del nombre del archivo.\n  // Ejemplo: PROGRAMACION DE ENTREGA AUDI 260714 → 20260714\n  const source = cleanText(\n    first.source_base_name ||\n    first.file_name ||\n    first.run_name ||\n    \"\"\n  );\n\n  const matchAudiDate = source.match(/AUDI[_\\s-]*(\\d{6})/i);\n\n  if (matchAudiDate) {\n    const value = matchAudiDate[1]; // 260714\n    const year = `20${value.slice(0, 2)}`;\n    const month = value.slice(2, 4);\n    const day = value.slice(4, 6);\n\n    return `${year}${month}${day}`;\n  }\n\n  // Otro respaldo: timestamp de ejecución, ejemplo 20260715_103712\n  const timestamp = cleanText(first.timestamp);\n\n  if (/^\\d{8}/.test(timestamp)) {\n    return timestamp.slice(0, 8);\n  }\n\n  // Último respaldo: fecha actual\n  const now = new Date();\n\n  const yyyy = now.getFullYear();\n  const mm = String(now.getMonth() + 1).padStart(2, \"0\");\n  const dd = String(now.getDate()).padStart(2, \"0\");\n\n  return `${yyyy}${mm}${dd}`;\n}\n\nconst first = remisiones[0].json;\n\nconst templatesDir = first.templates_dir;\nconst logoUri = toFileUri(`${templatesDir}\\\\images\\\\DC_logo.jpg`);\n\nconst hiTempDir =\n  cleanText(first.temp_hojas_identificacion_dir) ||\n  `${first.base_herramienta}\\\\06_ARCHIVOS TEMPORALES\\\\html_hojas_identificacion`;\n\nconst hojasIdentificacionDir =\n  cleanText(first.hojas_identificacion_dir) ||\n  `${first.base_herramienta}\\\\02_SALIDAS\\\\HOJAS_IDENTIFICACION`;\n\nconst numeroHojas = remisiones.length;\nconst fechaArchivo = getFechaDocumentoForFile(first);\n\nconst htmlName = `Hojas Identificacion Audi T N${numeroHojas} ${fechaArchivo}.html`;\nconst htmlPath = `${hiTempDir}\\\\${htmlName}`;\n\nconst pages = remisiones.map((item, index) => {\n  const json = item.json;\n\n  const descripcion = getDescripcionHI(json);\n  const cantidad = getCantidadHI(json);\n\n  if (!descripcion) {\n    throw new Error(`Falta descripción para hoja de identificación en artículo ${index + 1}.`);\n  }\n\n  if (!cantidad) {\n    throw new Error(`Falta cantidad para hoja de identificación en artículo ${index + 1}.`);\n  }\n\n  return `\n    <div class=\"page\">\n      <img class=\"logo\" src=\"${logoUri}\" alt=\"Daubert México\" />\n\n      <div class=\"content\">\n        <div class=\"description\">${nl2br(descripcion)}</div>\n        <div class=\"quantity\">${nl2br(cantidad)}</div>\n      </div>\n    </div>\n  `;\n}).join(\"\\n\");\n\nhtml = html\n  .replace(/<!--\\s*{{hi_pages}}\\s*-->/g, pages)\n  .replace(/{{hi_pages}}/g, pages);\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  Buffer.from(html, \"utf8\"),\n  htmlName,\n  \"text/html\"\n);\n\nreturn [\n  {\n    json: {\n      ...first,\n\n      hi_html_name: htmlName,\n      hi_html_path: htmlPath,\n      hi_temp_dir: hiTempDir,\n\n      hojas_identificacion_dir: hojasIdentificacionDir,\n\n      hi_pdf_name: htmlName.replace(/\\.html?$/i, \".pdf\"),\n      hi_pdf_path: `${hojasIdentificacionDir}\\\\${htmlName.replace(/\\.html?$/i, \".pdf\")}`,\n\n      logo_uri: logoUri,\n\n      hojas_identificacion_generadas: remisiones.length,\n      hi_fecha_archivo: fechaArchivo,\n\n      pdf_script_path: first.pdf_script_path,\n      clean_script_path: first.clean_script_path\n    },\n    binary: {\n      data: binaryData\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        352
+      ],
+      "id": "92534fcb-9afb-45b5-ac17-a2d63940431c",
+      "name": "Renderizar HTML HI"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.hi_html_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        352
+      ],
+      "id": "d1fe3daa-be70-4d1f-adbe-d74b63478410",
+      "name": "Guardado temporal HTML HI"
+    },
+    {
+      "parameters": {
+        "command": "={{ \n'powershell -NoProfile -ExecutionPolicy Bypass -File \"' \n+ $('Renderizar HTML HI').first().json.pdf_script_path \n+ '\" -TempDir \"' \n+ $('Renderizar HTML HI').first().json.hi_temp_dir \n+ '\" -OutDir \"' \n+ $('Renderizar HTML HI').first().json.hojas_identificacion_dir \n+ '\"' \n}}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        352
+      ],
+      "id": "3a396c97-2d23-4a94-a76d-10854aebc2dd",
+      "name": "Convertir PDF HI"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "c055762a-8fe7-4141-a639-df2372f30060",
+      "typeVersion": 1.1,
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        272,
+        352
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Leer template HI": {
+      "main": [
+        [
+          {
+            "node": "Renderizar HTML HI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Renderizar HTML HI": {
+      "main": [
+        [
+          {
+            "node": "Guardado temporal HTML HI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardado temporal HTML HI": {
+      "main": [
+        [
+          {
+            "node": "Convertir PDF HI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convertir PDF HI": {
+      "main": [
+        [
+          {
+            "node": "Eliminar html temporal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Leer template HI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "b9706345-0c6b-408d-9d03-77ba2e104f0f",
+  "meta": {},
+  "nodeGroups": [],
+  "id": "RZHzdlnfWUbXLqC5",
+  "tags": [
+    {
+      "updatedAt": "2026-07-15T18:14:06.800Z",
+      "createdAt": "2026-07-15T18:14:06.800Z",
+      "id": "eYGjWweetlbn79aY",
+      "name": "Subflujo"
+    },
+    {
+      "updatedAt": "2026-07-02T18:20:45.128Z",
+      "createdAt": "2026-07-02T18:20:45.128Z",
+      "id": "fma05lhgcWzEzDuT",
+      "name": "Remisiones"
+    },
+    {
+      "updatedAt": "2026-07-02T18:20:45.133Z",
+      "createdAt": "2026-07-02T18:20:45.133Z",
+      "id": "xgmfEYF3AEuJ6w3Q",
+      "name": "Automatización"
+    }
+  ]
+}
