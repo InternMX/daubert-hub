@@ -4,13 +4,20 @@ import type { FormEvent } from 'react';
 import type { DirectoryContactMethod } from '../services/contactDirectory';
 import { ContactApiError } from '../services/contacts';
 import { editContactMethod, type AddContactMethodType, type EditedContactMethod, type EditContactMethodInput } from '../services/contactMethods';
-import { contactMethodValidationError, methodPlaceholder, methodTypes, methodValueLabel } from './contactMethodForm';
+import { ACTIVE_REQUIRES_PARA_MESSAGE, contactMethodValidationError, isActiveRequiresParaError, methodPlaceholder, methodTypes, methodValueLabel } from './contactMethodForm';
+import { PaymentNotificationFields, type PaymentNotificationFieldsValue } from './PaymentNotificationFields';
 
 export type EditableDirectoryContactMethod = DirectoryContactMethod & { type: AddContactMethodType };
 
 export function EditContactMethodForm({ method, onClose, onEdited }: { method: EditableDirectoryContactMethod; onClose: () => void; onEdited: (method: EditedContactMethod) => void }) {
   const [type, setType] = useState<AddContactMethodType>(method.type);
   const [value, setValue] = useState(method.value);
+  const initialPayment: PaymentNotificationFieldsValue = {
+    isPrimary: method.isPrimary,
+    receivesPaymentNotifications: method.receivesPaymentNotifications ?? false,
+    paymentRecipientType: method.receivesPaymentNotifications ? method.paymentRecipientType ?? null : null
+  };
+  const [paymentFields, setPaymentFields] = useState<PaymentNotificationFieldsValue>(initialPayment);
   const [valueError, setValueError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -18,7 +25,11 @@ export function EditContactMethodForm({ method, onClose, onEdited }: { method: E
   const trimmed = value.trim();
   const typeChanged = type !== method.type;
   const valueChanged = trimmed !== method.value.trim();
-  const dirty = typeChanged || valueChanged;
+  // The payment fields only apply while the method is (still) an email.
+  const paymentApplies = type === 'CORREO';
+  const primaryChanged = paymentApplies && paymentFields.isPrimary !== initialPayment.isPrimary;
+  const paymentChanged = paymentApplies && (paymentFields.receivesPaymentNotifications !== initialPayment.receivesPaymentNotifications || paymentFields.paymentRecipientType !== initialPayment.paymentRecipientType);
+  const dirty = typeChanged || valueChanged || primaryChanged || paymentChanged;
   function close() { if (!submittingRef.current) onClose(); }
   function changeType(next: AddContactMethodType) { setType(next); setValueError(null); setSubmitError(null); }
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -27,9 +38,14 @@ export function EditContactMethodForm({ method, onClose, onEdited }: { method: E
     const input: EditContactMethodInput = {};
     if (typeChanged) input.type = type;
     if (valueChanged) input.value = trimmed;
+    if (primaryChanged) input.isPrimary = paymentFields.isPrimary;
+    if (paymentChanged) {
+      input.receivesPaymentNotifications = paymentFields.receivesPaymentNotifications;
+      if (paymentFields.receivesPaymentNotifications) input.paymentRecipientType = paymentFields.paymentRecipientType;
+    }
     submittingRef.current = true; setSubmitting(true);
     try { const edited = await editContactMethod(method.id, input); onClose(); onEdited(edited); }
-    catch (error) { if (error instanceof ContactApiError && error.code === 'CONTACT_METHOD_DUPLICATE') setSubmitError('Este medio ya existe para este contacto.'); else setSubmitError('No fue posible actualizar el medio de contacto. Inténtalo nuevamente.'); }
+    catch (error) { if (isActiveRequiresParaError(error)) setSubmitError(ACTIVE_REQUIRES_PARA_MESSAGE); else if (error instanceof ContactApiError && error.code === 'CONTACT_METHOD_DUPLICATE') setSubmitError('Este medio ya existe para este contacto.'); else setSubmitError('No fue posible actualizar el medio de contacto. Inténtalo nuevamente.'); }
     finally { submittingRef.current = false; setSubmitting(false); }
   }
   return <Box component="form" aria-label={`Editar medio ${method.value}`} noValidate onSubmit={submit} sx={{ my: 0.5, px: { xs: 1, sm: 1.5 }, py: 1.25, bgcolor: 'action.hover', borderRadius: 1 }}>
@@ -39,6 +55,7 @@ export function EditContactMethodForm({ method, onClose, onEdited }: { method: E
       <FormControl size="small" disabled={submitting} sx={{ width: { xs: '100%', sm: 150 }, flexShrink: 0 }}><InputLabel id={`edit-method-type-${method.id}`}>Tipo</InputLabel><Select labelId={`edit-method-type-${method.id}`} label="Tipo" value={type} onChange={(event) => changeType(event.target.value as AddContactMethodType)}>{methodTypes.map((methodType) => <MenuItem key={methodType.value} value={methodType.value}>{methodType.label}</MenuItem>)}</Select></FormControl>
       <TextField label={methodValueLabel(type)} type={type === 'WEB' ? 'url' : 'text'} value={value} placeholder={methodPlaceholder(type)} onChange={(event) => { setValue(event.target.value); setValueError(null); setSubmitError(null); }} error={Boolean(valueError)} helperText={valueError} disabled={submitting} size="small" autoFocus fullWidth />
     </Stack>
+    <PaymentNotificationFields idPrefix={`edit-method-${method.id}`} type={type} value={paymentFields} disabled={submitting} onChange={setPaymentFields} />
     <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 1 }}><Button type="button" size="small" onClick={close} disabled={submitting}>Cancelar</Button><Button type="submit" size="small" variant="contained" disabled={submitting || !dirty} startIcon={submitting ? <CircularProgress size={14} color="inherit" /> : undefined}>Guardar</Button></Stack>
   </Box>;
 }

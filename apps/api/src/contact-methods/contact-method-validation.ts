@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { ContactMethodType } from '../contacts/dto/create-contact.dto';
+import { PaymentRecipientType } from './dto/payment-recipient-type';
 
 export function validateContactMethod(type: string, value: string): void {
   if (!Object.values(ContactMethodType).includes(type as ContactMethodType)) {
@@ -30,4 +31,38 @@ export function isWebUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+export interface PaymentNotificationFlags {
+  receivesPaymentNotifications: boolean;
+  paymentRecipientType: PaymentRecipientType | null;
+}
+
+interface RequestedPaymentNotificationFlags {
+  receivesPaymentNotifications?: boolean;
+  paymentRecipientType?: PaymentRecipientType | null;
+}
+
+// Resolves the persisted recibe_notificacion_pago / tipo_destinatario_pago pair for a method.
+//  - receives=false            => recipient type is normalized to null (whatever was sent).
+//  - receives=true             => the method must be CORREO and a recipient type (PARA|CC|CCO) is mandatory.
+//  - non-CORREO, not requested => receives=false / null (e.g. an email edited into a phone number).
+// `current` (edit only) supplies the values to keep when the request omits them. isPrimary
+// (es_principal) is a separate concept and is deliberately not part of this function.
+export function resolvePaymentNotificationFlags(
+  resultingType: string,
+  requested: RequestedPaymentNotificationFlags,
+  current?: { receivesPaymentNotifications: boolean; paymentRecipientType: string | null }
+): PaymentNotificationFlags {
+  const isEmail = resultingType === ContactMethodType.Email;
+  const receives = requested.receivesPaymentNotifications ?? (isEmail ? current?.receivesPaymentNotifications ?? false : false);
+  if (!receives) return { receivesPaymentNotifications: false, paymentRecipientType: null };
+  if (!isEmail) {
+    throw new BadRequestException({ code: 'PAYMENT_NOTIFICATION_REQUIRES_EMAIL', message: 'Solo un medio de tipo correo puede recibir notificaciones de pago.' });
+  }
+  const recipientType = requested.paymentRecipientType ?? (current?.paymentRecipientType as PaymentRecipientType | null | undefined) ?? null;
+  if (!recipientType || !Object.values(PaymentRecipientType).includes(recipientType)) {
+    throw new BadRequestException({ code: 'PAYMENT_RECIPIENT_TYPE_REQUIRED', message: 'Indica si el destinatario de notificaciones de pago es PARA, CC o CCO.' });
+  }
+  return { receivesPaymentNotifications: true, paymentRecipientType: recipientType };
 }

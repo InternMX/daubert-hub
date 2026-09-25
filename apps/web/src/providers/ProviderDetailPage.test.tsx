@@ -1,11 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProviderApiError, getProvider } from '../services/providers';
 import { ProviderDetailPage } from './ProviderDetailPage';
 import { listCompanyAddresses } from '../services/companyAddresses';
 import { getCompanyAliases } from '../services/companyAliases';
+import { getPaymentNotificationSettings } from '../services/paymentNotificationSettings';
 
 vi.mock('../services/providers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/providers')>()),
@@ -20,7 +21,13 @@ vi.mock('../services/companyAliases', async (importOriginal) => ({
   getCompanyAliases: vi.fn()
 }));
 
+vi.mock('../services/paymentNotificationSettings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/paymentNotificationSettings')>()),
+  getPaymentNotificationSettings: vi.fn()
+}));
+
 const getProviderMock = vi.mocked(getProvider);
+const getSettingsMock = vi.mocked(getPaymentNotificationSettings);
 const listCompanyAddressesMock = vi.mocked(listCompanyAddresses);
 const getCompanyAliasesMock = vi.mocked(getCompanyAliases);
 
@@ -28,6 +35,9 @@ function renderPage(path = '/providers/121', state?: { directoryPath: string }) 
   return render(<MemoryRouter initialEntries={[{ pathname: path, state }]}><Routes><Route path="/providers/:id" element={<ProviderDetailPage />} /><Route path="/providers" element={<div>Directorio de proveedores</div>} /></Routes></MemoryRouter>);
 }
 
+beforeEach(() => {
+  getSettingsMock.mockResolvedValue({ companyId: '121', dropboxPath: null, processesPaymentReceipts: false, notificationsActive: false, destinationPath: null, readiness: { ready: false, missingRequirements: ['DROPBOX_PATH_REQUIRED', 'PAYMENT_PROCESSING_REQUIRED', 'PAYMENT_RECIPIENT_PARA_REQUIRED'] } });
+});
 afterEach(() => vi.clearAllMocks());
 
 describe('ProviderDetailPage', () => {

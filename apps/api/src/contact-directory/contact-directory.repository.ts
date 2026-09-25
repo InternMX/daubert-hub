@@ -5,7 +5,7 @@ import type { ListContactDirectoryCompaniesDto } from './dto/list-contact-direct
 
 interface CompanyRow extends QueryResultRow { id: string; commercial_name: string; company_type: string; contact_count: string; matched_alias: string | null; }
 interface ContactRow extends QueryResultRow { id: string; name: string | null; contact_type: string; area: string | null; position: string | null; notes: string | null; status: 'ACTIVO' | 'INACTIVO'; is_primary: boolean; }
-interface MethodRow extends QueryResultRow { id: string; contact_id: string; type: string; value: string; is_primary: boolean; }
+interface MethodRow extends QueryResultRow { id: string; contact_id: string; type: string; value: string; is_primary: boolean; receives_payment_notifications: boolean; payment_recipient_type: string | null; }
 export interface CompanyDetailRecord { company: Omit<CompanyRow, 'contact_count'>; contacts: Array<ContactRow & { methods: MethodRow[]; inactiveMethods: MethodRow[] }>; }
 
 @Injectable()
@@ -40,9 +40,9 @@ export class ContactDirectoryRepository {
     const contacts = await this.database.query<ContactRow>(`SELECT contacto_id::text AS id, nombre AS name, tipo_contacto AS contact_type, area, cargo AS position, observaciones AS notes, estatus AS status, es_contacto_principal AS is_primary
       FROM core.contactos WHERE empresa_id = $1 AND estatus IN ('ACTIVO', 'INACTIVO')
       ORDER BY es_contacto_principal DESC, CASE WHEN tipo_contacto = 'PERSONA' AND nombre IS NOT NULL THEN 0 WHEN tipo_contacto = 'BUZON_GENERICO' THEN 1 WHEN tipo_contacto = 'AREA' THEN 2 ELSE 3 END, lower(coalesce(area, nombre, '')), contacto_id`, [id]);
-    const methods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor AS value, es_principal AS is_primary FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'ACTIVO'
+    const methods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor AS value, es_principal AS is_primary, recibe_notificacion_pago AS receives_payment_notifications, tipo_destinatario_pago AS payment_recipient_type FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'ACTIVO'
       ORDER BY contacto_id, es_principal DESC, CASE tipo_medio WHEN 'CORREO' THEN 1 WHEN 'TELEFONO' THEN 2 WHEN 'WHATSAPP' THEN 3 WHEN 'OTRO' THEN 4 ELSE 5 END, lower(btrim(valor)), medio_id`, [contacts.map((contact) => contact.id)]) : [];
-    const inactiveMethods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor AS value, es_principal AS is_primary FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'INACTIVO'
+    const inactiveMethods = contacts.length ? await this.database.query<MethodRow>(`SELECT medio_id::text AS id, contacto_id::text AS contact_id, tipo_medio AS type, valor AS value, es_principal AS is_primary, recibe_notificacion_pago AS receives_payment_notifications, tipo_destinatario_pago AS payment_recipient_type FROM core.medios_contacto WHERE contacto_id = ANY($1::bigint[]) AND estatus = 'INACTIVO'
       ORDER BY contacto_id, es_principal DESC, CASE tipo_medio WHEN 'CORREO' THEN 1 WHEN 'TELEFONO' THEN 2 WHEN 'WHATSAPP' THEN 3 WHEN 'OTRO' THEN 4 ELSE 5 END, lower(btrim(valor)), medio_id`, [contacts.map((contact) => contact.id)]) : [];
     const byContact = new Map<string, MethodRow[]>();
     const inactiveByContact = new Map<string, MethodRow[]>();

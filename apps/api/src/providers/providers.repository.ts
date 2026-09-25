@@ -3,6 +3,7 @@ import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import type { AuditIdentity } from '../common/authenticated-request';
 import { replaceCompanyAliases } from '../companies/company-aliases.repository';
+import { insertPaymentNotificationSettings, syncPaymentNotificationDestination } from '../payment-notification-settings/payment-notification-settings.repository';
 import type { CreateProviderDto } from './dto/create-provider.dto';
 import { FiscalChangeMode, type UpdateProviderDto } from './dto/update-provider.dto';
 import { ProviderSortBy, ProviderStatusFilter, SortOrder, type ListProvidersDto } from './dto/list-providers.dto';
@@ -13,6 +14,7 @@ interface CompanyRow extends QueryResultRow {
   nombre_comercial: string;
   estatus: string;
   observaciones: string | null;
+  ruta_dropbox: string | null;
 }
 
 interface FiscalRow extends QueryResultRow {
@@ -44,6 +46,7 @@ export interface ListedProvidersRecord {
 }
 
 export interface FoundProviderRecord extends ListedProviderRow {
+  dropbox_path: string | null;
   roles: string[];
   aliases: string[];
   other_aliases: Array<{ alias: string; type: string }>;
@@ -55,6 +58,7 @@ interface LockedProviderRow extends QueryResultRow {
   nombre_comercial: string;
   observaciones: string | null;
   estatus: string;
+  ruta_dropbox: string | null;
   roles: string[];
 }
 
@@ -64,6 +68,7 @@ interface LockedCompanyRow extends QueryResultRow {
   nombre_comercial: string;
   observaciones: string | null;
   estatus: string;
+  ruta_dropbox: string | null;
 }
 
 interface RoleRow extends QueryResultRow {
@@ -101,6 +106,9 @@ export class ProvidersRepository {
       const company = await this.insertCompany(client, input);
       await client.query('INSERT INTO core.empresa_roles (empresa_id, rol) VALUES ($1, $2)', [company.empresa_id, input.providerType]);
       const fiscal = input.fiscal ? await this.insertFiscal(client, company.empresa_id, input) : null;
+      // Same transaction: a failure here rolls the whole company back (no half-created provider).
+      // Safe defaults: procesa=false, activas=false; never activated automatically.
+      await insertPaymentNotificationSettings(client, company.empresa_id, company.ruta_dropbox);
       await client.query('COMMIT');
       return { company, fiscal };
     } catch (error) {
@@ -194,6 +202,7 @@ export class ProvidersRepository {
         company.empresa_id::text AS id,
         company.nombre_comercial AS commercial_name,
         provider_role.rol AS provider_type,
+        company.ruta_dropbox AS dropbox_path,
         COALESCE(provider_roles.roles, ARRAY[]::text[]) AS roles,
         COALESCE(company_aliases.aliases, ARRAY[]::text[]) AS aliases,
         COALESCE(other_company_aliases.aliases, '[]'::jsonb) AS other_aliases,
@@ -271,6 +280,7 @@ export class ProvidersRepository {
         values.push(id);
         await client.query(`UPDATE core.empresas SET ${sets.join(', ')} WHERE empresa_id = $${values.length}`, values);
       }
+      if (input.rutaDropbox !== undefined) await this.updateDropboxPath(client, id, company.ruta_dropbox, input.rutaDropbox);
       await this.updateFiscal(client, id, fiscal, input);
       if (input.aliases !== undefined) await replaceCompanyAliases(client, id, input.aliases);
       await client.query('COMMIT');
@@ -331,9 +341,22 @@ export class ProvidersRepository {
     } finally { client.release(); }
   }
 
+  // ruta_dropbox and ruta_destino change together in the caller's transaction. The path arrives already
+  // validated/canonicalized by ProvidersService. Clearing it while Payment Notifications are active
+  // would leave n8n with an active company and no Dropbox path, so that is refused.
+  private async updateDropboxPath(client: PoolClient, id: string, current: string | null, next: string | null): Promise<void> {
+    if ((current ?? null) === (next ?? null)) return;
+    if (next === null) {
+      const active = await client.query('SELECT 1 FROM core.empresas_notificacion_pago WHERE empresa_id = $1 AND notificaciones_activas = TRUE', [id]);
+      if (active.rows.length > 0) throw Object.assign(new Error('PAYMENT_NOTIFICATIONS_DROPBOX_PATH_IN_USE'), { code: 'PAYMENT_NOTIFICATIONS_DROPBOX_PATH_IN_USE' });
+    }
+    await client.query('UPDATE core.empresas SET ruta_dropbox = $1 WHERE empresa_id = $2', [next, id]);
+    await syncPaymentNotificationDestination(client, id, next);
+  }
+
   private async lockProvider(client: PoolClient, id: string): Promise<LockedProviderRow | null> {
     const company = await client.query<LockedCompanyRow>(
-      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
+      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus, ruta_dropbox FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
     const row = company.rows[0];
     if (!row) return null;
     const roles = await client.query<{ rol: string }>(`
@@ -349,7 +372,7 @@ export class ProvidersRepository {
   // provider role is currently active (mirrors ClientsRepository.lockCompany).
   private async lockCompanyRow(client: PoolClient, id: string): Promise<LockedCompanyRow | null> {
     const result = await client.query<LockedCompanyRow>(
-      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
+      'SELECT empresa_id::text, tipo_empresa, nombre_comercial, observaciones, estatus, ruta_dropbox FROM core.empresas WHERE empresa_id = $1 FOR UPDATE', [id]);
     return result.rows[0] ?? null;
   }
 
@@ -405,8 +428,8 @@ export class ProvidersRepository {
 
   private async insertCompany(client: PoolClient, input: CreateProviderDto): Promise<CompanyRow> {
     const result = await client.query<CompanyRow>(
-      'INSERT INTO core.empresas (tipo_empresa, nombre_comercial, observaciones) VALUES ($1, $2, $3) RETURNING empresa_id, tipo_empresa, nombre_comercial, estatus, observaciones, created_at, updated_at',
-      [input.providerType, input.commercialName, input.notes ?? null]
+      'INSERT INTO core.empresas (tipo_empresa, nombre_comercial, observaciones, ruta_dropbox) VALUES ($1, $2, $3, $4) RETURNING empresa_id, tipo_empresa, nombre_comercial, estatus, observaciones, ruta_dropbox, created_at, updated_at',
+      [input.providerType, input.commercialName, input.notes ?? null, input.rutaDropbox ?? null]
     );
     return result.rows[0]!;
   }

@@ -35,13 +35,19 @@ export class SafeExceptionFilter implements ExceptionFilter {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
-  private responseFor(exception: HttpException): { statusCode: number; message: string; code?: string } {
+  private responseFor(exception: HttpException): { statusCode: number; message: string; code?: string; missingRequirements?: string[] } {
     const payload = exception.getResponse();
     if (typeof payload === 'string') return { statusCode: exception.getStatus(), message: payload };
     if (typeof payload === 'object' && payload !== null && 'message' in payload) {
       const message = payload.message;
       const code = 'code' in payload && typeof payload.code === 'string' ? payload.code : undefined;
-      return { statusCode: exception.getStatus(), message: Array.isArray(message) ? 'Solicitud no válida.' : String(message), ...(code ? { code } : {}) };
+      // Allow-listed, structured domain detail (e.g. PAYMENT_NOTIFICATIONS_NOT_READY): only an array of
+      // upper-case requirement codes ever passes through, never free-form text or internals.
+      const requirements = 'missingRequirements' in payload && Array.isArray(payload.missingRequirements)
+        && payload.missingRequirements.every((item: unknown) => typeof item === 'string' && /^[A-Z][A-Z0-9_]*$/.test(item))
+        ? (payload.missingRequirements as string[])
+        : undefined;
+      return { statusCode: exception.getStatus(), message: Array.isArray(message) ? 'Solicitud no válida.' : String(message), ...(code ? { code } : {}), ...(requirements ? { missingRequirements: requirements } : {}) };
     }
     return { statusCode: exception.getStatus(), message: 'Solicitud no válida.' };
   }

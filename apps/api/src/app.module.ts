@@ -19,6 +19,7 @@ import { RecentActivityModule } from './recent-activity/recent-activity.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { AliasesModule } from './aliases/aliases.module';
+import { PaymentNotificationSettingsModule } from './payment-notification-settings/payment-notification-settings.module';
 import { SecurityModule } from './security/security.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { SecurityModule } from './security/security.module';
     AutomationsModule,
     AddressesModule,
     AliasesModule,
+    PaymentNotificationSettingsModule,
     ClientsModule,
     SecurityModule
   ],

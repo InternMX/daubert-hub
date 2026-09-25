@@ -15,23 +15,25 @@ describe('ProvidersRepository', () => {
     const query = vi.fn()
       .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', estatus: 'ACTIVO', observaciones: null }] })
-      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
     const { repository, client } = repositoryWithClient(query);
     await expect(repository.create(input, 'request-1', { userId: null, userEmail: null })).resolves.toMatchObject({ company: { empresa_id: '121' }, fiscal: null });
     expect(query).toHaveBeenNthCalledWith(1, 'BEGIN');
     expect(query).toHaveBeenNthCalledWith(2, "SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     expect(query).toHaveBeenNthCalledWith(3, "SELECT set_config('app.request_id', $1, true)", ['request-1']);
-    expect(query).toHaveBeenNthCalledWith(8, 'COMMIT');
+    // company, role, then the payment-notification settings row (false/false), all before COMMIT.
+    expect(query.mock.calls[7]?.[0]).toContain('INSERT INTO core.empresas_notificacion_pago');
+    expect(query).toHaveBeenNthCalledWith(9, 'COMMIT');
     expect(client.release).toHaveBeenCalledOnce();
   });
 
   it('inserts fiscal data before committing', async () => {
     const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({ rows: [{ empresa_id: '121', tipo_empresa: 'SERVICIO', nombre_comercial: 'Acme', estatus: 'ACTIVO', observaciones: null }] })
-      .mockResolvedValueOnce(undefined).mockResolvedValueOnce({ rows: [{ empresa_fiscal_id: '122', razon_social: 'Acme SA', rfc: 'ABC123456XYZ' }] }).mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(undefined).mockResolvedValueOnce({ rows: [{ empresa_fiscal_id: '122', razon_social: 'Acme SA', rfc: 'ABC123456XYZ' }] }).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
     const { repository } = repositoryWithClient(query);
     await expect(repository.create({ ...input, providerType: ProviderType.Service, fiscal: { legalName: 'Acme SA', rfc: 'ABC123456XYZ' } }, 'request-2', { userId: null, userEmail: null })).resolves.toMatchObject({ fiscal: { empresa_fiscal_id: '122' } });
-    expect(query).toHaveBeenNthCalledWith(9, 'COMMIT');
+    expect(query).toHaveBeenNthCalledWith(10, 'COMMIT');
   });
 
   it('rolls back and releases the client when fiscal insertion fails', async () => {

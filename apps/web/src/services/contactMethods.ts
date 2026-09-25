@@ -1,12 +1,15 @@
 import { apiBaseUrl } from './api';
-import type { ContactMethodType } from './contactDirectory';
+import type { ContactMethodType, PaymentRecipientType } from './contactDirectory';
 import { ContactApiError } from './contacts';
 
 export type AddContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'WEB';
-export interface AddContactMethodInput { type: AddContactMethodType; value: string; }
-export interface AddedContactMethod { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO'; }
-export interface EditContactMethodInput { type?: AddContactMethodType; value?: string; }
-export interface EditedContactMethod { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO' | 'INACTIVO'; }
+// isPrimary (es_principal) and the payment-notification fields are independent: PARA never implies primary and
+// primary never implies PARA. receivesPaymentNotifications=false means no recipient type (the API normalizes it).
+export interface PaymentNotificationMethodFields { isPrimary?: boolean; receivesPaymentNotifications?: boolean; paymentRecipientType?: PaymentRecipientType | null; }
+export interface AddContactMethodInput extends PaymentNotificationMethodFields { type: AddContactMethodType; value: string; }
+export interface AddedContactMethod extends PaymentNotificationMethodFields { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO'; }
+export interface EditContactMethodInput extends PaymentNotificationMethodFields { type?: AddContactMethodType; value?: string; }
+export interface EditedContactMethod extends PaymentNotificationMethodFields { id: string; type: AddContactMethodType; value: string; status: 'ACTIVO' | 'INACTIVO'; }
 
 export interface ContactMethodLifecycleResult {
   id: string;
@@ -15,6 +18,8 @@ export interface ContactMethodLifecycleResult {
   value: string;
   status: 'ACTIVO' | 'INACTIVO';
   isPrimary: boolean;
+  receivesPaymentNotifications?: boolean;
+  paymentRecipientType?: PaymentRecipientType | null;
 }
 
 async function changeContactMethodStatus(id: string, action: 'deactivate' | 'reactivate'): Promise<ContactMethodLifecycleResult> {

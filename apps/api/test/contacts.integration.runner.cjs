@@ -232,7 +232,7 @@ async function run() {
       assert(added.response.status === 201, `Method ${addition.payload.type} creation failed: ${JSON.stringify(added.body)}`);
       assert(added.response.headers.get('x-request-id') === addition.requestId, `Method ${addition.payload.type} response did not preserve x-request-id.`);
       assert(typeof added.body.data.id === 'string' && added.body.data.type === addition.payload.type && added.body.data.value === addition.payload.value && added.body.data.status === 'ACTIVO', `Method ${addition.payload.type} response is inconsistent.`);
-      assert(Object.keys(added.body.data).sort().join(',') === 'id,status,type,value', `Method ${addition.payload.type} response exposed fields outside the safe contract.`);
+      assert(Object.keys(added.body.data).sort().join(',') === 'id,isPrimary,paymentRecipientType,receivesPaymentNotifications,status,type,value', `Method ${addition.payload.type} response exposed fields outside the safe contract.`);
       addedMethodIds.push(added.body.data.id);
     }
 
@@ -264,7 +264,7 @@ async function run() {
     const webEditRequestId = `method-edit-web-${randomUUID()}`;
     requestIds.add(webEditRequestId);
     const editedWeb = await patchContactMethod(addedWebMethod.medio_id, { value: editedWebUrl }, webEditRequestId);
-    assert(editedWeb.response.status === 200 && JSON.stringify(editedWeb.body) === JSON.stringify({ data: { id: addedWebMethod.medio_id, type: 'WEB', value: editedWebUrl, status: 'ACTIVO' } }), `WEB method edit did not return the exact updated URL: ${JSON.stringify(editedWeb.body)}`);
+    assert(editedWeb.response.status === 200 && JSON.stringify(editedWeb.body) === JSON.stringify({ data: { id: addedWebMethod.medio_id, type: 'WEB', value: editedWebUrl, status: 'ACTIVO', isPrimary: false, receivesPaymentNotifications: false, paymentRecipientType: null } }), `WEB method edit did not return the exact updated URL: ${JSON.stringify(editedWeb.body)}`);
     const persistedEditedWeb = (await pool.query('SELECT tipo_medio, valor, estatus FROM core.medios_contacto WHERE medio_id = $1', [addedWebMethod.medio_id])).rows[0];
     assert(persistedEditedWeb && persistedEditedWeb.tipo_medio === 'WEB' && persistedEditedWeb.valor === editedWebUrl && persistedEditedWeb.estatus === 'ACTIVO', 'WEB method edit did not persist the exact updated URL.');
 
@@ -349,7 +349,7 @@ async function run() {
     const emailBeforeEdit = (await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones FROM core.medios_contacto WHERE medio_id = $1', [activeEmailId])).rows[0];
     const correctedEmail = await patchContactMethod(activeEmailId, { value: 'corrected@example.test' });
     assert(correctedEmail.response.status === 200 && correctedEmail.response.headers.get('x-request-id') === correctedEmail.requestId, `Active email edit failed: ${JSON.stringify(correctedEmail.body)}`);
-    assert(JSON.stringify(correctedEmail.body) === JSON.stringify({ data: { id: activeEmailId, type: 'CORREO', value: 'corrected@example.test', status: 'ACTIVO' } }), 'Method edit response did not expose exactly the safe updated representation with a string ID.');
+    assert(JSON.stringify(correctedEmail.body) === JSON.stringify({ data: { id: activeEmailId, type: 'CORREO', value: 'corrected@example.test', status: 'ACTIVO', isPrimary: true, receivesPaymentNotifications: true, paymentRecipientType: 'CC' } }), 'Method edit response did not expose exactly the safe updated representation with a string ID: ' + JSON.stringify(correctedEmail.body));
     const emailAfterEdit = (await pool.query('SELECT medio_id::text, contacto_id::text, tipo_medio, valor, estatus, es_principal, recibe_notificacion_pago, tipo_destinatario_pago, observaciones FROM core.medios_contacto WHERE medio_id = $1', [activeEmailId])).rows[0];
     assert(emailAfterEdit.medio_id === emailBeforeEdit.medio_id && emailAfterEdit.contacto_id === emailBeforeEdit.contacto_id && emailAfterEdit.estatus === emailBeforeEdit.estatus && emailAfterEdit.es_principal === emailBeforeEdit.es_principal && emailAfterEdit.recibe_notificacion_pago === emailBeforeEdit.recibe_notificacion_pago && emailAfterEdit.tipo_destinatario_pago === emailBeforeEdit.tipo_destinatario_pago && emailAfterEdit.observaciones === emailBeforeEdit.observaciones, 'Email edit changed the ID, parent, status, principal, payment routing, or observations.');
     assert(emailAfterEdit.valor === 'corrected@example.test', 'Email edit did not persist the corrected value.');

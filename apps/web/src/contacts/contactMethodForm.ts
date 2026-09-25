@@ -1,5 +1,14 @@
 import type { AddContactMethodType } from '../services/contactMethods';
 
+// The backend refuses (409) any change that would leave a company with active Payment Notifications
+// without an operable PARA recipient. The Hub only translates that code; it never predicts it locally.
+export const ACTIVE_REQUIRES_PARA_CODE = 'PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA';
+export const ACTIVE_REQUIRES_PARA_MESSAGE = 'No se puede realizar el cambio porque este es el último destinatario PARA de una empresa con Notificaciones de Pago activas. Agrega otro destinatario PARA o desactiva primero las Notificaciones de Pago.';
+
+export function isActiveRequiresParaError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === ACTIVE_REQUIRES_PARA_CODE;
+}
+
 export const methodTypes: Array<{ value: AddContactMethodType; label: string }> = [
   { value: 'CORREO', label: 'Correo' },
   { value: 'TELEFONO', label: 'Teléfono' },

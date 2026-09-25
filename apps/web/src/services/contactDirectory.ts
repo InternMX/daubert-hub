@@ -5,7 +5,10 @@ export type CompanyType = 'PROVEEDOR' | 'SERVICIO' | 'FLETE' | 'CLIENTE' | 'OTRO
 export type ContactMethodType = 'CORREO' | 'TELEFONO' | 'WHATSAPP' | 'WEB' | 'OTRO';
 export type DirectoryContactType = 'PERSONA' | 'AREA' | 'BUZON_GENERICO';
 export interface DirectoryCompany { id: string; commercialName: string; companyType: CompanyType; contactCount: number; matchedAlias?: string | null; }
-export interface DirectoryContactMethod { id: string; type: ContactMethodType; value: string; isPrimary: boolean; }
+export type PaymentRecipientType = 'PARA' | 'CC' | 'CCO';
+// receivesPaymentNotifications / paymentRecipientType come from the API (always present there); optional here so
+// callers that only care about the basic method shape stay valid.
+export interface DirectoryContactMethod { id: string; type: ContactMethodType; value: string; isPrimary: boolean; receivesPaymentNotifications?: boolean; paymentRecipientType?: PaymentRecipientType | null; }
 export interface DirectoryContact { id: string; name: string | null; contactType: DirectoryContactType; area: string | null; position: string | null; notes: string | null; isPrimary: boolean; methods: DirectoryContactMethod[]; inactiveMethods: DirectoryContactMethod[]; }
 export interface DirectoryCompanyDetail { company: Omit<DirectoryCompany, 'contactCount' | 'matchedAlias'>; contacts: DirectoryContact[]; inactiveContacts: DirectoryContact[]; }
 export interface DirectoryList { data: DirectoryCompany[]; meta: { page: number; pageSize: number; total: number; totalPages: number }; }

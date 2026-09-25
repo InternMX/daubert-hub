@@ -53,3 +53,20 @@ describe('SafeExceptionFilter Retry-After handling', () => {
     expect(response.set).not.toHaveBeenCalled();
   });
 });
+
+describe('SafeExceptionFilter structured requirement codes', () => {
+  it('passes through an allow-listed missingRequirements array of upper-case codes', () => {
+    const { host, response } = fakeHost();
+    const exception = new HttpException({ code: 'PAYMENT_NOTIFICATIONS_NOT_READY', message: 'No listo.', missingRequirements: ['DROPBOX_PATH_REQUIRED', 'PAYMENT_PROCESSING_REQUIRED'] }, HttpStatus.CONFLICT);
+    new SafeExceptionFilter().catch(exception, host);
+    expect(response.json.mock.calls[0]?.[0]).toEqual({ statusCode: 409, message: 'No listo.', code: 'PAYMENT_NOTIFICATIONS_NOT_READY', missingRequirements: ['DROPBOX_PATH_REQUIRED', 'PAYMENT_PROCESSING_REQUIRED'] });
+  });
+
+  it('drops anything that is not a plain array of requirement codes (no free text, no internals)', () => {
+    for (const missingRequirements of [['select * from core.empresas'], [1, 2], 'DROPBOX_PATH_REQUIRED', [{ sql: 'x' }]]) {
+      const { host, response } = fakeHost();
+      new SafeExceptionFilter().catch(new HttpException({ code: 'X', message: 'm', missingRequirements }, HttpStatus.CONFLICT), host);
+      expect(response.json.mock.calls[0]?.[0]).not.toHaveProperty('missingRequirements');
+    }
+  });
+});

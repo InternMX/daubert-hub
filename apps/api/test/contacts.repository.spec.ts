@@ -53,18 +53,21 @@ describe('ContactsRepository', () => {
     const updated = { ...locked, estatus: targetStatus };
     const query = vi.fn()
       .mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce({ rows: [locked] })
-      .mockResolvedValueOnce({ rows: [updated] })
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ rows: [locked] });
+    // Deactivation first runs the read-only PARA invariant check (Payment Notifications inactive here).
+    if (targetStatus === 'INACTIVO') query.mockResolvedValueOnce({ rows: [{ active: false, total: 0, remaining: 0 }] });
+    query.mockResolvedValueOnce({ rows: [updated] }).mockResolvedValueOnce(undefined);
     const { repository, client } = repositoryWithClient(query);
+    const updateIndex = targetStatus === 'INACTIVO' ? 7 : 6;
 
     await expect(repository.changeStatus(id, targetStatus, 'request-status', { userId: null, userEmail: null })).resolves.toEqual(updated);
     expect(query).toHaveBeenNthCalledWith(1, 'BEGIN');
     expect(query).toHaveBeenNthCalledWith(2, "SELECT set_config('app.origin', $1, true)", ['DAUBERT_HUB']);
     expect(query).toHaveBeenNthCalledWith(3, "SELECT set_config('app.request_id', $1, true)", ['request-status']);
     expect(query.mock.calls[5]).toEqual([expect.stringContaining('FOR UPDATE OF contact, company'), [id]]);
-    expect(query.mock.calls[6]).toEqual([expect.stringMatching(/UPDATE core\.contactos SET estatus = \$1[\s\S]*RETURNING contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal/), [targetStatus, id]]);
-    expect(query.mock.calls.flatMap((call) => String(call[0])) .join(' ')).not.toMatch(/medios_contacto|CASCADE/i);
+    expect(query.mock.calls[updateIndex]).toEqual([expect.stringMatching(/UPDATE core\.contactos SET estatus = \$1[\s\S]*RETURNING contacto_id::text, empresa_id::text, tipo_contacto, nombre, area, cargo, observaciones, estatus, es_contacto_principal/), [targetStatus, id]]);
+    // Never cascades to the contact's methods: no write touches medios_contacto (the invariant check only reads it).
+    expect(query.mock.calls.flatMap((call) => String(call[0])).filter((sql) => !sql.includes('SELECT')).join(' ')).not.toMatch(/medios_contacto|CASCADE/i);
     expect(query).toHaveBeenLastCalledWith('COMMIT');
     expect(client.release).toHaveBeenCalledOnce();
   });

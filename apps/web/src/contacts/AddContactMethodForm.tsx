@@ -4,22 +4,26 @@ import type { FormEvent } from 'react';
 import { ContactApiError } from '../services/contacts';
 import { addContactMethod, type AddContactMethodType, type AddedContactMethod } from '../services/contactMethods';
 import { contactMethodValidationError, methodPlaceholder, methodTypes, methodValueLabel } from './contactMethodForm';
+import { PaymentNotificationFields, type PaymentNotificationFieldsValue } from './PaymentNotificationFields';
+
+const noPaymentFields: PaymentNotificationFieldsValue = { isPrimary: false, receivesPaymentNotifications: false, paymentRecipientType: null };
 
 export function AddContactMethodForm({ contact, onClose, onAdded }: { contact: { id: string; label: string }; onClose: () => void; onAdded: (contactId: string, method: AddedContactMethod) => void }) {
   const [type, setType] = useState<AddContactMethodType>('CORREO');
   const [value, setValue] = useState('');
+  const [paymentFields, setPaymentFields] = useState<PaymentNotificationFieldsValue>(noPaymentFields);
   const [valueError, setValueError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
-  function reset() { setType('CORREO'); setValue(''); setValueError(null); setSubmitError(null); }
+  function reset() { setType('CORREO'); setValue(''); setPaymentFields(noPaymentFields); setValueError(null); setSubmitError(null); }
   function close() { if (submittingRef.current) return; reset(); onClose(); }
   function changeType(next: AddContactMethodType) { setType(next); setValue(''); setValueError(null); setSubmitError(null); }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (submittingRef.current) return;
     const trimmed = value.trim(); const error = contactMethodValidationError(type, trimmed); setValueError(error); setSubmitError(null); if (error) return;
     submittingRef.current = true; setSubmitting(true);
-    try { const method = await addContactMethod(contact.id, { type, value: trimmed }); reset(); onClose(); onAdded(contact.id, method); }
+    try { const method = await addContactMethod(contact.id, { type, value: trimmed, ...(type === 'CORREO' ? { ...(paymentFields.isPrimary ? { isPrimary: true } : {}), ...(paymentFields.receivesPaymentNotifications ? { receivesPaymentNotifications: true, paymentRecipientType: paymentFields.paymentRecipientType } : {}) } : {}) }); reset(); onClose(); onAdded(contact.id, method); }
     catch (error) { if (error instanceof ContactApiError && error.code === 'CONTACT_METHOD_DUPLICATE') setSubmitError('Este medio ya existe para este contacto.'); else setSubmitError('No fue posible agregar el medio de contacto. Inténtalo nuevamente.'); }
     finally { submittingRef.current = false; setSubmitting(false); }
   }
@@ -30,6 +34,7 @@ export function AddContactMethodForm({ contact, onClose, onAdded }: { contact: {
       <FormControl size="small" disabled={submitting} sx={{ width: { xs: '100%', sm: 150 }, flexShrink: 0 }}><InputLabel id={`add-method-type-${contact.id}`}>Tipo</InputLabel><Select labelId={`add-method-type-${contact.id}`} label="Tipo" value={type} onChange={(event) => changeType(event.target.value as AddContactMethodType)}>{methodTypes.map((methodType) => <MenuItem key={methodType.value} value={methodType.value}>{methodType.label}</MenuItem>)}</Select></FormControl>
       <TextField label={methodValueLabel(type)} type={type === 'WEB' ? 'url' : 'text'} value={value} placeholder={methodPlaceholder(type)} onChange={(event) => setValue(event.target.value)} error={Boolean(valueError)} helperText={valueError} disabled={submitting} size="small" autoFocus fullWidth />
     </Stack>
+    <PaymentNotificationFields idPrefix={`add-method-${contact.id}`} type={type} value={paymentFields} disabled={submitting} onChange={setPaymentFields} />
     <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 1 }}><Button type="button" size="small" onClick={close} disabled={submitting}>Cancelar</Button><Button type="submit" size="small" variant="contained" disabled={submitting} startIcon={submitting ? <CircularProgress size={14} color="inherit" /> : undefined}>Agregar</Button></Stack>
   </Box>;
 }
