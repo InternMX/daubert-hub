@@ -20,7 +20,7 @@ Principio ([ADR-005](../decisions/ADR-005-hub-consume-estado-automatizaciones.md
 | Historial y detalle | `…/remissions/audi/executions`, `…/remissions/caterpillar/*`, `…/payment-notifications/*` | Sólo lectura |
 | Ajuste seguro de folio | `PATCH /automations/:automationCode/document-series/:seriesCode` (ADMIN) | [document-series](../database/document-series.md) |
 | Reproceso manual Caterpillar | `POST …/caterpillar/executions/:executionId/reprocess` (ADMIN) | [reprocessing](../automations/caterpillar/reprocessing.md) |
-| Reproceso Notificaciones de pago | `POST …/payment-notifications/:executionId/reprocess` | [payment-notifications](../automations/payment-notifications/README.md) (pendiente) |
+| Reproceso Notificaciones de pago | `POST …/payment-notifications/:executionId/reprocess` | [payment-notifications](../automations/payment-notifications/README.md) |
 | Acuses de revisión | `POST /automations/:automationCode/review-acknowledgements` | Tabla `ops.automation_review_acknowledgements`; el Hub calcula el "último problema pendiente" y sólo ese es reconocible |
 | Actividad reciente | `GET /recent-activity` | Repositorios por fuente: Audi, Caterpillar, Notificaciones de pago y ajustes de series; presentación común en `remission-activity-presentation.ts` |
 

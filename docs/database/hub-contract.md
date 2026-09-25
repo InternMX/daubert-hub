@@ -109,8 +109,10 @@ Ninguno: todo grant del Hub tiene uso estático en `apps/api/src`.
 
 Nota: la relación exacta repository → service → controller se define por inyección de dependencias; aquí se listan los `*.service.ts`/`*.controller.ts` del mismo directorio como aproximación. Detalle de módulos: [hub docs](../hub/README.md).
 
+> **Actualización 2026-09-25:** el Hub ahora también usa `core.empresas_notificacion_pago` (`SELECT/INSERT/UPDATE`, migración `20260925_011`); D3 la listaba como no usada. Ver [company-configuration](../automations/payment-notifications/company-configuration.md).
+
 ## Objetos de base de datos que el Hub **no** usa
 
 - Vistas: ninguna de las 10 (incluida `core.vw_empresas_hub`, cuyo nombre sugiere lo contrario).
 - Funciones: ninguna de las 13 (salvo indirectamente los 25 triggers).
-- Tablas: `core.borradores_notificacion_pago`, `core.empresas_notificacion_pago`, `core.snapshot_carga_empresas_inicial`, `core.stg_contactos_notificacion_pago` y todo `staging.*`.
+- Tablas: `core.borradores_notificacion_pago`, `core.snapshot_carga_empresas_inicial`, `core.stg_contactos_notificacion_pago` y todo `staging.*`.

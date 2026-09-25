@@ -45,7 +45,7 @@ docs/
 │   ├── README.md
 │   ├── caterpillar/              módulo piloto (documentado de extremo a extremo)
 │   ├── audi/README.md            esqueleto (pendiente)
-│   └── payment-notifications/README.md   esqueleto (pendiente)
+│   └── payment-notifications/         documentado (incluye company-configuration.md: configuración por empresa desde el Hub)
 ├── operations/                   runbooks generales
 │   └── README.md · deployment.md · backup-restore.md · database-backup-restore.md · troubleshooting.md
 ├── decisions/                    ADRs

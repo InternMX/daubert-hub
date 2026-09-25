@@ -36,9 +36,11 @@ Formato: **síntoma → causa probable → qué revisar → acción segura → q
 ## 5. PDF no clasificado (`ALIAS_NO_CATALOGADO` / `ALIAS_AMBIGUO`)
 
 - **Causa probable:** el alias del PDF no está en el catálogo o coincide con más de un proveedor.
-- **Qué revisar:** el resumen por correo (motivo por archivo), `04_ERRORES\PDF`, el catálogo (`core.vw_catalogo_notificacion_pago_n8n`).
-- **Acción segura:** corregir el catálogo (por el responsable de datos maestros) y **reprocesar** el correo.
+- **Qué revisar:** el resumen por correo (motivo por archivo), `04_ERRORES\PDF`, el catálogo (`core.vw_catalogo_notificacion_pago_n8n`). En el Hub, el detalle de la ejecución lista estos archivos en "Archivos que requieren atención".
+- **Acción segura:** corregir el catálogo **desde el Hub** (alias de la empresa, [company-configuration](company-configuration.md)) y **reprocesar** el correo.
 - **Qué NO hacer:** no mover el PDF a mano a la carpeta del proveedor (queda fuera del control de duplicados).
+
+> Si el problema es de **alta o configuración de una empresa** (no permite activar, no permite quitar un destinatario, ruta Dropbox), ver [company-configuration → troubleshooting](company-configuration.md#troubleshooting-breve). Los errores de archivo (PDFs sin empresa) se explican en el [README](README.md#errores-de-archivo-vs-resultados-por-empresa).
 
 ## 6. Errores de ruta (`RUTA_PROVEEDOR_FUERA_DE_ROOT`, `CARPETA_PROVEEDOR_NO_EXISTE`, `RUTA_FUERA_DE_DROPBOX`, `PLANTILLA_RUTA_INVALIDA`, `RUTA_DESTINO_VACIA`)
 
@@ -71,7 +73,7 @@ Formato: **síntoma → causa probable → qué revisar → acción segura → q
 ## 10. Notificaciones "omitidas"
 
 - **Causa probable:** el proveedor tiene `notificaciones_activas = false` (`NOTIFICACION_DESACTIVADA`) → resultado `OMITIDO`, sin borrador (es intencional).
-- **Acción segura:** cambiarlo en el catálogo si el negocio lo requiere y reprocesar.
+- **Acción segura:** activar "Generar borradores" desde el Hub si el negocio lo requiere (exige ruta Dropbox, "Procesa comprobantes" y al menos un PARA; ver [company-configuration](company-configuration.md)) y reprocesar.
 
 ## 11. Duplicados
 

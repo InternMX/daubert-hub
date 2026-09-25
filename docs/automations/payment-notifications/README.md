@@ -10,7 +10,7 @@ Documentado en la Fase D2 **a partir de los exports reales**. Los JSON **no est�
 | Disparos | **Automático:** `Schedule Trigger` → `Obtener correos Outlook` (sondeo del buzón; intervalo sin valor explícito en el export) · **Manual:** `Reprocesar correo manual` · **Hub:** webhook `POST daubert-hub/notificaciones-pago/reprocesar` |
 | Credenciales | `Postgres produccion` / `Postgres pruebas`; `Outlook LOGIN OAUT2` (**la misma en TEST y PROD**); `Daubert Hub - n8n PROD` / `… TEST` (Header Auth del webhook) |
 | Error Workflow | PROD: referencia un workflow **sin export** (dependencia ausente). TEST: ninguno |
-| Hub | Dashboard, detalle, **reproceso** (`POST /api/automations/payment-notifications/:executionId/reprocess`, sin restricción de rol), acuses de revisión |
+| Hub | Dashboard, detalle, **reproceso** (`POST /api/automations/payment-notifications/:executionId/reprocess`, sin restricción de rol), acuses de revisión y **configuración por empresa** ([company-configuration](company-configuration.md)) |
 
 ## Propósito
 
@@ -29,6 +29,7 @@ Lee correos de Outlook que traen **comprobantes de pago en un ZIP** (del adminis
 | [architecture.md](architecture.md) | Componentes y responsabilidades |
 | [workflow.md](workflow.md) | Flujo principal, reproceso y errores (Mermaid); reglas verificadas |
 | [nodes-reference.md](nodes-reference.md) | Referencia de nodos |
+| [company-configuration.md](company-configuration.md) | **Configuración por empresa desde el Hub** (ruta Dropbox, destinatarios PARA/CC/CCO, readiness, migración 011) |
 | [database-contract.md](database-contract.md) | Contrato PostgreSQL |
 | [reprocessing.md](reprocessing.md) | Reproceso, contrato con el Hub, **seguridad** |
 | [testing.md](testing.md) | Pruebas y promoción |
@@ -39,3 +40,21 @@ Lee correos de Outlook que traen **comprobantes de pago en un ZIP** (del adminis
 ## Categorías de proveedor
 
 Las categorías **FLETES**, **PROVEEDORES** y **PROVEEDOR DE SERVICIOS** **no están escritas en el workflow**: llegan del catálogo de PostgreSQL (vista `core.vw_catalogo_notificacion_pago_n8n`, campo `tipo_empresa`) junto con alias del PDF, plantilla de ruta destino, destinatarios PARA/CC/CCO y el indicador `notificaciones_activas`. En TEST existen carpetas `FLETES`, `PROVEEDORES` y `PROVEEDOR DE SERVICIOS` bajo `Pruebas\NOTIFICACIONES DE PAGO`. Tratamiento especial visible en el workflow: importes de **DHL** (`IMPORTES_DHL`, `SIN_IMPORTES_DHL`).
+
+## Configuración de empresas desde el Hub
+
+Desde 2026-09-25 la configuración necesaria para que una empresa participe (ruta Dropbox, destinatarios PARA/CC/CCO, "Procesa comprobantes" y "Generar borradores") se hace **desde el Hub, sin SQL manual**. PostgreSQL sigue siendo la fuente de verdad y n8n (sin cambios) consume el catálogo `core.vw_catalogo_notificacion_pago_n8n`. Detalle, reglas, endpoints y procedimiento: [company-configuration](company-configuration.md).
+
+## Errores de archivo vs resultados por empresa
+
+El Hub separa dos universos:
+
+- **Resultados por empresa** (`core.resultados_notificacion_pago`: `LISTO`/`MANUAL`/`ERROR`/`OMITIDO`). `totalResults` y los contadores por estado cuentan **solo** estos.
+- **Errores de archivo**: PDFs que n8n no pudo asociar a ninguna empresa (no tienen `empresa_id`). n8n los registra en `core.correos_notificacion_pago.detalle_error` con el formato `<archivo>: <CODIGO> - <detalle> | HASH=<sha256>`.
+
+Comportamiento del Hub:
+
+- El API los parsea y los expone como `fileErrors` (conteo, en el listado y el detalle) y `fileErrorDetails` (`fileName`, `errorCode`, `detail`, `fileHash`, solo en el detalle). **No** suman a `totalResults` ni se convierten en filas por empresa.
+- Se muestran por separado: columna **"Errores archivo"** en el listado y sección **"Archivos que requieren atención"** en el detalle. El hash es un dato técnico y no se muestra.
+- Si `detalle_error` trae varios registros (por salto de línea o inline separados por `" | "`), cada uno con un `HASH=` válido se parsea individualmente; lo que no cumple el formato se omite.
+- n8n sigue siendo dueño del reproceso selectivo por `correo_id`/hash; este contrato no cambió.

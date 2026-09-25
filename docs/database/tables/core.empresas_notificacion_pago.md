@@ -6,6 +6,8 @@
 
 Configuración por empresa de las notificaciones de pago (`notificaciones_activas`, `procesa_comprobantes_pago`, `ruta_destino`). Relación 1:1 con `core.empresas` (PK = `empresa_id`).
 
+> **Actualización 2026-09-25:** el Hub ya administra esta tabla (alta de proveedor, upsert de empresas históricas, sincronización de `ruta_destino`). Reglas y flujo: [company-configuration](../../automations/payment-notifications/company-configuration.md). El Hub siempre inserta `notificaciones_activas=false` y `procesa_comprobantes_pago=false` explícitos (los defaults de columna siguen siendo `true`) y no escribe `observaciones`.
+
 ## Primary Key
 
 `empresas_notificacion_pago_pkey` — PRIMARY KEY (empresa_id)
@@ -60,6 +62,7 @@ Vistas que la leen: [`core.vw_carga_empresas_inicial`](../views/core.vw_carga_em
 
 | Rol | PROD | TEST |
 | --- | --- | --- |
+| `daubert_hub_app` | RIU (migración `20260925_011`) | - |
 | `daubert_hub_test_user` | - | RIUD |
 
 Leyenda: R=SELECT, I=INSERT, U=UPDATE, D=DELETE. Propietario: `postgres` (todos los privilegios).
@@ -70,7 +73,7 @@ Ninguna (ninguna función de negocio la referencia en su cuerpo).
 
 ## Hub consumers
 
-Ninguno en `apps/api/src` (búsqueda de `core.empresas_notificacion_pago` en SQL de repositorios/servicios).
+Desde 2026-09-25: `payment-notification-settings/payment-notification-settings.repository.ts` (lectura, upsert y alta/sincronización de `ruta_destino`) y `providers/providers.repository.ts` (alta de proveedor y cambio de `ruta_dropbox`). D3 (2026-09-24) no encontró ninguno.
 
 ## n8n consumers
 
@@ -78,10 +81,10 @@ Ninguno demostrable (ningún workflow versionado la referencia).
 
 ## Riesgos al modificar
 
-- Ningún rol de aplicación tiene grants directos: se consume **solo a través de vistas** (propiedad de `postgres`).
+- n8n la consume **solo a través de vistas** (propiedad de `postgres`). El Hub (`daubert_hub_app`) tiene `SELECT/INSERT/UPDATE` directo desde la migración `20260925_011`; sin `DELETE`.
 - Sin trigger de auditoría ni `updated_at` automático (no tiene trigger `updated_at`).
 
 ## TEST vs PROD
 
 - Estructura (columnas, tipos, defaults, constraints, índices, triggers): **idéntica**.
-- Permisos: **drift real** — Hub PROD (`daubert_hub_app`) = sin grants vs TEST (`daubert_hub_test_user`) = RIUD. Ver [permissions-matrix](../permissions-matrix.md).
+- Permisos: medición D3 (2026-09-24) Hub PROD sin grants vs TEST RIUD; desde la migración `20260925_011` Hub PROD = `RIU` (sigue sin `DELETE`). Ver [permissions-matrix](../permissions-matrix.md).

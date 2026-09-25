@@ -20,7 +20,7 @@ Leyenda: **R**=SELECT · **I**=INSERT · **U**=UPDATE · **D**=DELETE · **X**=E
 | `core.empresa_roles` | RIU | - | - | - | - |  |
 | `core.empresas` | RIU | R | - | - | - | n8n lee la tabla completa (RFC no está aquí; está en `empresas_fiscales`). |
 | `core.empresas_fiscales` | RIU | - | - | - | - |  |
-| `core.empresas_notificacion_pago` | - | - | - | - | - | Solo a través de vistas. |
+| `core.empresas_notificacion_pago` | RIU | - | - | - | - | Hub: `SELECT/INSERT/UPDATE` desde la migración `20260925_011` (2026-09-25; sin `DELETE`). n8n la consume a través de la vista `core.vw_catalogo_notificacion_pago_n8n`. |
 | `core.medios_contacto` | RIU | - | - | - | - |  |
 | `core.resultados_notificacion_pago` | R | RIU | - | - | - |  |
 | `core.snapshot_carga_empresas_inicial` | - | - | - | - | - |  |
@@ -66,7 +66,7 @@ Leyenda: **R**=SELECT · **I**=INSERT · **U**=UPDATE · **D**=DELETE · **X**=E
 | `core.empresa_roles` | - | - | - | RIUD | - |  |
 | `core.empresas` | - | R | - | RIUD | - | n8n lee la tabla completa (RFC no está aquí; está en `empresas_fiscales`). |
 | `core.empresas_fiscales` | - | - | - | RIUD | - |  |
-| `core.empresas_notificacion_pago` | - | - | - | RIUD | - | Solo a través de vistas. |
+| `core.empresas_notificacion_pago` | - | - | - | RIUD | - | Estado documentado en D3 (2026-09-24). En PROD el Hub tiene `RIU` desde la 011: ver la matriz PROD. |
 | `core.medios_contacto` | - | - | - | RIUD | - |  |
 | `core.resultados_notificacion_pago` | - | RIU | - | RIUD | - |  |
 | `core.snapshot_carga_empresas_inicial` | - | - | - | RIUD | - |  |

@@ -17,7 +17,8 @@ Runbooks generales. Si no hay evidencia suficiente para un procedimiento exacto,
 | Migraciones de BD | [database/migrations](../database/migrations.md) |
 | Series/folios | [database/document-series](../database/document-series.md) |
 | Base de datos (diagnóstico) | [database/troubleshooting](../database/troubleshooting.md) |
-| Audi / Notificaciones de pago | PENDIENTE |
+| Notificaciones de pago | [production-runbook](../automations/payment-notifications/production-runbook.md) · alta de empresas: [company-configuration](../automations/payment-notifications/company-configuration.md) |
+| Audi | PENDIENTE |
 
 ## Principios operativos
 

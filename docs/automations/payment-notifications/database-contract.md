@@ -12,7 +12,7 @@ Verificado en el export PROD (credencial `Postgres produccion`) y TEST (`Postgre
 | Tablas escritas | `core.correos_notificacion_pago` (INSERT/UPDATE), `core.borradores_notificacion_pago` (INSERT/UPDATE), `core.resultados_notificacion_pago` (INSERT … ON CONFLICT DO UPDATE) |
 | Base | TEST `daubert_hub_test` / PROD `daubert_global` (por el nombre de la credencial) |
 | Relación con folios/series | **Ninguna** (no usa `operacion.*` ni `ops.*`) |
-| Hub | Lee las mismas tres tablas (`payment-notifications.repository.ts`) y sólo inserta en `ops.automation_trigger_requests` |
+| Hub | Lee las tablas de correos/resultados (`payment-notifications.repository.ts`), inserta en `ops.automation_trigger_requests` y, desde 2026-09-25, **administra `core.empresas_notificacion_pago`** (`SELECT/INSERT/UPDATE`) y los flags de `core.medios_contacto` ([company-configuration](company-configuration.md)) |
 
 ## Consultas por nodo
 
@@ -60,7 +60,7 @@ Contrastado el 2026-09-24 con el catálogo real (solo metadata; **no se leyeron 
 | `core.correos_notificacion_pago` | PK `correo_id`; `UNIQUE (outlook_message_id)`; `estado` ∈ `PENDIENTE/PROCESADO/ERROR`; columnas de resumen (`resumen_enviado`, `fecha_resumen_enviado`, `detalle_error_resumen`) | [ficha](../../database/tables/core.correos_notificacion_pago.md) |
 | `core.borradores_notificacion_pago` | PK `borrador_id`; `UNIQUE (correo_id, empresa_id)`; `estado` ∈ `PENDIENTE/CREADO/ERROR`; FK `NO ACTION` a correos y empresas | [ficha](../../database/tables/core.borradores_notificacion_pago.md) |
 | `core.resultados_notificacion_pago` | PK (`correo_id`, `empresa_id`); `estado` ∈ `LISTO/MANUAL/ERROR/OMITIDO`; FK `CASCADE` a correos, `NO ACTION` a empresas | [ficha](../../database/tables/core.resultados_notificacion_pago.md) |
-| `core.empresas_notificacion_pago` | Configuración 1:1 por empresa (`notificaciones_activas`, `procesa_comprobantes_pago`, `ruta_destino`); **sin grants directos** para ningún rol de aplicación | [ficha](../../database/tables/core.empresas_notificacion_pago.md) |
+| `core.empresas_notificacion_pago` | Configuración 1:1 por empresa (`notificaciones_activas`, `procesa_comprobantes_pago`, `ruta_destino`); en D3 (2026-09-24) **sin grants directos** para ningún rol de aplicación; desde la migración `20260925_011` el Hub (`daubert_hub_app`) tiene `SELECT/INSERT/UPDATE` | [ficha](../../database/tables/core.empresas_notificacion_pago.md) |
 | `core.vw_catalogo_notificacion_pago_n8n` | Vista de catálogo (alias, `ruta_destino`, `rfc`, correos `PARA/CC/CCO`); depende de `vw_contactos_notificacion_pago_n8n`, `alias_empresa`, `empresas_notificacion_pago`; **idéntica en TEST y PROD** | [ficha](../../database/views/core.vw_catalogo_notificacion_pago_n8n.md) |
 | `core.vw_contactos_notificacion_pago_n8n` | Base de la anterior | [ficha](../../database/views/core.vw_contactos_notificacion_pago_n8n.md) |
 | `core.medios_contacto` / `core.contactos` | Origen de los correos (`recibe_notificacion_pago`, `tipo_destinatario_pago` `PARA/CC/CCO`; `chk_medios_contacto_notificacion`) | [medios](../../database/tables/core.medios_contacto.md) · [contactos](../../database/tables/core.contactos.md) |
@@ -80,3 +80,7 @@ Contrastado el 2026-09-24 con el catálogo real (solo metadata; **no se leyeron 
 ### No verificable con `daubert_docs_ro`
 
 Contenido de correos/contactos/resultados, número de correos `PENDIENTE` sin cerrar, si `archivos_procesados.json` (fuera de PostgreSQL) discrepa. Ver [troubleshooting](../../database/troubleshooting.md).
+
+## Configuración administrada desde el Hub (2026-09-25)
+
+Posterior a D3: el Hub escribe `core.empresas_notificacion_pago` (upsert, sin `DELETE`), `core.empresas.ruta_dropbox` y `recibe_notificacion_pago`/`tipo_destinatario_pago`/`es_principal` de `core.medios_contacto`. **El contrato de lectura de n8n no cambió**: sigue leyendo `core.vw_catalogo_notificacion_pago_n8n`, cuya definición no se modificó. Reglas (readiness, invariante del último PARA, `ruta_destino`), endpoints y migración 011: [company-configuration](company-configuration.md).

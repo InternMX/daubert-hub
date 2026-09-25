@@ -37,6 +37,7 @@ Verificado en migraciones/código:
 | `ops.automation_trigger_requests` (+ secuencia) | `INSERT` / `USAGE` (sin `SELECT/UPDATE/DELETE`) | `20260911_003` |
 | `ops.fn_resolver_ejecucion_para_reproceso(bigint)` | **Sin** `EXECUTE` (el postcheck 009 lo exige) | 009 |
 | `operacion.series_documentales` (`UPDATE`) y `operacion.ajustes_series` (`INSERT`) | Requeridos por el ajuste de folio (`document-series.repository.ts`); grants en migraciones de permisos del Hub (`20260827_005`, `20260828_001`) | Lista exacta: PENDIENTE |
+| `core.empresas_notificacion_pago` | `SELECT/INSERT/UPDATE` (sin `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`; sin secuencia) | `20260925_011` (aplicada y validada en PROD, 2026-09-25) |
 | `core.direcciones` | `INSERT/UPDATE` + secuencia | `20260902_002` — **contradicho por D3: sin grants en PROD** |
 | Esquema `security` y `ops.automation_review_acknowledgements` | Los necesarios para sesiones/usuarios/acuses | `20260904_002`, `20260910_001` |
 

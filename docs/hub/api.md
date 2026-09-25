@@ -41,7 +41,8 @@ Prefijo global: `/api`. Fuente: decoradores de `apps/api/src/**/*.controller.ts`
 | Clientes | `GET/POST /api/clients`, `GET/PATCH /api/clients/:clientId`, `POST …/deactivate`, `…/reactivate` |
 | Contactos | `POST /api/contacts`, `PATCH /api/contacts/:id`, `POST …/deactivate`, `…/reactivate`; `POST /api/contacts/:id/methods`; `PATCH /api/contact-methods/:id`, `POST …/deactivate`, `…/reactivate` |
 | Directorio | `GET /api/contact-directory/companies`, `GET /api/contact-directory/companies/:id` |
-| Empresas | `GET /api/companies/search` |
+| Empresas | `GET /api/companies/search`, `GET /api/companies/dropbox-path-suggestion` (solo cálculo) |
+| Config. Notificaciones de pago | `GET/PATCH /api/companies/:companyId/payment-notification-settings` — [company-configuration](../automations/payment-notifications/company-configuration.md) |
 | Alias | `GET/PATCH /api/companies/:companyId/aliases` |
 | Direcciones | `GET/POST /api/companies/:companyId/addresses`, `PATCH /api/addresses/:addressId`, `POST …/deactivate`, `…/reactivate` |
 | Actividad reciente | `GET /api/recent-activity` |

@@ -91,7 +91,7 @@ Equivalencia de roles: Hub PROD `daubert_hub_app` ↔ TEST `daubert_hub_test_use
 | `core.empresa_roles` | RIU | RIUD | TEST más ancho |
 | `core.empresas` | RIU | RIUD | TEST más ancho |
 | `core.empresas_fiscales` | RIU | RIUD | TEST más ancho |
-| `core.empresas_notificacion_pago` | - | RIUD | TEST más ancho (solo TEST) |
+| `core.empresas_notificacion_pago` | RIU (desde `20260925_011`; D3 lo midió sin grants) | RIUD | TEST más ancho (`DELETE`) |
 | `core.medios_contacto` | RIU | RIUD | TEST más ancho |
 | `core.resultados_notificacion_pago` | R | RIUD | TEST más ancho |
 | `core.snapshot_carga_empresas_inicial` | - | RIUD | TEST más ancho (solo TEST) |
