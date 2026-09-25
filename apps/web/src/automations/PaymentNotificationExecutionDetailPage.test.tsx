@@ -23,11 +23,13 @@ function detail(overrides: Partial<PaymentNotificationExecutionDetail> = {}): Pa
     manualCount: 1,
     errorCount: 0,
     omittedCount: 0,
+    fileErrors: 0,
     summarySent: false,
     summarySentAt: null,
     reviewStatus: null,
     reprocessAvailable: false,
     results: [],
+    fileErrorDetails: [],
     ...overrides
   };
 }
@@ -51,6 +53,57 @@ describe('PaymentNotificationExecutionDetailPage', () => {
     expect(screen.getByText('5 resultados')).toBeInTheDocument();
     expect(screen.getByText('4 Listos · 1 Manual · 0 Error · 0 Omitidos')).toBeInTheDocument();
     expect(screen.getByText('Resumen no enviado')).toBeInTheDocument();
+  });
+
+  describe('file errors ("Archivos que requieren atención")', () => {
+    const hash = 'a'.repeat(64);
+    const fileErrorDetails = [
+      { fileName: '13.-KARINA MEZA.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'KARINA MEZA', fileHash: hash },
+      { fileName: '2.-CTO DE ABASTECIMIENT.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'CTO DE ABASTECIMIENT', fileHash: 'b'.repeat(64) }
+    ];
+
+    it('shows the section with every file name, error code and detail when fileErrors > 0, separately from company results', async () => {
+      detailMock.mockResolvedValue(detail({ outcomeStatus: 'COMPLETED', totalResults: 11, readyCount: 11, manualCount: 0, fileErrors: 2, fileErrorDetails }));
+      renderPage();
+
+      const heading = await screen.findByRole('heading', { level: 2, name: 'Archivos que requieren atención' });
+      const section = within(heading.closest('section') as HTMLElement);
+      expect(section.getByText('13.-KARINA MEZA.pdf')).toBeInTheDocument();
+      expect(section.getByText('2.-CTO DE ABASTECIMIENT.pdf')).toBeInTheDocument();
+      expect(section.getAllByText('ALIAS_NO_CATALOGADO')).toHaveLength(2);
+      expect(section.getByText('KARINA MEZA')).toBeInTheDocument();
+      expect(section.getByText('CTO DE ABASTECIMIENT')).toBeInTheDocument();
+      // The technical hash is a contract for n8n/API, not user-facing content.
+      expect(screen.queryByText(hash)).not.toBeInTheDocument();
+      // Company universe is untouched: 11 results, 0 errors, file errors reported on their own line.
+      expect(screen.getByText('11 resultados')).toBeInTheDocument();
+      expect(screen.getByText('11 Listos · 0 Manual · 0 Error · 0 Omitidos')).toBeInTheDocument();
+      expect(screen.getByText('2 errores de archivo')).toBeInTheDocument();
+      expect(screen.getByText('Completado')).toBeInTheDocument();
+    });
+
+    it('does not render the section (nor an empty block) when fileErrors = 0', async () => {
+      detailMock.mockResolvedValue(detail());
+      renderPage();
+      await screen.findByText('Parcial');
+      expect(screen.queryByText('Archivos que requieren atención')).not.toBeInTheDocument();
+      expect(screen.queryByText(/errores? de archivo/)).not.toBeInTheDocument();
+    });
+
+    it('renders markup in file names and details as plain text', async () => {
+      detailMock.mockResolvedValue(detail({ fileErrors: 1, fileErrorDetails: [{ fileName: '<b>x</b>.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: '<img src=x onerror=alert(1)>', fileHash: hash }] }));
+      const { container } = renderPage();
+      expect(await screen.findByText('<b>x</b>.pdf')).toBeInTheDocument();
+      expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
+      expect(container.querySelector('b, img')).toBeNull();
+    });
+
+    it('renders a file error without a detail', async () => {
+      detailMock.mockResolvedValue(detail({ fileErrors: 1, fileErrorDetails: [{ fileName: 'x.pdf', errorCode: 'RUTA_NO_VALIDADA', detail: null, fileHash: hash }] }));
+      renderPage();
+      expect(await screen.findByText('x.pdf')).toBeInTheDocument();
+      expect(screen.getByText('RUTA_NO_VALIDADA')).toBeInTheDocument();
+    });
   });
 
   it('translates every provider result status', async () => {

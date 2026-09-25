@@ -19,6 +19,9 @@ export interface PaymentNotificationExecutionSummary {
   manualCount: number;
   errorCount: number;
   omittedCount: number;
+  // File-level errors (PDFs n8n could not associate with a company). Independent from the
+  // per-company counts above: never added to totalResults or errorCount.
+  fileErrors: number;
   summarySent: boolean;
   summarySentAt: string | null;
   reviewStatus: PaymentNotificationReviewStatus;
@@ -35,8 +38,16 @@ export interface PaymentNotificationProviderResult {
   attentionReason: string | null;
 }
 
+export type PaymentNotificationFileError = {
+  fileName: string;
+  errorCode: string;
+  detail: string | null;
+  fileHash: string;
+};
+
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
   results: PaymentNotificationProviderResult[];
+  fileErrorDetails: PaymentNotificationFileError[];
 }
 
 export interface ListPaymentNotificationExecutions {
@@ -96,6 +107,7 @@ function isExecutionSummary(value: unknown): value is PaymentNotificationExecuti
     && isNonNegativeFiniteNumber(item.manualCount)
     && isNonNegativeFiniteNumber(item.errorCount)
     && isNonNegativeFiniteNumber(item.omittedCount)
+    && isNonNegativeFiniteNumber(item.fileErrors)
     && typeof item.summarySent === 'boolean'
     && isNullableIsoDateString(item.summarySentAt)
     && isReviewStatus(item.reviewStatus)
@@ -111,10 +123,20 @@ function isProviderResult(value: unknown): value is PaymentNotificationProviderR
     && isNullableString(item.attentionReason);
 }
 
+function isFileError(value: unknown): value is PaymentNotificationFileError {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.fileName === 'string' && item.fileName.length > 0
+    && typeof item.errorCode === 'string' && item.errorCode.length > 0
+    && isNullableString(item.detail)
+    && typeof item.fileHash === 'string';
+}
+
 function isExecutionDetail(value: unknown): value is PaymentNotificationExecutionDetail {
   if (!isExecutionSummary(value)) return false;
-  const results = (value as unknown as Record<string, unknown>).results;
-  return Array.isArray(results) && results.every(isProviderResult);
+  const record = value as unknown as Record<string, unknown>;
+  return Array.isArray(record.results) && record.results.every(isProviderResult)
+    && Array.isArray(record.fileErrorDetails) && record.fileErrorDetails.every(isFileError);
 }
 
 function isMeta(value: unknown): value is ListPaymentNotificationExecutions['meta'] {

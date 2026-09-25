@@ -15,6 +15,9 @@ export interface PaymentNotificationExecutionRow extends QueryResultRow {
   manual_count: number;
   error_count: number;
   omitted_count: number;
+  // Raw core.correos_notificacion_pago.detalle_error (same row, no extra query). Parsed into
+  // structured file errors by the service (payment-notification-file-errors.ts), never in SQL.
+  file_error_detail: string | null;
 }
 
 export interface ListedPaymentNotificationExecutions {
@@ -48,7 +51,8 @@ const EXECUTION_COLUMNS = `
     count(*) FILTER (WHERE resultado.estado = 'LISTO')::int AS ready_count,
     count(*) FILTER (WHERE resultado.estado = 'MANUAL')::int AS manual_count,
     count(*) FILTER (WHERE resultado.estado = 'ERROR')::int AS error_count,
-    count(*) FILTER (WHERE resultado.estado = 'OMITIDO')::int AS omitted_count`;
+    count(*) FILTER (WHERE resultado.estado = 'OMITIDO')::int AS omitted_count,
+    correo.detalle_error AS file_error_detail`;
 
 @Injectable()
 export class PaymentNotificationsRepository {
