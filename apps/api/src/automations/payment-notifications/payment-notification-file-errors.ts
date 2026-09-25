@@ -3,6 +3,10 @@
 //
 //   13.-KARINA MEZA.pdf: ALIAS_NO_CATALOGADO - KARINA MEZA | HASH=<sha256>
 //
+// Production may store several records separated by newlines (LF/CRLF/CR) AND/OR several records on
+// the same line separated by " | ", e.g. `<rec1> | HASH=<h1> | <rec2> | HASH=<h2>`. Splitting on "|" is
+// therefore not possible (every record itself contains "| HASH=").
+//
 // These are a different universe from core.resultados_notificacion_pago (per-company LISTO/MANUAL/
 // ERROR/OMITIDO, which requires correo_id + empresa_id). They are only surfaced here as structured
 // data — never converted into fake per-company result rows. n8n remains the source of truth and the
@@ -19,23 +23,43 @@ export interface PaymentNotificationFileError {
   fileHash: string;
 }
 
-// <fileName>: <ERROR_CODE>[ - <detail>] | HASH=<64 hex>
-// - fileName is lazy so it ends at the first ": <CODE>" that lets the rest of the line match.
+// Strategy: the only reliable record boundary is the terminator `| HASH=<64 hex>` (followed by end of
+// text, a newline, or a " | " separator). The text is scanned once for terminators; the text between
+// two terminators is one candidate record, which must then match `<fileName>: <CODE>[ - <detail>]`.
 // - errorCode is an open pattern (no whitelist): future codes parse without code changes.
-// - detail is optional; the lazy match stops at the final " | HASH=" segment.
-const FILE_ERROR_LINE = /^(.+?):\s+([A-Z][A-Z0-9_]*)(?:\s+-\s+(.*?))?\s*\|\s*HASH=([0-9a-fA-F]{64})\s*$/;
+// - detail is optional (null when absent/empty) and can never contain a terminator, because a
+//   terminator always closes the record.
+// - A record whose HASH is missing/invalid has no terminator, so it is dropped rather than guessed;
+//   any leftover text before a later valid terminator (e.g. an invalid-hash record's remains) is
+//   discarded up to its last "HASH=" token so it never leaks into the next record.
+const TERMINATOR = /\|\s*HASH=([0-9a-fA-F]{64})(?![0-9a-fA-F])(?=[ \t]*(?:$|[\r\n]|\|))/g;
+const RECORD = /^(.+?):\s+([A-Z][A-Z0-9_]*)(?:\s+-(?:\s+(.*))?)?$/;
+const HASH_TOKEN = /HASH=\S*/g;
 
 export function parsePaymentNotificationFileErrors(detalleError: string | null | undefined): PaymentNotificationFileError[] {
   if (typeof detalleError !== 'string' || detalleError.trim() === '') return [];
   const fileErrors: PaymentNotificationFileError[] = [];
-  for (const line of detalleError.split(/\r\n|\n|\r/)) {
-    const match = FILE_ERROR_LINE.exec(line.trim());
+  let recordStart = 0;
+  for (const terminator of detalleError.matchAll(TERMINATOR)) {
+    const fileHash = terminator[1]!;
+    const candidate = lastRecordText(detalleError.slice(recordStart, terminator.index));
+    recordStart = terminator.index + terminator[0].length;
+    const match = RECORD.exec(candidate);
     if (!match) continue;
-    const [, fileName, errorCode, detail, fileHash] = match;
-    const trimmedFileName = fileName!.trim();
-    if (!trimmedFileName) continue;
-    const trimmedDetail = detail?.trim();
-    fileErrors.push({ fileName: trimmedFileName, errorCode: errorCode!, detail: trimmedDetail ? trimmedDetail : null, fileHash: fileHash! });
+    const fileName = match[1]!.trim();
+    if (!fileName) continue;
+    const detail = match[3]?.trim();
+    fileErrors.push({ fileName, errorCode: match[2]!, detail: detail ? detail : null, fileHash });
   }
   return fileErrors;
+}
+
+// A candidate may be preceded by unrelated lines (records never span lines, so only the last line
+// counts) and by the remains of a previous record whose HASH was invalid (cut after its last
+// "HASH=" token and the " | " separator that follows it).
+function lastRecordText(segment: string): string {
+  const lastLine = segment.split(/\r\n|\n|\r/).map((line) => line.trim()).filter((line) => line !== '').pop() ?? '';
+  let text = lastLine;
+  for (const token of lastLine.matchAll(HASH_TOKEN)) text = lastLine.slice(token.index + token[0].length);
+  return text.replace(/^\s*\|\s*/, '').trim();
 }
