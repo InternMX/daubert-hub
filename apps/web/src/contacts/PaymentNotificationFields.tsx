@@ -1,6 +1,9 @@
-import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Typography } from '@mui/material';
+import { Box, Checkbox, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { PAYMENT_NOTIFICATIONS_HELP, PRIMARY_EMAIL_HELP, RECIPIENT_TYPE_HELP } from '../components/paymentNotificationHelp';
 import type { PaymentRecipientType } from '../services/contactDirectory';
 import type { AddContactMethodType } from '../services/contactMethods';
+
 
 const paymentRecipientOptions: Array<{ value: PaymentRecipientType; label: string }> = [
   { value: 'PARA', label: 'PARA' },
@@ -31,11 +34,18 @@ export function PaymentNotificationFields({ idPrefix, type, value, disabled, onC
   const labelId = `${idPrefix}-recipient-type-label`;
   return (
     <Box sx={{ mt: 1.25 }}>
-      <FormControlLabel
-        control={<Checkbox size="small" checked={value.isPrimary} disabled={disabled} onChange={(event) => onChange({ ...value, isPrimary: event.target.checked })} />}
-        label="Correo principal"
-      />
-      <Typography variant="caption" component="p" color="text.secondary" sx={{ mt: 0.5, fontWeight: 700 }}>Notificaciones de Pago</Typography>
+      <Stack direction="row" alignItems="center" spacing={0.5}>
+        <FormControlLabel
+          control={<Checkbox size="small" checked={value.isPrimary} disabled={disabled} onChange={(event) => onChange({ ...value, isPrimary: event.target.checked })} />}
+          label="Correo principal"
+          sx={{ mr: 0 }}
+        />
+        <InfoTooltip label="Correo principal" text={PRIMARY_EMAIL_HELP} />
+      </Stack>
+      <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mt: 0.5 }}>
+        <Typography variant="caption" component="p" color="text.secondary" sx={{ fontWeight: 700 }}>Notificaciones de Pago</Typography>
+        <InfoTooltip label="Notificaciones de Pago" text={PAYMENT_NOTIFICATIONS_HELP} />
+      </Stack>
       <FormControlLabel
         control={
           <Checkbox
@@ -53,7 +63,8 @@ export function PaymentNotificationFields({ idPrefix, type, value, disabled, onC
         label="Recibe notificaciones de pago"
       />
       {value.receivesPaymentNotifications && (
-        <FormControl size="small" disabled={disabled} sx={{ mt: 0.75, width: { xs: '100%', sm: 200 } }}>
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mt: 0.75 }}>
+        <FormControl size="small" disabled={disabled} sx={{ width: { xs: 'calc(100% - 28px)', sm: 200 } }}>
           <InputLabel id={labelId}>Tipo de destinatario</InputLabel>
           <Select
             labelId={labelId}
@@ -64,6 +75,8 @@ export function PaymentNotificationFields({ idPrefix, type, value, disabled, onC
             {paymentRecipientOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
           </Select>
         </FormControl>
+        <InfoTooltip label="Tipo de destinatario" text={RECIPIENT_TYPE_HELP} />
+        </Stack>
       )}
     </Box>
   );

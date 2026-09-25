@@ -46,7 +46,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     await selectType(user, 'Flete');
     await user.type(nameField(), 'TRANSPORTES KARINA');
     expect(await screen.findByText('FLETES/TRANSPORTES KARINA', undefined, WAIT)).toBeInTheDocument();
-    expect(screen.getByText('Sugerencia:')).toBeInTheDocument();
+    expect(screen.getByText('Sugerencia de ruta')).toBeInTheDocument();
     expect(suggestionMock).toHaveBeenCalledTimes(1);
     expect(suggestionMock.mock.calls[0]!.slice(0, 2)).toEqual(['FLETE', 'TRANSPORTES KARINA']);
   });
@@ -168,7 +168,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     await selectType(user, 'Flete');
     await user.type(nameField(), '???');
     await waitFor(() => expect(suggestionMock).toHaveBeenCalled(), WAIT);
-    expect(screen.queryByText('Sugerencia:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sugerencia de ruta')).not.toBeInTheDocument();
   });
 });
 
@@ -196,7 +196,7 @@ describe('EditProviderPage — Dropbox path suggestion', () => {
     const name = await screen.findByRole('textbox', { name: /Nombre comercial/ });
     await user.type(name, ' EXPRESS');
     expect(await screen.findByText('FLETES/TRANSPORTES KARINA EXPRESS', undefined, WAIT)).toBeInTheDocument();
-    expect(screen.getByText('Sugerencia según los datos actuales:')).toBeInTheDocument();
+    expect(screen.getByText('Sugerencia de ruta según los datos actuales')).toBeInTheDocument();
     expect(pathField()).toHaveValue('FLETES/TRANSPORTES KARINA');
   });
 

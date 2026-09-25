@@ -1,4 +1,6 @@
 import { Alert, Box, Button, Chip, CircularProgress, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { CALCULATED_DESTINATION_HELP, GENERATE_DRAFTS_HELP, PROCESSES_RECEIPTS_HELP } from '../components/paymentNotificationHelp';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getPaymentNotificationSettings,
@@ -20,10 +22,14 @@ function requirementLabel(code: string): string {
   return requirementLabels[code] ?? 'Completar un requisito pendiente.';
 }
 
-function ReadOnlyField({ label, value, placeholder }: { label: string; value: string | null; placeholder: string }) {
+
+function ReadOnlyField({ label, value, placeholder, help }: { label: string; value: string | null; placeholder: string; help?: string }) {
   return (
     <Box>
-      <Typography variant="overline" color="text.secondary">{label}</Typography>
+      <Stack direction="row" alignItems="center" spacing={0.5}>
+        <Typography variant="overline" color="text.secondary">{label}</Typography>
+        {help && <InfoTooltip label={label} text={help} />}
+      </Stack>
       <Typography sx={{ overflowWrap: 'anywhere' }} color={value ? 'text.primary' : 'text.secondary'}>{value ?? placeholder}</Typography>
     </Box>
   );
@@ -91,17 +97,25 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
         <Stack spacing={2.5} sx={{ mt: 2 }}>
           {actionError && <Alert severity="error">{actionError}</Alert>}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 1, sm: 4 }}>
-            <FormControlLabel
-              control={<Switch checked={settings.processesPaymentReceipts} disabled={saving} onChange={(event) => void change({ processesPaymentReceipts: event.target.checked })} />}
-              label="Procesa comprobantes"
-            />
-            <FormControlLabel
-              control={<Switch checked={settings.notificationsActive} disabled={saving} onChange={(event) => void change({ notificationsActive: event.target.checked })} />}
-              label="Generar borradores"
-            />
+            <Stack direction="row" alignItems="center" spacing={0.5}>
+              <FormControlLabel
+                control={<Switch checked={settings.processesPaymentReceipts} disabled={saving} onChange={(event) => void change({ processesPaymentReceipts: event.target.checked })} />}
+                label="Procesa comprobantes"
+                sx={{ mr: 0 }}
+              />
+              <InfoTooltip label="Procesa comprobantes" text={PROCESSES_RECEIPTS_HELP} />
+            </Stack>
+            <Stack direction="row" alignItems="center" spacing={0.5}>
+              <FormControlLabel
+                control={<Switch checked={settings.notificationsActive} disabled={saving} onChange={(event) => void change({ notificationsActive: event.target.checked })} />}
+                label="Generar borradores"
+                sx={{ mr: 0 }}
+              />
+              <InfoTooltip label="Generar borradores" text={GENERATE_DRAFTS_HELP} />
+            </Stack>
           </Stack>
           <ReadOnlyField label="Ruta Dropbox" value={settings.dropboxPath} placeholder="Sin ruta registrada." />
-          <ReadOnlyField label="Destino calculado" value={settings.destinationPath} placeholder="Se calcula al registrar la ruta de Dropbox." />
+          <ReadOnlyField label="Destino calculado" value={settings.destinationPath} placeholder="Se calcula al registrar la ruta de Dropbox." help={CALCULATED_DESTINATION_HELP} />
           <Box>
             <Typography variant="overline" color="text.secondary">Estado de preparación</Typography>
             <Box sx={{ mt: 0.5 }}>

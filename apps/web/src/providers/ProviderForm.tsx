@@ -111,7 +111,7 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
         <FormSection title="Notificaciones de pago" optional>
           <Stack spacing={2.5}>
             <Typography variant="body2" color="text.secondary">La empresa se crea con las notificaciones de pago desactivadas. Podrás activarlas desde el detalle cuando esté lista.</Typography>
-            <DropboxPathField value={rutaDropbox} onChange={setRutaDropbox} error={errors.rutaDropbox} helperText="Ruta relativa a Dropbox, por ejemplo FLETES/TRANSPORTES KARINA." companyType={providerType} commercialName={commercialName} suggestionLabel="Sugerencia:" />
+            <DropboxPathField value={rutaDropbox} onChange={setRutaDropbox} error={errors.rutaDropbox} helperText="Ruta relativa a Dropbox, por ejemplo FLETES/TRANSPORTES KARINA." companyType={providerType} commercialName={commercialName} suggestionLabel="Sugerencia de ruta" />
           </Stack>
         </FormSection>
         <FormSection title="Información adicional" optional>
