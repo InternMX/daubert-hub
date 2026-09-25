@@ -14,6 +14,7 @@ const summary = {
   manualCount: 1,
   errorCount: 0,
   omittedCount: 0,
+  fileErrors: 0,
   summarySent: false,
   summarySentAt: null,
   reviewStatus: null,
@@ -68,7 +69,7 @@ describe('listPaymentNotificationExecutions', () => {
 });
 
 describe('getPaymentNotificationExecution', () => {
-  const detail = { ...summary, results: [{ companyId: '7', companyName: 'NOVAPAK', status: 'MANUAL', attentionReason: 'Faltan destinatarios principales configurados.' }] };
+  const detail = { ...summary, results: [{ companyId: '7', companyName: 'NOVAPAK', status: 'MANUAL', attentionReason: 'Faltan destinatarios principales configurados.' }], fileErrorDetails: [] as unknown[] };
 
   it('requests the detail endpoint with the exact executionId string, never Number()', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: detail }));
@@ -94,6 +95,36 @@ describe('getPaymentNotificationExecution', () => {
     const malformed = { ...detail, results: [{ companyId: '7', companyName: 'NOVAPAK', status: 'UNKNOWN', attentionReason: null }] };
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: malformed })));
     await expect(getPaymentNotificationExecution('32')).rejects.toBeInstanceOf(PaymentNotificationApiError);
+  });
+
+  it('accepts structured file errors (fileErrors + fileErrorDetails), including a null detail', async () => {
+    const hash = 'a'.repeat(64);
+    const withFileErrors = {
+      ...detail,
+      fileErrors: 2,
+      fileErrorDetails: [
+        { fileName: '13.-KARINA MEZA.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'KARINA MEZA', fileHash: hash },
+        { fileName: 'x.pdf', errorCode: 'NUEVO_ERROR', detail: null, fileHash: hash }
+      ]
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: withFileErrors })));
+    await expect(getPaymentNotificationExecution('32')).resolves.toEqual(withFileErrors);
+  });
+
+  it('rejects a malformed file error entry and a response without fileErrorDetails/fileErrors', async () => {
+    const malformed = { ...detail, fileErrors: 1, fileErrorDetails: [{ fileName: 'x.pdf', errorCode: 42, detail: null, fileHash: 'h' }] };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: malformed })));
+    await expect(getPaymentNotificationExecution('32')).rejects.toBeInstanceOf(PaymentNotificationApiError);
+
+    const { fileErrorDetails: _omitted, ...withoutDetails } = detail;
+    void _omitted;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: withoutDetails })));
+    await expect(getPaymentNotificationExecution('32')).rejects.toBeInstanceOf(PaymentNotificationApiError);
+
+    const { fileErrors: _count, ...withoutCount } = summary;
+    void _count;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: [withoutCount], meta: { page: 1, pageSize: 25, total: 1, totalPages: 1 } })));
+    await expect(listPaymentNotificationExecutions(1, 25)).rejects.toBeInstanceOf(PaymentNotificationApiError);
   });
 
   it('propagates a 404 status for an unknown execution', async () => {

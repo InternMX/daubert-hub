@@ -43,6 +43,7 @@ function summary(overrides: Partial<PaymentNotificationExecutionSummary> = {}): 
     manualCount: 1,
     errorCount: 0,
     omittedCount: 0,
+    fileErrors: 0,
     summarySent: false,
     summarySentAt: null,
     reviewStatus: null,
@@ -56,7 +57,7 @@ function listResponse(data: PaymentNotificationExecutionSummary[], meta: Partial
 }
 
 function detail(overrides: Partial<PaymentNotificationExecutionDetail> = {}): PaymentNotificationExecutionDetail {
-  return { ...summary(), results: [], ...overrides };
+  return { ...summary(), results: [], fileErrorDetails: [], ...overrides };
 }
 
 function renderPage() { return render(<MemoryRouter><PaymentNotificationsPage /></MemoryRouter>); }
@@ -653,11 +654,118 @@ describe('PaymentNotificationsPage', () => {
     });
   });
 
+  describe('file errors (Errores archivo)', () => {
+    const hash = 'a'.repeat(64);
+    const fileErrorDetails = [
+      { fileName: '13.-KARINA MEZA.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'KARINA MEZA', fileHash: hash },
+      { fileName: '2.-CTO DE ABASTECIMIENT.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'CTO DE ABASTECIMIENT', fileHash: 'b'.repeat(64) }
+    ];
+    const elevenReadyWithFileErrors = summary({ outcomeStatus: 'COMPLETED', totalResults: 11, readyCount: 11, manualCount: 0, errorCount: 0, omittedCount: 0, fileErrors: 2 });
+
+    // Reads the first body row as { columnHeader: cellText } so each count is asserted under its own header.
+    async function firstRowByHeader() {
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent ?? '');
+      const cells = within(within(table).getAllByRole('row')[1]!).getAllByRole('cell').map((cell) => cell.textContent ?? '');
+      return Object.fromEntries(headers.map((header, index) => [header, cells[index]]));
+    }
+
+    it('shows "Errores archivo" with its count in the table, next to (not merged into) the company counts', async () => {
+      listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
+      renderPage();
+      const row = await firstRowByHeader();
+      expect(row['Errores archivo']).toBe('2');
+      expect(row['Total empresas']).toBe('11');
+      expect(row['Listos']).toBe('11');
+      expect(row['Error']).toBe('0');
+    });
+
+    it('keeps company Error = 0 and Errores archivo = 2 as separate values', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ errorCount: 0, fileErrors: 2 })]));
+      renderPage();
+      const row = await firstRowByHeader();
+      expect(row['Error']).toBe('0');
+      expect(row['Errores archivo']).toBe('2');
+    });
+
+    it('shows 0 under "Errores archivo" when there are none', async () => {
+      listMock.mockResolvedValue(listResponse([summary()]));
+      renderPage();
+      expect((await firstRowByHeader())['Errores archivo']).toBe('0');
+    });
+
+    it('mentions the file errors in the latest-execution card only when there are some, without touching the company counts line', async () => {
+      listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
+      detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails }));
+      renderPage();
+      await screen.findByRole('heading', { level: 2, name: 'Última ejecución' });
+      const card = within(latestSection());
+      expect(card.getByText('11 resultados')).toBeInTheDocument();
+      expect(card.getByText('11 Listos · 0 Manual · 0 Error · 0 Omitidos')).toBeInTheDocument();
+      expect(card.getByText('2 errores de archivo')).toBeInTheDocument();
+    });
+
+    it('lists the file errors under "Archivos que requieren atención" for the latest execution and never claims it needs no attention', async () => {
+      listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
+      detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails }));
+      renderPage();
+      const heading = await screen.findByRole('heading', { level: 2, name: 'Archivos que requieren atención' });
+      const section = within(heading.closest('section') as HTMLElement);
+      expect(section.getByText('13.-KARINA MEZA.pdf')).toBeInTheDocument();
+      expect(section.getByText('2.-CTO DE ABASTECIMIENT.pdf')).toBeInTheDocument();
+      expect(section.getAllByText('ALIAS_NO_CATALOGADO')).toHaveLength(2);
+      expect(section.getByText('KARINA MEZA')).toBeInTheDocument();
+      expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
+    });
+
+    it('renders no file-errors section, and keeps the healthy message, when fileErrors = 0 (also for a historical row without details)', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'COMPLETED', totalResults: 5, readyCount: 5, manualCount: 0 })]));
+      detailMock.mockResolvedValue(detail({ outcomeStatus: 'COMPLETED', totalResults: 5, readyCount: 5, manualCount: 0, results: [{ companyId: '1', companyName: 'A', status: 'LISTO', attentionReason: null }] }));
+      renderPage();
+      expect(await screen.findByText('La última ejecución no requiere atención.')).toBeInTheDocument();
+      expect(screen.queryByText('Archivos que requieren atención')).not.toBeInTheDocument();
+      expect(screen.queryByText(/errores? de archivo/)).not.toBeInTheDocument();
+    });
+
+    it('still renders PARTIAL as "Parcial" when the row also has file errors', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'PARTIAL', fileErrors: 2 })]));
+      detailMock.mockResolvedValue(detail({ outcomeStatus: 'PARTIAL', fileErrors: 2, fileErrorDetails }));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).getByText('Parcial')).toBeInTheDocument();
+    });
+
+    it('applies the same Reprocesar rules as before: visible only when reprocessAvailable, whatever the file errors', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: false, fileErrors: 2 })]));
+      const { unmount } = renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+      unmount();
+
+      listMock.mockResolvedValue(listResponse([summary({ reprocessAvailable: true, fileErrors: 2 })]));
+      renderPage();
+      const table2 = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      expect(within(table2).getByRole('button', { name: 'Reprocesar' })).toBeEnabled();
+    });
+
+    it('Reprocesar sends only the executionId (no file hashes or file list) to the service', async () => {
+      listMock.mockResolvedValue(listResponse([summary({ executionId: '77', reprocessAvailable: true, fileErrors: 2 })]));
+      detailMock.mockResolvedValue(detail({ executionId: '77', reprocessAvailable: true, fileErrors: 2, fileErrorDetails }));
+      const user = userEvent.setup();
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
+      await user.click(within(table).getByRole('button', { name: 'Reprocesar' }));
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reprocesar' }));
+      expect(reprocessMock).toHaveBeenCalledOnce();
+      expect(reprocessMock.mock.calls[0]).toEqual(['77']);
+    });
+  });
+
   describe('responsive recent-executions columns (three viewport tiers × sidebar state)', () => {
-    const DETAIL_COLUMNS = ['Listos', 'Manual', 'Error', 'Omitidos'];
-    const ALWAYS_VISIBLE_COLUMNS = ['Fecha', 'Resultado', 'Total', 'Resumen', 'Revisión'];
-    const FULL: readonly string[] = ['table-cell', 'table-cell', 'table-cell', 'table-cell'];
-    const COMPACT: readonly string[] = ['none', 'none', 'none', 'none'];
+    const DETAIL_COLUMNS = ['Listos', 'Manual', 'Error', 'Omitidos', 'Errores archivo'];
+    const ALWAYS_VISIBLE_COLUMNS = ['Fecha', 'Resultado', 'Total empresas', 'Resumen', 'Revisión'];
+    const FULL: readonly string[] = ['table-cell', 'table-cell', 'table-cell', 'table-cell', 'table-cell'];
+    const COMPACT: readonly string[] = ['none', 'none', 'none', 'none', 'none'];
 
     // The six meaningful (viewport tier × sidebar state) combinations and their expected outcome,
     // per the refined rule: compact = viewportBelowMd || (sidebarExpanded && viewportBelowLg).

@@ -4,7 +4,7 @@ import { PaymentNotificationsService } from '../src/automations/payment-notifica
 
 function execution(overrides: Partial<{
   execution_id: string; created_at: string; processed_at: string | null; processing_status: 'PENDIENTE' | 'PROCESADO' | 'ERROR';
-  summary_sent: boolean; summary_sent_at: string | null; total_results: number; ready_count: number; manual_count: number; error_count: number; omitted_count: number;
+  summary_sent: boolean; summary_sent_at: string | null; total_results: number; ready_count: number; manual_count: number; error_count: number; omitted_count: number; file_error_detail: string | null;
 }> = {}) {
   return {
     execution_id: '32',
@@ -18,6 +18,7 @@ function execution(overrides: Partial<{
     manual_count: 1,
     error_count: 0,
     omitted_count: 0,
+    file_error_detail: null,
     ...overrides
   };
 }
@@ -75,6 +76,7 @@ describe('PaymentNotificationsService', () => {
         manualCount: 1,
         errorCount: 0,
         omittedCount: 0,
+        fileErrors: 0,
         summarySent: false,
         summarySentAt: null,
         reviewStatus: null,
@@ -137,7 +139,7 @@ describe('PaymentNotificationsService', () => {
       const { service } = setup({ listResult: { total: 1, executions: [execution()] } });
       const result = await service.list({ page: 1, pageSize: 25 });
       expect(Object.keys(result.data[0]!).sort()).toEqual([
-        'createdAt', 'errorCount', 'executionId', 'manualCount', 'omittedCount', 'outcomeStatus',
+        'createdAt', 'errorCount', 'executionId', 'fileErrors', 'manualCount', 'omittedCount', 'outcomeStatus',
         'processedAt', 'processingStatus', 'readyCount', 'reprocessAvailable', 'reviewStatus', 'summarySent', 'summarySentAt', 'totalResults'
       ]);
       expect(JSON.stringify(result)).not.toMatch(/outlook|remitente|asunto|correos_para|correos_cc|correos_cco|rfc|detalle_error|motivo|acknowledgement_id/i);
@@ -204,6 +206,80 @@ describe('PaymentNotificationsService', () => {
         await service.list({ page: 1, pageSize: 25 });
         expect(reviewAcknowledgements.findLatest).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('file errors (detalle_error)', () => {
+    const HASH_A = 'a'.repeat(64);
+    const HASH_B = 'b'.repeat(64);
+    const twoFileErrors = `13.-KARINA MEZA.pdf: ALIAS_NO_CATALOGADO - KARINA MEZA | HASH=${HASH_A}\n2.-CTO DE ABASTECIMIENT.pdf: ALIAS_NO_CATALOGADO - CTO DE ABASTECIMIENT | HASH=${HASH_B}`;
+    const elevenReady = { total_results: 11, ready_count: 11, manual_count: 0, error_count: 0, omitted_count: 0, file_error_detail: twoFileErrors };
+
+    it('list: reports fileErrors=2 without changing the per-company universe (total stays 11, never 13) and without the details array', async () => {
+      const { service } = setup({ listResult: { total: 1, executions: [execution(elevenReady)] } });
+      const [row] = (await service.list({ page: 1, pageSize: 25 })).data;
+      expect(row?.totalResults).toBe(11);
+      expect(row?.totalResults).not.toBe(13);
+      expect(row?.readyCount).toBe(11);
+      expect(row?.errorCount).toBe(0);
+      expect(row?.fileErrors).toBe(2);
+      expect(row).not.toHaveProperty('fileErrorDetails');
+      expect(JSON.stringify(row)).not.toContain(HASH_A);
+    });
+
+    it('getDetail: exposes structured fileErrorDetails and keeps the company results untouched', async () => {
+      const { service } = setup({ findExecutionById: execution(elevenReady), findResultsByExecutionId: [{ company_id: '1', company_name: 'Acme', status: 'LISTO', motivo: null }] });
+      const { data } = await service.getDetail('32');
+      expect(data.totalResults).toBe(11);
+      expect(data.errorCount).toBe(0);
+      expect(data.fileErrors).toBe(2);
+      expect(data.fileErrorDetails).toEqual([
+        { fileName: '13.-KARINA MEZA.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'KARINA MEZA', fileHash: HASH_A },
+        { fileName: '2.-CTO DE ABASTECIMIENT.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'CTO DE ABASTECIMIENT', fileHash: HASH_B }
+      ]);
+      expect(data.fileErrors).toBe(data.fileErrorDetails.length);
+      expect(data.results).toHaveLength(1);
+    });
+
+    it('global outcome and reprocessAvailable are identical with and without file errors (PARTIAL stays PARTIAL)', async () => {
+      const cases = [
+        { row: { manual_count: 1, ready_count: 4 }, expected: 'PARTIAL' },
+        { row: { processing_status: 'ERROR' as const, total_results: 0, ready_count: 0, manual_count: 0 }, expected: 'FAILED' },
+        { row: { processing_status: 'ERROR' as const, total_results: 3, ready_count: 3, manual_count: 0 }, expected: 'PARTIAL' },
+        { row: { manual_count: 0, ready_count: 5, total_results: 5 }, expected: 'COMPLETED' },
+        { row: { processing_status: 'PENDIENTE' as const, total_results: 0, ready_count: 0, manual_count: 0 }, expected: null }
+      ];
+      for (const { row, expected } of cases) {
+        const withoutErrors = await setup({ listResult: { total: 1, executions: [execution(row)] } }).service.list({ page: 1, pageSize: 25 });
+        const withErrors = await setup({ listResult: { total: 1, executions: [execution({ ...row, file_error_detail: twoFileErrors })] } }).service.list({ page: 1, pageSize: 25 });
+        expect(withErrors.data[0]?.outcomeStatus).toBe(expected);
+        expect(withErrors.data[0]?.outcomeStatus).toBe(withoutErrors.data[0]?.outcomeStatus);
+        expect(withErrors.data[0]?.reprocessAvailable).toBe(withoutErrors.data[0]?.reprocessAvailable);
+      }
+    });
+
+    it('a COMPLETED execution with file errors is still COMPLETED and does not become reprocessable by itself', async () => {
+      const { service } = setup({ listResult: { total: 1, executions: [execution(elevenReady)] } });
+      const [row] = (await service.list({ page: 1, pageSize: 25 })).data;
+      expect(row?.outcomeStatus).toBe('COMPLETED');
+      expect(row?.reprocessAvailable).toBe(false);
+    });
+
+    it('legacy detalle_error (null, free text, no HASH) responds normally with fileErrors=0 and no details', async () => {
+      for (const legacy of [null, '', 'Error: algo antiguo', 'x.pdf: ALIAS_NO_CATALOGADO - P']) {
+        const list = await setup({ listResult: { total: 1, executions: [execution({ file_error_detail: legacy })] } }).service.list({ page: 1, pageSize: 25 });
+        expect(list.data[0]?.fileErrors).toBe(0);
+        const detail = await setup({ findExecutionById: execution({ file_error_detail: legacy }) }).service.getDetail('32');
+        expect(detail.data.fileErrors).toBe(0);
+        expect(detail.data.fileErrorDetails).toEqual([]);
+      }
+    });
+
+    it('reprocess still forwards only the correo_id to n8n, regardless of file errors (no hashes, no file list)', async () => {
+      const { service, webhookClient } = setup({ findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '77' }, findExecutionById: execution(elevenReady) });
+      await service.reprocess('77', 'req-1', identity);
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledTimes(1);
+      expect(webhookClient.triggerReprocess.mock.calls[0]).toEqual(['77']);
     });
   });
 

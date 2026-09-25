@@ -69,6 +69,12 @@ export function resultCountsSummary(counts: { readyCount: number; manualCount: n
   return `${counts.readyCount} Listos · ${counts.manualCount} Manual · ${counts.errorCount} Error · ${counts.omittedCount} Omitidos`;
 }
 
+// File-level errors are a separate universe from the per-company counts above (a PDF with no
+// resolvable company has no empresa_id), so they are never folded into resultCountsSummary.
+export function fileErrorsSummary(fileErrors: number): string {
+  return `${fileErrors} ${fileErrors === 1 ? 'error de archivo' : 'errores de archivo'}`;
+}
+
 const timeZone = 'America/Mexico_City';
 
 // processedAt wins when present; createdAt is the fallback (Phase 10B: fecha_recepcion is

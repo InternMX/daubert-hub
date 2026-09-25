@@ -6,7 +6,8 @@ import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { getPaymentNotificationExecution, PaymentNotificationApiError, type PaymentNotificationExecutionDetail } from '../services/paymentNotifications';
 import { OutcomeStatusChip, ResultStatusChip } from './PaymentNotificationStatusChips';
-import { executionTimestamp, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
+import { PaymentNotificationFileErrors } from './PaymentNotificationFileErrors';
+import { executionTimestamp, fileErrorsSummary, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
 
 const listPath = '/automations/payment-notifications';
 
@@ -71,6 +72,7 @@ export function PaymentNotificationExecutionDetailPage() {
           </Stack>
           <Typography sx={{ mt: 2.5 }}>{execution.totalResults} {execution.totalResults === 1 ? 'resultado' : 'resultados'}</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>{resultCountsSummary(execution)}</Typography>
+          {execution.fileErrors > 0 && <Typography color="warning.main" sx={{ mt: 0.5 }}>{fileErrorsSummary(execution.fileErrors)}</Typography>}
           <Typography sx={{ mt: 2 }} color={execution.summarySent ? 'success.main' : 'text.secondary'}>
             {execution.summarySent ? 'Resumen enviado ✓' : 'Resumen no enviado'}
           </Typography>
@@ -100,6 +102,7 @@ export function PaymentNotificationExecutionDetailPage() {
             </Paper>
           )}
         </Box>
+        {execution.fileErrors > 0 && <PaymentNotificationFileErrors fileErrors={execution.fileErrorDetails} titleId="payment-notification-file-errors-title" />}
       </Stack>
     </>
   );
