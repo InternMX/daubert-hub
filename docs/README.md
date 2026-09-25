@@ -72,7 +72,7 @@ Leyenda de fuentes usada en todo el árbol:
 | n8n (inventario, seguridad, drift, dependencias, rutas) | Completo (Fase D2) | [../n8n/](../n8n/README.md) · [n8n-test-prod-drift](automations/n8n-test-prod-drift.md) · [n8n-dependencies](automations/n8n-dependencies.md) · [n8n-paths](automations/n8n-paths.md) |
 | Caterpillar | Completo, **verificado contra el export** (D2) | [automations/caterpillar/](automations/caterpillar/README.md) |
 | Audi | Completo (D2) | [automations/audi/README.md](automations/audi/README.md) |
-| Notificaciones de pago | Completo (D2); export **no versionado** | [automations/payment-notifications/README.md](automations/payment-notifications/README.md) |
+| Notificaciones de pago | Completo (D2); export **no versionado**. Configuración por empresa desde el Hub: implementada y en PROD (2026-09-25), ver [company-configuration](automations/payment-notifications/company-configuration.md). Evolución futura: integración directa con Dropbox | [automations/payment-notifications/README.md](automations/payment-notifications/README.md) |
 | Operaciones | Parcial | Deploy Docker documentado; backup/restore exacto: PENDIENTE |
 | ADRs | 5 creados | Sólo con evidencia en código/documentos |
 

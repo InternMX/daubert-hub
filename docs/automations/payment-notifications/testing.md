@@ -6,8 +6,40 @@
 | --- | --- | --- |
 | API (unitarias) | `payment-notifications.controller.spec.ts`, `payment-notifications.service.spec.ts`, `payment-notifications.repository.spec.ts`, `payment-notifications-webhook.client.spec.ts`, `payment-notification-status.spec.ts`, `payment-notification-reason.spec.ts` | Listado/detalle, elegibilidad de reproceso del Hub, cliente del webhook (sin interpretar la respuesta), estados y motivos |
 | API (integración con BD de TEST) | `payment-notifications.integration.runner.cjs` (**incluido** en `npm run test:integration`) | Consultas sobre las tablas de notificaciones |
-| Frontend | `PaymentNotificationsPage.test.tsx`, `PaymentNotificationExecutionDetailPage.test.tsx`, `paymentNotifications.test.ts`, `paymentNotificationPresentation.test.ts` | Dashboard y detalle |
+| Frontend | `PaymentNotificationsPage.test.tsx`, `PaymentNotificationExecutionDetailPage.test.tsx`, `paymentNotifications.test.ts`, `paymentNotificationPresentation.test.ts` | Dashboard y detalle (incluye errores de archivo) |
+| Configuración por empresa (API/Web/integración) | Ver [Entrega de configuración por empresa](#entrega-de-configuración-por-empresa-2026-09-25) | Ajustes, readiness, invariante del último PARA, sugerencia de ruta Dropbox, flags de destinatario, ayudas contextuales |
 | **Workflow n8n** | **Ninguna prueba automatizada** | Sólo manual en TEST |
+
+## Entrega de configuración por empresa (2026-09-25)
+
+Evidencia final de pruebas de la feature [company-configuration](company-configuration.md) (código en `main`, commits `c7e3991`, `c4a9cf3`/`36de43f`, `815507e`). Es evidencia de código y de la base de **TEST**; el workflow n8n no cambió.
+
+**API**
+
+| Comprobación | Resultado |
+| --- | --- |
+| Vitest | 115 archivos, **1455 tests** pasaron |
+| typecheck / lint / build | PASS |
+
+**Integración** — `payment-notification-settings.integration.runner.cjs` (`npm run test:integration:payment-notification-settings`):
+
+- El runner valida explícitamente que la base activa sea `daubert_hub_test` y se niega a ejecutarse contra otra.
+- Los checks pasaron.
+- Se verificó la limpieza de los datos de negocio creados (empresas, contactos, medios, alias, configuración).
+- Por diseño, `security.users` y `security.sessions` requieren **limpieza administrativa**: el rol de aplicación no tiene `DELETE` sobre ellas, así que los usuarios sintéticos de integración pueden quedar en TEST hasta que un rol administrativo los retire. Es una tarea operativa de TEST, no una deuda funcional del módulo.
+
+**Web**
+
+| Comprobación | Resultado |
+| --- | --- |
+| Suite completa | 73 archivos |
+| `ProviderDropboxPath` aislado | 10/10 PASS |
+| `NewUserPage` aislado | 8/8 PASS |
+| typecheck / lint / build | PASS |
+
+Flakiness/timeouts observados bajo carga en la suite completa (timeouts ocasionales de 5 s en tests de UI), con los casos afectados pasando al ejecutarse aisladamente; no hubo fallos de aserción funcionales asociados. Otros casos inestables observados durante la misma tanda también pasaron aislados. No se modificaron timeouts ni se aplicó ninguna otra mitigación: queda como deuda técnica menor de la suite Web.
+
+Validación funcional posterior en PROD: [nota de despliegue](../../deployments/2026-09-25-payment-notification-config-prod.md#final-functional-validation-prod).
 
 ## Prueba manual en TEST (checklist)
 

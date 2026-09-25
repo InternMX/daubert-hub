@@ -18,7 +18,7 @@ Monorepo npm workspaces: `apps/api` (NestJS) y `apps/web` (React/Vite). Comandos
 | Centro de automatizaciones (overview, series, revisión) | Implementado | Completa a nivel general |
 | Caterpillar (monitoreo + reproceso + ajuste de folio) | Implementado y en PROD | [Documentación dedicada](../automations/caterpillar/README.md) |
 | Audi (historial + ajuste de folio) | Implementado | Esqueleto — [audi](../automations/audi/README.md) |
-| Notificaciones de pago (dashboard + reproceso) | Implementado | Esqueleto — [payment-notifications](../automations/payment-notifications/README.md) |
+| Notificaciones de pago (dashboard + reproceso + errores de archivo + configuración por empresa) | Implementado y en PROD (configuración por empresa: 2026-09-25) | [payment-notifications](../automations/payment-notifications/README.md) · [configuración por empresa](../automations/payment-notifications/company-configuration.md) |
 | Proveedores, Clientes, Contactos, Alias, Direcciones | Implementado (rutas y páginas existen) | Sólo catalogados en [api.md](api.md); comportamiento detallado: PENDIENTE |
 
 Este árbol **no** documenta como terminado nada que no tenga código y tests en el repositorio.
