@@ -44,4 +44,11 @@ export class CreateProviderDto {
   @Transform(normalizeNotes)
   @IsString()
   notes?: string | null;
+
+  // Relative Dropbox path (core.empresas.ruta_dropbox). Blank => null. Structure/safety is validated
+  // and canonicalized by ProvidersService via normalizeDropboxPath (payment-notification-settings/).
+  @IsOptional()
+  @Transform(normalizeNotes)
+  @IsString()
+  rutaDropbox?: string | null;
 }

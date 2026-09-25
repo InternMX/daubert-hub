@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ContactMethodsService } from '../src/contact-methods/contact-methods.service';
 import { ContactMethodType } from '../src/contacts/dto/create-contact.dto';
 
-const method = { id: '9007199254740993', contact_id: '121', type: 'CORREO', value: 'safe@example.test', status: 'INACTIVO', is_primary: false };
+const method = { id: '9007199254740993', contact_id: '121', type: 'CORREO', value: 'safe@example.test', status: 'INACTIVO', is_primary: false, receives_payment_notifications: false, payment_recipient_type: null };
 
 describe('ContactMethodsService', () => {
   it.each([
@@ -14,9 +14,8 @@ describe('ContactMethodsService', () => {
     const add = vi.fn().mockResolvedValue({ ...method, id: '205', type, value, status: 'ACTIVO' });
     const service = new ContactMethodsService({ add } as never);
     const response = await service.add('121', { type, value }, 'request-add', { userId: null, userEmail: null });
-    expect(response).toEqual({ data: { id: '205', type, value, status: 'ACTIVO' } });
+    expect(response).toEqual({ data: { id: '205', type, value, status: 'ACTIVO', isPrimary: false, receivesPaymentNotifications: false, paymentRecipientType: null } });
     expect(response.data).not.toHaveProperty('contactId');
-    expect(response.data).not.toHaveProperty('isPrimary');
     expect(JSON.stringify(response)).not.toMatch(/recibe_notificacion_pago|tipo_destinatario_pago/);
     expect(add).toHaveBeenCalledWith('121', { type, value }, 'request-add', { userId: null, userEmail: null });
   });
@@ -60,7 +59,7 @@ describe('ContactMethodsService', () => {
   ] as const)('edits %s in place and returns only safe fields', async (type, value, status) => {
     const edit = vi.fn().mockResolvedValue({ ...method, id: '205', type, value, status });
     const service = new ContactMethodsService({ edit } as never);
-    await expect(service.edit('205', { type, value }, 'request-edit', { userId: null, userEmail: null })).resolves.toEqual({ data: { id: '205', type, value, status } });
+    await expect(service.edit('205', { type, value }, 'request-edit', { userId: null, userEmail: null })).resolves.toEqual({ data: { id: '205', type, value, status, isPrimary: false, receivesPaymentNotifications: false, paymentRecipientType: null } });
     expect(edit).toHaveBeenCalledWith('205', { type, value }, 'request-edit', { userId: null, userEmail: null });
   });
 
@@ -92,7 +91,7 @@ describe('ContactMethodsService', () => {
   it('changes a method lifecycle status without exposing payment-routing data', async () => {
     const changeStatus = vi.fn().mockResolvedValue(method);
     const service = new ContactMethodsService({ changeStatus } as never);
-    await expect(service.deactivate('121', 'request-status', { userId: null, userEmail: null })).resolves.toEqual({ data: { id: method.id, contactId: '121', type: 'CORREO', value: 'safe@example.test', status: 'INACTIVO', isPrimary: false } });
+    await expect(service.deactivate('121', 'request-status', { userId: null, userEmail: null })).resolves.toEqual({ data: { id: method.id, contactId: '121', type: 'CORREO', value: 'safe@example.test', status: 'INACTIVO', isPrimary: false, receivesPaymentNotifications: false, paymentRecipientType: null } });
     expect(changeStatus).toHaveBeenCalledWith('121', 'INACTIVO', 'request-status', { userId: null, userEmail: null });
   });
 

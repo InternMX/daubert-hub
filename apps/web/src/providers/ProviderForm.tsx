@@ -2,13 +2,14 @@ import { Alert, Box, Button, CircularProgress, FormControl, FormHelperText, Inpu
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type { CreateProviderInput, ProviderType } from '../services/providers';
+import { DropboxPathField } from './DropboxPathField';
 
 interface ProviderFormProps {
   onSubmit: (input: CreateProviderInput) => Promise<void>;
   onCancel: () => void;
 }
 
-type FieldErrors = Partial<Record<'commercialName' | 'providerType' | 'fiscal' | 'rfc', string>>;
+type FieldErrors = Partial<Record<'commercialName' | 'providerType' | 'fiscal' | 'rfc' | 'rutaDropbox', string>>;
 
 const providerOptions: { value: ProviderType; label: string }[] = [
   { value: 'PROVEEDOR', label: 'Proveedor' },
@@ -45,6 +46,7 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
   const [legalName, setLegalName] = useState('');
   const [rfc, setRfc] = useState('');
   const [notes, setNotes] = useState('');
+  const [rutaDropbox, setRutaDropbox] = useState('');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -64,12 +66,15 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
         commercialName: commercialName.trim(),
         providerType,
         fiscal: trimmedLegalName && trimmedRfc ? { legalName: trimmedLegalName, rfc: trimmedRfc } : null,
-        notes: notes.trim() || null
+        notes: notes.trim() || null,
+        ...(rutaDropbox.trim() ? { rutaDropbox: rutaDropbox.trim() } : {})
       });
     } catch (error) {
       const apiError = error as { code?: string; requestId?: string | null };
       if (apiError.code === 'PROVIDER_NAME_ALREADY_EXISTS') {
         setErrors({ commercialName: 'Ya existe un proveedor o empresa con ese nombre comercial.' });
+      } else if (apiError.code?.startsWith('DROPBOX_PATH_')) {
+        setErrors({ rutaDropbox: 'Ingresa una ruta relativa a Dropbox válida (sin unidad, servidor, «..» ni caracteres no permitidos).' });
       } else if (apiError.code === 'RFC_ALREADY_EXISTS') {
         setErrors({ rfc: 'Ya existe una empresa registrada con ese RFC.' });
       } else {
@@ -101,6 +106,12 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
             <Typography variant="body2" color="text.secondary">Puedes registrar esta información más adelante.</Typography>
             <TextField label="Razón social" value={legalName} onChange={(event) => setLegalName(event.target.value)} error={Boolean(errors.fiscal)} helperText={errors.fiscal} fullWidth />
             <TextField label="RFC" value={rfc} onChange={(event) => setRfc(event.target.value.toUpperCase())} error={Boolean(errors.rfc)} helperText={errors.rfc} fullWidth />
+          </Stack>
+        </FormSection>
+        <FormSection title="Notificaciones de pago" optional>
+          <Stack spacing={2.5}>
+            <Typography variant="body2" color="text.secondary">La empresa se crea con las notificaciones de pago desactivadas. Podrás activarlas desde el detalle cuando esté lista.</Typography>
+            <DropboxPathField value={rutaDropbox} onChange={setRutaDropbox} error={errors.rutaDropbox} helperText="Ruta relativa a Dropbox, por ejemplo FLETES/TRANSPORTES KARINA." companyType={providerType} commercialName={commercialName} suggestionLabel="Sugerencia de ruta" />
           </Stack>
         </FormSection>
         <FormSection title="Información adicional" optional>

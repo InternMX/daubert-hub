@@ -4,6 +4,7 @@ import { AutomationTriggerRequestsRepository } from '../trigger-requests/automat
 import { ReviewAcknowledgementsRepository } from '../review/review-acknowledgements.repository';
 import { PAYMENT_NOTIFICATION_EXECUTION_SOURCE_TYPE } from '../review/review-source-types';
 import type { ListPaymentNotificationsDto } from './dto/list-payment-notifications.dto';
+import { parsePaymentNotificationFileErrors, type PaymentNotificationFileError } from './payment-notification-file-errors';
 import { mapAttentionReason } from './payment-notification-reason';
 import { derivePaymentNotificationOutcome, deriveReprocessAvailability, type PaymentNotificationOutcomeStatus, type PaymentNotificationProcessingStatus } from './payment-notification-status';
 import { PaymentNotificationsRepository, type PaymentNotificationExecutionRow, type PaymentNotificationProviderResultRow } from './payment-notifications.repository';
@@ -30,6 +31,11 @@ export interface PaymentNotificationExecutionSummary {
   manualCount: number;
   errorCount: number;
   omittedCount: number;
+  // File-level errors (PDFs n8n could not associate with a company). A separate universe from the
+  // per-company counts above: totalResults is NOT increased by fileErrors, and no per-company
+  // result row is ever fabricated for them. The list carries only the count; the detail carries
+  // fileErrorDetails.
+  fileErrors: number;
   summarySent: boolean;
   summarySentAt: string | null;
   // Backend-authoritative, per-row (Phase 10I UX refinement §3/§4). Non-null on at most one row:
@@ -58,6 +64,7 @@ export interface PaymentNotificationProviderResult {
 
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
   results: PaymentNotificationProviderResult[];
+  fileErrorDetails: PaymentNotificationFileError[];
 }
 
 export interface PaymentNotificationExecutionDetailResponse {
@@ -97,7 +104,13 @@ export class PaymentNotificationsService {
     const execution = await this.repository.findExecutionById(executionId);
     if (!execution) throw new NotFoundException('Ejecución de notificaciones de pago no encontrada.');
     const results = await this.repository.findResultsByExecutionId(executionId);
-    return { data: { ...this.mapSummary(execution), results: results.map((result) => this.mapResult(result)) } };
+    return {
+      data: {
+        ...this.mapSummary(execution),
+        results: results.map((result) => this.mapResult(result)),
+        fileErrorDetails: parsePaymentNotificationFileErrors(execution.file_error_detail)
+      }
+    };
   }
 
   // Reused by ReviewAcknowledgementsService (automations/review) instead of that module
@@ -190,6 +203,7 @@ export class PaymentNotificationsService {
       processingStatus: execution.processing_status,
       outcomeStatus: derivePaymentNotificationOutcome(execution.processing_status, counts),
       ...counts,
+      fileErrors: parsePaymentNotificationFileErrors(execution.file_error_detail).length,
       summarySent: execution.summary_sent,
       summarySentAt: execution.summary_sent_at ? new Date(execution.summary_sent_at).toISOString() : null,
       reviewStatus: currentProblemExecutionId && execution.execution_id === currentProblemExecutionId ? currentProblemStatus : null,

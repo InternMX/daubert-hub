@@ -4,6 +4,7 @@ import { ContactMethodType, ContactType, type CreateContactDto } from './dto/cre
 import type { UpdateContactDto } from './dto/update-contact.dto';
 import { ContactsRepository, type ContactRow, type CreatedContactRecord } from './contacts.repository';
 import { isWebUrl } from '../contact-methods/contact-method-validation';
+import { activeRequiresParaConflict, PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA } from '../payment-notification-settings/payment-notification-para-invariant';
 
 interface ContactData {
     id: string;
@@ -92,6 +93,7 @@ export class ContactsService {
 
   private throwKnownError(error: unknown): void {
     const code = (error as { code?: string }).code;
+    if (code === PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA) throw activeRequiresParaConflict();
     if (code === 'COMPANY_NOT_FOUND') throw new NotFoundException('Empresa no encontrada.');
     if (code === 'COMPANY_INACTIVE') throw new ConflictException({ code, message: 'La empresa está inactiva.' });
     if (code === 'COMPANY_BLOCKED') throw new ConflictException({ code, message: 'La empresa está bloqueada.' });

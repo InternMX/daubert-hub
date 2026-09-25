@@ -1,3 +1,4 @@
+import { assertActiveCompanyKeepsPara } from '../payment-notification-settings/payment-notification-para-invariant';
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
@@ -107,6 +108,9 @@ export class ContactsRepository {
         const code = targetStatus === 'ACTIVO' ? 'CONTACT_ALREADY_ACTIVE' : 'CONTACT_ALREADY_INACTIVE';
         throw Object.assign(new Error(code), { code });
       }
+      // Deactivating the contact that holds the last operable PARA of a company with active Payment
+      // Notifications is refused (company row already locked by lockContact; nothing written yet).
+      if (targetStatus === 'INACTIVO') await assertActiveCompanyKeepsPara(client, contact.empresa_id, { contactId: id });
       const result = await client.query<ContactRow>(`
         UPDATE core.contactos SET estatus = $1
         WHERE contacto_id = $2

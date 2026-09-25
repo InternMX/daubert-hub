@@ -11,7 +11,7 @@ describe('ProvidersService', () => {
     const create = vi.fn().mockResolvedValue({ company: { empresa_id: '9007199254740993', tipo_empresa: 'PROVEEDOR', nombre_comercial: 'Acme', estatus: 'ACTIVO', observaciones: null }, fiscal: null });
     const service = new ProvidersService({ create } as never);
     await expect(service.create(input, 'request-1', { userId: null, userEmail: null })).resolves.toEqual({ data: { id: '9007199254740993', commercialName: 'Acme', providerType: 'PROVEEDOR', status: 'ACTIVO', notes: null, fiscal: null } });
-    expect(create).toHaveBeenCalledWith(input, 'request-1', { userId: null, userEmail: null });
+    expect(create).toHaveBeenCalledWith({ ...input, rutaDropbox: null }, 'request-1', { userId: null, userEmail: null });
   });
 
   it('maps fiscal data without converting bigint identifiers to numbers', async () => {

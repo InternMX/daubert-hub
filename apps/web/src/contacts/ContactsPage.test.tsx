@@ -3,7 +3,7 @@ import { CssBaseline, ThemeProvider } from '@mui/material';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createContact, deactivateContact, reactivateContact, updateContact } from '../services/contacts';
+import { ContactApiError, createContact, deactivateContact, reactivateContact, updateContact } from '../services/contacts';
 import { addContactMethod, deactivateContactMethod, editContactMethod, reactivateContactMethod } from '../services/contactMethods';
 import { searchCompanies } from '../services/companies';
 import { getContactDirectoryCompany, listContactDirectoryCompanies, type DirectoryContact, type DirectoryContactMethod } from '../services/contactDirectory';
@@ -392,5 +392,36 @@ describe('ContactsPage contact lifecycle', () => {
     expect(screen.queryByText(/internals/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Contactos inactivos (1)' })).toBeInTheDocument();
     expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+  });
+});
+
+describe('ContactsPage — last PARA recipient guard (409 PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA)', () => {
+  const lastParaMessage = /último destinatario PARA de una empresa con Notificaciones de Pago activas/;
+
+  it('shows the clear message when deactivating the last PARA method is refused by the backend', async () => {
+    await lifecyclePage();
+    vi.mocked(deactivateContactMethod).mockRejectedValue(new ContactApiError(409, 'PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA', 'req-1'));
+    fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Desactivar' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Desactivar' }));
+    expect(await screen.findByText(lastParaMessage)).toBeInTheDocument();
+    expect(screen.getByText(/Agrega otro destinatario PARA o desactiva primero las Notificaciones de Pago/)).toBeInTheDocument();
+    expect(screen.queryByText('No fue posible desactivar el medio de contacto.')).not.toBeInTheDocument();
+  });
+
+  it('shows the same message when deactivating the contact that holds the last PARA is refused', async () => {
+    await lifecyclePage();
+    vi.mocked(deactivateContact).mockRejectedValue(new ContactApiError(409, 'PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA', 'req-2'));
+    fireEvent.click(await deactivateViaMenu());
+    expect(await screen.findByText(lastParaMessage)).toBeInTheDocument();
+    expect(screen.queryByText('No fue posible desactivar el contacto.')).not.toBeInTheDocument();
+  });
+
+  it('keeps the generic message for any other failure (the UI does not guess the cause)', async () => {
+    await lifecyclePage();
+    vi.mocked(deactivateContactMethod).mockRejectedValue(new ContactApiError(500, undefined, 'req-3'));
+    fireEvent.click(screen.getByRole('button', { name: `Acciones para Correo: ${activeMethod.value}` })); fireEvent.click(await screen.findByRole('menuitem', { name: 'Desactivar' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Desactivar' }));
+    expect(await screen.findByText('No fue posible desactivar el medio de contacto.')).toBeInTheDocument();
+    expect(screen.queryByText(lastParaMessage)).not.toBeInTheDocument();
   });
 });

@@ -18,6 +18,8 @@ describe('PaymentNotificationsRepository', () => {
       expect(sql).toContain('LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)');
       expect(sql).toContain('ORDER BY correo.correo_id DESC');
       expect(sql).not.toContain('HAVING');
+      // detalle_error rides on the same single query (no N+1) and is parsed in TypeScript, not SQL.
+      expect(sql).toContain('correo.detalle_error AS file_error_detail');
       expect(sql).not.toContain('fecha_recepcion');
       expect(values).toEqual([25, 25]);
     });

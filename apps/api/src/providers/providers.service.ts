@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuditIdentity } from '../common/authenticated-request';
 import { normalizeAliasList } from '../companies/company-aliases.repository';
+import { DropboxPathError, normalizeDropboxPath } from '../payment-notification-settings/dropbox-path';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import type { ListProvidersDto } from './dto/list-providers.dto';
 import { FiscalChangeMode, type UpdateProviderDto } from './dto/update-provider.dto';
@@ -18,6 +19,7 @@ export interface CreateProviderResponse {
     providerType: string;
     status: string;
     notes: string | null;
+    rutaDropbox: string | null;
     fiscal: { id: string; legalName: string; rfc: string } | null;
   };
 }
@@ -43,6 +45,7 @@ export interface GetProviderResponse {
     roles: string[];
     status: string;
     notes: string | null;
+    rutaDropbox: string | null;
     aliases: string[];
     otherAliases: Array<{ alias: string; type: string }>;
     fiscal: { id: string; legalName: string; rfc: string } | null;
@@ -54,8 +57,9 @@ export class ProvidersService {
   constructor(private readonly repository: ProvidersRepository) {}
 
   async create(input: CreateProviderDto, requestId: string, identity: AuditIdentity): Promise<CreateProviderResponse> {
+    const normalizedInput: CreateProviderDto = { ...input, rutaDropbox: this.normalizeDropboxPath(input.rutaDropbox) };
     try {
-      const created = await this.repository.create(input, requestId, identity);
+      const created = await this.repository.create(normalizedInput, requestId, identity);
       return this.mapResponse(created);
     } catch (error) {
       this.throwKnownConflict(error);
@@ -78,7 +82,8 @@ export class ProvidersService {
 
   async update(id: string, input: UpdateProviderDto, requestId: string, identity: AuditIdentity): Promise<GetProviderResponse> {
     this.validateFiscalFormat(input);
-    const normalizedInput = this.normalizeAliases(input);
+    const aliasNormalized = this.normalizeAliases(input);
+    const normalizedInput = input.rutaDropbox === undefined ? aliasNormalized : { ...aliasNormalized, rutaDropbox: this.normalizeDropboxPath(input.rutaDropbox) };
     try {
       const provider = await this.repository.update(id, normalizedInput, requestId, identity);
       if (!provider) throw new NotFoundException('Proveedor no encontrado.');
@@ -108,6 +113,18 @@ export class ProvidersService {
     }
   }
 
+  // Domain validation of the relative Dropbox path; the error carries only a stable code.
+  private normalizeDropboxPath(value: string | null | undefined): string | null {
+    try {
+      return normalizeDropboxPath(value);
+    } catch (error) {
+      if (error instanceof DropboxPathError) {
+        throw new BadRequestException({ code: error.code, message: 'La ruta de Dropbox debe ser una ruta relativa válida (sin unidad, servidor, ".." ni caracteres no permitidos).' });
+      }
+      throw error;
+    }
+  }
+
   private throwKnownConflict(error: unknown): void {
     const databaseError = error as PostgreSqlError;
     if ((error as { code?: string }).code === 'MULTI_ROLE_PROVIDER') {
@@ -127,6 +144,9 @@ export class ProvidersService {
     }
     if ((error as { code?: string }).code === 'PROVIDER_STATUS_NOT_MANAGEABLE') {
       throw new ConflictException({ code: 'PROVIDER_STATUS_NOT_MANAGEABLE', message: 'El estado actual del proveedor no puede administrarse desde este flujo.' });
+    }
+    if ((error as { code?: string }).code === 'PAYMENT_NOTIFICATIONS_DROPBOX_PATH_IN_USE') {
+      throw new ConflictException({ code: 'PAYMENT_NOTIFICATIONS_DROPBOX_PATH_IN_USE', message: 'No es posible quitar la ruta de Dropbox mientras las notificaciones de pago estén activas. Desactívalas primero.' });
     }
     if ((error as { code?: string }).code === 'ALIAS_ALREADY_ASSOCIATED') {
       throw new ConflictException({ code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' });
@@ -178,6 +198,7 @@ export class ProvidersService {
         providerType: created.company.tipo_empresa,
         status: created.company.estatus,
         notes: created.company.observaciones,
+        rutaDropbox: created.company.ruta_dropbox,
         fiscal: created.fiscal ? { id: created.fiscal.empresa_fiscal_id, legalName: created.fiscal.razon_social, rfc: created.fiscal.rfc } : null
       }
     };
@@ -209,6 +230,7 @@ export class ProvidersService {
         roles: provider.roles,
         status: provider.status,
         notes: provider.notes,
+        rutaDropbox: provider.dropbox_path,
         aliases: provider.aliases,
         otherAliases: provider.other_aliases,
         fiscal: provider.fiscal_id && provider.legal_name && provider.rfc

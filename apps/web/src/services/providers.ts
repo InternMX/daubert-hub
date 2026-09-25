@@ -8,6 +8,8 @@ export interface CreateProviderInput {
   providerType: ProviderType;
   fiscal: { legalName: string; rfc: string } | null;
   notes: string | null;
+  // Relative Dropbox path ("/"-separated). Omitted when blank; validated by the backend.
+  rutaDropbox?: string | null;
 }
 
 export interface CreatedProvider {
@@ -16,6 +18,7 @@ export interface CreatedProvider {
   providerType: ProviderType;
   status: string;
   notes: string | null;
+  rutaDropbox?: string | null;
   fiscal: { id: string; legalName: string; rfc: string } | null;
 }
 
@@ -34,6 +37,8 @@ export interface UpdateProviderInput {
   commercialName: string;
   providerType: ProviderType;
   notes: string | null;
+  // undefined = unchanged, null = clear, string = new relative path.
+  rutaDropbox?: string | null;
   aliases?: string[];
   fiscal: { legalName: string; rfc: string; changeMode?: FiscalChangeMode; effectiveStartDate?: string };
 }

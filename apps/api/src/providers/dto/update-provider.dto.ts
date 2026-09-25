@@ -49,6 +49,12 @@ export class UpdateProviderDto {
   @IsString()
   notes?: string | null;
 
+  // undefined = unchanged; blank/null = clear the path; otherwise validated by ProvidersService.
+  @IsOptional()
+  @Transform(normalizeNotes)
+  @IsString()
+  rutaDropbox?: string | null;
+
   @IsOptional()
   @Transform(trimAliases)
   @IsArray()

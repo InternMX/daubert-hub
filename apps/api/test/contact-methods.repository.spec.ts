@@ -8,7 +8,7 @@ function repositoryWithClient(query: ReturnType<typeof vi.fn>) {
 }
 
 describe('ContactMethodsRepository', () => {
-  it('adds an explicit active, non-primary, non-payment method in an audited transaction', async () => {
+  it('adds an explicit active method (non-primary, non-payment by default) in an audited transaction', async () => {
     const created = { id: '205', contact_id: '31', type: 'TELEFONO', value: '+52 449 222 2222', status: 'ACTIVO', is_primary: false };
     const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({ rows: [{ id: '31', status: 'ACTIVO', company_status: 'ACTIVO' }] })
@@ -19,8 +19,8 @@ describe('ContactMethodsRepository', () => {
     expect(query).toHaveBeenNthCalledWith(3, "SELECT set_config('app.request_id', $1, true)", ['request-add']);
     expect(query.mock.calls[5]?.[0]).toContain('FOR UPDATE OF contact');
     expect(query.mock.calls[6]?.[0]).toContain('BTRIM(valor) = $3');
-    expect(query.mock.calls[7]?.[0]).toContain("VALUES ($1, $2, $3, 'ACTIVO', FALSE, FALSE, NULL)");
-    expect(query.mock.calls[7]?.[1]).toEqual(['31', 'TELEFONO', '+52 449 222 2222']);
+    expect(query.mock.calls[7]?.[0]).toContain("VALUES ($1, $2, $3, 'ACTIVO', $4, $5, $6)");
+    expect(query.mock.calls[7]?.[1]).toEqual(['31', 'TELEFONO', '+52 449 222 2222', false, false, null]);
     expect(query).toHaveBeenNthCalledWith(9, 'COMMIT');
     expect(client.release).toHaveBeenCalledOnce();
   });
@@ -75,7 +75,7 @@ describe('ContactMethodsRepository', () => {
     [{ value: 'corrected@example.test' }, 'CORREO', 'corrected@example.test', 'ACTIVO'],
     [{ type: ContactMethodType.Phone }, 'TELEFONO', '449 555 0200', 'ACTIVO'],
     [{ type: ContactMethodType.WhatsApp, value: '+52 449 555 0201' }, 'WHATSAPP', '+52 449 555 0201', 'INACTIVO']
-  ] as const)('updates only the resulting type/value in place for partial payload %#', async (input, type, value, status) => {
+  ] as const)('updates the resulting type/value in place and keeps the omitted flags for partial payload %#', async (input, type, value, status) => {
     const locked = { id: '205', contact_id: '31', type: 'CORREO', value: '449 555 0200', status, is_primary: true, contact_status: 'ACTIVO', company_status: 'ACTIVO' };
     const updated = { id: '205', contact_id: '31', type, value, status, is_primary: true };
     const query = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
@@ -88,9 +88,10 @@ describe('ContactMethodsRepository', () => {
     expect(query.mock.calls[5]?.[0]).toContain('FOR UPDATE OF method, contact, company');
     expect(query.mock.calls[6]?.[0]).toContain('medio_id <> $4::bigint');
     expect(query.mock.calls[6]?.[1]).toEqual(['31', type, value, '205']);
-    expect(query.mock.calls[7]?.[0]).toContain('SET tipo_medio = $1, valor = $2');
-    expect(query.mock.calls[7]?.[0]).not.toMatch(/estatus\s*=|es_principal\s*=|recibe_notificacion_pago\s*=|tipo_destinatario_pago\s*=|observaciones\s*=/);
-    expect(query.mock.calls[7]?.[1]).toEqual([type, value, '205']);
+    expect(query.mock.calls[7]?.[0]).toContain('SET tipo_medio = $1, valor = $2, es_principal = $3, recibe_notificacion_pago = $4, tipo_destinatario_pago = $5');
+    expect(query.mock.calls[7]?.[0]).not.toMatch(/estatus\s*=|observaciones\s*=/);
+    // Omitted flags keep the current values: is_primary stays as locked, payment routing stays off.
+    expect(query.mock.calls[7]?.[1]).toEqual([type, value, true, false, null, '205']);
     expect(query).toHaveBeenNthCalledWith(9, 'COMMIT');
     expect(client.release).toHaveBeenCalledOnce();
   });

@@ -14,7 +14,8 @@ import {
   type PaymentNotificationExecutionSummary
 } from '../services/paymentNotifications';
 import { OutcomeStatusChip, ResultStatusChip } from './PaymentNotificationStatusChips';
-import { executionTimestamp, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
+import { PaymentNotificationFileErrors } from './PaymentNotificationFileErrors';
+import { executionTimestamp, fileErrorsSummary, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
 import { ReprocessCell } from './ReprocessCell';
 import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
 
@@ -44,6 +45,7 @@ function LatestExecutionCard({ execution }: { execution: PaymentNotificationExec
         </Stack>
         <Typography sx={{ mt: 2.5 }}>{execution.totalResults} {execution.totalResults === 1 ? 'resultado' : 'resultados'}</Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>{resultCountsSummary(execution)}</Typography>
+        {execution.fileErrors > 0 && <Typography color="warning.main" sx={{ mt: 0.5 }}>{fileErrorsSummary(execution.fileErrors)}</Typography>}
         <Typography sx={{ mt: 2 }} color={execution.summarySent ? 'success.main' : 'text.secondary'}>
           {execution.summarySent ? 'Resumen enviado ✓' : 'Resumen no enviado'}
         </Typography>
@@ -79,6 +81,9 @@ function AttentionSection({ executionId }: { executionId: string }) {
   // produced no results — not proof the run was evaluated and found healthy — so it gets its own
   // neutral copy instead of the positive "no requiere atención" claim.
   const isProcessedWithNoResults = detail?.processingStatus === 'PROCESADO' && detail.results.length === 0;
+  // File-level errors (PDFs with no resolvable company) never show up as per-company results, so
+  // an empty attentionItems list alone must not claim the run needs no attention.
+  const hasFileErrors = (detail?.fileErrors ?? 0) > 0;
 
   return (
     <Box component="section" aria-labelledby="payment-notifications-attention-title" sx={{ mt: 4, maxWidth: 760 }}>
@@ -89,7 +94,7 @@ function AttentionSection({ executionId }: { executionId: string }) {
           No fue posible cargar los proveedores que requieren atención.
         </Alert>
       )}
-      {!loading && !error && attentionItems.length === 0 && (
+      {!loading && !error && attentionItems.length === 0 && !hasFileErrors && (
         <Paper variant="outlined" sx={{ mt: 2, p: 3 }}>
           <Typography color="text.secondary">
             {isPending
@@ -112,6 +117,11 @@ function AttentionSection({ executionId }: { executionId: string }) {
             </Paper>
           ))}
         </Stack>
+      )}
+      {!loading && !error && detail && hasFileErrors && (
+        <Box sx={{ mt: attentionItems.length > 0 ? 3 : 2 }}>
+          <PaymentNotificationFileErrors fileErrors={detail.fileErrorDetails} titleId="payment-notifications-latest-file-errors-title" />
+        </Box>
       )}
     </Box>
   );
@@ -172,11 +182,12 @@ function RecentExecutionsSection({ page, onPageChange, result, loading, error, o
                 <TableRow>
                   <TableCell>Fecha</TableCell>
                   <TableCell>Resultado</TableCell>
-                  <TableCell align="right">Total</TableCell>
+                  <TableCell align="right">Total empresas</TableCell>
                   <TableCell align="right" sx={detailColumnSx}>Listos</TableCell>
                   <TableCell align="right" sx={detailColumnSx}>Manual</TableCell>
                   <TableCell align="right" sx={detailColumnSx}>Error</TableCell>
                   <TableCell align="right" sx={detailColumnSx}>Omitidos</TableCell>
+                  <TableCell align="right" sx={detailColumnSx}>Errores archivo</TableCell>
                   <TableCell>Resumen</TableCell>
                   <TableCell>Revisión</TableCell>
                 </TableRow>
@@ -200,6 +211,7 @@ function RecentExecutionsSection({ page, onPageChange, result, loading, error, o
                     <TableCell align="right" sx={detailColumnSx}>{execution.manualCount}</TableCell>
                     <TableCell align="right" sx={detailColumnSx}>{execution.errorCount}</TableCell>
                     <TableCell align="right" sx={detailColumnSx}>{execution.omittedCount}</TableCell>
+                    <TableCell align="right" sx={detailColumnSx}>{execution.fileErrors}</TableCell>
                     <TableCell><Typography color={execution.summarySent ? 'text.primary' : 'text.secondary'}>{execution.summarySent ? 'Enviado' : 'No enviado'}</Typography></TableCell>
                     <TableCell>
                       {/* Independent actions (PN1.2 §6/§13): reprocessing never acknowledges review,
