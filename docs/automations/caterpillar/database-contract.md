@@ -93,3 +93,36 @@ Workflow PROD `Remisiones CAT Produccion PG` — credencial `Postgres produccion
 | Base TEST / PROD | `daubert_hub_test` (credencial `cat_test`) / `daubert_global` (`Postgres produccion`); el JSON no contiene el nombre de la base, se infiere del nombre de la credencial |
 
 > **Observación:** como el workflow no consulta `ops.automatizacion_series_proceso`, agregar/activar una ruta en PostgreSQL **no** basta para habilitar un proceso: hay que editar el workflow (detector, `PROCESOS_HABILITADOS_PROD`, mapeo de serie). Por el contrario, PostgreSQL sigue rechazando reservar de una serie `INACTIVA` o que no sea ruta activa de la automatización.
+
+## Verificación contra PostgreSQL (Fase D3)
+
+Contrastado el 2026-09-24 con el catálogo real de PROD (`daubert_global`) y TEST (`daubert_hub_test`), solo lectura (`daubert_docs_ro`). Detalle por objeto: [tablas](../../database/tables/README.md), [funciones](../../database/functions/README.md), [folios](../../database/folios.md), [n8n-contract](../../database/n8n-contract.md#caterpillar-prod-rol-n8n_app-base-daubert_global).
+
+### Confirmado (D2/D1 coinciden con la base)
+
+| Afirmación previa | Resultado en PostgreSQL |
+| --- | --- |
+| Las 7 funciones existen, son `SECURITY DEFINER` con `search_path` fijo y `EXECUTE` revocado a `PUBLIC` | **CONFIRMED** (además existe `ops.fn_resolver_ruta_automatizacion`, 8.ª función definer, **sin uso** en el workflow) |
+| `EXECUTE` solo a `n8n_app` en PROD | **CONFIRMED** (`daubert_hub_app`: sin `EXECUTE` de negocio, como exige el postcheck 009) |
+| Índice único parcial de reproceso (`uq_ejecuciones_automatizacion_reproceso_unico`) | **CONFIRMED** en PROD y TEST |
+| Migración 009 aplicada | **CONFIRMED**: `md5` del cuerpo de `fn_crear_ejecucion_automatizacion` = `929939dc…` (el de la 009), índice y función nueva presentes |
+| Estados de ejecución/reserva/remisión | **CONFIRMED** por `CHECK` (`PROCESANDO/COMPLETADA/ERROR/CANCELADA`; `RESERVADA/APLICADA/ABANDONADA`; `PENDIENTE/GENERADA/CANCELADA`) |
+| El Hub solo puede `INSERT` en `ops.automation_trigger_requests` y `SELECT` en rutas, reservas, detalle, documentos | **CONFIRMED** |
+| En TEST `n8n_cat_test` no tiene grants directos | **CONFIRMED**: 0 privilegios de tabla; `USAGE` de `core/operacion/ops` y `EXECUTE` de las 8 funciones definer; sin `reservar_folios` |
+| El workflow no lee/escribe tablas directamente | **CONFIRMED** (el nombre `core.documentos` en los nodos Code aparece solo en comentarios) |
+
+### Amplía o precisa lo anterior
+
+1. **Elegibilidad de reproceso fuera de la base.** `fn_crear_ejecucion_automatizacion` no valida el padre (`p_reproceso_de_id`): no exige que esté en estado terminal, ni que sea de la misma automatización o documento. Solo la FK, `ck_ejecuciones_automatizacion_reproceso` (no apunta a sí mismo) y el índice único (un hijo por padre) protegen la cadena. La elegibilidad la aplican los nodos `Validar elegibilidad reproceso CAT` del workflow ([reprocessing](reprocessing.md)). Clasificación de seguridad: `REVIEW` ([security-definer](../../database/security-definer.md)).
+2. **Resolución de ejecución acotada por código.** `fn_resolver_ejecucion_para_reproceso` tiene `REMISIONES_CATERPILLAR` fijo en el `JOIN`; Audi no puede usarla.
+3. **Las funciones aceptan cualquier ejecución.** `fn_finalizar_ejecucion_automatizacion`/`fn_registrar_fallo_ejecucion` operan sobre cualquier `ejecucion_id`, no solo Caterpillar; con `n8n_app` compartido el aislamiento entre Audi y Caterpillar es **por convención**, no por privilegios ([n8n-app-audit](../../database/n8n-app-audit.md)).
+4. **PROD corre con `n8n_app`; TEST con `n8n_cat_test`.** El contrato mínimo (solo funciones) está probado en TEST; en PROD el rol conserva 12 privilegios de tabla que Caterpillar no necesita. `PERMISSION_DRIFT` esperado ([test-prod-drift](../../database/test-prod-drift.md#permisos)).
+5. **TEST y PROD tienen el mismo código de funciones**: seis de las siete funciones de Caterpillar (todas salvo `fn_registrar_fallo_ejecucion`) difieren de texto solo por **comentarios/CRLF** (sin drift funcional; ver [test-prod-drift](../../database/test-prod-drift.md#funciones)).
+6. **Concurrencia (verificada en las definiciones):** `pg_advisory_xact_lock` por (ejecución, serie) en la reserva y por (serie, folio) en el registro; `FOR UPDATE` de la serie y de la ejecución ([folios](../../database/folios.md#concurrencia-y-bloqueos-verificado-en-las-definiciones)).
+7. **FK `ON DELETE RESTRICT`** en todo el dominio (reservas, remisiones, detalle, rutas → ejecuciones/series/empresas): nada se puede borrar en cascada; los folios abandonados permanecen.
+8. **`operacion.remisiones` con estado `CANCELADA`**: ningún camino conocido (función, Hub, workflow) lo asigna (UNKNOWN cómo se cancela hoy).
+9. **Rutas y mapeos:** la tabla `ops.automatizacion_series_proceso` (9 rutas Caterpillar según D1) y el mapeo llave→serie son **datos**; no se pudieron leer con `daubert_docs_ro` (**UNKNOWN**). Estructura confirmada: `UNIQUE (automatizacion_id, llave_proceso)`, trigger de dueño único de serie, FK `RESTRICT`.
+
+### No verificable con `daubert_docs_ro`
+
+Ejecuciones/reservas/remisiones existentes, series y `siguiente_folio`, piso de folio, `automation_trigger_requests`, si hay ejecuciones `PROCESANDO`. Ver [troubleshooting](../../database/troubleshooting.md#ejecución-en-procesando) para los chequeos con un rol autorizado.

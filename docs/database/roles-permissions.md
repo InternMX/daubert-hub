@@ -2,6 +2,15 @@
 
 Fuentes: migraciones `20260827_004`, `20260911_002/003`, `20260922_001`, 009 (postcheck), paquete Caterpillar (`README_DEPLOY.md`), scripts `bootstrap-admin-prod.ts`, runner `caterpillar-model.integration.runner.cjs`. **No se documentan contraseñas ni cadenas de conexión.** La lista exhaustiva de grants no está en el repo: para el estado real consulta `information_schema`/`has_*_privilege` (los prechecks/postchecks ya lo hacen).
 
+> **Actualización D3 (2026-09-24).** El estado **real** de roles y grants (PROD y TEST) está ahora en [roles](roles.md), [permissions-matrix](permissions-matrix.md) y [n8n-app-audit](n8n-app-audit.md); este documento conserva la visión derivada de migraciones (D1). Correcciones que impone el catálogo real:
+>
+> - **`core.direcciones`**: D1 (y la migración `20260902_002`) indican `INSERT/UPDATE` + sequence para `daubert_hub_app`. En PROD **no existe ningún grant** de `daubert_hub_app` sobre esa tabla, aunque el Hub la usa ([hub-contract](hub-contract.md#brechas-detectadas)). En TEST el usuario del Hub sí tiene acceso.
+> - **`n8n_app` en PROD** tiene además `SELECT` sobre `core.empresas`, sobre las vistas `core.vw_catalogo_notificacion_pago_n8n` y `core.vw_contactos_notificacion_pago_n8n` y `INSERT/SELECT/UPDATE` sobre las tres tablas de notificaciones de pago (`correos`, `borradores`, `resultados`); D1 solo listaba los grants de Audi.
+> - **`n8n_app` en TEST**: mismos privilegios de tabla que en PROD, pero **solo** `EXECUTE` de `operacion.reservar_folios`; las funciones definer se otorgan a `n8n_cat_test`.
+> - `daubert_hub_test_user` tiene `SELECT/INSERT/UPDATE/DELETE` sobre casi todas las tablas **y vistas** de TEST (incluida `audit.cambios`).
+> - Qué rol respalda cada credencial n8n **sigue sin ser demostrable** desde la base: se infiere por el patrón de grants ([n8n-app-audit](n8n-app-audit.md)).
+> - Existe además `daubert_docs_ro` (solo lectura de catálogo, D3), no listado más abajo.
+
 ## Roles
 
 | Rol | Entorno | Uso | Nunca debe usarse para |
@@ -28,7 +37,7 @@ Verificado en migraciones/código:
 | `ops.automation_trigger_requests` (+ secuencia) | `INSERT` / `USAGE` (sin `SELECT/UPDATE/DELETE`) | `20260911_003` |
 | `ops.fn_resolver_ejecucion_para_reproceso(bigint)` | **Sin** `EXECUTE` (el postcheck 009 lo exige) | 009 |
 | `operacion.series_documentales` (`UPDATE`) y `operacion.ajustes_series` (`INSERT`) | Requeridos por el ajuste de folio (`document-series.repository.ts`); grants en migraciones de permisos del Hub (`20260827_005`, `20260828_001`) | Lista exacta: PENDIENTE |
-| `core.direcciones` | `INSERT/UPDATE` + secuencia | `20260902_002` |
+| `core.direcciones` | `INSERT/UPDATE` + secuencia | `20260902_002` — **contradicho por D3: sin grants en PROD** |
 | Esquema `security` y `ops.automation_review_acknowledgements` | Los necesarios para sesiones/usuarios/acuses | `20260904_002`, `20260910_001` |
 
 Nota de implementación: el bloqueo de fila del ajuste usa `FOR UPDATE OF series` porque `daubert_hub_app` sólo tiene `SELECT` sobre las tablas unidas; un `FOR UPDATE` sin alcance intentaría bloquearlas y sería denegado.

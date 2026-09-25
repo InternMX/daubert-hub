@@ -1,5 +1,7 @@
 # Backup y restauración
 
+> **Actualización D3:** existe un procedimiento **recomendado** (no ejecutado ni probado) en [database-backup-restore](database-backup-restore.md). Las decisiones de política (ubicación, retención, PITR, responsables) siguen PENDIENTE.
+
 > **Estado: PENDIENTE.** En el repositorio y en los documentos revisados **no existe** un procedimiento exacto de backup/restore de PostgreSQL. Este documento sólo recoge los requisitos que sí están respaldados y lo que hay que definir. No se inventan comandos ni calendarios.
 
 ## Lo que sí está respaldado

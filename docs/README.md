@@ -14,6 +14,9 @@ Este directorio es la **fuente de verdad documental** de Daubert Hub y de las au
 | Localizar un módulo, tabla o ruta | [00-overview/system-map.md](00-overview/system-map.md) |
 | Operar o depurar Caterpillar | [automations/caterpillar/README.md](automations/caterpillar/README.md) → [troubleshooting](automations/caterpillar/troubleshooting.md) |
 | Aplicar una migración | [database/migrations.md](database/migrations.md) |
+| Entender la base de datos (catálogo D3) | [database/README.md](database/README.md) → [data-dictionary](database/data-dictionary.md) |
+| Diagnosticar un problema de base de datos | [database/troubleshooting.md](database/troubleshooting.md) |
+| Backup/restore de PostgreSQL | [operations/database-backup-restore.md](operations/database-backup-restore.md) |
 | Desplegar el Hub (Docker) | [operations/deployment.md](operations/deployment.md) |
 | Saber por qué algo se diseñó así | [decisions/README.md](decisions/README.md) |
 | Ver qué se promovió a PROD y cuándo | [deployments/](deployments/) |
@@ -32,7 +35,11 @@ docs/
 │   ├── README.md · architecture.md · api.md
 │   └── authentication.md · authorization.md · automations.md
 ├── database/                     PostgreSQL
-│   ├── README.md · architecture.md · migrations.md
+│   ├── README.md · architecture.md · migrations.md · data-dictionary.md
+│   ├── schemas/ · tables/ · views/ · functions/          catálogo D3 (fichas por objeto)
+│   ├── relationships.md · roles.md · permissions-matrix.md · security-definer.md · n8n-app-audit.md
+│   ├── folios.md · audi-legacy-allocator.md · indexes.md · integrity-rules.md · triggers.md · sequences.md
+│   ├── test-prod-drift.md · hub-contract.md · n8n-contract.md · troubleshooting.md · schema-snapshots.md
 │   └── roles-permissions.md · document-series.md
 ├── automations/                  automatizaciones n8n
 │   ├── README.md
@@ -40,7 +47,7 @@ docs/
 │   ├── audi/README.md            esqueleto (pendiente)
 │   └── payment-notifications/README.md   esqueleto (pendiente)
 ├── operations/                   runbooks generales
-│   └── README.md · deployment.md · backup-restore.md · troubleshooting.md
+│   └── README.md · deployment.md · backup-restore.md · database-backup-restore.md · troubleshooting.md
 ├── decisions/                    ADRs
 │   └── README.md · ADR-001 … ADR-005
 └── deployments/                  notas de despliegue puntuales (existentes)
@@ -61,7 +68,7 @@ Leyenda de fuentes usada en todo el árbol:
 | --- | --- | --- |
 | Visión general y entornos | Completo (Fase D1) | Ver inconsistencias abiertas en [00-overview/environments.md](00-overview/environments.md) |
 | Hub (API/Web/auth/roles) | Completo a nivel general | Módulos de negocio (proveedores, clientes, contactos, direcciones) sólo listados, no detallados |
-| Base de datos | Completo a nivel de arquitectura, roles y series | Catálogo completo de tablas y DDL: PENDIENTE (los DDL viven fuera del repo) |
+| Base de datos | Completo (Fase D3): catálogo real de PROD/TEST (31 tablas, 10 vistas, 13 funciones), permisos, drift, folios | Snapshots `pg_dump`: PENDIENTE ([schema-snapshots](database/schema-snapshots.md)); datos y valores de configuración no leídos por diseño |
 | n8n (inventario, seguridad, drift, dependencias, rutas) | Completo (Fase D2) | [../n8n/](../n8n/README.md) · [n8n-test-prod-drift](automations/n8n-test-prod-drift.md) · [n8n-dependencies](automations/n8n-dependencies.md) · [n8n-paths](automations/n8n-paths.md) |
 | Caterpillar | Completo, **verificado contra el export** (D2) | [automations/caterpillar/](automations/caterpillar/README.md) |
 | Audi | Completo (D2) | [automations/audi/README.md](automations/audi/README.md) |
@@ -71,10 +78,10 @@ Leyenda de fuentes usada en todo el árbol:
 
 ## Pendientes transversales (candidatos a Fase D3 y posteriores)
 
-- **D3:** documentar PostgreSQL objeto por objeto (tablas, vistas como `core.vw_catalogo_notificacion_pago_n8n`, funciones, grants por rol/credencial) a partir de los contratos por workflow.
+- ~~**D3:** documentar PostgreSQL objeto por objeto~~ — hecho en la Fase D3 ([database/README.md](database/README.md)); quedan los pendientes listados allí (snapshots, datos de configuración, políticas de backup/retención).
 - Decidir el versionado de los exports de Notificaciones de pago ([n8n/security-notes](../n8n/security-notes.md)) y localizar el Error Workflow ausente.
 - Versionar en el repo el resto de migraciones de `daubert_global` (hoy sólo la 009 está en `database/migrations/daubert_global/`).
-- Procedimiento exacto de backup/restore de PostgreSQL: [operations/backup-restore.md](operations/backup-restore.md).
+- Políticas de backup/restore de PostgreSQL (procedimiento recomendado en [operations/database-backup-restore.md](operations/database-backup-restore.md); ubicación, retención y PITR siguen PENDIENTE).
 - Corregir las discrepancias Hub ↔ n8n y el drift detectados en D2 ([n8n-test-prod-drift](automations/n8n-test-prod-drift.md), [caterpillar/reprocessing](automations/caterpillar/reprocessing.md#discrepancias-hub--n8n-verificadas-en-d2)).
 - Resolver las inconsistencias listadas en [00-overview/environments.md](00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración).
 

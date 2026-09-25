@@ -1,16 +1,85 @@
 # Arquitectura de la base de datos
 
-Fuentes: consultas de los repositorios (`apps/api/src/**/*.repository.ts`), migración 009 versionada, paquetes de migración externos (ver [migrations](migrations.md)).
+Fuentes: catálogo real de PostgreSQL 18.4 (PROD `daubert_global` y TEST `daubert_hub_test`, Fase D3, solo lectura), consultas de los repositorios (`apps/api/src/**/*.repository.ts`), exports n8n (D2), migración 009 versionada y paquetes externos (ver [migrations](migrations.md)). Portal: [README](README.md).
+
+## Vista de alto nivel
+
+```mermaid
+flowchart LR
+    subgraph Hub["Hub (API NestJS)"]
+        H["daubert_hub_app (PROD)<br/>daubert_hub_test_user (TEST)"]
+    end
+    subgraph N8N["n8n (fuera de Docker)"]
+        A["Audi"]
+        C["Caterpillar"]
+        P["Notificaciones de pago"]
+    end
+    subgraph PG["PostgreSQL 18.4 (host Windows)"]
+        CORE["core<br/>empresas, contactos, documentos,<br/>notificaciones, 10 vistas"]
+        OPS["ops<br/>automatizaciones, ejecuciones,<br/>rutas, 6 funciones definer"]
+        OPER["operacion<br/>series, reservas, remisiones,<br/>ajustes, 3 funciones"]
+        SEC["security<br/>users, sessions"]
+        AUD["audit<br/>cambios + 2 triggers definer"]
+        STG["staging<br/>cargas históricas (sin consumidores)"]
+    end
+    H -->|"SQL directo (22 tablas)"| CORE
+    H --> OPS
+    H --> OPER
+    H --> SEC
+    H -.->|"solo lectura"| AUD
+    A -->|"SQL directo + reservar_folios"| OPER
+    A --> OPS
+    A --> CORE
+    C -->|"solo funciones SECURITY DEFINER"| OPS
+    C --> OPER
+    C --> CORE
+    P -->|"SQL directo + 2 vistas"| CORE
+    CORE -.->|"triggers de auditoría"| AUD
+    SEC -.->|"trigger users"| AUD
+```
+
+Los triggers de auditoría (10) escriben en `audit.cambios` con funciones `SECURITY DEFINER`, así que ningún rol de aplicación necesita `INSERT` sobre `audit`. `staging` no lo usa nadie en runtime.
+
+## Fronteras (boundaries)
+
+| Schema | Frontera | Quién entra | Quién no |
+| --- | --- | --- | --- |
+| `core` | Datos maestros y documentos | Hub (CRUD acotado), n8n (`n8n_app`: documentos, notificaciones, vistas) | `daubert_docs_ro` (solo catálogo) |
+| `ops` | Orquestación de automatizaciones | Hub (lectura + 2 `INSERT`), n8n (funciones y SQL directo Audi) | — |
+| `operacion` | Folios y remisiones | Hub (lectura + ajuste de folio), n8n (funciones; `n8n_app` con `UPDATE` directo) | `n8n_cat_test` en TEST solo vía funciones |
+| `security` | Identidad del Hub | **Solo el Hub** | n8n, roles de test de n8n |
+| `audit` | Bitácora | Triggers (escritura); Hub (lectura) | Resto |
+| `staging` | Aterrizaje de cargas históricas | **Nadie** (solo `postgres`) | Hub, n8n |
+
+Detalle: [schemas/](schemas/README.md), [permissions-matrix](permissions-matrix.md), [roles](roles.md), [hub-contract](hub-contract.md), [n8n-contract](n8n-contract.md).
+
+## Inventario real (D3)
+
+| Concepto | PROD | TEST |
+| --- | --- | --- |
+| Schemas propios | 6 (+ `public` sin objetos) | 6 (+ `public`) |
+| Tablas | 31 | 31 |
+| Vistas | 10 (ninguna materializada) | 10 |
+| Funciones | 13 (10 `SECURITY DEFINER`) | 13 |
+| Triggers | 25 | 25 |
+| Índices | 89 | 89 |
+| Constraints (PK 29 · FK 33 · UNIQUE 11 · CHECK 88 · NOT NULL 181 = 342) | 342 | 342 |
+| Sequences | 26 | 26 |
+| Extensiones | `plpgsql` | `plpgsql` |
+| Roles del proyecto | 6 | 6 (mismos, clúster único) |
+
+Estructura idéntica en ambas bases; los grants son lo que difiere ([test-prod-drift](test-prod-drift.md)).
 
 ## Esquemas
 
-| Esquema | Propósito | Objetos relevantes (observados) |
+| Esquema | Propósito | Ficha |
 | --- | --- | --- |
-| `core` | Datos maestros y documentos | `empresas`, `empresa_roles`, `direcciones`, contactos y métodos, `documentos`; `fn_actualizar_updated_at`, `fn_crear_o_resolver_documento` |
-| `ops` | Automatizaciones | `automatizaciones`, `ejecuciones_automatizacion`, `automatizacion_series_proceso`, `automation_trigger_requests`, `automation_review_acknowledgements`; funciones `fn_*` (abajo) |
-| `operacion` | Documentos operativos y folios | `series_documentales`, `reservas_folios`, `remisiones`, `remision_detalle`, `ajustes_series`; funciones de reserva y persistencia |
-| `security` | Acceso al Hub | `users`, `sessions` |
-| `audit` | Auditoría genérica | `audit.fn_registrar_cambio` (trigger `AFTER` de auditoría), tabla de cambios que registra `app.request_id`, `app.user_id`, etc. |
+| `core` | Datos maestros y documentos; modelo de notificaciones de pago; vistas | [core](schemas/core.md) |
+| `ops` | Automatizaciones: catálogo, ejecuciones, rutas, disparos manuales, acuses; funciones `fn_*` | [ops](schemas/ops.md) |
+| `operacion` | Series documentales, reservas de folios, remisiones, ajustes | [operacion](schemas/operacion.md) |
+| `security` | Usuarios y sesiones del Hub | [security](schemas/security.md) |
+| `audit` | `audit.cambios` y los triggers de auditoría (`fn_registrar_cambio`, `fn_registrar_cambio_security_users`) | [audit](schemas/audit.md) |
+| `staging` | Cargas históricas (BIND, manufactura) sin consumidores | [staging](schemas/staging.md) |
 
 ## Modelo de automatizaciones (núcleo)
 
@@ -51,7 +120,7 @@ Detalle de uso para Caterpillar: [database-contract.md](../automations/caterpill
 
 ## Funciones (patrón)
 
-Toda operación que n8n realiza sobre el modelo de automatizaciones pasa por **funciones `SECURITY DEFINER`** con `search_path` fijo, `REVOKE … FROM PUBLIC` y `GRANT EXECUTE` explícito al rol que corresponde. Esto permite que n8n opere con mínimo privilegio y que las reglas (idempotencia, ownership, integridad) vivan en PostgreSQL y no en el workflow.
+Toda operación que el workflow de **Caterpillar** realiza sobre el modelo de automatizaciones pasa por **funciones `SECURITY DEFINER`** con `search_path` fijo, `REVOKE … FROM PUBLIC` y `GRANT EXECUTE` explícito al rol que corresponde. Esto permite operar con mínimo privilegio y que las reglas (idempotencia, ownership, integridad) vivan en PostgreSQL y no en el workflow. **Verificado en D3:** el workflow de **Audi** y el de **Notificaciones de pago** *no* usan ese patrón (SQL directo; Audi solo llama al allocator legado `operacion.reservar_folios`, `SECURITY INVOKER`), por lo que `n8n_app` conserva privilegios directos de tabla ([n8n-app-audit](../database/n8n-app-audit.md)). Catálogo completo de las 13 funciones: [functions/](functions/README.md); clasificación de seguridad: [security-definer](security-definer.md).
 
 | Función | Esquema | Propósito (una línea) |
 | --- | --- | --- |
