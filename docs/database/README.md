@@ -31,7 +31,8 @@ PostgreSQL es la **fuente de verdad operativa** ([ADR-001](../decisions/ADR-001-
 | [schema-snapshots.md](schema-snapshots.md) | Snapshots `pg_dump --schema-only`: **PENDIENTE** (manual controlado) |
 | [roles-permissions.md](roles-permissions.md) | Roles y grants desde migraciones (D1); ver corrección en [roles.md](roles.md) |
 | [document-series.md](document-series.md) | Series y ajuste seguro de folios (D1) |
-| [../operations/database-backup-restore.md](../operations/database-backup-restore.md) | Procedimiento recomendado de backup/restore (no ejecutado; políticas PENDIENTE) |
+| [../operations/database-backup-restore.md](../operations/database-backup-restore.md) | Procedimiento recomendado de backup/restore (no ejecutado; restauración manual) |
+| [../operations/postgresql-backup-automation.md](../operations/postgresql-backup-automation.md) | Script automatizado con cifrado asimétrico (age) de backups por tiers. IMPLEMENTED / PENDING PROD VALIDATION (código, instalador, preflight, Task Scheduler reproducible y 619 pruebas en verde; age no instalado; ejecución real y registro de tareas PENDIENTE) |
 
 Contratos por automatización: [Caterpillar](../automations/caterpillar/database-contract.md) · [Audi](../automations/audi/database-contract.md) · [Notificaciones de pago](../automations/payment-notifications/database-contract.md).
 

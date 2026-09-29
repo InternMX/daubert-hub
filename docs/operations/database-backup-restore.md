@@ -32,8 +32,8 @@ pg_dumpall -h <host> -p <puerto> -U postgres --globals-only -f <ruta>\globals_<A
 
 3. **Consistencia**: `pg_dump` toma un snapshot transaccional coherente sin detener la base. No bloquea lecturas/escrituras normales; sí compite por I/O: elegir ventana de baja actividad. Preferir hacerlo **sin** n8n procesando (para no capturar una ejecución `PROCESANDO` a medias; ver "Verificación de folios" abajo).
 4. **Registrar** (en `docs/deployments/` si es previo a una migración): fecha/hora, operador, nombre y tamaño del archivo, hash `sha256` del archivo, versión de `pg_dump` y del servidor.
-5. **Ubicación y cifrado**: **PENDIENTE** (no hay política definida). Requisitos mínimos sugeridos: fuera del volumen de datos de PostgreSQL, fuera del repositorio, con acceso restringido, y cifrado en reposo si sale del host.
-6. **Retención y calendario**: **PENDIENTE** (no se inventa política). Tampoco se define aquí si se adoptará archivado de WAL / recuperación a un punto en el tiempo (PITR); el paquete de despliegue de Caterpillar exige "backup fresco **o** PITR confirmado" antes de migrar PROD.
+5. **Ubicación**: definida en [postgresql-backup-automation](postgresql-backup-automation.md) (carpeta Dropbox, fuera del volumen de datos de PostgreSQL y fuera del repositorio). **Cifrado en reposo**: implementado, cifrado ASIMÉTRICO con age (el job solo tiene la clave pública; la clave privada de recuperación vive fuera de esta máquina) — age aún no está instalado, pendiente de validar con una ejecución real.
+6. **Retención y calendario**: implementados por tier (Frequent/Daily/Monthly) en [postgresql-backup-automation](postgresql-backup-automation.md); la programación (Task Scheduler reproducible: `Register-DaubertBackupTasks.ps1`, ver el runbook de instalación) está implementada pero **no registrada**, y la primera ejecución real sigue PENDIENTE. Tampoco se define aquí si se adoptará archivado de WAL / recuperación a un punto en el tiempo (PITR); el paquete de despliegue de Caterpillar exige "backup fresco **o** PITR confirmado" antes de migrar PROD.
 
 Antes de cualquier migración en PROD: backup fresco + validación (siguiente sección) + `precheck` ([migrations](../database/migrations.md)).
 
@@ -47,7 +47,7 @@ Antes de cualquier migración en PROD: backup fresco + validación (siguiente se
 
 **Nunca** restaurar encima de `daubert_global` ni de `daubert_hub_test` como primer paso. Regla: `pg_restore` → base nueva vacía → verificar → decidir.
 
-1. Crear una base nueva con nombre inequívoco (por ejemplo `daubert_restore_<AAAAMMDD>`), propietario `postgres`. Los roles del proyecto deben existir en el clúster destino (restaurar `globals` **solo** en un clúster de prueba distinto; en el clúster productivo los roles ya existen).
+1. Crear una base nueva con nombre inequívoco (por ejemplo `daubert_restore_<AAAAMMDD>`), propietario `postgres`. Los roles del proyecto deben existir en el clúster destino (restaurar `globals` **solo** en un clúster de prueba distinto; en el clúster productivo los roles ya existen). Los `globals` del backup automatizado MONTHLY están sanitizados: **no traen contraseñas de roles**, que deben restablecerse desde los secretos autorizados tras restaurarlos.
 2. Restaurar sin cambiar propietarios ni privilegios inesperadamente:
 
 ```text
@@ -77,12 +77,13 @@ Ejecutar en `BEGIN TRANSACTION READ ONLY; … ROLLBACK;`:
 
 | Decisión | Estado |
 | --- | --- |
-| Ubicación y cifrado de los backups | PENDIENTE |
-| Frecuencia, retención y rotación | PENDIENTE |
+| Ubicación de los backups | Definida en [postgresql-backup-automation](postgresql-backup-automation.md) (carpeta Dropbox `BACKUPS\DAUBERT HUB\POSTGRESQL`, fuera del repositorio) |
+| Cifrado de los backups en reposo | PENDIENTE (no implementado; el destino depende de la protección propia de Dropbox) |
+| Frecuencia, retención y rotación | Implementadas en el script de [postgresql-backup-automation](postgresql-backup-automation.md) (Frequent/Daily/Monthly); **el registro real de tareas en Task Scheduler y la primera ejecución real siguen PENDIENTE** (instalación, preflight y tareas son reproducibles desde el repo) |
 | PITR / archivado de WAL | PENDIENTE |
 | Responsable y ventana de mantenimiento | PENDIENTE |
 | Backup de TEST (¿o se reconstruye desde migraciones?) | PENDIENTE |
-| Cómo se protegen y guardan los `globals` (contienen hashes) | PENDIENTE |
+| Cómo se protegen y guardan los `globals` | El script de [postgresql-backup-automation](postgresql-backup-automation.md) los genera (solo Monthly) **sanitizados** (`--no-role-passwords`, con la cuenta de mínimo privilegio `daubert_backup`, sin hashes de contraseña) y los cifra (age, asimétrico) junto con el dump; nunca se publican en texto plano fuera del artefacto cifrado. El `pg_dumpall` manual con superusuario de este documento sí incluiría hashes: si se usa, trate el archivo como secreto |
 | Prueba periódica de restauración | PENDIENTE |
 
 Fuera de PostgreSQL (no cubierto aquí): workflows y credenciales de n8n, archivos origen/PDFs en Dropbox, archivos de entorno ([backup-restore](backup-restore.md)).
