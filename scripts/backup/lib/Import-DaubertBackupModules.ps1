@@ -53,6 +53,14 @@ $DaubertBackupModuleGraph = [ordered]@{
     Preflight     = @('Config', 'LocalConfig')
     Install       = @('Config', 'LocalConfig')
     Prerequisites = @('Config')
+    # Backup de n8n (piezas propias; no alteran la clausura de Pipeline/PostgreSQL).
+    N8nConfig     = @('Config', 'Encryption')
+    N8nSqlite     = @()
+    N8nStaging    = @('Retention')
+    N8nTasks      = @('Tasks', 'Elevation', 'N8nConfig')
+    N8nInstall    = @('Config', 'LocalConfig', 'N8nConfig', 'N8nSqlite', 'N8nStaging')
+    N8nPreflight  = @('Config', 'LocalConfig', 'Preflight', 'N8nConfig', 'N8nSqlite', 'N8nStaging', 'N8nTasks')
+    N8nPipeline   = @('Config', 'Naming', 'Logging', 'Lock', 'Hash', 'Packaging', 'Encryption', 'Retention', 'Publish', 'N8nConfig', 'N8nSqlite', 'N8nStaging')
 }
 
 function Resolve-DaubertBackupModuleClosure {

@@ -115,12 +115,33 @@ Describe 'Portabilidad - sin dependencias de la máquina o el usuario original' 
         $offenders | Should BeNullOrEmpty
     }
 
-    It 'los scripts de backup no tocan .env.prod-temp, n8n ni compose de producción' {
+    It 'los scripts de backup no tocan .env.prod-temp, n8n ni compose de producción (n8n solo en las piezas propias del backup de n8n)' {
         foreach ($f in (Get-CodeFiles)) {
             $text = Get-Content -LiteralPath $f.FullName -Raw
             ($text -match '\.env\.prod') | Should Be $false
-            ($text -match '(?i)\bn8n\b') | Should Be $false
+            # El código de PostgreSQL y el genérico no mencionan n8n; solo BackupN8n*.psm1, Start-DaubertN8nBackup.ps1,
+            # el helper versionado n8n-sqlite-snapshot.js y el grafo del cargador central.
+            if ($f.Name -notmatch '^(BackupN8n\w+\.psm1|\w+-DaubertN8n\w+\.ps1|n8n-sqlite-snapshot\.js)$' -and $f.Name -ne 'Import-DaubertBackupModules.ps1') {
+                ($text -match '(?i)\bn8n\b') | Should Be $false
+            }
             ($text -match 'compose\.prod') | Should Be $false
+        }
+    }
+
+    It 'el motor de backup n8n (config/snapshot/staging/pipeline) no toca .env.prod, compose de producción, PostgreSQL ni Task Scheduler' {
+        foreach ($f in (Get-CodeFiles | Where-Object { $_.Name -match '^(BackupN8n(Config|Sqlite|Staging|Pipeline)\.psm1|Start-DaubertN8nBackup\.ps1)$' })) {
+            $text = Get-Content -LiteralPath $f.FullName -Raw
+            ($text -match '(?i)\.env\.prod|compose\.prod|pg_dump|pg_restore|psql|Register-ScheduledTask|schtasks|ScheduledTask') | Should Be $false
+        }
+    }
+
+    It 'ningún código n8n (incluidos instalador, preflight y tareas) toca .env.prod, compose de producción, binarios/tareas de PostgreSQL ni depende de valores de esta máquina' {
+        $n8n = @(Get-CodeFiles | Where-Object { $_.Name -match '^(BackupN8n\w+\.psm1|\w+-DaubertN8n\w+\.ps1)$' })
+        $n8n.Count | Should BeGreaterThan 8
+        foreach ($f in $n8n) {
+            $text = Get-Content -LiteralPath $f.FullName -Raw
+            ($text -match '(?i)\.env\.prod|compose\.prod|pg_dump|pg_restore|\bpsql\b|PostgreSQL (Frequent|Daily|Monthly)') | Should Be $false
+            ($text -match '(?i)DESKTOP-[A-Z0-9]{5,}|\b24\.19\.0\b|\b2\.27\.4\b|HERRAMIENTAS AUTOMATIZACION') | Should Be $false
         }
     }
 
