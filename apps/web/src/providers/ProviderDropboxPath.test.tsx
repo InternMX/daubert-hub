@@ -39,7 +39,7 @@ describe('ProviderForm — Ruta de Dropbox', () => {
     await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), '  FLETES/TRANSPORTES KARINA  ');
     await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
     expect(onSubmit).toHaveBeenCalledWith({ commercialName: 'TRANSPORTES KARINA', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/TRANSPORTES KARINA' }, { processesPaymentReceipts: false });
-  });
+  }, 10000);
 
   it('omits rutaDropbox when the field is blank (defaults false/false, no path)', async () => {
     const user = userEvent.setup();

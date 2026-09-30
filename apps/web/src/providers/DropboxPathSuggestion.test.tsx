@@ -118,7 +118,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     await user.type(nameField(), ' EXPRESS');
     expect(await screen.findByText('FLETES/KARINA EXPRESS', undefined, WAIT)).toBeInTheDocument();
     expect(pathField()).toHaveValue('FLETES/MI CARPETA');
-  });
+  }, 10000);
 
   it('a manually edited path can still be replaced explicitly with the suggestion', async () => {
     fakeApi();

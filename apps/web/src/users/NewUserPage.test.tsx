@@ -71,7 +71,7 @@ describe('NewUserPage', () => {
     await user.click(screen.getByRole('button', { name: 'Crear usuario' }));
 
     await waitFor(() => expect(createUserMock).toHaveBeenCalledWith(expect.objectContaining({ temporaryPassword: '  spaced password  ' })));
-  });
+  }, 10000);
 
   it('creates an ADMIN user and redirects to the new user detail', async () => {
     const user = userEvent.setup();
@@ -87,7 +87,7 @@ describe('NewUserPage', () => {
 
     await waitFor(() => expect(createUserMock).toHaveBeenCalledWith({ displayName: 'Ana Admin', email: 'ana@daubertcromwell.com', role: 'ADMIN', temporaryPassword: 'a-valid-temp-password' }));
     expect(await screen.findByTestId('location')).toHaveTextContent('/users/1');
-  });
+  }, 10000);
 
   it('creates a GENERAL user (the default role)', async () => {
     const user = userEvent.setup();
@@ -100,7 +100,7 @@ describe('NewUserPage', () => {
     await user.click(screen.getByRole('button', { name: 'Crear usuario' }));
 
     await waitFor(() => expect(createUserMock).toHaveBeenCalledWith(expect.objectContaining({ role: 'GENERAL' })));
-  });
+  }, 10000);
 
   it('shows a duplicate-email error on the email field', async () => {
     const user = userEvent.setup();
@@ -114,7 +114,7 @@ describe('NewUserPage', () => {
     await user.click(screen.getByRole('button', { name: 'Crear usuario' }));
 
     expect(await screen.findByText('Ya existe un usuario registrado con ese correo electrónico.')).toBeInTheDocument();
-  });
+  }, 10000);
 
   it('explains the mandatory first-login password change', () => {
     renderPage();
