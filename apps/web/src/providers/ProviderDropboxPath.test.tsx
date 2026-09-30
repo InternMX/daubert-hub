@@ -18,11 +18,13 @@ async function selectType(user: ReturnType<typeof userEvent.setup>, label: strin
 }
 
 describe('ProviderForm — Ruta de Dropbox', () => {
-  it('shows the field with an example and explains that notifications start off', () => {
+  it('shows the field with an example once "Configurar ahora" is chosen, with the later-setup explanation always visible', async () => {
+    const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     expect(screen.getByRole('textbox', { name: 'Ruta de Dropbox' })).toBeInTheDocument();
     expect(screen.getByText(/FLETES\/TRANSPORTES KARINA/)).toBeInTheDocument();
-    expect(screen.getByText(/desactivadas/)).toBeInTheDocument();
+    expect(screen.getByText('Puedes configurar las notificaciones de pago más tarde desde la ficha del proveedor.')).toBeInTheDocument();
     // No client-side destination field: ruta_destino is derived by the backend.
     expect(screen.queryByLabelText(/Destino/i)).not.toBeInTheDocument();
   });
@@ -31,21 +33,23 @@ describe('ProviderForm — Ruta de Dropbox', () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await user.type(screen.getByRole('textbox', { name: /Nombre comercial/ }), 'TRANSPORTES KARINA');
     await selectType(user, 'Flete');
     await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), '  FLETES/TRANSPORTES KARINA  ');
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
-    expect(onSubmit).toHaveBeenCalledWith({ commercialName: 'TRANSPORTES KARINA', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/TRANSPORTES KARINA' });
-  });
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
+    expect(onSubmit).toHaveBeenCalledWith({ commercialName: 'TRANSPORTES KARINA', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/TRANSPORTES KARINA' }, { processesPaymentReceipts: false });
+  }, 10000);
 
   it('omits rutaDropbox when the field is blank (defaults false/false, no path)', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await user.type(screen.getByRole('textbox', { name: /Nombre comercial/ }), 'X');
     await selectType(user, 'Flete');
     await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), '   ');
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
     expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('rutaDropbox');
   });
 
@@ -53,10 +57,11 @@ describe('ProviderForm — Ruta de Dropbox', () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockRejectedValue(new ProviderApiError(400, 'DROPBOX_PATH_ABSOLUTE', 'req-1'));
     render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await user.type(screen.getByRole('textbox', { name: /Nombre comercial/ }), 'X');
     await selectType(user, 'Flete');
     await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), 'C:\\Users\\06\\Dropbox');
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
     expect(await screen.findByText(/ruta relativa a Dropbox válida/)).toBeInTheDocument();
   });
 });

@@ -1,7 +1,9 @@
-import { Alert, Box, Button, Chip, CircularProgress, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
+import { ACTIVE_REQUIRES_PARA_MESSAGE, isActiveRequiresParaError } from '../contacts/contactMethodForm';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { CALCULATED_DESTINATION_HELP, GENERATE_DRAFTS_HELP, PROCESSES_RECEIPTS_HELP } from '../components/paymentNotificationHelp';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PaymentRecipientsDrawer } from './PaymentRecipientsDrawer';
 import {
   getPaymentNotificationSettings,
   PaymentNotificationSettingsApiError,
@@ -46,6 +48,9 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
   const [actionError, setActionError] = useState<string | null>(null);
   const [blockedRequirements, setBlockedRequirements] = useState<string[]>([]);
   const savingRef = useRef(false);
+  const [recipientsOpen, setRecipientsOpen] = useState(false);
+  // Confirmation dialog for the only two activation actions. Cancelling it never calls the API.
+  const [confirming, setConfirming] = useState<'activate' | 'deactivate' | null>(null);
 
   const load = useCallback(() => {
     let active = true;
@@ -60,22 +65,38 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
 
   useEffect(() => load(), [load, retry]);
 
+  // Explicit, silent re-query (no spinner) after recipients changed elsewhere: the backend stays the only source of
+  // readiness. A stale "blocked" list from a previous 409 is dropped because the backend answer replaces it.
+  // keepMessages: after a FAILED (de)activation the error just shown must survive the refresh that re-syncs the state.
+  const refreshSettings = useCallback((keepMessages = false) => {
+    getPaymentNotificationSettings(companyId)
+      .then((value) => { setSettings(value); if (!keepMessages) { setBlockedRequirements([]); setActionError(null); } })
+      .catch(() => { if (!keepMessages) setActionError('No fue posible actualizar el estado de preparación. Recarga la ficha para verlo al día.'); });
+  }, [companyId]);
+
   async function change(input: UpdatePaymentNotificationSettingsInput) {
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setActionError(null);
     setBlockedRequirements([]);
+    const togglesActivation = input.notificationsActive !== undefined;
     try {
       setSettings(await updatePaymentNotificationSettings(companyId, input));
+      // The backend answer is the truth; re-query once more so readiness/active never come from anything else.
+      if (togglesActivation) refreshSettings();
     } catch (error) {
       if (error instanceof PaymentNotificationSettingsApiError && error.code === 'PAYMENT_NOTIFICATIONS_NOT_READY') {
-        // Backend-authoritative list of what is still missing (the switch stays off).
+        // Backend-authoritative list of what is still missing (activation stays off).
         setBlockedRequirements(error.missingRequirements);
         setActionError('No se pueden activar las notificaciones de pago todavía. Completa los requisitos pendientes.');
+      } else if (isActiveRequiresParaError(error)) {
+        setActionError(ACTIVE_REQUIRES_PARA_MESSAGE);
       } else {
         setActionError(`No fue posible guardar la configuración. Inténtalo nuevamente.${error instanceof PaymentNotificationSettingsApiError && error.requestId ? ` Referencia: ${error.requestId}` : ''}`);
       }
+      // Never leave the UI showing a state the backend rejected: re-sync from the backend.
+      if (togglesActivation) refreshSettings(true);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -105,32 +126,56 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
               />
               <InfoTooltip label="Procesa comprobantes" text={PROCESSES_RECEIPTS_HELP} />
             </Stack>
-            <Stack direction="row" alignItems="center" spacing={0.5}>
-              <FormControlLabel
-                control={<Switch checked={settings.notificationsActive} disabled={saving} onChange={(event) => void change({ notificationsActive: event.target.checked })} />}
-                label="Generar borradores"
-                sx={{ mr: 0 }}
-              />
-              <InfoTooltip label="Generar borradores" text={GENERATE_DRAFTS_HELP} />
-            </Stack>
           </Stack>
           <ReadOnlyField label="Ruta Dropbox" value={settings.dropboxPath} placeholder="Sin ruta registrada." />
           <ReadOnlyField label="Destino calculado" value={settings.destinationPath} placeholder="Se calcula al registrar la ruta de Dropbox." help={CALCULATED_DESTINATION_HELP} />
           <Box>
-            <Typography variant="overline" color="text.secondary">Estado de preparación</Typography>
+            <Stack direction="row" alignItems="center" spacing={0.5}>
+              <Typography variant="overline" color="text.secondary">Generar borradores</Typography>
+              <InfoTooltip label="Generar borradores" text={GENERATE_DRAFTS_HELP} />
+            </Stack>
+            {/* Three states, all decided by the backend: active -> ready -> incomplete. React only renders them. */}
             <Box sx={{ mt: 0.5 }}>
-              {settings.readiness.ready
-                ? <Chip size="small" color="success" label="Lista para activar" />
-                : <Chip size="small" color="warning" label="Faltan requisitos" />}
+              {settings.notificationsActive
+                ? <Chip size="small" color="success" label="Notificaciones activas" />
+                : settings.readiness.ready
+                  ? <Chip size="small" color="success" variant="outlined" label="Lista para activar" />
+                  : <Chip size="small" color="warning" label="Faltan requisitos" />}
             </Box>
-            {missing.length > 0 && (
+            {settings.notificationsActive && (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1.5 }}>
+                <Button variant="outlined" size="small" color="warning" disabled={saving} onClick={() => setConfirming('deactivate')}>Desactivar temporalmente</Button>
+                <Button variant="outlined" size="small" onClick={() => setRecipientsOpen(true)}>Administrar destinatarios</Button>
+              </Stack>
+            )}
+            {!settings.notificationsActive && settings.readiness.ready && (
+              <Button variant="contained" size="small" disabled={saving} onClick={() => setConfirming('activate')} sx={{ mt: 1.5 }}>Activar notificaciones</Button>
+            )}
+            {!settings.notificationsActive && missing.length > 0 && (
               <Box component="ul" aria-label="Requisitos pendientes" sx={{ mt: 1, mb: 0, pl: 2.5 }}>
                 {missing.map((code) => <Typography key={code} component="li" variant="body2">{requirementLabel(code)}</Typography>)}
               </Box>
             )}
+            {/* Shown from the backend's missing list, in the guided post-creation flow and in the normal provider page alike. */}
+            {!settings.notificationsActive && missing.includes('PAYMENT_RECIPIENT_PARA_REQUIRED') && <Button variant="outlined" size="small" onClick={() => setRecipientsOpen(true)} sx={{ mt: 1.5 }}>Configurar destinatarios</Button>}
           </Box>
         </Stack>
       )}
+      <PaymentRecipientsDrawer companyId={companyId} open={recipientsOpen} onClose={() => setRecipientsOpen(false)} onChanged={() => refreshSettings()} />
+      <Dialog open={confirming !== null} onClose={() => setConfirming(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{confirming === 'deactivate' ? 'Desactivar notificaciones de pago' : 'Activar notificaciones de pago'}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirming === 'deactivate'
+              ? 'La automatización dejará de generar notificaciones de pago para esta empresa. No se borra ninguna configuración: la ruta de Dropbox, «Procesa comprobantes» y los destinatarios se conservan, y podrás activarlas de nuevo.'
+              : 'La automatización empezará a generar notificaciones de pago para esta empresa con la configuración actual.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirming(null)}>Cancelar</Button>
+          <Button variant="contained" color={confirming === 'deactivate' ? 'warning' : 'primary'} onClick={() => { const next = confirming === 'activate'; setConfirming(null); void change({ notificationsActive: next }); }}>{confirming === 'deactivate' ? 'Desactivar' : 'Activar'}</Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }

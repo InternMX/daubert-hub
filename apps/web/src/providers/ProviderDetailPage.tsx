@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
@@ -33,8 +33,20 @@ function DetailField({ label, value }: { label: string; value: string }) {
 export function ProviderDetailPage() {
   const { id = '' } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const directoryPath = typeof location.state === 'object' && location.state !== null && 'directoryPath' in location.state && typeof location.state.directoryPath === 'string' ? location.state.directoryPath : '/providers';
   const successMessage = typeof location.state === 'object' && location.state !== null && 'successMessage' in location.state && typeof location.state.successMessage === 'string' ? location.state.successMessage : null;
+  const navState: Record<string, unknown> = typeof location.state === 'object' && location.state !== null ? location.state as Record<string, unknown> : {};
+  // Set by "Guardar y continuar" on the new-provider form: guidance only, nothing here is persisted.
+  const paymentSetupGuide = navState.paymentNotificationSetup === true;
+  const processesReceiptsFailed = paymentSetupGuide && navState.processesReceiptsSaved === false;
+  // "Terminar por ahora" only ends the guided mode: it stays on this page (replace, no extra history entry), keeps the
+  // rest of the navigation state (e.g. directoryPath) and writes nothing to the backend.
+  function finishGuidedSetup() {
+    const { paymentNotificationSetup: _guide, processesReceiptsSaved: _saved, ...rest } = navState;
+    void _guide; void _saved;
+    navigate(location.pathname, { replace: true, state: rest });
+  }
   const [provider, setProvider] = useState<ProviderDetail | null>(null);
   const [error, setError] = useState<ProviderApiError | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +96,13 @@ export function ProviderDetailPage() {
       </PageHeader>
       <Stack spacing={2} sx={{ mt: 4, maxWidth: 840 }}>
         {successMessage && <Alert severity="success">{successMessage}</Alert>}
+        {paymentSetupGuide && (
+          <Alert severity="info" role="region" aria-label="Continuar configuración de notificaciones de pago" action={<Button color="inherit" size="small" onClick={finishGuidedSetup}>Terminar por ahora</Button>}>
+            <Typography variant="subtitle2">Continúa con las notificaciones de pago</Typography>
+            Revisa la ruta de Dropbox y «Procesa comprobantes» en la sección Notificaciones de pago, y elige los destinatarios con «Configurar destinatarios». Lo que ya configuraste queda guardado y puedes retomarlo más tarde desde esta ficha.
+          </Alert>
+        )}
+        {processesReceiptsFailed && <Alert severity="warning">El proveedor se creó, pero no se pudo activar «Procesa comprobantes». Actívalo en la sección Notificaciones de pago.</Alert>}
         {actionError && <Alert severity="error">{actionError}</Alert>}
         <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
           <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Información general</Typography>
