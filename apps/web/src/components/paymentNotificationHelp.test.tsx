@@ -196,20 +196,21 @@ describe('DropboxPathField — tooltips', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     expect(screen.getByRole('button', { name: 'Información: Ruta de Dropbox' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: /Nombre comercial/ }), 'X');
     await user.click(screen.getByRole('combobox', { name: /Tipo de proveedor/ }));
     await user.click(screen.getByRole('option', { name: 'Flete' }));
     await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), '  FLETES/X  ');
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
-    expect(onSubmit).toHaveBeenCalledWith({ commercialName: 'X', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/X' });
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
+    expect(onSubmit).toHaveBeenCalledWith({ commercialName: 'X', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/X' }, { processesPaymentReceipts: false });
   });
 });
 
 describe('CompanyPaymentNotificationSettingsSection — tooltips', () => {
   const settings = { companyId: '7', dropboxPath: 'FLETES/KARINA', processesPaymentReceipts: false, notificationsActive: false, destinationPath: 'FLETES\\KARINA\\PAGOS', readiness: { ready: false, missingRequirements: ['PAYMENT_PROCESSING_REQUIRED' as const] } };
 
-  it('adds icons only to the switches and the calculated destination (none on the readiness block, which is already explicit)', async () => {
+  it('adds icons only to the processing switch, the draft-generation status and the calculated destination (none on the readiness block, which is already explicit)', async () => {
     getSettingsMock.mockResolvedValue(settings);
     render(<MemoryRouter><CompanyPaymentNotificationSettingsSection companyId="7" /></MemoryRouter>);
     await screen.findByRole('switch', { name: 'Procesa comprobantes' });
@@ -241,7 +242,7 @@ describe('CompanyPaymentNotificationSettingsSection — tooltips', () => {
     await user.click(icon('Procesa comprobantes'));
     await user.click(icon('Generar borradores'));
     expect(processes).not.toBeChecked();
-    expect(screen.getByRole('switch', { name: 'Generar borradores' })).not.toBeChecked();
+    expect(screen.queryByRole('switch', { name: 'Generar borradores' })).not.toBeInTheDocument();
     expect(updateSettingsMock).not.toHaveBeenCalled();
     await user.click(processes);
     expect(updateSettingsMock).toHaveBeenCalledWith('7', { processesPaymentReceipts: true });
