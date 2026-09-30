@@ -1,11 +1,22 @@
-import { Alert, Box, Button, CircularProgress, FormControl, FormHelperText, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, FormControl, FormControlLabel, FormHelperText, FormLabel, InputLabel, MenuItem, Paper, Radio, RadioGroup, Select, Stack, Switch, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import type { CreateProviderInput, ProviderType } from '../services/providers';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { PROCESSES_RECEIPTS_HELP } from '../components/paymentNotificationHelp';
 import { DropboxPathField } from './DropboxPathField';
 
+// Extra step requested with "Configurar ahora". Pure UI intent: it is never sent to the backend as a flag.
+// Only `processesPaymentReceipts` is applied afterwards through the existing payment-notification-settings PATCH.
+export interface PaymentNotificationSetup {
+  processesPaymentReceipts: boolean;
+}
+
+type SetupMode = 'LATER' | 'NOW';
+
 interface ProviderFormProps {
-  onSubmit: (input: CreateProviderInput) => Promise<void>;
+  // The second argument is present only when the user chose "Configurar ahora".
+  onSubmit: (input: CreateProviderInput, paymentSetup?: PaymentNotificationSetup) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -47,6 +58,9 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
   const [rfc, setRfc] = useState('');
   const [notes, setNotes] = useState('');
   const [rutaDropbox, setRutaDropbox] = useState('');
+  // UI-only state (never persisted): LATER is the default and keeps the form exactly as it was.
+  const [setupMode, setSetupMode] = useState<SetupMode>('LATER');
+  const [processesReceipts, setProcessesReceipts] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -62,13 +76,17 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
     const trimmedRfc = rfc.trim().toUpperCase();
     setSubmitting(true);
     try {
-      await onSubmit({
+      const setupNow = setupMode === 'NOW';
+      const input: CreateProviderInput = {
         commercialName: commercialName.trim(),
         providerType,
         fiscal: trimmedLegalName && trimmedRfc ? { legalName: trimmedLegalName, rfc: trimmedRfc } : null,
         notes: notes.trim() || null,
-        ...(rutaDropbox.trim() ? { rutaDropbox: rutaDropbox.trim() } : {})
-      });
+        // Hidden fields are never submitted: the path only applies while "Configurar ahora" is selected.
+        ...(setupNow && rutaDropbox.trim() ? { rutaDropbox: rutaDropbox.trim() } : {})
+      };
+      if (setupNow) await onSubmit(input, { processesPaymentReceipts: processesReceipts });
+      else await onSubmit(input);
     } catch (error) {
       const apiError = error as { code?: string; requestId?: string | null };
       if (apiError.code === 'PROVIDER_NAME_ALREADY_EXISTS') {
@@ -110,8 +128,25 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
         </FormSection>
         <FormSection title="Notificaciones de pago" optional>
           <Stack spacing={2.5}>
-            <Typography variant="body2" color="text.secondary">La empresa se crea con las notificaciones de pago desactivadas. Podrás activarlas desde el detalle cuando esté lista.</Typography>
-            <DropboxPathField value={rutaDropbox} onChange={setRutaDropbox} error={errors.rutaDropbox} helperText="Ruta relativa a Dropbox, por ejemplo FLETES/TRANSPORTES KARINA." companyType={providerType} commercialName={commercialName} suggestionLabel="Sugerencia de ruta" />
+            <FormControl>
+              <FormLabel id="payment-setup-label">¿Deseas configurar las notificaciones de pago ahora?</FormLabel>
+              <RadioGroup aria-labelledby="payment-setup-label" value={setupMode} onChange={(event) => setSetupMode(event.target.value as SetupMode)}>
+                <FormControlLabel value="LATER" control={<Radio />} label="Configurar después" />
+                <FormControlLabel value="NOW" control={<Radio />} label="Configurar ahora" />
+              </RadioGroup>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary">Puedes configurar las notificaciones de pago más tarde desde la ficha del proveedor.</Typography>
+            {setupMode === 'NOW' && (
+              <Stack spacing={2.5}>
+                <DropboxPathField value={rutaDropbox} onChange={setRutaDropbox} error={errors.rutaDropbox} helperText="Ruta relativa a Dropbox, por ejemplo FLETES/TRANSPORTES KARINA." companyType={providerType} commercialName={commercialName} suggestionLabel="Sugerencia de ruta" />
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <FormControlLabel control={<Switch checked={processesReceipts} onChange={(event) => setProcessesReceipts(event.target.checked)} />} label="Procesa comprobantes" sx={{ mr: 0 }} />
+                  <InfoTooltip label="Procesa comprobantes" text={PROCESSES_RECEIPTS_HELP} />
+                </Stack>
+                <Typography variant="body2" color="text.secondary">Los destinatarios de correo se configuran después de crear el proveedor.</Typography>
+                <Typography variant="body2" color="text.secondary">La configuración no activa automáticamente las notificaciones. Podrás activarlas desde la ficha del proveedor cuando todos los requisitos estén completos.</Typography>
+              </Stack>
+            )}
           </Stack>
         </FormSection>
         <FormSection title="Información adicional" optional>
@@ -119,7 +154,7 @@ export function ProviderForm({ onSubmit, onCancel }: ProviderFormProps) {
         </FormSection>
         <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="flex-end" sx={{ pt: 1 }}>
           <Button type="button" variant="text" onClick={onCancel} disabled={submitting}>Cancelar</Button>
-          <Button type="submit" variant="contained" disabled={submitting} startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : undefined}>{submitting ? 'Guardando...' : 'Guardar proveedor'}</Button>
+          <Button type="submit" variant="contained" disabled={submitting} startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : undefined}>{submitting ? 'Guardando...' : setupMode === 'NOW' ? 'Guardar y continuar' : 'Guardar proveedor'}</Button>
         </Stack>
       </Stack>
     </Box>

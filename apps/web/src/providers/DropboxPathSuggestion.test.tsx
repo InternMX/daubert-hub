@@ -32,6 +32,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await user.type(nameField(), '   ');
     await selectType(user, 'Flete');
     await new Promise((resolve) => setTimeout(resolve, 700));
@@ -43,6 +44,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'TRANSPORTES KARINA');
     expect(await screen.findByText('FLETES/TRANSPORTES KARINA', undefined, WAIT)).toBeInTheDocument();
@@ -56,6 +58,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'TRANSPORTES KARINA');
     await user.click(await screen.findByRole('button', { name: 'Usar sugerencia' }, WAIT));
@@ -69,6 +72,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Proveedor');
     await user.type(nameField(), 'ACME');
     await user.click(await screen.findByRole('button', { name: 'Usar sugerencia' }, WAIT));
@@ -80,6 +84,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'KARINA');
     expect(await screen.findByText('FLETES/KARINA', undefined, WAIT)).toBeInTheDocument();
@@ -92,6 +97,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'ACME');
     expect(await screen.findByText('FLETES/ACME', undefined, WAIT)).toBeInTheDocument();
@@ -104,6 +110,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(pathField(), 'FLETES/MI CARPETA');
     await user.type(nameField(), 'KARINA');
@@ -117,6 +124,7 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     fakeApi();
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(pathField(), 'OTRA/RUTA');
     await user.type(nameField(), 'KARINA');
@@ -129,20 +137,22 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     const { unmount } = render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'KARINA');
     await screen.findByRole('button', { name: 'Usar sugerencia' }, WAIT);
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
     expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('rutaDropbox');
     unmount();
 
     const second = vi.fn().mockResolvedValue(undefined);
     render(<ProviderForm onSubmit={second} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'KARINA');
     await user.click(await screen.findByRole('button', { name: 'Usar sugerencia' }, WAIT));
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
-    expect(second).toHaveBeenCalledWith({ commercialName: 'KARINA', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/KARINA' });
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
+    expect(second).toHaveBeenCalledWith({ commercialName: 'KARINA', providerType: 'FLETE', fiscal: null, notes: null, rutaDropbox: 'FLETES/KARINA' }, { processesPaymentReceipts: false });
     expect(Object.keys(second.mock.calls[0]![0])).not.toContain('suggestedDropboxPath');
   });
 
@@ -151,20 +161,22 @@ describe('ProviderForm — Dropbox path suggestion', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), 'KARINA');
     await waitFor(() => expect(suggestionMock).toHaveBeenCalled(), WAIT);
     expect(screen.queryByRole('button', { name: 'Usar sugerencia' })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await user.type(pathField(), 'FLETES/KARINA');
-    await user.click(screen.getByRole('button', { name: 'Guardar proveedor' }));
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ rutaDropbox: 'FLETES/KARINA' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ rutaDropbox: 'FLETES/KARINA' }), { processesPaymentReceipts: false });
   });
 
   it('a null suggestion (nothing safe to propose) shows nothing', async () => {
     suggestionMock.mockResolvedValue(null);
     const user = userEvent.setup();
     render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await selectType(user, 'Flete');
     await user.type(nameField(), '???');
     await waitFor(() => expect(suggestionMock).toHaveBeenCalled(), WAIT);
