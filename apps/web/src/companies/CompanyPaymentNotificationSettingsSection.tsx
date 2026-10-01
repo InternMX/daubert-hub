@@ -23,7 +23,15 @@ const requirementLabels: Record<string, string> = {
 function requirementLabel(code: string): string {
   return requirementLabels[code] ?? 'Completar un requisito pendiente.';
 }
+type DisplayState = 'INCOMPLETE_INACTIVE' | 'READY_INACTIVE' | 'ACTIVE' | 'ACTIVE_INCOMPLETE';
 
+// Pure mapping of the two backend flags onto the four UI states. It does not derive readiness from anything.
+function paymentNotificationDisplayState({ notificationsActive, readiness }: PaymentNotificationSettings): DisplayState {
+  if (!notificationsActive && !readiness.ready) return 'INCOMPLETE_INACTIVE';
+  if (!notificationsActive && readiness.ready) return 'READY_INACTIVE';
+  if (notificationsActive && readiness.ready) return 'ACTIVE';
+  return 'ACTIVE_INCOMPLETE';
+}
 
 function ReadOnlyField({ label, value, placeholder, help }: { label: string; value: string | null; placeholder: string; help?: string }) {
   return (
@@ -104,6 +112,7 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
   }
 
   const missing = blockedRequirements.length > 0 ? blockedRequirements : settings?.readiness.missingRequirements ?? [];
+  const displayState = settings ? paymentNotificationDisplayState(settings) : null;
 
   return (
     <Paper component="section" aria-labelledby="company-payment-notifications-heading" variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
@@ -134,14 +143,18 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
               <Typography variant="overline" color="text.secondary">Generar borradores</Typography>
               <InfoTooltip label="Generar borradores" text={GENERATE_DRAFTS_HELP} />
             </Stack>
-            {/* Three states, all decided by the backend: active -> ready -> incomplete. React only renders them. */}
+            {/* Four states, both inputs come straight from the backend (notificationsActive, readiness.ready). React only renders them. */}
             <Box sx={{ mt: 0.5 }}>
-              {settings.notificationsActive
-                ? <Chip size="small" color="success" label="Notificaciones activas" />
-                : settings.readiness.ready
-                  ? <Chip size="small" color="success" variant="outlined" label="Lista para activar" />
-                  : <Chip size="small" color="warning" label="Faltan requisitos" />}
+              {displayState === 'INCOMPLETE_INACTIVE' && <Chip size="small" color="warning" label="Faltan requisitos" />}
+              {displayState === 'READY_INACTIVE' && <Chip size="small" color="success" variant="outlined" label="Lista para activar" />}
+              {displayState === 'ACTIVE' && <Chip size="small" color="success" label="Notificaciones activas" />}
+              {displayState === 'ACTIVE_INCOMPLETE' && <Chip size="small" color="warning" label="Activa pero incompleta" />}
             </Box>
+            {displayState === 'ACTIVE_INCOMPLETE' && (
+              <Alert severity="warning" sx={{ mt: 1.5 }}>
+                Las notificaciones están activas, pero falta completar requisitos de configuración.
+              </Alert>
+            )}
             {settings.notificationsActive && (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1.5 }}>
                 <Button variant="outlined" size="small" color="warning" disabled={saving} onClick={() => setConfirming('deactivate')}>Desactivar temporalmente</Button>
@@ -151,7 +164,7 @@ export function CompanyPaymentNotificationSettingsSection({ companyId }: { compa
             {!settings.notificationsActive && settings.readiness.ready && (
               <Button variant="contained" size="small" disabled={saving} onClick={() => setConfirming('activate')} sx={{ mt: 1.5 }}>Activar notificaciones</Button>
             )}
-            {!settings.notificationsActive && missing.length > 0 && (
+            {displayState !== 'ACTIVE' && displayState !== 'READY_INACTIVE' && missing.length > 0 && (
               <Box component="ul" aria-label="Requisitos pendientes" sx={{ mt: 1, mb: 0, pl: 2.5 }}>
                 {missing.map((code) => <Typography key={code} component="li" variant="body2">{requirementLabel(code)}</Typography>)}
               </Box>

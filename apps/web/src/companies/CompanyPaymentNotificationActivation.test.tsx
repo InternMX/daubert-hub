@@ -84,6 +84,90 @@ describe('Notificaciones de pago — tres estados (los decide el backend)', () =
   });
 });
 
+describe('Activa pero incompleta (notificationsActive=true, readiness.ready=false)', () => {
+  const activeIncomplete: PaymentNotificationSettings = { ...active, readiness: { ready: false, missingRequirements: ['PAYMENT_RECIPIENT_PARA_REQUIRED'] } };
+
+  it('muestra "Activa pero incompleta", la explicación y los requisitos del backend; no afirma que esté lista ni activa completa', async () => {
+    api.getSettings.mockResolvedValue(activeIncomplete);
+    renderSection();
+    expect(await screen.findByText('Activa pero incompleta')).toBeInTheDocument();
+    expect(screen.getByText(/activas, pero falta completar requisitos de configuración/)).toBeInTheDocument();
+    const items = within(screen.getByRole('list', { name: 'Requisitos pendientes' })).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(/destinatario PARA/);
+    expect(screen.queryByText('Notificaciones activas')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lista para activar')).not.toBeInTheDocument();
+    expect(screen.queryByText('Faltan requisitos')).not.toBeInTheDocument();
+  });
+
+  it('NO muestra Activar; sí Desactivar temporalmente y Administrar destinatarios (sin duplicar con Configurar)', async () => {
+    api.getSettings.mockResolvedValue(activeIncomplete);
+    renderSection();
+    await screen.findByText('Activa pero incompleta');
+    expect(screen.queryByRole('button', ACTIVATE)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Desactivar temporalmente' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Administrar destinatarios' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Configurar destinatarios' })).not.toBeInTheDocument();
+  });
+
+  it('muestra solo lo que dice el backend: sin inventar requisitos aunque falten destinatarios o Dropbox en otros campos', async () => {
+    api.getSettings.mockResolvedValue({ ...activeIncomplete, dropboxPath: null, processesPaymentReceipts: false, readiness: { ready: false, missingRequirements: ['DROPBOX_PATH_REQUIRED'] } });
+    renderSection();
+    await screen.findByText('Activa pero incompleta');
+    const items = within(screen.getByRole('list', { name: 'Requisitos pendientes' })).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent(/ruta de Dropbox/);
+  });
+
+  it('respeta readiness.ready=false aunque no haya requisitos listados (no se recalcula en React)', async () => {
+    api.getSettings.mockResolvedValue({ ...activeIncomplete, readiness: { ready: false, missingRequirements: [] } });
+    renderSection();
+    expect(await screen.findByText('Activa pero incompleta')).toBeInTheDocument();
+    expect(screen.queryByText('Notificaciones activas')).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Requisitos pendientes' })).not.toBeInTheDocument();
+  });
+
+  it('Desactivar envía { notificationsActive: false } con id string, vuelve a consultar y no toca destinatarios ni Procesa comprobantes', async () => {
+    api.getSettings.mockResolvedValueOnce(activeIncomplete).mockResolvedValue({ ...incomplete, processesPaymentReceipts: true });
+    api.updateSettings.mockResolvedValue({ ...incomplete, processesPaymentReceipts: true });
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(await screen.findByRole('button', { name: 'Desactivar temporalmente' }));
+    await confirm(user, 'Desactivar');
+    expect(await screen.findByText('Faltan requisitos')).toBeInTheDocument();
+    expect(api.updateSettings).toHaveBeenCalledTimes(1);
+    expect(api.updateSettings).toHaveBeenCalledWith(COMPANY, { notificationsActive: false });
+    expect(typeof api.updateSettings.mock.calls[0]![0]).toBe('string');
+    expect(Object.keys(api.updateSettings.mock.calls[0]![1] as object)).toEqual(['notificationsActive']);
+    await waitFor(() => expect(api.getSettings).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('switch', { name: 'Procesa comprobantes' })).toBeChecked();
+    expect(api.editMethod).not.toHaveBeenCalled();
+    expect(api.addMethod).not.toHaveBeenCalled();
+    expect(api.createContact).not.toHaveBeenCalled();
+  });
+
+  it('un 409 ACTIVE_REQUIRES_PARA al desactivar mantiene el mensaje existente y sigue "Activa pero incompleta"', async () => {
+    api.getSettings.mockResolvedValue(activeIncomplete);
+    api.updateSettings.mockRejectedValue(new PaymentNotificationSettingsApiError(409, 'PAYMENT_NOTIFICATIONS_ACTIVE_REQUIRES_PARA', 'req-4'));
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(await screen.findByRole('button', { name: 'Desactivar temporalmente' }));
+    await confirm(user, 'Desactivar');
+    expect(await screen.findByText(/último destinatario PARA de una empresa con Notificaciones de Pago activas/)).toBeInTheDocument();
+    await waitFor(() => expect(api.getSettings).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Activa pero incompleta')).toBeInTheDocument();
+  });
+
+  it('"Administrar destinatarios" abre el panel existente con el id BIGINT como string', async () => {
+    api.getSettings.mockResolvedValue(activeIncomplete);
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(await screen.findByRole('button', { name: 'Administrar destinatarios' }));
+    expect(await screen.findByRole('dialog', { name: 'Destinatarios de notificaciones de pago' })).toBeInTheDocument();
+    expect(api.getDirectory).toHaveBeenCalledWith(COMPANY);
+  });
+});
+
 describe('Activar notificaciones', () => {
   it('envía el PATCH existente con { notificationsActive: true } y el id BIGINT como string, y luego refresca settings', async () => {
     api.getSettings.mockResolvedValueOnce(base).mockResolvedValue(active);
