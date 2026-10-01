@@ -101,19 +101,23 @@ Describe 'BackupTasks - generación de XML (funciones puras)' {
         $doc.SelectSingleNode('//t:StartBoundary', $ns).InnerText | Should Be '2026-01-01T01:00:00'
     }
 
-    It 'Daily: un disparo diario sin repetición, a la hora de config' {
+    It 'Daily: trigger diario a la hora de config con repetición horaria (PT1H durante P1D) = oportunidades de reintento' {
         $doc = Get-XmlDoc (New-TaskXmlFor -Tier Daily)
         $ns = New-XmlNs $doc
-        $doc.SelectSingleNode('//t:CalendarTrigger/t:Repetition', $ns) | Should BeNullOrEmpty
+        $doc.SelectSingleNode('//t:CalendarTrigger/t:Repetition/t:Interval', $ns).InnerText | Should Be 'PT1H'
+        $doc.SelectSingleNode('//t:CalendarTrigger/t:Repetition/t:Duration', $ns).InnerText | Should Be 'P1D'
+        $doc.SelectSingleNode('//t:CalendarTrigger/t:Repetition/t:StopAtDurationEnd', $ns).InnerText | Should Be 'false'
         $doc.SelectSingleNode('//t:StartBoundary', $ns).InnerText | Should Be '2026-01-01T02:00:00'
-        $doc.SelectSingleNode('//t:ScheduleByDay', $ns) | Should Not BeNullOrEmpty
+        $doc.SelectSingleNode('//t:ScheduleByDay/t:DaysInterval', $ns).InnerText | Should Be '1'
     }
 
-    It 'Monthly: ScheduleByMonth, día configurado y los 12 meses' {
+    It 'Monthly: YA NO es un disparo único mensual: trigger diario + repetición horaria durante 24 h (el día lo decide -OnlyIfDue)' {
         $doc = Get-XmlDoc (New-TaskXmlFor -Tier Monthly -Schedule ([pscustomobject]@{ startTime = '03:00'; dayOfMonth = 5 }))
         $ns = New-XmlNs $doc
-        $doc.SelectSingleNode('//t:ScheduleByMonth/t:DaysOfMonth/t:Day', $ns).InnerText | Should Be '5'
-        $doc.SelectNodes('//t:ScheduleByMonth/t:Months/*', $ns).Count | Should Be 12
+        $doc.SelectSingleNode('//t:ScheduleByMonth', $ns) | Should BeNullOrEmpty
+        $doc.SelectSingleNode('//t:ScheduleByDay/t:DaysInterval', $ns).InnerText | Should Be '1'
+        $doc.SelectSingleNode('//t:CalendarTrigger/t:Repetition/t:Interval', $ns).InnerText | Should Be 'PT1H'
+        $doc.SelectSingleNode('//t:CalendarTrigger/t:Repetition/t:Duration', $ns).InnerText | Should Be 'P1D'
         $doc.SelectSingleNode('//t:StartBoundary', $ns).InnerText | Should Be '2026-01-01T03:00:00'
     }
 
@@ -279,10 +283,10 @@ Describe 'Task Scheduler - política exacta de las tres tareas y detalle de -Wha
         ($script:plan | ForEach-Object { $_.TaskName }) | Should Be @('Daubert - PostgreSQL Frequent', 'Daubert - PostgreSQL Daily', 'Daubert - PostgreSQL Monthly')
     }
 
-    It 'horarios: FREQUENT cada 4 h desde 00:30; DAILY 02:00; MONTHLY día 1 a las 03:00' {
+    It 'horarios: FREQUENT cada 4 h desde 00:30; DAILY y MONTHLY cada 1 h desde 02:00 / 03:00 con -OnlyIfDue' {
         (Get-D 'Frequent').Schedule | Should Be 'cada 4 h, todos los días, empezando a las 00:30'
-        (Get-D 'Daily').Schedule | Should Be 'todos los días a las 02:00'
-        (Get-D 'Monthly').Schedule | Should Be 'día 1 de cada mes a las 03:00'
+        (Get-D 'Daily').Schedule | Should Be 'cada 1 h, todos los días, empezando a las 02:00 (solo hace backup si falta el del periodo: -OnlyIfDue)'
+        (Get-D 'Monthly').Schedule | Should Be 'cada 1 h, todos los días, empezando a las 03:00 (solo hace backup si falta el del periodo: -OnlyIfDue)'
     }
 
     It 'todas ejecutan el entrypoint canónico commands\Start-DaubertPostgresBackup.ps1 con su -Tier y SIEMPRE -ConfigPath del config instalado' {
@@ -291,7 +295,10 @@ Describe 'Task Scheduler - política exacta de las tres tareas y detalle de -Wha
             $d.Script | Should Be $script:entry
             $d.Tier | Should Be $t
             $d.ConfigPath | Should Be $script:cfgPath
-            $d.Arguments | Should Be ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $script:entry + '" -Tier ' + $t + ' -ConfigPath "' + $script:cfgPath + '"')
+            $base = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $script:entry + '" -Tier ' + $t + ' -ConfigPath "' + $script:cfgPath + '"'
+            # Frequent conserva exactamente sus argumentos de siempre; Daily/Monthly añaden -OnlyIfDue y la espera del lock.
+            $expected = if ($t -eq 'Frequent') { $base } else { $base + ' -OnlyIfDue -LockTimeoutSeconds 900' }
+            $d.Arguments | Should Be $expected
         }
     }
 
@@ -329,7 +336,7 @@ Describe 'Task Scheduler - política exacta de las tres tareas y detalle de -Wha
 
     It 'Format-BackupTaskPlan muestra nombre, horario, ejecutable, script, tier, ConfigPath, logon y concurrencia de las 3 tareas' {
         $text = (Format-BackupTaskPlan -Plan $script:plan) -join "`n"
-        foreach ($needle in 'Daubert - PostgreSQL Frequent', 'Daubert - PostgreSQL Daily', 'Daubert - PostgreSQL Monthly', 'cada 4 h', 'día 1 de cada mes', 'powershell.exe', 'commands\Start-DaubertPostgresBackup.ps1', 'C:\ProgramData\DaubertHub\Backup\config.json', 'S4U', 'PC\operador', 'MultipleInstances=IgnoreNew', '[CREATE]') {
+        foreach ($needle in 'Daubert - PostgreSQL Frequent', 'Daubert - PostgreSQL Daily', 'Daubert - PostgreSQL Monthly', 'cada 4 h', 'cada 1 h, todos los días, empezando a las 03:00', '-OnlyIfDue', 'powershell.exe', 'commands\Start-DaubertPostgresBackup.ps1', 'C:\ProgramData\DaubertHub\Backup\config.json', 'S4U', 'PC\operador', 'MultipleInstances=IgnoreNew', '[CREATE]') {
             $text.Contains($needle) | Should Be $true
         }
     }
@@ -423,5 +430,96 @@ Describe 'Task Scheduler - los scripts Register/Unregister con -WhatIf (in-proce
         $src | Should Not Match "TaskName\s+['""][^'""]*\*"
         $src | Should Not Match 'Get-ScheduledTask\s*(\||$|\r)'
         ([regex]::Matches($src, 'Unregister-ScheduledTask ')).Count | Should BeGreaterThan 0
+    }
+}
+
+Describe 'Task Scheduler - Daily/Monthly con oportunidades periódicas de reintento (Frequent intacta)' {
+
+    BeforeEach {
+        $global:TaskState = @{}
+        Mock Get-BackupScheduledTaskDefinition { if ($global:TaskState.ContainsKey($TaskName)) { [pscustomobject]@{ TaskName = $TaskName; Xml = $global:TaskState[$TaskName] } } else { $null } } -ModuleName BackupTasks
+        Mock Register-BackupScheduledTaskXml { $global:TaskState[$TaskName] = $Xml } -ModuleName BackupTasks
+    }
+
+    function Get-LegacyHash {
+        # Hash v1 EXACTO de antes del cambio (mismo canónico): lo que ya llevan registradas las tareas reales.
+        param([string]$Tier, $Schedule, [string]$Arguments)
+        $canonical = @('v1', $Tier, "start=$($Schedule.startTime)", "interval=$($Schedule.intervalHours)", "dom=$($Schedule.dayOfMonth)", $global:TestPs, $Arguments, 'S4U', $global:TestUser) -join '|'
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try { $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($canonical)) } finally { $sha.Dispose() }
+        (($bytes | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 16)
+    }
+    function Get-LegacyArgs { param([string]$Tier) ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Tier {1} -ConfigPath "{2}"' -f $global:TestScript, $Tier, $global:TestConfig) }
+    function Get-Hash { param([string]$Xml) [regex]::Match($Xml, 'def=([0-9a-f]{16})').Groups[1].Value }
+    function Get-PlanFor { param($Cfg) Get-BackupTaskPlan -LocalConfig $Cfg -ScriptPath $global:TestScript -ConfigPath $global:TestConfig -PowerShellPath $global:TestPs -UserId $global:TestUser }
+    function Get-ArgsFor { param($Cfg, [string]$Tier) $plan = Get-PlanFor $Cfg; $p = $plan | Where-Object { $_.Tier -eq $Tier }; (Get-BackupTaskPlanDetail -Xml $p.Xml).Arguments }
+
+    It 'Frequent: XML, argumentos y hash IDÉNTICOS a los de antes (no se toca)' {
+        $xml = New-TaskXmlFor -Tier Frequent
+        $doc = Get-XmlDoc $xml
+        $ns = New-XmlNs $doc
+        $doc.SelectSingleNode('//t:Exec/t:Arguments', $ns).InnerText | Should Be (Get-LegacyArgs 'Frequent')
+        $doc.SelectSingleNode('//t:Repetition/t:Interval', $ns).InnerText | Should Be 'PT4H'
+        Get-Hash $xml | Should Be (Get-LegacyHash -Tier Frequent -Schedule (Get-DefaultSchedule -Tier Frequent) -Arguments (Get-LegacyArgs 'Frequent'))
+    }
+
+    It 'Daily y Monthly: el hash cambia respecto al anterior (v2), así que re-registrar las ACTUALIZA; Frequent queda Unchanged' {
+        # Estado "real" actual: las tres tareas registradas con la definición anterior (v1).
+        foreach ($t in 'Frequent', 'Daily', 'Monthly') {
+            $sched = Get-DefaultSchedule -Tier $t
+            $global:TaskState[(Get-BackupTaskName -Tier $t)] = "<Task><RegistrationInfo><Description>DaubertHub-Managed-Backup tier=$t def=$(Get-LegacyHash -Tier $t -Schedule $sched -Arguments (Get-LegacyArgs $t))</Description></RegistrationInfo></Task>"
+        }
+        $plan = Get-PlanFor ([pscustomobject]@{})
+        ($plan | Where-Object { $_.Tier -eq 'Frequent' }).Action | Should Be 'Unchanged'
+        ($plan | Where-Object { $_.Tier -eq 'Daily' }).Action | Should Be 'Update'
+        ($plan | Where-Object { $_.Tier -eq 'Monthly' }).Action | Should Be 'Update'
+    }
+
+    It 'tras registrar la nueva definición, un segundo plan es Unchanged para las tres (idempotente)' {
+        Register-BackupTasks -Plan (Get-PlanFor ([pscustomobject]@{})) | Out-Null
+        $again = Get-PlanFor ([pscustomobject]@{})
+        (($again | Where-Object { $_.Action -eq 'Unchanged' }) | Measure-Object).Count | Should Be 3
+    }
+
+    It 'espera del lock: Daily/Monthly 900 s por defecto, Frequent sin espera; configurable por tier en config.json' {
+        (Get-ArgsFor ([pscustomobject]@{}) 'Frequent') | Should Not Match 'LockTimeoutSeconds'
+        (Get-ArgsFor ([pscustomobject]@{}) 'Daily') | Should Match ' -OnlyIfDue -LockTimeoutSeconds 900$'
+        (Get-ArgsFor ([pscustomobject]@{}) 'Monthly') | Should Match ' -OnlyIfDue -LockTimeoutSeconds 900$'
+
+        $custom = [pscustomobject]@{ schedules = [pscustomobject]@{ Daily = [pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 300 }; Monthly = [pscustomobject]@{ startTime = '03:00'; dayOfMonth = 1; lockTimeoutSeconds = 0 } } }
+        (Get-ArgsFor $custom 'Daily') | Should Match ' -OnlyIfDue -LockTimeoutSeconds 300$'
+        (Get-ArgsFor $custom 'Monthly') | Should Not Match 'LockTimeoutSeconds'
+        (Get-ArgsFor $custom 'Monthly') | Should Match ' -OnlyIfDue$'
+    }
+
+    It 'cambiar lockTimeoutSeconds en config.json cambia la definición (Update) solo de esa tarea' {
+        Register-BackupTasks -Plan (Get-PlanFor ([pscustomobject]@{})) | Out-Null
+        $custom = [pscustomobject]@{ schedules = [pscustomobject]@{ Daily = [pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 300 } } }
+        $plan = Get-PlanFor $custom
+        ($plan | Where-Object { $_.Tier -eq 'Daily' }).Action | Should Be 'Update'
+        ($plan | Where-Object { $_.Tier -eq 'Monthly' }).Action | Should Be 'Unchanged'
+        ($plan | Where-Object { $_.Tier -eq 'Frequent' }).Action | Should Be 'Unchanged'
+    }
+
+    It 'las propiedades que garantizan la recuperación siguen presentes: StartWhenAvailable, IgnoreNew y límite de 4 h (sin RestartOnFailure)' {
+        foreach ($t in 'Daily', 'Monthly') {
+            $doc = Get-XmlDoc (New-TaskXmlFor -Tier $t)
+            $ns = New-XmlNs $doc
+            $doc.SelectSingleNode('//t:Settings/t:StartWhenAvailable', $ns).InnerText | Should Be 'true'
+            $doc.SelectSingleNode('//t:Settings/t:MultipleInstancesPolicy', $ns).InnerText | Should Be 'IgnoreNew'
+            $doc.SelectSingleNode('//t:Settings/t:ExecutionTimeLimit', $ns).InnerText | Should Be 'PT4H'
+            $doc.SelectSingleNode('//t:Settings/t:RestartOnFailure', $ns) | Should BeNullOrEmpty
+        }
+    }
+
+    It 'estructura del trigger: un solo CalendarTrigger con StartBoundary, Repetition y ScheduleByDay' {
+        foreach ($t in 'Daily', 'Monthly') {
+            $doc = Get-XmlDoc (New-TaskXmlFor -Tier $t)
+            $ns = New-XmlNs $doc
+            $doc.SelectNodes('//t:Triggers/t:CalendarTrigger', $ns).Count | Should Be 1
+            $doc.SelectNodes('//t:CalendarTrigger/t:StartBoundary', $ns).Count | Should Be 1
+            $doc.SelectNodes('//t:CalendarTrigger/t:Repetition', $ns).Count | Should Be 1
+            $doc.SelectNodes('//t:CalendarTrigger/t:ScheduleByDay', $ns).Count | Should Be 1
+        }
     }
 }

@@ -61,6 +61,28 @@ function Get-DefaultSchedule {
     }
 }
 
+function Get-DefaultLockTimeoutSeconds {
+    <#
+        Espera por defecto (segundos) por backup.lock de las TAREAS PROGRAMADAS (config.json puede
+        sobre-escribirla en schedules.<Tier>.lockTimeoutSeconds). Frequent conserva 0 (falla de inmediato,
+        como siempre): su siguiente oportunidad es la ejecucion de 4 h despues. Daily y Monthly esperan a que
+        termine otra ejecucion (los backups duran segundos) y, si aun asi no hay lock, el siguiente disparo
+        horario del Task Scheduler (-OnlyIfDue) vuelve a intentarlo. Debe quedar MUY por debajo del limite
+        de ejecucion de la tarea (4 h).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Frequent', 'Daily', 'Monthly')]
+        [string]$Tier
+    )
+    switch ($Tier) {
+        'Frequent' { 0 }
+        'Daily' { 900 }
+        'Monthly' { 900 }
+    }
+}
+
 function Get-DefaultBackupPaths {
     <#
         Layout estándar Código ≠ configuración ≠ secretos ≠ datos, calculado
@@ -520,4 +542,4 @@ function Test-BackupPrerequisite {
     }
 }
 
-Export-ModuleMember -Function Get-BackupConfig, Get-TierDefinition, Test-BackupPrerequisite, Get-DefaultRetention, Get-DefaultSchedule, Get-DefaultBackupPaths, Find-PostgresBinPath, Get-PostgresInstallations, Select-PostgresInstallation, Get-PostgresInstallationDiagnostic, Find-SevenZipPath, Find-AgePath, Test-BackupToolPath
+Export-ModuleMember -Function Get-BackupConfig, Get-TierDefinition, Test-BackupPrerequisite, Get-DefaultRetention, Get-DefaultSchedule, Get-DefaultLockTimeoutSeconds, Get-DefaultBackupPaths, Find-PostgresBinPath, Get-PostgresInstallations, Select-PostgresInstallation, Get-PostgresInstallationDiagnostic, Find-SevenZipPath, Find-AgePath, Test-BackupToolPath

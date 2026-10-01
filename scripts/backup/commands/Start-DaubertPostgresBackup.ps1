@@ -25,6 +25,15 @@
     .PARAMETER DryRun
     Todo hasta el hash en staging; NO publica y NO borra en retención.
 
+    .PARAMETER OnlyIfDue
+    Solo Daily/Monthly (las tareas programadas lo pasan): si ya existe el backup publicado VÁLIDO
+    (.age + .sha256) del periodo actual, sale con 0 sin hacer nada; si no, hace el backup. Permite
+    reintentos periódicos del Task Scheduler sin duplicar. Frequent lo ignora.
+
+    .PARAMETER LockTimeoutSeconds
+    Segundos a esperar si otra ejecución tiene backup.lock antes de salir con exit 2 (por defecto 0:
+    falla de inmediato). Las tareas Daily/Monthly lo toman de config.json (schedules.<Tier>.lockTimeoutSeconds).
+
     .EXAMPLE
     .\commands\Start-DaubertPostgresBackup.ps1 -Tier Frequent -ConfigPath "$env:ProgramData\DaubertHub\Backup\config.json"
 #>
@@ -35,6 +44,8 @@ param(
     [string]$Tier,
 
     [switch]$DryRun,
+
+    [switch]$OnlyIfDue,
 
     [string]$ConfigPath,
 
@@ -82,6 +93,7 @@ $runParams = @{
     SevenZipTimeoutSeconds = $SevenZipTimeoutSeconds
     AgeTimeoutSeconds      = $AgeTimeoutSeconds
     Now                    = $Now
+    OnlyIfDue              = $OnlyIfDue
 }
 if ($PSBoundParameters.ContainsKey('ConfigPath')) { $runParams.ConfigPath = $ConfigPath }
 

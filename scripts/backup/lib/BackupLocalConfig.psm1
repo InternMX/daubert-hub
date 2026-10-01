@@ -113,7 +113,8 @@ function Test-ScheduleDefinition {
     <#
         Valida el schedule de un tier. Devuelve un array de errores (vacío
         si es válido). Campos: startTime "HH:mm" (todos), intervalHours 1-24
-        (Frequent), dayOfMonth 1-28 (Monthly).
+        (Frequent), dayOfMonth 1-28 (Monthly), lockTimeoutSeconds 0-3600
+        (opcional, todos: espera por backup.lock de la tarea programada).
     #>
     [CmdletBinding()]
     param(
@@ -122,7 +123,7 @@ function Test-ScheduleDefinition {
     )
 
     $errs = New-Object System.Collections.Generic.List[string]
-    $allowed = switch ($Tier) { 'Frequent' { @('startTime', 'intervalHours') } 'Daily' { @('startTime') } 'Monthly' { @('startTime', 'dayOfMonth') } }
+    $allowed = switch ($Tier) { 'Frequent' { @('startTime', 'intervalHours', 'lockTimeoutSeconds') } 'Daily' { @('startTime', 'lockTimeoutSeconds') } 'Monthly' { @('startTime', 'dayOfMonth', 'lockTimeoutSeconds') } }
 
     foreach ($n in (Get-PropertyName -Object $Schedule)) {
         if ($allowed -notcontains $n) { $errs.Add("schedules.$Tier.$n no es un campo válido para este tier") }
@@ -131,6 +132,10 @@ function Test-ScheduleDefinition {
     $start = Get-OptionalProperty -Object $Schedule -Name 'startTime'
     if ($null -ne $start -and (-not ($start -is [string]) -or $start -notmatch '^([01]\d|2[0-3]):[0-5]\d$')) {
         $errs.Add("schedules.$Tier.startTime debe tener formato HH:mm (00:00-23:59)")
+    }
+    $lockTimeout = Get-OptionalProperty -Object $Schedule -Name 'lockTimeoutSeconds'
+    if ($null -ne $lockTimeout -and (-not ($lockTimeout -is [int] -or $lockTimeout -is [long]) -or $lockTimeout -lt 0 -or $lockTimeout -gt 3600)) {
+        $errs.Add("schedules.$Tier.lockTimeoutSeconds debe ser un entero entre 0 y 3600")
     }
     $interval = Get-OptionalProperty -Object $Schedule -Name 'intervalHours'
     if ($Tier -eq 'Frequent' -and $null -ne $interval) {
@@ -162,6 +167,19 @@ function Get-LocalConfigSchedule {
         $out[$n] = if ($null -ne $v) { $v } else { Get-OptionalProperty -Object $def -Name $n }
     }
     [pscustomobject]$out
+}
+
+function Get-LocalConfigLockTimeout {
+    <# Espera (s) por backup.lock de la tarea programada de un tier: schedules.<Tier>.lockTimeoutSeconds sobre Get-DefaultLockTimeoutSeconds. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][ValidateSet('Frequent', 'Daily', 'Monthly')][string]$Tier
+    )
+    $user = Get-OptionalProperty -Object (Get-OptionalProperty -Object $Config -Name 'schedules') -Name $Tier
+    $v = Get-OptionalProperty -Object $user -Name 'lockTimeoutSeconds'
+    if ($null -ne $v) { return [int]$v }
+    return [int](Get-DefaultLockTimeoutSeconds -Tier $Tier)
 }
 
 function Get-LocalConfigRetention {
@@ -773,7 +791,7 @@ function New-PgPassFile {
 }
 
 Export-ModuleMember -Function `
-    Test-ScheduleDefinition, Get-LocalConfigSchedule, Get-LocalConfigRetention, `
+    Test-ScheduleDefinition, Get-LocalConfigSchedule, Get-LocalConfigLockTimeout, Get-LocalConfigRetention, `
     Test-LocalConfigObject, Read-LocalBackupConfig, New-LocalBackupConfigObject, Write-LocalBackupConfig, `
     ConvertTo-BackupConfigParameters, Initialize-BackupLayout, `
     Test-AgePublicRecipient, Test-AgePrivateKeyText, Get-AgeRecipientInfo, Write-AgeRecipientsFile, Find-AgePrivateKeyInPath, `

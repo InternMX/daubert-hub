@@ -32,7 +32,7 @@ PostgreSQL es la **fuente de verdad operativa** ([ADR-001](../decisions/ADR-001-
 | [roles-permissions.md](roles-permissions.md) | Roles y grants desde migraciones (D1); ver corrección en [roles.md](roles.md) |
 | [document-series.md](document-series.md) | Series y ajuste seguro de folios (D1) |
 | [../operations/database-backup-restore.md](../operations/database-backup-restore.md) | Procedimiento recomendado de backup/restore (no ejecutado; restauración manual) |
-| [../operations/postgresql-backup-automation.md](../operations/postgresql-backup-automation.md) | Script automatizado con cifrado asimétrico (age) de backups por tiers. IMPLEMENTED / PENDING PROD VALIDATION (código, instalador, preflight, Task Scheduler reproducible y 619 pruebas en verde; age no instalado; ejecución real y registro de tareas PENDIENTE) |
+| [../operations/postgresql-backup-automation.md](../operations/postgresql-backup-automation.md) | Script automatizado con cifrado asimétrico (age) de backups por tiers. IMPLEMENTED y en operación real contra `daubert_global` (backups reales de los tres tiers con SHA-256 verificado, tareas registradas en Task Scheduler, Daily/Monthly con reintento horario `-OnlyIfDue`; 884 pruebas en verde); pendiente: restore drill de un backup de esta automatización con la clave privada en otra estación |
 
 Contratos por automatización: [Caterpillar](../automations/caterpillar/database-contract.md) · [Audi](../automations/audi/database-contract.md) · [Notificaciones de pago](../automations/payment-notifications/database-contract.md).
 

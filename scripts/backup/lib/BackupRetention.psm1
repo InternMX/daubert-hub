@@ -139,4 +139,116 @@ function Invoke-BackupRetention {
     }
 }
 
-Export-ModuleMember -Function Get-RetentionCutoffDate, Test-PathIsWithinRoot, Invoke-BackupRetention
+function Get-LatestPublishedBackup {
+    <#
+        Timestamp del último backup PUBLICADO VÁLIDO de un tier, o $null si no hay ninguno.
+        "Válido" = archivo final <db>_<TIER>_<ts>.age (patrón Archive) CON su sidecar .sha256 no vacío.
+        Un .age sin sidecar (publicación interrumpida) NO cuenta como éxito. No se abre ni se descifra
+        nada: solo nombres y tamaños. El timestamp sale del nombre, no de la fecha del filesystem.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDir,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Pattern
+    )
+
+    if (-not (Test-Path -LiteralPath $TargetDir -PathType Container)) { return $null }
+
+    $latest = $null
+    foreach ($file in (Get-ChildItem -LiteralPath $TargetDir -File | Where-Object { $_.Name -match $Pattern })) {
+        $sidecar = Get-Item -LiteralPath "$($file.FullName).sha256" -ErrorAction SilentlyContinue
+        if ($null -eq $sidecar -or $sidecar.Length -le 0) { continue }
+        $ts = ConvertFrom-BackupTimestamp -Timestamp ([regex]::Match($file.Name, $Pattern).Groups['timestamp'].Value)
+        if ($null -eq $ts) { continue }
+        if ($null -eq $latest -or $ts -gt $latest) { $latest = $ts }
+    }
+    return $latest
+}
+
+function Get-ScheduleValue {
+    # Lee un campo del schedule (objeto de config.json o hashtable) sin fallar si no existe.
+    param($Schedule, [string]$Name)
+    if ($Schedule -is [System.Collections.IDictionary]) { return $Schedule[$Name] }
+    $p = $Schedule.PSObject.Properties[$Name]
+    if ($null -ne $p) { return $p.Value }
+    return $null
+}
+
+function Get-BackupLastScheduledInstant {
+    <#
+        Función PURA. Último instante programado (<= Now) de un tier con periodo:
+          - Daily:   hoy a startTime (o ayer, si todavía no llega esa hora).
+          - Monthly: este mes, día dayOfMonth a startTime (o el del mes anterior, si todavía no llega).
+        El schedule es el mismo de config.json (startTime "HH:mm", dayOfMonth 1-28).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Daily', 'Monthly')]
+        [string]$Tier,
+
+        [Parameter(Mandatory = $true)]
+        $Schedule,
+
+        [Parameter(Mandatory = $true)]
+        [datetime]$Now
+    )
+
+    $start = [string](Get-ScheduleValue -Schedule $Schedule -Name 'startTime')
+    if ($start -notmatch '^([01]\d|2[0-3]):([0-5]\d)$') { throw "schedule.startTime inválido ('$start'): se esperaba HH:mm." }
+    $time = New-TimeSpan -Hours ([int]$Matches[1]) -Minutes ([int]$Matches[2])
+
+    if ($Tier -eq 'Daily') {
+        $instant = $Now.Date.Add($time)
+        if ($instant -gt $Now) { $instant = $instant.AddDays(-1) }
+        return $instant
+    }
+
+    $domValue = Get-ScheduleValue -Schedule $Schedule -Name 'dayOfMonth'
+    $dom = if ($null -ne $domValue) { [int]$domValue } else { 1 }
+    if ($dom -lt 1 -or $dom -gt 28) { throw "schedule.dayOfMonth inválido ($dom): se esperaba 1-28." }
+    $instant = (New-Object System.DateTime($Now.Year, $Now.Month, $dom)).Add($time)
+    if ($instant -gt $Now) { $instant = $instant.AddMonths(-1) }
+    return $instant
+}
+
+function Test-BackupDue {
+    <#
+        Función PURA: ¿toca hacer el backup de este tier?
+        Toca si NO hay ningún backup publicado válido, o si el último es anterior al último instante
+        programado (Get-BackupLastScheduledInstant). Frequent no tiene periodo: siempre toca.
+        Devuelve { Due, Reason, ScheduledInstant, LatestPublished }.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Frequent', 'Daily', 'Monthly')]
+        [string]$Tier,
+
+        [Parameter(Mandatory = $true)]
+        $Schedule,
+
+        [Parameter(Mandatory = $true)]
+        [datetime]$Now,
+
+        [Nullable[datetime]]$LatestPublished = $null
+    )
+
+    if ($Tier -eq 'Frequent') {
+        return [pscustomobject]@{ Due = $true; Reason = 'not_applicable'; ScheduledInstant = $null; LatestPublished = $LatestPublished }
+    }
+
+    $instant = Get-BackupLastScheduledInstant -Tier $Tier -Schedule $Schedule -Now $Now
+    if ($null -eq $LatestPublished) {
+        return [pscustomobject]@{ Due = $true; Reason = 'no_published_backup'; ScheduledInstant = $instant; LatestPublished = $null }
+    }
+    if ([datetime]$LatestPublished -lt $instant) {
+        return [pscustomobject]@{ Due = $true; Reason = 'latest_before_scheduled_instant'; ScheduledInstant = $instant; LatestPublished = $LatestPublished }
+    }
+    return [pscustomobject]@{ Due = $false; Reason = 'up_to_date'; ScheduledInstant = $instant; LatestPublished = $LatestPublished }
+}
+
+Export-ModuleMember -Function Get-RetentionCutoffDate, Test-PathIsWithinRoot, Invoke-BackupRetention, Get-LatestPublishedBackup, Get-BackupLastScheduledInstant, Test-BackupDue

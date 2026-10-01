@@ -55,7 +55,7 @@ function New-IsolatedTestRoot {
 function Invoke-Backup {
     param(
         $Env, [Parameter(Mandatory = $true)][string]$Tier, [switch]$DryRun, [string]$Now, [int]$LockTimeoutSeconds = 0,
-        [hashtable]$Override = @{}
+        [hashtable]$Override = @{}, [switch]$OnlyIfDue
     )
     $cli = @{
         BackupRoot = $Env.BackupRoot; StagingRoot = $Env.StagingRoot; PgBinPath = $Env.PgBinPath; PgPassFile = $Env.PgPassFile
@@ -64,6 +64,7 @@ function Invoke-Backup {
     foreach ($k in $Override.Keys) { $cli[$k] = $Override[$k] }
     $params = @{ Tier = $Tier; CliParameters = $cli; LockTimeoutSeconds = $LockTimeoutSeconds }
     if ($DryRun) { $params.DryRun = $true }
+    if ($OnlyIfDue) { $params.OnlyIfDue = $true }
     if ($Now) { $params.Now = [datetime]$Now }
     $out = @(Invoke-DaubertBackupRun @params 2>$null)
     return [int]$out[-1]
@@ -681,5 +682,345 @@ Describe 'Limpieza de staging huérfano (plaintext de una ejecución que murió)
         $global:ProcSim.Calls.Clear()
         Remove-OrphanedStagingDirectory -StagingRoot $script:env.StagingRoot | Out-Null
         $global:ProcSim.Calls.Count | Should Be 0
+    }
+}
+
+# Dobles de la comprobación "¿toca?": los Mock de Pester 3.4 con -ModuleName pueden filtrarse entre pruebas, así que
+# se registran UNA vez por prueba (BeforeEach) y su comportamiento lo decide $global:DueMode / $global:LatestMode.
+$global:RealDueState = Get-Command Get-BackupDueState -Module BackupPipeline
+$global:RealLatest = & (Get-Module BackupPipeline) { Get-Command Get-LatestPublishedBackup }
+function global:Initialize-DueDoubles { $global:DueMode = 'real'; $global:LatestMode = 'real'; $global:DueCalls = 0 }
+function global:Invoke-LatestPublishedDouble {
+    param($TargetDir, $Pattern)
+    if ($global:LatestMode -eq 'throw') { throw 'carpeta del tier ilegible (simulado)' }
+    & $global:RealLatest -TargetDir $TargetDir -Pattern $Pattern
+}
+function global:Invoke-DueStateDouble {
+    param($Config, $Schedule, $Now)
+    $global:DueCalls++
+    switch ($global:DueMode) {
+        'throw' { throw 'fallo simulado de la comprobación' }
+        'throw-from-second' { if ($global:DueCalls -ge 2) { throw 'fallo simulado dentro del lock' } }
+        'race' {
+            # Otra ejecución publicó el backup entre la comprobación previa y la toma del lock.
+            if ($global:DueCalls -eq 1) { return [pscustomobject]@{ Due = $true; Reason = 'latest_before_scheduled_instant'; ScheduledInstant = [datetime]'2026-10-01T02:00:00'; LatestPublished = [datetime]'2026-09-30T02:03:01' } }
+            return [pscustomobject]@{ Due = $false; Reason = 'up_to_date'; ScheduledInstant = [datetime]'2026-10-01T02:00:00'; LatestPublished = [datetime]'2026-10-01T09:44:00' }
+        }
+    }
+    & $global:RealDueState -Config $Config -Schedule $Schedule -Now $Now
+}
+
+function New-SeededBackup {
+    # Backup ya publicado (.age + .sha256) con el timestamp indicado (yyyyMMdd_HHmmss), sin ejecutar nada.
+    param($Env, [string]$Tier, [string]$Stamp, [switch]$NoSidecar)
+    $dir = Join-Path $Env.BackupRoot $Tier.ToUpperInvariant()
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $name = "daubert_global_$($Tier.ToUpperInvariant())_$Stamp.age"
+    Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' -Encoding UTF8
+    if (-not $NoSidecar) { Set-Content -LiteralPath (Join-Path $dir "$name.sha256") -Value 'abc  x' -Encoding ASCII }
+}
+
+function Get-PublishedArchives {
+    param($Env, [string]$Tier)
+    @(Get-Published $Env $Tier | Where-Object { $_ -match '\.age$' })
+}
+
+function Get-LogFileCount {
+    param($Env, [string]$Tier)
+    $dir = Join-Path $Env.BackupRoot ('LOGS\' + $Tier.ToUpperInvariant())
+    if (Test-Path -LiteralPath $dir) { @(Get-ChildItem -LiteralPath $dir -Filter '*.log.jsonl').Count } else { 0 }
+}
+
+Describe 'Pipeline con -OnlyIfDue: un backup pendiente se recupera y uno ya exitoso no se duplica' {
+
+    BeforeEach {
+        $script:env = New-IsolatedTestRoot
+        Reset-ProcessSim
+        Mock Invoke-ExternalProcess { Invoke-FakePgProcess -FilePath $FilePath -ArgumentList $ArgumentList -EnvironmentVariables $EnvironmentVariables } -ModuleName BackupPgTools
+        Mock Invoke-AgeProcess { Invoke-FakeAgeProcess -AgePath $AgePath -ArgumentList $ArgumentList } -ModuleName BackupEncryption
+        Mock Invoke-SevenZipProcess { Invoke-FakeSevenZipProcess -SevenZipPath $SevenZipPath -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory } -ModuleName BackupPackaging
+        Mock Test-BackupToolPath { Test-FakeToolPath -Path $Path } -ModuleName BackupConfig
+        Initialize-DueDoubles
+        Mock Get-BackupDueState { Invoke-DueStateDouble -Config $Config -Schedule $Schedule -Now $Now } -ModuleName BackupPipeline
+        Mock Get-LatestPublishedBackup { Invoke-LatestPublishedDouble -TargetDir $TargetDir -Pattern $Pattern } -ModuleName BackupPipeline
+    }
+
+    AfterEach {
+        Remove-Item -LiteralPath $script:env.Root -Recurse -Force -ErrorAction SilentlyContinue
+        Clear-FakeTools
+    }
+
+    Context 'Daily' {
+
+        It 'sin backups previos: hace el Daily; la repetición horaria siguiente termina en 0 sin hacer nada (ni pg_dump, ni log, ni archivos nuevos)' {
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+            Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20261001_094400.age')
+            $dumps = @(Get-SimCalls 'pg_dump').Count
+            $logs = Get-LogFileCount $script:env Daily
+            $dumps | Should BeGreaterThan 0
+
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T10:44:00') | Should Be 0
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-02T01:44:00') | Should Be 0
+            Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20261001_094400.age')
+            @(Get-SimCalls 'pg_dump').Count | Should Be $dumps
+            Get-LogFileCount $script:env Daily | Should Be $logs
+        }
+
+        It 'PC apagada: el último es de hace 3 días; al encender hace UN solo backup nuevo y luego ya no' {
+            New-SeededBackup -Env $script:env -Tier Daily -Stamp '20260930_020301'
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-04T09:44:00') | Should Be 0
+            Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20260930_020301.age', 'daubert_global_DAILY_20261004_094400.age')
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-04T10:44:00') | Should Be 0
+            @(Get-PublishedArchives $script:env Daily).Count | Should Be 2
+        }
+
+        It 'ya existe el Daily de hoy: exit 0 sin hacer nada' {
+            New-SeededBackup -Env $script:env -Tier Daily -Stamp '20261001_020301'
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+            Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20261001_020301.age')
+            @(Get-SimCalls 'pg_dump').Count | Should Be 0
+        }
+
+        It 'un .age SIN sidecar (publicación interrumpida) no cuenta: se vuelve a hacer' {
+            New-SeededBackup -Env $script:env -Tier Daily -Stamp '20261001_020301' -NoSidecar
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+            (Get-Published $script:env Daily) -contains 'daubert_global_DAILY_20261001_094400.age.sha256' | Should Be $true
+        }
+
+        It 'SIN -OnlyIfDue el comportamiento no cambia: una ejecución manual siempre hace backup' {
+            New-SeededBackup -Env $script:env -Tier Daily -Stamp '20261001_020301'
+            (Invoke-Backup -Env $script:env -Tier Daily -Now '2026-10-01T09:44:00') | Should Be 0
+            @(Get-PublishedArchives $script:env Daily).Count | Should Be 2
+        }
+    }
+
+    Context 'Monthly (no depende de una única ejecución el día 1)' {
+
+        It 'ciclo completo: septiembre hecho -> no toca hasta el 1 a las 03:00 -> intento fallido -> reintento horario -> hecho -> no toca hasta noviembre' {
+            New-SeededBackup -Env $script:env -Tier Monthly -Stamp '20260901_030012'
+
+            # Día 1 antes de las 03:00: nada que hacer.
+            (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-10-01T02:59:00') | Should Be 0
+            @(Get-PublishedArchives $script:env Monthly).Count | Should Be 1
+            @(Get-SimCalls 'pg_dump').Count | Should Be 0
+
+            # 03:00: toca, pero el intento FALLA (pg_dump) -> no hay artefacto y NO cuenta como éxito.
+            $global:ProcSim.PgDump.Mode = 'NO_FILE'; $global:ProcSim.PgDump.ExitCode = 1
+            (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-10-01T03:00:00') | Should Be 4
+            @(Get-PublishedArchives $script:env Monthly).Count | Should Be 1
+
+            # El siguiente disparo horario lo reintenta y esta vez funciona.
+            Reset-ProcessSim
+            (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-10-01T04:00:00') | Should Be 0
+            Get-PublishedArchives $script:env Monthly | Should Be @('daubert_global_MONTHLY_20260901_030012.age', 'daubert_global_MONTHLY_20261001_040000.age')
+
+            # Ya existe el del mes: los disparos horarios de todos los días siguientes terminan en 0 sin hacer nada.
+            $dumps = @(Get-SimCalls 'pg_dump').Count
+            foreach ($d in '2026-10-01T05:00:00', '2026-10-02T09:44:00', '2026-10-20T12:00:00', '2026-10-31T23:00:00') {
+                (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now $d) | Should Be 0
+            }
+            @(Get-PublishedArchives $script:env Monthly).Count | Should Be 2
+            @(Get-SimCalls 'pg_dump').Count | Should Be $dumps
+
+            # Noviembre: vuelve a tocar.
+            (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-11-01T03:00:00') | Should Be 0
+            @(Get-PublishedArchives $script:env Monthly).Count | Should Be 3
+        }
+
+        It 'PC apagada el día 1: al encender el día 2 (o el 15) hace el Monthly del mes UNA vez' {
+            New-SeededBackup -Env $script:env -Tier Monthly -Stamp '20260901_030012'
+            (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-10-15T09:44:00') | Should Be 0
+            Get-PublishedArchives $script:env Monthly | Should Be @('daubert_global_MONTHLY_20260901_030012.age', 'daubert_global_MONTHLY_20261015_094400.age')
+            (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-10-15T10:44:00') | Should Be 0
+            @(Get-PublishedArchives $script:env Monthly).Count | Should Be 2
+        }
+    }
+
+    Context 'Frequent' {
+        It 'Frequent ignora -OnlyIfDue: siempre hace backup' {
+            (Invoke-Backup -Env $script:env -Tier Frequent -OnlyIfDue -Now '2026-10-01T08:30:00') | Should Be 0
+            (Invoke-Backup -Env $script:env -Tier Frequent -OnlyIfDue -Now '2026-10-01T08:30:05') | Should Be 0
+            @(Get-PublishedArchives $script:env Frequent).Count | Should Be 2
+        }
+    }
+
+    Context 'Lock ocupado: un fallo temporal no es una pérdida definitiva' {
+
+        It 'con el lock tomado y LockTimeoutSeconds 0: exit 2 sin artefacto; liberado el lock, el siguiente disparo horario lo recupera' {
+            $held = Enter-BackupLock -LockFilePath $script:env.LockFilePath -TimeoutSeconds 0
+            try {
+                (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 2
+                @(Get-PublishedArchives $script:env Daily).Count | Should Be 0
+                @(Get-SimCalls 'pg_dump').Count | Should Be 0
+            }
+            finally { Exit-BackupLock -LockHandle $held }
+
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T10:44:00') | Should Be 0
+            Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20261001_104400.age')
+        }
+
+        It 'si el backup del periodo ya existe, un lock ocupado NO es un error (exit 0 sin esperar ni tocar nada)' {
+            New-SeededBackup -Env $script:env -Tier Daily -Stamp '20261001_020301'
+            $held = Enter-BackupLock -LockFilePath $script:env.LockFilePath -TimeoutSeconds 0
+            try {
+                (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+            }
+            finally { Exit-BackupLock -LockHandle $held }
+        }
+
+        It 'LockTimeoutSeconds > 0: espera a que otra ejecución suelte el lock y luego hace el backup (sin exit 2)' {
+            $lockPath = $script:env.LockFilePath
+            $lockModule = Join-Path $backupRoot 'lib\BackupLock.psm1'
+            $job = Start-Job -ScriptBlock {
+                param($Module, $Path)
+                Import-Module $Module -Force
+                $h = Enter-BackupLock -LockFilePath $Path -TimeoutSeconds 0
+                Start-Sleep -Seconds 3
+                Exit-BackupLock -LockHandle $h
+            } -ArgumentList $lockModule, $lockPath
+            try {
+                $deadline = (Get-Date).AddSeconds(30)
+                while (-not (Test-Path -LiteralPath $lockPath) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+                Test-Path -LiteralPath $lockPath | Should Be $true
+
+                (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -LockTimeoutSeconds 60 -Now '2026-10-01T09:44:00') | Should Be 0
+                Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20261001_094400.age')
+            }
+            finally { Wait-Job $job -Timeout 30 | Out-Null; Remove-Job $job -Force -ErrorAction SilentlyContinue }
+        }
+
+        It 'LockTimeoutSeconds agotado (lock que no se suelta): exit 2 limpio, sin staging huérfano ni artefacto' {
+            $held = Enter-BackupLock -LockFilePath $script:env.LockFilePath -TimeoutSeconds 0
+            try {
+                (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -LockTimeoutSeconds 2 -Now '2026-10-01T09:44:00') | Should Be 2
+                @(Get-PublishedArchives $script:env Daily).Count | Should Be 0
+                @(Get-ChildItem -LiteralPath $script:env.StagingRoot -Force -ErrorAction SilentlyContinue).Count | Should Be 0
+            }
+            finally { Exit-BackupLock -LockHandle $held }
+        }
+    }
+
+    Context 'Sin duplicados: segunda comprobación DENTRO del lock' {
+
+        It 'si otra ejecución publicó el backup entre la comprobación previa y la toma del lock, no genera otro (exit 0, log due_check skipped, lock liberado)' {
+            $global:DueMode = 'race'
+
+            (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:30') | Should Be 0
+            $global:DueCalls | Should Be 2
+            @(Get-PublishedArchives $script:env Daily).Count | Should Be 0
+            @(Get-SimCalls 'pg_dump').Count | Should Be 0
+            (Get-LogText $script:env Daily) | Should Match '"stage":"due_check","result":"skipped"'
+            Test-Path -LiteralPath $script:env.LockFilePath | Should Be $false
+        }
+    }
+
+    Context 'Resolución de configuración y entrypoint' {
+
+        It 'Resolve-BackupRunConfig devuelve el schedule efectivo del tier (defaults sin config.json)' {
+            $m = (Resolve-BackupRunConfig -Tier Monthly).Schedule
+            $m.startTime | Should Be '03:00'
+            $m.dayOfMonth | Should Be 1
+            (Resolve-BackupRunConfig -Tier Daily).Schedule.startTime | Should Be '02:00'
+        }
+
+        It 'Start-DaubertPostgresBackup.ps1 expone -OnlyIfDue y lo pasa al pipeline' {
+            $script = Get-Content -LiteralPath (Join-Path $backupRoot 'commands\Start-DaubertPostgresBackup.ps1') -Raw
+            $script | Should Match '\[switch\]\$OnlyIfDue'
+            $script | Should Match 'OnlyIfDue\s+=\s+\$OnlyIfDue'
+        }
+    }
+}
+
+Describe 'Pipeline con -OnlyIfDue: si la comprobación "¿toca?" falla, se continúa con el pipeline normal (no exit 1 sin log)' {
+
+    BeforeEach {
+        $script:env = New-IsolatedTestRoot
+        Reset-ProcessSim
+        Initialize-DueDoubles
+        Mock Invoke-ExternalProcess { Invoke-FakePgProcess -FilePath $FilePath -ArgumentList $ArgumentList -EnvironmentVariables $EnvironmentVariables } -ModuleName BackupPgTools
+        Mock Invoke-AgeProcess { Invoke-FakeAgeProcess -AgePath $AgePath -ArgumentList $ArgumentList } -ModuleName BackupEncryption
+        Mock Invoke-SevenZipProcess { Invoke-FakeSevenZipProcess -SevenZipPath $SevenZipPath -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory } -ModuleName BackupPackaging
+        Mock Test-BackupToolPath { Test-FakeToolPath -Path $Path } -ModuleName BackupConfig
+        Mock Get-BackupDueState { Invoke-DueStateDouble -Config $Config -Schedule $Schedule -Now $Now } -ModuleName BackupPipeline
+        Mock Get-LatestPublishedBackup { Invoke-LatestPublishedDouble -TargetDir $TargetDir -Pattern $Pattern } -ModuleName BackupPipeline
+    }
+
+    AfterEach {
+        $global:DueMode = 'real'; $global:LatestMode = 'real'
+        Remove-Item -LiteralPath $script:env.Root -Recurse -Force -ErrorAction SilentlyContinue
+        Clear-FakeTools
+    }
+
+    It 'lectura de la carpeta del tier fallida (Get-LatestPublishedBackup lanza): hace el backup, exit 0, y deja un warning due_check en el log' {
+        $global:LatestMode = 'throw'
+        (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+        Get-PublishedArchives $script:env Daily | Should Be @('daubert_global_DAILY_20261001_094400.age')
+        $log = Get-LogText $script:env Daily
+        $log | Should Match '"stage":"due_check","result":"warning"'
+        $log | Should Match 'carpeta del tier ilegible \(simulado\)'
+        $log | Should Match '"stage":"run","result":"success"'
+        Test-Path -LiteralPath $script:env.LockFilePath | Should Be $false
+    }
+
+    It 'Get-BackupDueState lanza siempre (antes y dentro del lock): exit 0, backup hecho y un warning en cada comprobación' {
+        $global:DueMode = 'throw'
+        (Invoke-Backup -Env $script:env -Tier Monthly -OnlyIfDue -Now '2026-10-01T03:00:00') | Should Be 0
+        Get-PublishedArchives $script:env Monthly | Should Be @('daubert_global_MONTHLY_20261001_030000.age')
+        $log = Get-LogText $script:env Monthly
+        ([regex]::Matches($log, '"stage":"due_check","result":"warning"')).Count | Should Be 2
+        $log | Should Match 'No se pudo determinar si ya existe el backup'
+        $log | Should Match 'No se pudo repetir la comprobación dentro del lock'
+    }
+
+    It 'si además el pipeline falla (pg_dump), el error queda registrado por el mecanismo existente: exit 4 (no 1), log con warning y failure' {
+        $global:DueMode = 'throw'
+        $global:ProcSim.PgDump.Mode = 'NO_FILE'; $global:ProcSim.PgDump.ExitCode = 1
+        (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 4
+        @(Get-PublishedArchives $script:env Daily).Count | Should Be 0
+        $log = Get-LogText $script:env Daily
+        $log | Should Match '"stage":"due_check","result":"warning"'
+        $log | Should Match '"stage":"run","result":"failure"'
+        Test-Path -LiteralPath $script:env.LockFilePath | Should Be $false
+    }
+
+    It 'solo falla la segunda comprobación (dentro del lock): continúa y lo registra' {
+        $global:DueMode = 'throw-from-second'
+        (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+        $global:DueCalls | Should Be 2
+        @(Get-PublishedArchives $script:env Daily).Count | Should Be 1
+        $log = Get-LogText $script:env Daily
+        ([regex]::Matches($log, '"stage":"due_check","result":"warning"')).Count | Should Be 1
+        $log | Should Match 'No se pudo repetir la comprobación dentro del lock'
+    }
+
+    It 'ante la duda no se OMITE: si no se puede comprobar, hace el backup aunque ya exista uno del periodo' {
+        New-SeededBackup -Env $script:env -Tier Daily -Stamp '20261001_020301'
+        $global:LatestMode = 'throw'
+        (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+        @(Get-PublishedArchives $script:env Daily).Count | Should Be 2
+    }
+
+    It 'sin errores en la comprobación no aparece ningún warning due_check (comportamiento normal intacto)' {
+        (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+        $global:DueCalls | Should Be 2
+        (Get-LogText $script:env Daily) | Should Not Match '"stage":"due_check"'
+    }
+
+    It 'sin errores y con el backup del periodo ya hecho: sigue omitiendo con exit 0 (la protección contra duplicados no cambió)' {
+        New-SeededBackup -Env $script:env -Tier Daily -Stamp '20261001_020301'
+        (Invoke-Backup -Env $script:env -Tier Daily -OnlyIfDue -Now '2026-10-01T09:44:00') | Should Be 0
+        @(Get-PublishedArchives $script:env Daily).Count | Should Be 1
+        @(Get-SimCalls 'pg_dump').Count | Should Be 0
+    }
+
+    It 'Get-BackupDueStateSafe nunca lanza y siempre devuelve la propiedad Error' {
+        $cfg = [pscustomobject]@{ Tier = 'Daily'; TierDir = (Join-Path $script:env.BackupRoot 'DAILY'); PgDatabase = 'daubert_global' }
+        $ok = Get-BackupDueStateSafe -Config $cfg -Schedule ([pscustomobject]@{ startTime = '02:00' }) -Now ([datetime]'2026-10-01T09:44:00')
+        $ok.Error | Should BeNullOrEmpty
+        $ok.Due | Should Be $true
+        $bad = Get-BackupDueStateSafe -Config $cfg -Schedule ([pscustomobject]@{ startTime = '99:99' }) -Now ([datetime]'2026-10-01T09:44:00')
+        $bad.Due | Should Be $true
+        $bad.Reason | Should Be 'due_check_error'
+        $bad.Error | Should Match 'startTime'
     }
 }

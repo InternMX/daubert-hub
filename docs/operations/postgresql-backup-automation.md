@@ -1,6 +1,6 @@
 # Backup automatizado y cifrado (asimétrico) de PostgreSQL
 
-**Estado: IMPLEMENTED / PENDING PROD VALIDATION.** Motor de backup, instalador, preflight, Task Scheduler reproducible y pruebas (619 Pester) están completos. **age NO está instalado** en esta máquina (no se instala automáticamente) y **el sistema no se ha ejecutado nunca contra `daubert_global` ni contra el destino real**; el rol `daubert_backup`, el `pgpass`, el par de claves age real y el registro de tareas siguen **PENDING PROD VALIDATION** (ver [Validación real](#validación-real-pendiente)).
+**Estado: IMPLEMENTED y en operación real contra `daubert_global`.** Motor de backup, instalador, preflight, Task Scheduler reproducible y pruebas (carpeta `scripts/backup/tests`: 884 Pester, todas pasan) están completos. **Validación real:** desde el 2026-09-29 los tres tiers (Frequent, Daily, Monthly) han generado backups reales de `daubert_global` cifrados con age, con el SHA-256 de cada artefacto publicado verificado contra su `.sha256`; las tres tareas están registradas en Task Scheduler (Daily y Monthly se actualizaron el 2026-10-01 al esquema de reintento horario con `-OnlyIfDue`). Detalle en [Validación real](#validación-real). **Siguen pendientes** un restore drill de un backup generado por esta automatización con la clave privada age en una estación separada y la restauración de los `globals` en un clúster independiente (ver [Estado y pendientes](#estado-y-pendientes)).
 
 Complementa a [database-backup-restore](database-backup-restore.md) (restauración de PostgreSQL). El **restore drill de n8n/PostgreSQL del 2026-09-28** SÍ se ejecutó realmente: [Restore drill 2026-09-28](#restore-drill-2026-09-28-postgresql--n8n-manual-pass).
 
@@ -35,7 +35,7 @@ scripts/backup/
     BackupTasks.psm1           XML de Task Scheduler + registro/desregistro idempotente
     BackupPipeline.psm1        pipeline de backup (pasos 1-14) + resolución de config; el entrypoint es un envoltorio fino
     BackupNaming / Logging / Lock / Hash / PgTools / Packaging / Encryption / Retention / Publish  (motor de backup)
-  tests/                       Pester (619 pruebas)
+  tests/                       Pester (884 pruebas)
 ```
 
 ## Cifrado: age asimétrico (resumen del diseño)
@@ -60,8 +60,8 @@ La primera versión cifraba con 7-Zip y contraseña por stdin; se demostró (con
 | Tier | Frecuencia por defecto | Retención por defecto | Contenido | Carpeta |
 | --- | --- | --- | --- | --- |
 | `Frequent` | cada 4 h desde 00:30 | 7 días | solo el dump (`pg_dump -Fc`) | `FREQUENT\` |
-| `Daily` | 1 vez al día, 02:00 | 30 días | dump + schema-only | `DAILY\` |
-| `Monthly` | día 1 de cada mes, 03:00 | 12 meses | dump + schema-only + **globals sanitizados** | `MONTHLY\` |
+| `Daily` | 1 vez al día, desde las 02:00 (`-OnlyIfDue`, ver [Backups pendientes](#backups-pendientes-recuperación-tras-apagado-o-lock-ocupado)) | 30 días | dump + schema-only | `DAILY\` |
+| `Monthly` | 1 vez al mes, desde el día 1 a las 03:00 (`-OnlyIfDue`) | 12 meses | dump + schema-only + **globals sanitizados** | `MONTHLY\` |
 
 **Resumen de contenido:** `FREQUENT` = full dump · `DAILY` = full dump + schema-only · `MONTHLY` = full dump + schema-only + **globals sanitizados**.
 
@@ -188,6 +188,8 @@ El instalador: pregunta una sola vez por la conexión y por las rutas locales (a
 }
 ```
 
+Opcional (no se escribe por defecto): `schedules.<Tier>.lockTimeoutSeconds` (entero 0-3600), la espera por `backup.lock` que la tarea programada de ese tier pasa como `-LockTimeoutSeconds`. Defaults: Frequent 0, Daily y Monthly 900. Se aplica al re-registrar las tareas; ver [Backups pendientes](#backups-pendientes-recuperación-tras-apagado-o-lock-ocupado).
+
 Reglas: todas las rutas absolutas (se admiten espacios); `pgPassFile` no puede estar dentro de `backupRoot`; `dayOfMonth` 1–28; `intervalHours` 1–24. Tras editar `schedules`, ejecute `Register-DaubertBackupTasks.ps1` (actualiza solo lo que cambió).
 
 **Precedencia**: parámetro explícito del CLI **>** `config.json` (`-ConfigPath`) **>** detección/defaults no personales. Sin `-ConfigPath` el entrypoint **no** lee `%ProgramData%` (aislamiento para pruebas y ejecuciones ad-hoc); las tareas programadas siempre pasan `-ConfigPath`.
@@ -246,9 +248,9 @@ Exit code: **0 = PASS, 1 = WARN, 2 = FAIL**. Parámetros: `-ConfigPath`, `-MinFr
 
 Las **únicas** tareas administradas: `Daubert - PostgreSQL Frequent`, `Daubert - PostgreSQL Daily`, `Daubert - PostgreSQL Monthly`.
 
-- Definidas por XML generado (`New-BackupTaskXml`) y registradas con `Register-ScheduledTask -Xml` (cubre el trigger mensual, que PS 5.1 no soporta con sus cmdlets).
+- Definidas por XML generado (`New-BackupTaskXml`) y registradas con `Register-ScheduledTask -Xml` (un único mecanismo para las tres tareas: fija `MultipleInstancesPolicy=IgnoreNew`, `StartWhenAvailable` y la repetición de cada trigger; Monthly **no** usa un trigger mensual, ver [Backups pendientes](#backups-pendientes-recuperación-tras-apagado-o-lock-ocupado)).
 - Ejecutan `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<repo>\scripts\backup\commands\Start-DaubertPostgresBackup.ps1" -Tier <Tier> -ConfigPath "<config.json>"`. **Sin secretos en los argumentos.**
-- `MultipleInstancesPolicy = IgnoreNew`; coexisten con el lock interno (si dos tiers coinciden, el segundo sale con exit `2`, sin daño). `StartWhenAvailable` recupera ejecuciones perdidas; límite de ejecución 4 h.
+- `MultipleInstancesPolicy = IgnoreNew`; coexisten con el lock interno. Con `-LockTimeoutSeconds` (Daily/Monthly: 900 s por defecto) una tier espera a que termine la otra; si no hay lock, exit `2` sin daño y el siguiente disparo horario lo reintenta (ver [Backups pendientes](#backups-pendientes-recuperación-tras-apagado-o-lock-ocupado)). `StartWhenAvailable` recupera ejecuciones perdidas; límite de ejecución 4 h.
 - Cuenta: el usuario que registra las tareas, `LeastPrivilege`. Por defecto `-LogonType S4U` (corre sin sesión iniciada y sin guardar contraseña); `-LogonType Interactive` si el entorno no permite S4U. Esa cuenta debe poder leer el pgpass y escribir en `backupRoot`, y **no** debe tener acceso a la clave privada age.
 - **Idempotente**: la descripción de cada tarea lleva una marca y un hash de la definición; si coincide → `Unchanged`; si difiere → `Update`; si no existe → `Create`.
 - **Seguro**: nunca toca tareas ajenas; si existe una tarea con ese nombre **sin** la marca de Daubert → `Blocked` (y se informa).
@@ -264,15 +266,29 @@ Las **únicas** tareas administradas: `Daubert - PostgreSQL Frequent`, `Daubert 
 
 **Eliminar / re-registrar**: `Unregister-…` y luego `Register-…`; o simplemente editar `schedules` en `config.json` y volver a ejecutar `Register-…` (solo se actualiza la tarea que cambió).
 
+### Backups pendientes: recuperación tras apagado o lock ocupado
+
+Daily y Monthly ya no dependen de un único disparo. Cada tarea se dispara **cada hora** (repetición `PT1H` durante 24 h desde su hora de inicio) con `-OnlyIfDue`:
+
+- **¿Toca?** Se decide solo con los backups **publicados válidos** (`<db>_<TIER>_<ts>.age` **con** su `.sha256` no vacío; un `.age` sin sidecar no cuenta). No hay archivo de estado ni base de datos. Daily toca si el último es anterior al último instante programado (hoy a `startTime`, o ayer si todavía no llega); Monthly, si el último es anterior al `dayOfMonth` a `startTime` de este mes (o del anterior, si todavía no llega). Frequent ignora `-OnlyIfDue`.
+- **Si ya existe el backup del periodo**: exit `0` sin hacer nada (sin log, sin tomar el lock). La comprobación se repite **dentro del lock** para que dos ejecuciones simultáneas no dupliquen (log `due_check` / `skipped`).
+- **Equipo apagado o suspendido** en el horario: `StartWhenAvailable` hace un primer intento al volver y la repetición horaria insiste hasta que exista el backup (Monthly puede hacerse el día 2, el 15 o el 30 si falló el del día 1; no hay límite dentro del mes). No cubre el tiempo en que el equipo duerme.
+- **Lock ocupado**: Daily/Monthly esperan hasta `-LockTimeoutSeconds` (Frequent no espera, como siempre); si el tiempo se agota salen con exit `2` y el siguiente disparo horario lo reintenta.
+- **Configuración**: `schedules.<Tier>.lockTimeoutSeconds` (opcional, entero 0-3600) en `config.json`; se aplica al **re-registrar** las tareas. `startTime` y `dayOfMonth` también los lee el script en cada ejecución.
+- **Consecuencias**: una falla persistente (p. ej. PostgreSQL caído) deja un log por intento (hasta 24 al día por tier). Re-registrar con `Register-DaubertBackupTasks.ps1` actualiza Daily y Monthly (hash `v2`) y deja Frequent sin cambios.
+- **Ejecución manual**: sin `-OnlyIfDue` el script siempre hace el backup (comportamiento anterior).
+
 ### Configuración exacta de las tres tareas
 
 | Tarea | Horario | Retención (config) |
 | --- | --- | --- |
 | `Daubert - PostgreSQL Frequent` | cada 4 h, todos los días, empezando a las 00:30 | 7 días |
-| `Daubert - PostgreSQL Daily` | todos los días a las 02:00 | 30 días |
-| `Daubert - PostgreSQL Monthly` | día 1 de cada mes a las 03:00 | 12 meses |
+| `Daubert - PostgreSQL Daily` | cada 1 h, todos los días, desde las 02:00 (con `-OnlyIfDue`: solo hace backup si falta el del día) | 30 días |
+| `Daubert - PostgreSQL Monthly` | cada 1 h, todos los días, desde las 03:00 (con `-OnlyIfDue`: solo hace backup si falta el del mes; "toca" desde `dayOfMonth` a `startTime`) | 12 meses |
 
 Todas ejecutan `powershell.exe` (Windows PowerShell 5.1, ruta completa) con `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<repo>\scripts\backup\commands\Start-DaubertPostgresBackup.ps1" -Tier <Tier> -ConfigPath "C:\ProgramData\DaubertHub\Backup\config.json"`. Rutas absolutas resueltas al registrar (no dependen del directorio actual; `WorkingDirectory` = carpeta del script). `-ExecutionPolicy Bypass` es necesario porque los scripts no están firmados y la política por defecto de Windows PowerShell en clientes es `Restricted`; solo afecta a ese proceso.
+
+Argumentos adicionales de Daily y Monthly (Frequent no cambia): `-OnlyIfDue -LockTimeoutSeconds <schedules.<Tier>.lockTimeoutSeconds, por defecto 900>`.
 
 Ajustes: `MultipleInstancesPolicy=IgnoreNew` (no arranca una segunda instancia de la misma tarea; el lock interno cubre tiers distintos), `StartWhenAvailable=true` (recupera ejecuciones perdidas por apagado/reinicio), límite de ejecución 4 h, sin restricciones de batería/AC, `RunOnlyIfNetworkAvailable=false`, `LeastPrivilege`.
 
@@ -357,7 +373,9 @@ $cfg = "$env:ProgramData\DaubertHub\Backup\config.json"
 .\scripts\backup\commands\Start-DaubertPostgresBackup.ps1 -Tier Daily -ConfigPath $cfg -DryRun
 ```
 
-Parámetros sobre-escribibles (prevalecen sobre `config.json`): `-BackupRoot`, `-StagingRoot`, `-LogRoot`, `-LockRoot`, `-PgBinPath`, `-PgPassFile`, `-PgHost`, `-PgPort`, `-PgUser`, `-PgDatabase`, `-SevenZipPath`, `-AgePath`, `-RecipientsFilePath`, `-LockFilePath`, `-LockTimeoutSeconds`, `-SevenZipTimeoutSeconds`, `-AgeTimeoutSeconds`.
+Parámetros sobre-escribibles (prevalecen sobre `config.json`): `-BackupRoot`, `-StagingRoot`, `-LogRoot`, `-LockRoot`, `-PgBinPath`, `-PgPassFile`, `-PgHost`, `-PgPort`, `-PgUser`, `-PgDatabase`, `-SevenZipPath`, `-AgePath`, `-RecipientsFilePath`, `-LockFilePath`, `-LockTimeoutSeconds` (por defecto 0: falla de inmediato; las tareas Daily/Monthly pasan 900), `-SevenZipTimeoutSeconds`, `-AgeTimeoutSeconds`.
+
+Switch `-OnlyIfDue` (solo Daily/Monthly; lo pasan las tareas programadas): si ya existe el backup publicado válido (`.age` + `.sha256` no vacío) del periodo actual, sale con exit `0` sin hacer nada; si no, hace el backup. Frequent lo ignora y sin él el script siempre hace el backup. Ver [Backups pendientes](#backups-pendientes-recuperación-tras-apagado-o-lock-ocupado).
 
 ### Los comandos siempre usan el código actual del repo (sin cerrar PowerShell)
 
@@ -448,28 +466,36 @@ Import-Module Pester -RequiredVersion 3.4.0
 Invoke-Pester scripts\backup\tests
 ```
 
-**619 pruebas**: motor de backup, configuración/pgpass/detección, instalador, preflight, Task Scheduler, config externa end-to-end, seams de procesos y portabilidad.
+**884 pruebas** (toda la carpeta `scripts/backup/tests`, incluidas las del backup de n8n): motor de backup, configuración/pgpass/detección, instalador, preflight, Task Scheduler, config externa end-to-end, seams de procesos, portabilidad y recuperación de backups pendientes (`-OnlyIfDue`, espera del lock).
 
-## Validación real (pendiente)
+## Validación real
 
-Nada de esto se ha ejecutado contra sistemas reales. Orden sugerido (cada paso requiere aprobación humana): instalar age → crear el rol `daubert_backup` → `Install-DaubertBackup.ps1` → `Test-DaubertBackupEnvironment.ps1` → `-DryRun` contra una carpeta de prueba → backup real a carpeta de prueba + restore drill con la clave privada en otra estación → apuntar al destino real → `Register-DaubertBackupTasks.ps1`.
+Ejecutada en el host productor contra `daubert_global` (rol `daubert_backup`, `pgpass` y recipients age reales; cifrado con la clave pública, sin clave privada en el job):
+
+- **2026-09-29**: primeras ejecuciones reales de los tres tiers; `pg_dump`, `pg_restore -l`, cifrado con age, SHA-256 y publicación correctos.
+- **Task Scheduler**: las tres tareas están registradas (`S4U`, cuenta del operador, `LeastPrivilege`).
+- **2026-10-01 ~09:44**: tras reanudarse el equipo, Daily, Monthly y Frequent arrancaron a la vez (`StartWhenAvailable`); Frequent tomó el lock y Daily y Monthly salieron con exit `2` (lock ocupado, sin espera). Fue el origen del esquema actual (reintento horario con `-OnlyIfDue` y espera del lock).
+- **2026-10-01 (tarde)**: se re-registraron Daily y Monthly con el esquema nuevo (Frequent quedó `Unchanged`). Cada una generó su backup real del día, su SHA-256 coincide con el `.sha256` publicado y una segunda ejecución terminó con exit `0` **sin** crear un segundo backup.
 
 ## Estado y pendientes
 
 | Elemento | Estado |
 | --- | --- |
-| Motor de backup (age asimétrico, pipeline, retención, lock) | **IMPLEMENTED** |
-| Config externa, instalador, preflight, Task Scheduler reproducible | **IMPLEMENTED** |
-| Pruebas Pester (619) | **IMPLEMENTED**, pasando |
+| Motor de backup (age asimétrico, pipeline, retención, lock) | **IMPLEMENTED**, validado en `daubert_global` |
+| Config externa, instalador, preflight, Task Scheduler reproducible | **IMPLEMENTED**, validado (tareas registradas y ejecutándose) |
+| Recuperación de backups pendientes (`-OnlyIfDue`, espera del lock) | **IMPLEMENTED**, validada en el equipo real (Daily y Monthly, 2026-10-01) |
+| Pruebas Pester (884, toda la carpeta `scripts/backup/tests`) | **IMPLEMENTED**, pasando |
 | Documentación (este archivo) | **IMPLEMENTED** |
-| Instalación de age | **PENDIENTE** (manual; el instalador no instala dependencias) |
-| Rol `daubert_backup`, pgpass real, par de claves age real | **PENDING PROD VALIDATION** |
-| Primera ejecución real y restore drill con clave privada en estación separada | **PENDING PROD VALIDATION** |
-| Registro real de tareas en Task Scheduler | **PENDING PROD VALIDATION** |
+| age instalado, rol `daubert_backup`, `pgpass` real, par de claves age real | **VALIDADO** en las ejecuciones reales |
+| Primera ejecución real de los tres tiers | **VALIDADO** (SHA-256 de los artefactos publicados verificado) |
+| Registro real de tareas en Task Scheduler | **VALIDADO** (Daily y Monthly actualizadas el 2026-10-01) |
+| Restore drill de un backup generado por esta automatización, con la clave privada en una estación separada | **PENDIENTE** |
+| Restauración de los `globals` (roles) en un clúster PostgreSQL independiente | **PENDIENTE** |
+| Recuperación tras una suspensión/reanudación real con el esquema `-OnlyIfDue` | **PENDIENTE** de observación (el 2026-10-01 se validó el re-registro y la no duplicación, no un catch-up real con el esquema nuevo) |
 
 ## Restore drill 2026-09-28 (PostgreSQL + n8n, manual) — PASS
 
-Ejecutado manualmente el 2026-09-28, fuera de esta automatización (que aún no genera backups reales). Resultado: **PASS**, con las siguientes salvedades y hallazgos documentados tal como se reportaron:
+Ejecutado manualmente el 2026-09-28, fuera de esta automatización y antes de sus primeros backups reales (2026-09-29), por lo que no restauró un artefacto generado por ella. Resultado: **PASS**, con las siguientes salvedades y hallazgos documentados tal como se reportaron:
 
 - **PostgreSQL**: restaurado en una **base de datos aislada dentro del mismo clúster PostgreSQL 18** (no una instancia bare-metal separada) — por lo tanto, **esta prueba NO valida la restauración de los `globals`** (roles y sus atributos a nivel de clúster), que requeriría un clúster distinto.
 - Los **conteos críticos y los permisos** de la base restaurada coincidieron con lo esperado.

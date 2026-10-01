@@ -232,6 +232,37 @@ Describe 'BackupLocalConfig - lectura y escritura de config.json' {
             (Get-LocalConfigRetention -Config $cfg -Tier Frequent).Value | Should Be 3
             (Get-LocalConfigRetention -Config $cfg -Tier Monthly).Value | Should Be 12
         }
+        It 'lockTimeoutSeconds: opcional en los tres tiers, entero 0-3600; fuera de rango o no entero se rechaza' {
+            foreach ($t in 'Frequent', 'Daily', 'Monthly') {
+                (Test-ScheduleDefinition -Tier $t -Schedule ([pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 0 })).Count | Should Be 0
+                (Test-ScheduleDefinition -Tier $t -Schedule ([pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 900 })).Count | Should Be 0
+                (Test-ScheduleDefinition -Tier $t -Schedule ([pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 3600 })).Count | Should Be 0
+                (Test-ScheduleDefinition -Tier $t -Schedule ([pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = -1 })).Count | Should Not Be 0
+                (Test-ScheduleDefinition -Tier $t -Schedule ([pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 3601 })).Count | Should Not Be 0
+                (Test-ScheduleDefinition -Tier $t -Schedule ([pscustomobject]@{ startTime = '02:00'; lockTimeoutSeconds = 'mucho' })).Count | Should Not Be 0
+            }
+        }
+        It 'lockTimeoutSeconds en un config.json completo se valida y se resuelve sobre los defaults (Daily/Monthly 900, Frequent 0)' {
+            $c = New-TestConfigObject -Root $script:root
+            $c['schedules']['Daily']['lockTimeoutSeconds'] = 300
+            $json = $c | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+            (Test-LocalConfigObject -Config $json).IsValid | Should Be $true
+            (Get-LocalConfigLockTimeout -Config $json -Tier Daily) | Should Be 300
+            (Get-LocalConfigLockTimeout -Config $json -Tier Monthly) | Should Be 900
+            (Get-LocalConfigLockTimeout -Config $json -Tier Frequent) | Should Be 0
+            $c['schedules']['Monthly']['lockTimeoutSeconds'] = 99999
+            (Test-LocalConfigObject -Config ($c | ConvertTo-Json -Depth 8 | ConvertFrom-Json)).IsValid | Should Be $false
+        }
+        It 'defaults centralizados de espera del lock: Frequent 0, Daily 900, Monthly 900 (muy por debajo del límite de 4 h)' {
+            Get-DefaultLockTimeoutSeconds -Tier Frequent | Should Be 0
+            Get-DefaultLockTimeoutSeconds -Tier Daily | Should Be 900
+            Get-DefaultLockTimeoutSeconds -Tier Monthly | Should Be 900
+        }
+        It 'lockTimeoutSeconds no aparece en el schedule efectivo ni en el config generado (los defaults no se escriben en config.json)' {
+            (Get-LocalConfigSchedule -Config ([pscustomobject]@{}) -Tier Daily).PSObject.Properties.Name -contains 'lockTimeoutSeconds' | Should Be $false
+            Write-LocalBackupConfig -Path $script:cfgPath -Config (New-TestConfigObject -Root $script:root) | Out-Null
+            [System.IO.File]::ReadAllText($script:cfgPath) | Should Not Match 'lockTimeoutSeconds'
+        }
         It 'config.json generado incluye retención y schedules explícitos por tier' {
             Write-LocalBackupConfig -Path $script:cfgPath -Config (New-TestConfigObject -Root $script:root) | Out-Null
             $r = Read-LocalBackupConfig -Path $script:cfgPath

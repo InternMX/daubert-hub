@@ -63,7 +63,7 @@ function Resolve-BackupRunConfig {
         config.json (si -ConfigPath) < parámetros explícitos del CLI
         (-CliParameters, claves = parámetros de Get-BackupConfig) < nada más.
         Las herramientas sin ruta se detectan de forma portable.
-        Devuelve { Config, Errors }.
+        Devuelve { Config, Schedule, Errors } (Schedule = schedule efectivo del tier: config.json sobre defaults).
     #>
     [CmdletBinding()]
     param(
@@ -73,6 +73,7 @@ function Resolve-BackupRunConfig {
     )
 
     $configParams = @{ Tier = $Tier }
+    $schedule = Get-DefaultSchedule -Tier $Tier
     $errors = New-Object System.Collections.Generic.List[string]
 
     if ($ConfigPath) {
@@ -85,6 +86,7 @@ function Resolve-BackupRunConfig {
         foreach ($kv in (ConvertTo-BackupConfigParameters -LocalConfig $local.Config -Tier $Tier).GetEnumerator()) {
             $configParams[$kv.Key] = $kv.Value
         }
+        $schedule = Get-LocalConfigSchedule -Config $local.Config -Tier $Tier
     }
 
     # Los parámetros explícitos del CLI SIEMPRE prevalecen sobre config.json.
@@ -99,7 +101,7 @@ function Resolve-BackupRunConfig {
         }
     }
 
-    [pscustomobject]@{ Config = (Get-BackupConfig @configParams); Errors = @() }
+    [pscustomobject]@{ Config = (Get-BackupConfig @configParams); Schedule = $schedule; Errors = @() }
 }
 
 function Remove-OrphanedStagingDirectory {
@@ -133,6 +135,51 @@ function Remove-OrphanedStagingDirectory {
     }
     return $removed.ToArray()
 }
+function Get-BackupDueState {
+    <#
+        ¿Toca hacer el backup de esta configuración? Solo cuenta el último backup PUBLICADO VÁLIDO
+        (.age + .sha256, ver Get-LatestPublishedBackup); no hay archivo de estado ni base de datos.
+        Frequent no tiene periodo: siempre toca. Sin -Schedule se usa el schedule por defecto del tier.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Config,
+        $Schedule,
+        [Parameter(Mandatory = $true)][datetime]$Now
+    )
+
+    if ($null -eq $Schedule) { $Schedule = Get-DefaultSchedule -Tier $Config.Tier }
+    $latest = $null
+    if ($Config.TierDir) {
+        $pattern = Get-BackupFileNamePattern -Kind Archive -Tier $Config.Tier -Database $Config.PgDatabase
+        $latest = Get-LatestPublishedBackup -TargetDir $Config.TierDir -Pattern $pattern
+    }
+    return (Test-BackupDue -Tier $Config.Tier -Schedule $Schedule -Now $Now -LatestPublished $latest)
+}
+
+function Get-BackupDueStateSafe {
+    <#
+        Igual que Get-BackupDueState pero NUNCA lanza: si no se puede determinar (carpeta ilegible, schedule
+        inválido, ...) devuelve Due = $true con el mensaje en Error. -OnlyIfDue solo puede OMITIR un backup cuando
+        hay certeza de que ya existe; ante la duda se sigue al pipeline normal, que registra los errores por el
+        mecanismo existente (log JSONL y exit code). Siempre devuelve la propiedad Error ($null si todo fue bien).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Config,
+        $Schedule,
+        [Parameter(Mandatory = $true)][datetime]$Now
+    )
+
+    try {
+        $state = Get-BackupDueState -Config $Config -Schedule $Schedule -Now $Now -ErrorAction Stop
+        return [pscustomobject]@{ Due = [bool]$state.Due; Reason = $state.Reason; ScheduledInstant = $state.ScheduledInstant; LatestPublished = $state.LatestPublished; Error = $null }
+    }
+    catch {
+        return [pscustomobject]@{ Due = $true; Reason = 'due_check_error'; ScheduledInstant = $null; LatestPublished = $null; Error = $_.Exception.Message }
+    }
+}
+
 function Invoke-DaubertBackup {
     <#
         Ejecuta el pipeline completo para una configuración ya resuelta y
@@ -145,10 +192,24 @@ function Invoke-DaubertBackup {
         [int]$LockTimeoutSeconds = 0,
         [int]$SevenZipTimeoutSeconds = 300,
         [int]$AgeTimeoutSeconds = 300,
-        [datetime]$Now = (Get-Date)
+        [datetime]$Now = (Get-Date),
+        [switch]$OnlyIfDue,
+        $Schedule
     )
 
     $ExitCodes = $script:ExitCodes
+
+    # -OnlyIfDue (Daily/Monthly por Task Scheduler): si ya existe el backup válido de este periodo, no hay
+    # nada que hacer. Es un éxito (exit 0) y no deja log ni toca el lock. Se vuelve a comprobar DENTRO del lock.
+    $initialDueError = $null
+    if ($OnlyIfDue) {
+        $dueState = Get-BackupDueStateSafe -Config $Config -Schedule $Schedule -Now $Now
+        $initialDueError = $dueState.Error
+        if (-not $dueState.Due) {
+            Write-Verbose ("Backup $($Config.Tier) omitido: ya existe un backup publicado válido del periodo (ultimo=$($dueState.LatestPublished.ToString('s')), instante programado=$($dueState.ScheduledInstant.ToString('s'))).")
+            return $ExitCodes.Success
+        }
+    }
 
     $prereq = Test-BackupPrerequisite -Config $Config
     if (-not $prereq.IsValid) {
@@ -162,6 +223,9 @@ function Invoke-DaubertBackup {
     $stagingDir = Join-Path $Config.StagingRoot $RunId
 
     Write-BackupLogEntry -LogPath $LogPath -RunId $RunId -Tier $Config.Tier -Stage 'run' -Result 'start' -Message "DryRun=$($DryRun.IsPresent)"
+    if ($initialDueError) {
+        Write-BackupLogEntry -LogPath $LogPath -RunId $RunId -Tier $Config.Tier -Stage 'due_check' -Result 'warning' -Message "No se pudo determinar si ya existe el backup de este periodo; se continúa con el backup normal. Detalle: $initialDueError"
+    }
 
     $exitCode = $ExitCodes.UnexpectedError
     $lockHandle = $null
@@ -175,6 +239,17 @@ function Invoke-DaubertBackup {
             Write-BackupLogEntry -LogPath $LogPath -RunId $RunId -Tier $Config.Tier -Stage 'lock' -Result 'failure' -Message $_.Exception.Message
             Write-Error $_.Exception.Message -ErrorAction Continue
             return $ExitCodes.LockHeld
+        }
+
+        if ($OnlyIfDue) {
+            $dueState = Get-BackupDueStateSafe -Config $Config -Schedule $Schedule -Now $Now
+            if ($dueState.Error) {
+                Write-BackupLogEntry -LogPath $LogPath -RunId $RunId -Tier $Config.Tier -Stage 'due_check' -Result 'warning' -Message "No se pudo repetir la comprobación dentro del lock; se continúa con el backup normal. Detalle: $($dueState.Error)"
+            }
+            if (-not $dueState.Due) {
+                Write-BackupLogEntry -LogPath $LogPath -RunId $RunId -Tier $Config.Tier -Stage 'due_check' -Result 'skipped' -Message 'Otra ejecución ya publicó el backup válido de este periodo; no se genera uno nuevo.'
+                return $ExitCodes.Success
+            }
         }
 
         # Con el lock en mano, cualquier staging de otra ejecuciÃ³n es huÃ©rfano (plaintext residual de un kill).
@@ -388,7 +463,8 @@ function Invoke-DaubertBackupRun {
         [int]$LockTimeoutSeconds = 0,
         [int]$SevenZipTimeoutSeconds = 300,
         [int]$AgeTimeoutSeconds = 300,
-        [datetime]$Now = (Get-Date)
+        [datetime]$Now = (Get-Date),
+        [switch]$OnlyIfDue
     )
 
     $resolved = Resolve-BackupRunConfig -Tier $Tier -ConfigPath $ConfigPath -CliParameters $CliParameters
@@ -396,7 +472,7 @@ function Invoke-DaubertBackupRun {
         foreach ($e in $resolved.Errors) { Write-Error $e -ErrorAction Continue }
         return $script:ExitCodes.PrerequisiteError
     }
-    return (Invoke-DaubertBackup -Config $resolved.Config -DryRun:$DryRun -LockTimeoutSeconds $LockTimeoutSeconds -SevenZipTimeoutSeconds $SevenZipTimeoutSeconds -AgeTimeoutSeconds $AgeTimeoutSeconds -Now $Now)
+    return (Invoke-DaubertBackup -Config $resolved.Config -DryRun:$DryRun -LockTimeoutSeconds $LockTimeoutSeconds -SevenZipTimeoutSeconds $SevenZipTimeoutSeconds -AgeTimeoutSeconds $AgeTimeoutSeconds -Now $Now -OnlyIfDue:$OnlyIfDue -Schedule $resolved.Schedule)
 }
 
-Export-ModuleMember -Function Resolve-BackupRunConfig, Invoke-DaubertBackup, Invoke-DaubertBackupRun, Remove-OrphanedStagingDirectory
+Export-ModuleMember -Function Resolve-BackupRunConfig, Get-BackupDueState, Get-BackupDueStateSafe, Invoke-DaubertBackup, Invoke-DaubertBackupRun, Remove-OrphanedStagingDirectory

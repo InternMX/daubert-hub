@@ -18,6 +18,10 @@
       - Las tareas llaman al entrypoint canónico con -Tier y -ConfigPath;
         NINGÚN secreto viaja en los argumentos (la contraseña vive solo en
         el pgpass referenciado por config.json).
+      - Daily y Monthly (SOLO ellas) usan trigger diario con repetición horaria y -OnlyIfDue: si el equipo
+        estuvo apagado o un intento falló (p. ej. lock ocupado), el siguiente disparo lo reintenta y, cuando ya
+        existe el backup válido del periodo, los disparos siguientes terminan en 0 sin hacer nada. Monthly ya
+        NO depende de un único disparo el día 1: el día del mes lo decide el script (schedules.Monthly.dayOfMonth).
       - Las tareas coexisten con el lock interno del script: IgnoreNew evita
         instancias solapadas de la MISMA tarea; el lock cubre tiers distintos.
       - Idempotencia: la descripción de cada tarea lleva una marca y un hash
@@ -43,6 +47,9 @@ $script:TaskNames = [ordered]@{
 }
 # Fecha ancla fija (determinista): la primera ejecución real la fija StartWhenAvailable/repetición.
 $script:AnchorDate = '2026-01-01'
+# Oportunidades de reintento de Daily/Monthly: el trigger se repite cada hora durante 24 h desde su hora
+# de inicio (como Frequent) y, con -OnlyIfDue, cada disparo solo hace backup si FALTA el del periodo.
+$script:RetryInterval = 'PT1H'
 
 function Get-BackupTaskName {
     [CmdletBinding()]
@@ -68,9 +75,14 @@ function Get-BackupTaskArguments {
     param(
         [Parameter(Mandatory = $true)][ValidateSet('Frequent', 'Daily', 'Monthly')][string]$Tier,
         [Parameter(Mandatory = $true)][string]$ScriptPath,
-        [Parameter(Mandatory = $true)][string]$ConfigPath
+        [Parameter(Mandatory = $true)][string]$ConfigPath,
+        [switch]$OnlyIfDue,
+        [Nullable[int]]$LockTimeoutSeconds = $null
     )
-    return ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Tier {1} -ConfigPath "{2}"' -f $ScriptPath, $Tier, $ConfigPath)
+    $arguments = ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -Tier {1} -ConfigPath "{2}"' -f $ScriptPath, $Tier, $ConfigPath)
+    if ($OnlyIfDue) { $arguments += ' -OnlyIfDue' }
+    if ($null -ne $LockTimeoutSeconds -and $LockTimeoutSeconds -gt 0) { $arguments += " -LockTimeoutSeconds $LockTimeoutSeconds" }
+    return $arguments
 }
 
 function Get-BackupTaskDefinitionHash {
@@ -84,12 +96,16 @@ function Get-BackupTaskDefinitionHash {
         [Parameter(Mandatory = $true)][string]$LogonType,
         [Parameter(Mandatory = $true)][string]$UserId
     )
-    $canonical = @(
-        'v1', $Tier, "start=$($Schedule.startTime)",
+    # Frequent conserva EXACTAMENTE su definición (y su hash) anterior; Daily/Monthly pasan a v2 (repetición
+    # horaria + -OnlyIfDue en los argumentos), de modo que re-registrar las ACTUALIZA.
+    $canonicalParts = @(
+        $(if ($Tier -eq 'Frequent') { 'v1' } else { 'v2' }), $Tier, "start=$($Schedule.startTime)",
         "interval=$(Get-OptionalProperty -Object $Schedule -Name 'intervalHours')",
         "dom=$(Get-OptionalProperty -Object $Schedule -Name 'dayOfMonth')",
         $PowerShellPath, $Arguments, $LogonType, $UserId
-    ) -join '|'
+    )
+    if ($Tier -ne 'Frequent') { $canonicalParts += "retry=$($script:RetryInterval)" }
+    $canonical = $canonicalParts -join '|'
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($canonical)) } finally { $sha.Dispose() }
     return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 16)
@@ -108,7 +124,8 @@ function New-BackupTaskXml {
         [Parameter(Mandatory = $true)][string]$ConfigPath,
         [string]$PowerShellPath = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'),
         [ValidateSet('S4U', 'Interactive')][string]$LogonType = 'S4U',
-        [string]$UserId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        [string]$UserId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+        [Nullable[int]]$LockTimeoutSeconds = $null
     )
 
     $sErrors = @(Test-ScheduleDefinition -Tier $Tier -Schedule $Schedule)
@@ -118,7 +135,10 @@ function New-BackupTaskXml {
     if (-not $startTime) { throw "Schedule de $Tier sin startTime." }
     $startBoundary = "$($script:AnchorDate)T$($startTime):00"
 
-    $arguments = Get-BackupTaskArguments -Tier $Tier -ScriptPath $ScriptPath -ConfigPath $ConfigPath
+    # Daily/Monthly: -OnlyIfDue + repetición horaria. Frequent no cambia (sin -OnlyIfDue; espera de lock solo si se configura > 0).
+    $retries = ($Tier -ne 'Frequent')
+    if ($null -eq $LockTimeoutSeconds) { $LockTimeoutSeconds = Get-DefaultLockTimeoutSeconds -Tier $Tier }
+    $arguments = Get-BackupTaskArguments -Tier $Tier -ScriptPath $ScriptPath -ConfigPath $ConfigPath -OnlyIfDue:$retries -LockTimeoutSeconds $LockTimeoutSeconds
     $defHash = Get-BackupTaskDefinitionHash -Tier $Tier -Schedule $Schedule -PowerShellPath $PowerShellPath -Arguments $arguments -LogonType $LogonType -UserId $UserId
     $description = "$($script:ManagedMarker) tier=$Tier def=$defHash. Gestionada por scripts/backup/commands/Register-DaubertBackupTasks.ps1; no editar a mano."
 
@@ -133,12 +153,14 @@ function New-BackupTaskXml {
             $scheduleBlock = "      <ScheduleByDay>`r`n        <DaysInterval>1</DaysInterval>`r`n      </ScheduleByDay>`r`n"
         }
         'Daily' {
+            $repetition = "      <Repetition>`r`n        <Interval>$($script:RetryInterval)</Interval>`r`n        <Duration>P1D</Duration>`r`n        <StopAtDurationEnd>false</StopAtDurationEnd>`r`n      </Repetition>`r`n"
             $scheduleBlock = "      <ScheduleByDay>`r`n        <DaysInterval>1</DaysInterval>`r`n      </ScheduleByDay>`r`n"
         }
         'Monthly' {
-            $dom = [int](Get-OptionalProperty -Object $Schedule -Name 'dayOfMonth')
-            $months = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December' | ForEach-Object { "          <$_ />" }) -join "`r`n"
-            $scheduleBlock = "      <ScheduleByMonth>`r`n        <DaysOfMonth>`r`n          <Day>$dom</Day>`r`n        </DaysOfMonth>`r`n        <Months>`r`n$months`r`n        </Months>`r`n      </ScheduleByMonth>`r`n"
+            # Ya NO es un disparo único el día dayOfMonth: dispara TODOS los días, cada hora, y -OnlyIfDue decide.
+            # "Toca" desde dayOfMonth a startTime hasta que exista un Monthly válido de ese mes (puede ser días después).
+            $repetition = "      <Repetition>`r`n        <Interval>$($script:RetryInterval)</Interval>`r`n        <Duration>P1D</Duration>`r`n        <StopAtDurationEnd>false</StopAtDurationEnd>`r`n      </Repetition>`r`n"
+            $scheduleBlock = "      <ScheduleByDay>`r`n        <DaysInterval>1</DaysInterval>`r`n      </ScheduleByDay>`r`n"
         }
     }
 
@@ -248,7 +270,8 @@ function Get-BackupTaskPlan {
     $plan = New-Object System.Collections.Generic.List[object]
     foreach ($t in $Tier) {
         $schedule = Get-LocalConfigSchedule -Config $LocalConfig -Tier $t
-        $xml = New-BackupTaskXml -Tier $t -Schedule $schedule -ScriptPath $ScriptPath -ConfigPath $ConfigPath -PowerShellPath $PowerShellPath -LogonType $LogonType -UserId $UserId
+        $lockTimeout = Get-LocalConfigLockTimeout -Config $LocalConfig -Tier $t
+        $xml = New-BackupTaskXml -Tier $t -Schedule $schedule -ScriptPath $ScriptPath -ConfigPath $ConfigPath -PowerShellPath $PowerShellPath -LogonType $LogonType -UserId $UserId -LockTimeoutSeconds $lockTimeout
         $hash = [regex]::Match($xml, 'def=([0-9a-f]{16})').Groups[1].Value
         $name = Get-BackupTaskName -Tier $t
         $existing = Get-BackupScheduledTaskDefinition -TaskName $name
@@ -285,6 +308,7 @@ function Get-BackupTaskPlanDetail {
     elseif ($trigger.SelectSingleNode("*[local-name()='Repetition']")) {
         $hours = [regex]::Match([string]$trigger.Repetition.Interval, 'PT(\d+)H').Groups[1].Value
         $schedule = "cada $hours h, todos los días, empezando a las $time"
+        if ([string]$task.Actions.Exec.Arguments -match ' -OnlyIfDue(\s|$)') { $schedule += ' (solo hace backup si falta el del periodo: -OnlyIfDue)' }
     }
     else { $schedule = "todos los días a las $time" }
 
