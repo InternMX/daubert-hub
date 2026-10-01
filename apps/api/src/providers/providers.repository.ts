@@ -351,7 +351,7 @@ export class ProvidersRepository {
       if (active.rows.length > 0) throw Object.assign(new Error('PAYMENT_NOTIFICATIONS_DROPBOX_PATH_IN_USE'), { code: 'PAYMENT_NOTIFICATIONS_DROPBOX_PATH_IN_USE' });
     }
     await client.query('UPDATE core.empresas SET ruta_dropbox = $1 WHERE empresa_id = $2', [next, id]);
-    await syncPaymentNotificationDestination(client, id, next);
+    await syncPaymentNotificationDestination(client, id, current, next);
   }
 
   private async lockProvider(client: PoolClient, id: string): Promise<LockedProviderRow | null> {

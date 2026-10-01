@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import type { AuditIdentity } from '../common/authenticated-request';
 import { DatabaseService } from '../database/database.service';
-import { buildPaymentDestinationPath } from './dropbox-path';
+import { buildPaymentDestinationPath, resolveDestinationAfterDropboxChange, type DestinationChangeKind } from './dropbox-path';
 
 export interface PaymentNotificationSettingsRow extends QueryResultRow {
   company_id: string;
@@ -60,14 +60,26 @@ export async function insertPaymentNotificationSettings(client: PoolClient, comp
     VALUES ($1, FALSE, FALSE, $2)`, [companyId, buildPaymentDestinationPath(dropboxPath)]);
 }
 
-// Keeps ruta_destino in sync when ruta_dropbox changes, in the caller's transaction. A company
-// without a settings row gets one (false/false) — never activated as a side effect. An existing row
-// keeps its flags untouched.
-export async function syncPaymentNotificationDestination(client: PoolClient, companyId: string | number, dropboxPath: string | null): Promise<void> {
-  await client.query(`
+// Keeps ruta_destino coherent when ruta_dropbox changes, in the caller's transaction (the company row is
+// already locked). Only the flags-free column ruta_destino is ever written, and only when it must move:
+//   - no settings row yet: create it (false/false) with the standard destination — never activated as a side effect;
+//   - standard destination: regenerated for the new path;
+//   - historical destination (same prefix as the previous path, custom sub-path): prefix swapped, sub-path kept verbatim;
+//   - unrelated / unchanged destination: left untouched.
+// Returns what was decided so callers and tests can tell the cases apart.
+export async function syncPaymentNotificationDestination(client: PoolClient, companyId: string | number, previousDropboxPath: string | null, nextDropboxPath: string | null): Promise<DestinationChangeKind> {
+  const existing = await client.query<{ ruta_destino: string | null }>('SELECT ruta_destino FROM core.empresas_notificacion_pago WHERE empresa_id = $1 FOR UPDATE', [companyId]);
+  const storedDestination = existing.rows[0]?.ruta_destino ?? null;
+  const decision = resolveDestinationAfterDropboxChange({ previousDropboxPath, nextDropboxPath, currentDestination: storedDestination });
+  if (existing.rows.length === 0) {
+    await client.query(`
     INSERT INTO core.empresas_notificacion_pago (empresa_id, procesa_comprobantes_pago, notificaciones_activas, ruta_destino)
     VALUES ($1, FALSE, FALSE, $2)
-    ON CONFLICT (empresa_id) DO UPDATE SET ruta_destino = EXCLUDED.ruta_destino, updated_at = now()`, [companyId, buildPaymentDestinationPath(dropboxPath)]);
+    ON CONFLICT (empresa_id) DO NOTHING`, [companyId, decision.destination ?? buildPaymentDestinationPath(nextDropboxPath)]);
+  } else if (decision.destination !== null && decision.destination !== storedDestination) {
+    await client.query('UPDATE core.empresas_notificacion_pago SET ruta_destino = $2, updated_at = now() WHERE empresa_id = $1', [companyId, decision.destination]);
+  }
+  return decision.kind;
 }
 
 @Injectable()

@@ -312,6 +312,28 @@ async function run() {
     const recreated = await settingsRow(historicalId);
     assert(recreated && recreated.active === false && recreated.processes === false && recreated.destination.startsWith('PROVEEDORES\\Synthetic Moved\\'), 'A path change on a historical company must create a safe false/false row with the new destination.');
 
+    // 13b. P1: a historical ruta_destino template survives a ruta_dropbox change (prefix swapped, sub-path
+    // verbatim); a standard destination is regenerated; an unrelated one is left alone. Synthetic companies only
+    // (cleaned up with the rest of companyIds), flags never change.
+    const STANDARD_SUFFIX = 'PAGOS\\NOTIFICACIONES DE PAGO\\{ANIO}\\{MES_NUM}.- {MES_NOMBRE_TITULO}';
+    const protectCase = async (label, storedDestination, newPath) => {
+      const created = await request('POST', '/providers', { commercialName: `${marker}_P1_${label}`, providerType: 'PROVEEDOR', rutaDropbox: `PROVEEDORES/Synthetic P1 ${label}` });
+      assert(created.status === 201, `P1 fixture ${label} was not created: ${JSON.stringify(created.body)}`);
+      const id = created.body.data.id;
+      companyIds.add(id);
+      if (storedDestination !== null) await pool.query('UPDATE core.empresas_notificacion_pago SET ruta_destino = $2 WHERE empresa_id = $1', [id, storedDestination]);
+      const before = await settingsRow(id);
+      const moved = await request('PATCH', `/providers/${id}`, { rutaDropbox: newPath });
+      assert(moved.status === 200, `P1 ${label}: changing the path failed: ${JSON.stringify(moved.body)}`);
+      const after = await settingsRow(id);
+      assert(after.active === before.active && after.processes === before.processes && after.active === false && after.processes === false, `P1 ${label}: the flags changed.`);
+      return after;
+    };
+    const historicalDestination = 'PROVEEDORES\\Synthetic P1 HIST\\PAGO PROVEEDOR\\{ANIO}\\{MES_NOMBRE_TITULO}';
+    assert((await protectCase('HIST', historicalDestination, 'PROVEEDORES/Synthetic P1 HIST Moved')).destination === 'PROVEEDORES\\Synthetic P1 HIST Moved\\PAGO PROVEEDOR\\{ANIO}\\{MES_NOMBRE_TITULO}', 'P1: the historical sub-path was not preserved.');
+    assert((await protectCase('STD', null, 'PROVEEDORES/Synthetic P1 STD Moved')).destination === `PROVEEDORES\\Synthetic P1 STD Moved\\${STANDARD_SUFFIX}`, 'P1: a standard destination was not regenerated for the new path.');
+    assert((await protectCase('UNREL', 'OTRA CARPETA SYNTHETIC\\PAGOS\\{ANIO}', 'PROVEEDORES/Synthetic P1 UNREL Moved')).destination === 'OTRA CARPETA SYNTHETIC\\PAGOS\\{ANIO}', 'P1: an unrelated destination was overwritten.');
+
     // 14. Error contract and BIGINT ids.
     let missingId = '9007199254740993';
     while ((await pool.query('SELECT 1 FROM core.empresas WHERE empresa_id = $1', [missingId])).rows.length) missingId = (BigInt(missingId) + 1n).toString();

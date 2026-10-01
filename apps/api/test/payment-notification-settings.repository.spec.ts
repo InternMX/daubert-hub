@@ -173,13 +173,14 @@ describe('transaction helpers', () => {
     expect(query.mock.calls[0]![1]).toEqual(['121', DEFAULT_DESTINATION]);
   });
 
-  it('syncPaymentNotificationDestination only rewrites ruta_destino on conflict, never the flags', async () => {
+  it('syncPaymentNotificationDestination creates a MISSING row as false/false with the standard destination (never activated as a side effect)', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] });
-    await syncPaymentNotificationDestination({ query } as never, '121', 'PROVEEDORES/COMPO');
-    const [sql, params] = query.mock.calls[0]!;
-    expect(sql).toContain('ON CONFLICT (empresa_id) DO UPDATE SET ruta_destino = EXCLUDED.ruta_destino');
-    expect(sql.split('DO UPDATE')[1]).not.toMatch(/notificaciones_activas|procesa_comprobantes_pago/);
+    const kind = await syncPaymentNotificationDestination({ query } as never, '121', null, 'PROVEEDORES/COMPO');
+    expect(kind).toBe('NEW');
+    expect(query.mock.calls[0]![0]).toContain('FOR UPDATE');
+    const [sql, params] = query.mock.calls[1]!;
     expect(sql).toContain('VALUES ($1, FALSE, FALSE, $2)');
+    expect(sql).toContain('ON CONFLICT (empresa_id) DO NOTHING');
     expect(params).toEqual(['121', 'PROVEEDORES\\COMPO\\PAGOS\\NOTIFICACIONES DE PAGO\\{ANIO}\\{MES_NUM}.- {MES_NOMBRE_TITULO}']);
   });
 });

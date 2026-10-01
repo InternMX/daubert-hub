@@ -65,11 +65,12 @@ describe('ProvidersRepository.create — payment notification config', () => {
 describe('ProvidersRepository.update — ruta_dropbox / ruta_destino', () => {
   const lockedCompany = (dropbox: string | null) => ({ rows: [{ empresa_id: '121', tipo_empresa: 'FLETE', nombre_comercial: 'TRANSPORTES KARINA', observaciones: null, estatus: 'ACTIVO', ruta_dropbox: dropbox }] });
 
-  function updateClient(current: string | null, options: { active?: boolean } = {}) {
+  function updateClient(current: string | null, options: { active?: boolean; destination?: string } = {}) {
     return fakeClient((sql) => {
       if (sql.includes('FROM core.empresas WHERE empresa_id = $1 FOR UPDATE')) return lockedCompany(current);
       if (sql.includes('FROM core.empresa_roles WHERE empresa_id = $1 AND estatus')) return { rows: [{ rol: 'FLETE' }] };
       if (sql.includes('notificaciones_activas = TRUE')) return { rows: options.active ? [{}] : [] };
+      if (sql.includes('SELECT ruta_destino FROM core.empresas_notificacion_pago')) return { rows: options.destination ? [{ ruta_destino: options.destination }] : [] };
       return undefined;
     });
   }
@@ -79,7 +80,7 @@ describe('ProvidersRepository.update — ruta_dropbox / ruta_destino', () => {
     vi.spyOn(repository, 'findById').mockResolvedValue(null);
     await repository.update('121', { rutaDropbox: 'FLETES/TRANSPORTES KARINA' }, 'req-1', identity);
     const dropboxUpdate = calls.findIndex((call) => call.sql.includes('UPDATE core.empresas SET ruta_dropbox'));
-    const sync = calls.findIndex((call) => call.sql.includes('ON CONFLICT (empresa_id) DO UPDATE SET ruta_destino'));
+    const sync = calls.findIndex((call) => call.sql.includes('ON CONFLICT (empresa_id) DO NOTHING'));
     expect(calls[dropboxUpdate]!.params).toEqual(['FLETES/TRANSPORTES KARINA', '121']);
     expect(calls[sync]!.params).toEqual(['121', DESTINATION]);
     expect(dropboxUpdate).toBeGreaterThan(-1);
@@ -102,12 +103,12 @@ describe('ProvidersRepository.update — ruta_dropbox / ruta_destino', () => {
     expect(calls.some((call) => call.sql.includes('ruta_dropbox ='))).toBe(false);
   });
 
-  it('clearing the path resets ruta_destino to the schema default', async () => {
-    const { repository, calls } = updateClient('FLETES/TRANSPORTES KARINA');
+  it('clearing the path resets a STANDARD ruta_destino to the schema default', async () => {
+    const { repository, calls } = updateClient('FLETES/TRANSPORTES KARINA', { destination: DESTINATION });
     vi.spyOn(repository, 'findById').mockResolvedValue(null);
     await repository.update('121', { rutaDropbox: null }, 'req-1', identity);
     expect(calls.find((call) => call.sql.includes('UPDATE core.empresas SET ruta_dropbox'))!.params).toEqual([null, '121']);
-    expect(calls.find((call) => call.sql.includes('ON CONFLICT (empresa_id) DO UPDATE SET ruta_destino'))!.params).toEqual(['121', DEFAULT_DESTINATION]);
+    expect(calls.find((call) => call.sql.includes('UPDATE core.empresas_notificacion_pago SET ruta_destino'))!.params).toEqual(['121', DEFAULT_DESTINATION]);
   });
 
   it('refuses to clear the path while notifications are active, and rolls back', async () => {
