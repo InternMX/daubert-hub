@@ -66,6 +66,58 @@ export function buildPaymentDestinationPath(dropboxPath: string | null | undefin
   return [...canonical.split('/'), PAYMENT_DESTINATION_SUFFIX].join(SEPARATOR);
 }
 
+// ---- Destination protection when ruta_dropbox changes -----------------------------------------
+// Historical companies carry their own ruta_destino template (same folder prefix as ruta_dropbox, but a
+// different sub-path than the standard one). n8n consumes ruta_destino as stored, so a change of
+// ruta_dropbox must move ONLY the prefix and keep the stored sub-path byte for byte.
+//   NEW        no stored destination yet            -> standard destination for the new path
+//   UNCHANGED  the path did not really change       -> leave the stored value alone
+//   STANDARD   stored == standard(previous path)    -> regenerate the standard for the new path
+//   HISTORICAL stored = <previous path>\<sub-path>  -> <new path>\<same sub-path> (clearing the path leaves it alone)
+//   UNRELATED  stored does not start with the previous path -> leave it alone (never guessed, never overwritten)
+export type DestinationChangeKind = 'NEW' | 'UNCHANGED' | 'STANDARD' | 'HISTORICAL' | 'UNRELATED';
+
+export interface DestinationChangeDecision {
+  kind: DestinationChangeKind;
+  // null = keep the stored ruta_destino exactly as it is.
+  destination: string | null;
+}
+
+// "\"-form of a STORED ruta_dropbox. Legacy rows are not revalidated here, so this never throws.
+function storedPathWithSeparator(path: string | null | undefined): string | null {
+  if (path === null || path === undefined) return null;
+  const trimmed = path.trim().replace(/[\\/]+$/, '');
+  if (trimmed === '') return null;
+  return trimmed.split(/[\\/]/).join(SEPARATOR);
+}
+
+export function resolveDestinationAfterDropboxChange(input: {
+  previousDropboxPath: string | null | undefined;
+  nextDropboxPath: string | null | undefined;
+  currentDestination: string | null | undefined;
+}): DestinationChangeDecision {
+  const previous = storedPathWithSeparator(input.previousDropboxPath);
+  // The new path must be valid (same DropboxPathError as before); it arrives canonical from the service.
+  const nextCanonical = normalizeDropboxPath(input.nextDropboxPath);
+  const next = nextCanonical === null ? null : nextCanonical.split('/').join(SEPARATOR);
+  const standardForNext = next === null ? DEFAULT_PAYMENT_DESTINATION_PATH : next + SEPARATOR + PAYMENT_DESTINATION_SUFFIX;
+  const current = input.currentDestination;
+
+  if (current === null || current === undefined || current.trim() === '') return { kind: 'NEW', destination: standardForNext };
+  if (previous === next) return { kind: 'UNCHANGED', destination: null };
+
+  const standardForPrevious = previous === null ? PAYMENT_DESTINATION_SUFFIX : previous + SEPARATOR + PAYMENT_DESTINATION_SUFFIX;
+  if (current === standardForPrevious) return { kind: 'STANDARD', destination: standardForNext };
+
+  // Belongs to the previous path only on a whole-segment boundary ("A\B" is not a prefix of "A\BC\x"),
+  // compared case-insensitively like Windows paths, with something left after the separator.
+  if (previous !== null && current.length > previous.length + 1 && current.slice(0, previous.length).toLowerCase() === previous.toLowerCase() && current.charAt(previous.length) === SEPARATOR) {
+    if (next === null) return { kind: 'HISTORICAL', destination: null };
+    return { kind: 'HISTORICAL', destination: next + SEPARATOR + current.slice(previous.length + 1) };
+  }
+  return { kind: 'UNRELATED', destination: null };
+}
+
 // ---- Suggestion (phase 1.2) -------------------------------------------------------------------
 // Pure, backend-owned proposal for ruta_dropbox from company type + commercial name. It never
 // persists anything and is never used for ruta_destino unless the user confirms it as the actual
