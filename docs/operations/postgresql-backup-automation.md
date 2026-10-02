@@ -1,8 +1,8 @@
 # Backup automatizado y cifrado (asimétrico) de PostgreSQL
 
-**Estado: IMPLEMENTED y en operación real contra `daubert_global`.** Motor de backup, instalador, preflight, Task Scheduler reproducible y pruebas (carpeta `scripts/backup/tests`: 884 Pester, todas pasan) están completos. **Validación real:** desde el 2026-09-29 los tres tiers (Frequent, Daily, Monthly) han generado backups reales de `daubert_global` cifrados con age, con el SHA-256 de cada artefacto publicado verificado contra su `.sha256`; las tres tareas están registradas en Task Scheduler (Daily y Monthly se actualizaron el 2026-10-01 al esquema de reintento horario con `-OnlyIfDue`). Detalle en [Validación real](#validación-real). **Siguen pendientes** un restore drill de un backup generado por esta automatización con la clave privada age en una estación separada y la restauración de los `globals` en un clúster independiente (ver [Estado y pendientes](#estado-y-pendientes)).
+**Estado: IMPLEMENTED y en operación real contra `daubert_global`.** Motor de backup, instalador, preflight, Task Scheduler reproducible y pruebas (carpeta `scripts/backup/tests`: 884 Pester, todas pasan) están completos. **Validación real:** desde el 2026-09-29 los tres tiers (Frequent, Daily, Monthly) han generado backups reales de `daubert_global` cifrados con age, con el SHA-256 de cada artefacto publicado verificado contra su `.sha256`; las tres tareas están registradas en Task Scheduler (Daily y Monthly se actualizaron el 2026-10-01 al esquema de reintento horario con `-OnlyIfDue`). Detalle en [Validación real](#validación-real). **Restore drill real completado el 2026-10-01** con un backup Daily de esta automatización ([Restore drill 2026-10-01](#restore-drill-2026-10-01-backup-daily-generado-por-esta-automatización--pass)). **Siguen pendientes** repetirlo con la clave privada age en una estación separada y la restauración de los `globals` en un clúster independiente (ver [Estado y pendientes](#estado-y-pendientes)).
 
-Complementa a [database-backup-restore](database-backup-restore.md) (restauración de PostgreSQL). El **restore drill de n8n/PostgreSQL del 2026-09-28** SÍ se ejecutó realmente: [Restore drill 2026-09-28](#restore-drill-2026-09-28-postgresql--n8n-manual-pass).
+Complementa a [database-backup-restore](database-backup-restore.md) (restauración de PostgreSQL). El **restore drill de n8n/PostgreSQL del 2026-09-28** SÍ se ejecutó realmente: [Restore drill 2026-09-28](#restore-drill-2026-09-28-postgresql--n8n-manual-pass). El **restore drill del 2026-10-01** restauró un backup Daily generado por esta automatización: [Restore drill 2026-10-01](#restore-drill-2026-10-01-backup-daily-generado-por-esta-automatización--pass).
 
 ## Arquitectura final: código ≠ configuración ≠ secretos ≠ datos
 
@@ -489,9 +489,38 @@ Ejecutada en el host productor contra `daubert_global` (rol `daubert_backup`, `p
 | age instalado, rol `daubert_backup`, `pgpass` real, par de claves age real | **VALIDADO** en las ejecuciones reales |
 | Primera ejecución real de los tres tiers | **VALIDADO** (SHA-256 de los artefactos publicados verificado) |
 | Registro real de tareas en Task Scheduler | **VALIDADO** (Daily y Monthly actualizadas el 2026-10-01) |
-| Restore drill de un backup generado por esta automatización, con la clave privada en una estación separada | **PENDIENTE** |
+| Restore drill de un backup generado por esta automatización (Daily 2026-10-01, base temporal `daubert_restore_20261001`) | **VALIDADO** (PASS, 2026-10-01; ver [Restore drill 2026-10-01](#restore-drill-2026-10-01-backup-daily-generado-por-esta-automatización--pass)) |
+| Ese restore drill con la clave privada age en una estación separada | **PENDIENTE** (el drill del 2026-10-01 se ejecutó en la estación del operador, dentro del mismo clúster PostgreSQL) |
 | Restauración de los `globals` (roles) en un clúster PostgreSQL independiente | **PENDIENTE** |
 | Recuperación tras una suspensión/reanudación real con el esquema `-OnlyIfDue` | **PENDIENTE** de observación (el 2026-10-01 se validó el re-registro y la no duplicación, no un catch-up real con el esquema nuevo) |
+
+## Restore drill 2026-10-01 (backup Daily generado por esta automatización) — PASS
+
+Primer restore drill de un artefacto generado por esta automatización (el del 2026-09-28, más abajo, fue manual y previo a ella). Backup restaurado: `daubert_global_DAILY_20261001_164644.age`, SHA-256 del `.age` `9eb2109afb724a0204056bdc14f09136b3b5a50c4b5432c80ee0777151661670` (coincidió con su `.sha256`).
+
+Se ejecutó paso a paso con un script de drill local fuera del repositorio (`C:\RestoreDrill\drill.ps1`), con modo de simulación (`-ShowOnly`) revisado antes de cada paso real. Pasos, todos terminados correctamente: Prepare, Identity, Decrypt, Extract, Validate, CreateDb, Restore, Verify, DropDb, Cleanup.
+
+- La restauración se hizo **exclusivamente** en la base temporal `daubert_restore_20261001`, dentro del mismo clúster; nunca sobre `daubert_global` ni `daubert_hub_test`.
+- Prepare copió el `.age` y su `.sha256` a una carpeta de trabajo fuera de Dropbox y del repositorio y verificó el SHA-256 de la copia. Identity descifró la identidad age privada (custodiada cifrada en `RECOVERY\KEYS`) y comprobó que correspondía a un recipient de `age-recipients.txt`. Decrypt y Extract produjeron el dump completo y el dump de esquema; Validate los listó con `pg_restore --list`.
+
+Resultados de Verify (`verify.sql`, que termina en `ROLLBACK;`, por lo que la verificación fue de solo lectura):
+
+- Base restaurada: `daubert_restore_20261001`.
+- Esquemas restaurados: `audit`, `core`, `operacion`, `ops`, `security`, `staging`.
+- 13 funciones.
+- `ops.fn_crear_ejecucion_automatizacion(...)`: MD5 `929939dcc7cd3ef0e09b7b2a868b9616`; el MD5 restaurado coincidió con el esperado.
+- Permisos de `daubert_hub_app` verificados sobre `core.direcciones`, `core.alias_empresa` y `core.empresas_notificacion_pago`.
+- 0 ejecuciones en estado `PROCESANDO`.
+- Series documentales y folios verificados.
+
+Cierre:
+
+- `daubert_restore_20261001` fue eliminada (DropDb) y ya no existe.
+- La carpeta de trabajo `C:\RestoreDrill\20261001` fue eliminada (Cleanup), incluida la identidad privada descifrada.
+- El `.age` y el `.sha256` originales en Dropbox permanecieron intactos (tamaño y SHA-256 comprobados al final: 67 966 y 106 bytes).
+- `daubert_global`, `daubert_hub_test` y `daubert_global_restore_test` permanecieron existentes.
+
+Alcance: es una restauración **temporal en una base aislada**, no sobre producción, y no incluyó una prueba funcional del Hub contra la base restaurada. Se ejecutó en la estación del operador y en el mismo clúster, por lo que **no** cubre la clave privada en una estación separada ni la restauración de los `globals`; ambos siguen en [Estado y pendientes](#estado-y-pendientes).
 
 ## Restore drill 2026-09-28 (PostgreSQL + n8n, manual) — PASS
 
