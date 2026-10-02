@@ -2,9 +2,9 @@
 
 Complementa a [deployment](deployment.md) (orden, trampas) y a [`deploy/README.md`](../../deploy/README.md) (comandos genéricos). Este documento fija el **procedimiento de PROD tal como corre hoy** (proyecto `daubert-hub`, `compose.pilot.yaml` + `compose.prod-temp.yaml`, puerto `8082`; ver [nota 2026-10-01](../deployments/2026-10-01-hub-v1-prod.md)). **Sin secretos.**
 
-> **Estado: preparado, no ejecutado.** Solo el preflight (solo lectura) se ha ejecutado contra PROD. Ni el deploy, ni el ancla de rollback, ni el rollback se han ejecutado: **sus comandos solo se revisaron estáticamente** (sintaxis y semántica de Docker leída de `--help` y de `docker inspect`), no se probaron.
+> **Estado: preparado, no ejecutado.** Solo el preflight y `Deploy-DaubertHub.ps1 -Preflight` / `-WhatIf` (modos de solo lectura) se han ejecutado contra PROD. **`-Deploy` no se ha ejecutado nunca**, ni el ancla de rollback, ni el rollback: el script de deploy se probó únicamente con pruebas automatizadas que simulan Docker (no ejecutan ningún deploy), y los comandos de rollback solo se revisaron estáticamente.
 >
-> **No existe ningún script de deploy ni de rollback**: solo existe el preflight. Los comandos de abajo son para copiar y ejecutar a mano. "Automatizable" significa que *podría* scriptarse, no que ya exista el script.
+> **Existe `scripts/deploy/Deploy-DaubertHub.ps1`** (modos `-Preflight`, `-WhatIf`, `-Deploy`; ver [abajo](#script-de-deployment-deploy-dauberthubps1)). **No existe un modo `-Rollback`**: el rollback sigue siendo manual (comandos de la sección ROLLBACK). Todavía **no hay una versión nueva del Hub para desplegar**: este mecanismo está listo pero sin usar.
 
 ## Referencia (2026-10-02)
 
@@ -63,6 +63,42 @@ Comprueba, entre otros:
 - **Rollback (`FAIL` si el release requiere reconstruir, `WARN` si no hay nada que desplegar):** que la imagen en ejecución de `api` y `web` coincida, por **digest de manifiesto**, con la etiqueta `:latest` (así se puede preservar por nombre).
 - **No bloqueantes (`WARN`):** release sin tag, backup `FREQUENT` atrasado (si algún tier tiene backup válido reciente), variables de `compose.prod-temp.yaml` vacías, n8n sin escuchar, tareas de backup con resultado anómalo, migraciones o cambios de n8n en el delta.
 
+## Script de deployment: `Deploy-DaubertHub.ps1`
+
+`scripts/deploy/Deploy-DaubertHub.ps1` envuelve el preflight y este checklist en tres **modos mutuamente excluyentes**. Sin ningún modo (o con más de uno) no hace nada: muestra el uso (o rechaza con exit `3`).
+
+```powershell
+.\scripts\deploy\Deploy-DaubertHub.ps1 -Preflight   # solo lectura
+.\scripts\deploy\Deploy-DaubertHub.ps1 -WhatIf      # solo lectura: valida y muestra el plan
+.\scripts\deploy\Deploy-DaubertHub.ps1 -Deploy      # el ÚNICO modo que modifica PROD
+```
+
+| Modo | Qué hace | ¿Modifica algo? |
+| --- | --- | --- |
+| `-Preflight` | Ejecuta `Test-DaubertDeployPreflight.ps1` y **propaga su exit code**: `0` apto, `1` bloqueado, `2` sin cambios de Hub/Docker | No |
+| `-WhatIf` | Ejecuta el preflight y **las mismas validaciones que `-Deploy`**; si todo pasa imprime el plan: commit actual de PROD, commit a desplegar (== `HEAD`), `APP_VERSION`, cambios de Hub/Docker que se desplegarían, servicios afectados (`api`, `web`), las anclas de rollback que se crearían, el comando Compose exacto, los checks post-deploy y el procedimiento de rollback. Con preflight `1` → "bloqueado"; con `2` o sin cambios de Hub/Docker → "SIN CAMBIOS DE HUB/DOCKER — NO HAY NADA QUE DESPLEGAR" y no imprime plan | **No**: nunca llega a la función mutante (bloqueada fuera de `-Deploy`) |
+| `-Deploy` | 1) preflight (aborta con `1`; con `2` informa que no hay nada que desplegar); 2) vuelve a comprobar `HEAD == candidato`, árbol limpio, commit anterior (SHA hexadecimal válido), `/api/health` de PROD sano, `APP_VERSION`, imágenes de Compose, que la imagen en ejecución de `api` y `web` sea la etiquetada (digest de manifiesto) y que las etiquetas `rollback-<commit anterior>` **no existan**; 3) imprime el plan y pide escribir **exactamente** `DEPLOY DAUBERT HUB` (cualquier otra entrada, incluidas variantes en minúscula o con espacios, cancela sin tocar nada); 4) crea las anclas por nombre y comprueba que cada una existe y apunta al digest esperado; 5) fija `APP_VERSION` (del `package.json` raíz) y `GIT_COMMIT` (`git rev-parse --short HEAD`) y ejecuta `docker compose … up -d --build api web`; 6) espera a `api` *healthy* y a `web`, verifica `/api/health` (`status=ok`, `database=connected`, `environment=PRODUCTION`, `commit` = candidato, `version` = `APP_VERSION`), `docker compose ps` (solo lectura) y que ambos servicios estén en ejecución | **Sí**, y solo `api` y `web` |
+
+Códigos de salida: `0` correcto · `1` bloqueado o abortado (PROD no cambió) · `2` nada que desplegar · `3` error de uso · `5` **DEPLOYMENT FALLIDO**.
+
+**Si el post-deploy falla**, `-Deploy` **no hace rollback automático**: se detiene, conserva el estado y muestra `DEPLOYMENT FALLIDO` y `ROLLBACK DISPONIBLE` con el procedimiento (sección ROLLBACK).
+
+**Garantías de seguridad (verificadas por pruebas):**
+
+- Todo proceso externo pasa por dos únicos puntos: una lectura con lista de comandos permitidos (`git` y `docker` solo de lectura, y el preflight) y una mutación con una lista **exacta**: `docker tag daubert-hub-<svc>:latest daubert-hub-<svc>:rollback-<sha>` y `docker compose --project-name daubert-hub --env-file deploy/pilot.prod.env -f compose.pilot.yaml -f compose.prod-temp.yaml up -d --build api web`. Cualquier otro comando (incluidos `down`, `rm`, `rmi`, `prune`, `restart`, `commit`, `save`, `--remove-orphans` o servicios distintos de `api`/`web`) es **rechazado antes de ejecutarse**.
+- Una etiqueta de rollback existente **aborta**; nunca se sobrescribe. No usa `docker commit` ni `docker save`.
+- No ejecuta SQL ni migraciones, no toca n8n ni PostgreSQL y no ejecuta `git fetch/pull/checkout/reset`. Un release con migraciones o cambios de n8n se **bloquea** (se despliega siguiendo el checklist manual).
+- No imprime secretos: toda la salida pasa por un filtro que oculta contraseñas, tokens y secretos, y del archivo de entorno solo se lee `HUB_PORT`.
+
+**Pruebas:** `scripts/deploy/tests/Deploy-DaubertHub.Tests.ps1` (Pester 3.4; carpeta separada de las 884 pruebas de backup). Simulan Docker y Git con mocks y **nunca ejecutan un deploy**:
+
+```powershell
+Import-Module Pester -RequiredVersion 3.4.0
+Invoke-Pester scripts\deploy\tests
+```
+
+Los comandos manuales de abajo quedan como **referencia equivalente** (y para el rollback, que aún no tiene modo propio).
+
 ## Estado real de la imagen Web y alternativas de preservación
 
 **Hallazgo (2026-10-02, solo lectura).** Docker usa el almacén de imágenes *containerd*. En él, `docker inspect <contenedor> --format '{{.Image}}'` **no es un ID direccionable para todos los contenedores**: para `daubert-hub-web-1` devuelve `sha256:49e460d8…`, que `docker image inspect` rechaza (`No such image`), por lo que un `docker tag` hecho con ese valor **falla**. En cambio, el *digest de manifiesto* con el que se creó el contenedor (`docker inspect … .ImageManifestDescriptor.digest`) **sí coincide** con el de `daubert-hub-web:latest` (`docker image inspect … --platform linux/amd64 --format '{{.Id}}'` → `sha256:cb967dfe…`), y el contenedor se creó 0,5 s después de esa imagen. Es decir: el `web` en ejecución **es** la imagen etiquetada; lo que no sirve es el ID de `.Image`. Con `api` ocurre lo mismo con otros valores y ambos IDs coinciden. Además, el bundle servido en `:8082` contiene la interfaz de V1 ("Activa pero incompleta"), ausente en el commit anterior.
@@ -81,7 +117,7 @@ Por eso el ancla **se crea por nombre, tras comprobar que el digest de manifiest
 
 ## Checklist
 
-Leyenda: **A** = automatizable (lo cubre el preflight, o se podría scriptar; **solo el preflight existe**), **M** = manual / requiere decisión o intervención del operador.
+Leyenda: **A** = automatizado por el preflight o por `Deploy-DaubertHub.ps1`; **M** = manual / requiere decisión o intervención del operador (incluye todo el rollback: aún no tiene modo propio).
 
 ### PRE-DEPLOY
 
@@ -94,7 +130,7 @@ Leyenda: **A** = automatizable (lo cubre el preflight, o se podría scriptar; **
 | 5 | Si hay cambio de n8n: preparar/activar workflow y credencial **antes** del Hub | M |
 | 6 | Backup válido reciente (SHA-256 verificado) y tareas de backup sanas. **Si el release incluye migraciones: tomar un backup justo antes de aplicarla** (no basta con el "reciente") y verificar su SHA-256 | A (preflight, solo la comprobación) + M (lanzar el backup previo a la migración) |
 | 7 | Preflight sin `FAIL` y con exit `0` | A |
-| 8 | **Ancla de rollback** por nombre, con validación de `$prev` y sin sobrescribir (comandos abajo). Sin ancla fiable no se despliega | M (copiar/pegar; scriptable, el script no existe) |
+| 8 | **Ancla de rollback** por nombre, con validación de `$prev` y sin sobrescribir. Sin ancla fiable no se despliega | A (`Deploy-DaubertHub.ps1 -Deploy` la crea y la verifica; comandos manuales abajo como referencia) |
 | 9 | Opcional: `docker save` de las anclas a un archivo local fuera del repositorio (alternativa 1b) | M |
 | 10 | Avisar a usuarios de la ventana (los contenedores `api` y `web` se recrean) | M |
 
@@ -102,9 +138,9 @@ Leyenda: **A** = automatizable (lo cubre el preflight, o se podría scriptar; **
 
 | # | Paso | A/M |
 | --- | --- | --- |
-| 1 | Fijar `APP_VERSION` y `GIT_COMMIT` en el shell | M (copiar/pegar) |
-| 2 | `docker compose @cf up -d --build api web` | M (copiar/pegar) |
-| 3 | Esperar a que `api` quede *healthy* | M |
+| 1 | Fijar `APP_VERSION` y `GIT_COMMIT` | A (`-Deploy`) |
+| 2 | `docker compose @cf up -d --build api web` | A (`-Deploy`, tras la confirmación `DEPLOY DAUBERT HUB`) |
+| 3 | Esperar a que `api` quede *healthy* y `web` responda | A (`-Deploy`) |
 
 ### POST-DEPLOY
 
@@ -123,7 +159,7 @@ Leyenda: **A** = automatizable (lo cubre el preflight, o se podría scriptar; **
 | # | Paso | A/M |
 | --- | --- | --- |
 | 1 | Decidir el rollback (health `!= ok`, humo fallido). **Sin `down`** | M |
-| 2 | Comprobar que existen las anclas del commit anterior; preservar la imagen nueva como `failed-<commit>` (sin sobrescribir); devolver las anclas a `:latest`; `up -d --no-build api web` (comandos abajo) | M (copiar/pegar; scriptable, el script no existe) |
+| 2 | Comprobar que existen las anclas del commit anterior; preservar la imagen nueva como `failed-<commit>` (sin sobrescribir); devolver las anclas a `:latest`; `up -d --no-build api web` (comandos abajo) | M (copiar/pegar; **no existe un modo `-Rollback`**) |
 | 3 | Si hubo migración: `down.sql` con sus guards (aborta si es inseguro), en `psql` con rol administrativo | M |
 | 4 | Si hubo cambio de n8n: revertir el workflow según su runbook | M |
 | 5 | Verificar con el post-deploy (`/api/health` con el commit anterior) | M / A |
@@ -226,13 +262,14 @@ docker compose @cf up -d --no-build api web                                     
 | Rollback del Hub antes documentado | Solo "reconstruir la versión anterior" ([deployment](deployment.md#rollback-del-hub)): reconstrucción aproximada, lenta y dependiente de Git |
 | Preservar la imagen exacta | Mecanismo definido (ancla por nombre con comprobación de digest). **No ejecutado, no probado** en PROD |
 | Imagen `web` en ejecución | **Es** la imagen etiquetada (mismo manifiesto); el ancla debe crearse por nombre, no con `docker inspect … .Image` |
-| Script de ancla/rollback | **No existe**: son comandos manuales |
+| Script de ancla | `Deploy-DaubertHub.ps1 -Deploy` la crea y la verifica (**no ejecutado todavía**). El rollback **no tiene script**: son comandos manuales |
 | Prueba del rollback | **Pendiente**: ni el ancla ni `up --no-build` se han ejecutado en PROD |
 | Rollback de PostgreSQL | Cada migración trae `down.sql` con guards; manual |
 | Rollback de n8n | Por workflow, ver [runbook de Caterpillar](../automations/caterpillar/production-runbook.md#rollback) |
 
 ## Pendientes y riesgos conocidos (no bloquean el preflight)
 
+- **`Deploy-DaubertHub.ps1 -Deploy` y el ancla de rollback: nunca ejecutados contra PROD**; solo probados con mocks. Su primera ejecución real será con el primer release que cambie `apps/`, `docker/` o `compose*`. Pendiente: modo `-Rollback` separado, con confirmación explícita.
 - **Pruebas automatizadas de `Test-DaubertDeployPreflight.ps1`: pendientes** (recomendado, aún no implementado). Deberían vivir en `scripts/deploy/tests` para no alterar el conteo de las 884 pruebas de backup, y cubrir: ausencia de cmdlets de escritura y de verbos mutantes de Docker/Git, asignación de `PASS`/`WARN`/`FAIL`, los tres códigos de salida (incluido el exit `2`) y que no se impriman secretos.
 - La tarea `Daubert - PostgreSQL Frequent` no ha publicado backup desde 2026-10-01 16:30 aunque figura con resultado `0`; Daily y Monthly están al día. Causa no determinada (posible suspensión del equipo).
 - El commit `add458c` no tiene tag; el último es `v0.9.0-pilot.2` (`bdf6e66`).
