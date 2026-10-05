@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "21adc105-6f0d-4cf6-a830-9618e2b90557",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.json",
+  "output": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.html",
+  "specification": {
+    "sha256": "77882c980ad471d8017ccbd6ddd6d56c48bce200a05de6a257a3391ebac6111f",
+    "bytes": 10885
+  },
+  "artifact": {
+    "sha256": "4824c57f73cdcf626a504649f78783e0b80f958198cad651c214c3caff94f3a4",
+    "bytes": 774135
+  }
+}

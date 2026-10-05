@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "7acd5b80-8651-45e8-b3cd-197e658ff0f9",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.json",
+  "output": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.html",
+  "specification": {
+    "sha256": "f2362de229fc8b96fb79313d13c53a36c2096369e3ffe57b22fa47ea51be96a1",
+    "bytes": 9697
+  },
+  "artifact": {
+    "sha256": "9e720c8ecae05c8c307cf97629c613bda0ee08ed1ff62aed68d3d6f735879a9d",
+    "bytes": 777359
+  }
+}

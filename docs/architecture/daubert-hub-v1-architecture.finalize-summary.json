@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.json",
+    "sha256": "f2362de229fc8b96fb79313d13c53a36c2096369e3ffe57b22fa47ea51be96a1",
+    "bytes": 9697
+  },
+  "artifact": {
+    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.html",
+    "sha256": "9e720c8ecae05c8c307cf97629c613bda0ee08ed1ff62aed68d3d6f735879a9d",
+    "bytes": 777359
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.finalize.json",
+    "summaryReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "check-failed"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3405
+}

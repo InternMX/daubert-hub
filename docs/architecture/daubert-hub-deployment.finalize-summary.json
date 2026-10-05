@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.json",
+    "sha256": "77882c980ad471d8017ccbd6ddd6d56c48bce200a05de6a257a3391ebac6111f",
+    "bytes": 10885
+  },
+  "artifact": {
+    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.html",
+    "sha256": "4824c57f73cdcf626a504649f78783e0b80f958198cad651c214c3caff94f3a4",
+    "bytes": 774135
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.finalize.json",
+    "summaryReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-valid"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3201
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.json",
+    "sha256": "38c31c9782025bb7cc07ea540a4289250fa27b8455a533fcd1a282d18d683f91",
+    "bytes": 6344
+  },
+  "artifact": {
+    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.html",
+    "sha256": "8326c6bd26d4f2a7dde4f3fdb47b3e045adc06f146a7f8395d30f3de72a074a0",
+    "bytes": 764072
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.finalize.json",
+    "summaryReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-valid"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2923
+}

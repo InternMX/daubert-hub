@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Daubert Hub V1 · petición y flujo de datos",
+    "output": "docs/architecture/daubert-hub-v1-dataflow.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/InternMX/daubert-hub.git",
+      "revision": "ac4575df870cc48d3db0b67b3daf8e0930bc8e50",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {
+      "id": "employee",
+      "type": "external",
+      "label": "PC de empleado",
+      "sublabel": "Navegador · LAN",
+      "pos": [
+        60,
+        80
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "firewall",
+      "type": "security",
+      "label": "Windows Firewall",
+      "sublabel": "TCP 8082 · regla pendiente",
+      "pos": [
+        430,
+        80
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Web / Nginx",
+      "sublabel": "HTTP 8082 → contenedor 80",
+      "pos": [
+        800,
+        80
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docker/nginx.conf",
+          "line": 1,
+          "end_line": 9
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API / NestJS",
+      "sublabel": "/api · puerto interno 3000",
+      "pos": [
+        800,
+        340
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docker/nginx.conf",
+          "line": 21,
+          "end_line": 29
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL 18",
+      "sublabel": "Windows · TCP 5432",
+      "pos": [
+        430,
+        340
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/api/src/database/database.service.ts",
+          "line": 10,
+          "end_line": 23
+        }
+      ]
+    },
+    {
+      "id": "n8n",
+      "type": "backend",
+      "label": "n8n",
+      "sublabel": "Windows · TCP 5678",
+      "pos": [
+        430,
+        610
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/api/src/automations/remisiones-caterpillar/caterpillar-reprocess-webhook.client.ts",
+          "line": 42,
+          "end_line": 57
+        }
+      ]
+    },
+    {
+      "id": "denied",
+      "type": "security",
+      "label": "Acceso directo prohibido",
+      "sublabel": "LAN: 3000 / 5432 / 5678",
+      "pos": [
+        60,
+        340
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "internet",
+      "type": "external",
+      "label": "Internet",
+      "sublabel": "Hub sin exposición V1",
+      "pos": [
+        60,
+        610
+      ],
+      "size": [
+        220,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "LAN",
+      "wraps": [
+        "employee"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "security-group",
+      "label": "Security boundary · objetivo V1",
+      "wraps": [
+        "firewall"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Windows host",
+      "wraps": [
+        "firewall",
+        "web",
+        "api",
+        "postgres",
+        "n8n"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Docker · Application runtime",
+      "wraps": [
+        "web",
+        "api"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Servicios del host / datos persistentes",
+      "wraps": [
+        "postgres",
+        "n8n"
+      ],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    {
+      "id": "employee-firewall",
+      "from": "employee",
+      "to": "firewall",
+      "label": "8082: Allow pendiente",
+      "variant": "dashed"
+    },
+    {
+      "id": "firewall-web",
+      "from": "firewall",
+      "to": "web",
+      "label": "Objetivo permitido",
+      "variant": "security"
+    },
+    {
+      "id": "web-api",
+      "from": "web",
+      "to": "api",
+      "label": "/api → api:3000",
+      "variant": "default"
+    },
+    {
+      "id": "api-postgres",
+      "from": "api",
+      "to": "postgres",
+      "label": "SQL · host 5432",
+      "variant": "default"
+    },
+    {
+      "id": "api-n8n",
+      "from": "api",
+      "to": "n8n",
+      "label": "Solo reproceso",
+      "variant": "dashed"
+    },
+    {
+      "id": "employee-denied",
+      "from": "employee",
+      "to": "denied",
+      "label": "Sin acceso directo",
+      "variant": "security"
+    },
+    {
+      "id": "internet-denied",
+      "from": "internet",
+      "to": "denied",
+      "label": "Sin entrada V1",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Petición normal",
+      "items": [
+        "El navegador obtiene la SPA de Nginx. Las llamadas /api se reenvían internamente a api:3000.",
+        "La API consulta PostgreSQL; n8n solo participa cuando la operación pide un reproceso.",
+        "El navegador no recibe el token n8n ni llama directamente a PostgreSQL o n8n."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Permitido es objetivo · todavía pendiente",
+      "items": [
+        "8082 está publicado por Docker, pero falta la regla Windows de entrada LAN.",
+        "Regla objetivo: TCP 8082, RemoteAddress LocalSubnet, Action Allow; debe cubrir Public.",
+        "Los timeout desde Android son consistentes con firewall; no prueban aislamiento Wi-Fi."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Conexiones internas / host",
+      "items": [
+        "API → PostgreSQL/n8n: host.docker.internal, puertos 5432/5678; no son puertos publicados por API.",
+        "n8n lee/escribe PostgreSQL y archivos Dropbox; su SQLite/config permanece en Windows.",
+        "Sesiones de la aplicación en PostgreSQL: reemplazar Web/API no elimina los datos."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "FUTURO / OPCIONAL",
+      "items": [
+        "Cloudflare + Access, Tailscale y hostname interno quedan fuera de esta petición LAN.",
+        "Internet → Hub sin exposición es el alcance V1; no implica que el host carezca de conexiones salientes."
+      ]
+    }
+  ]
+}

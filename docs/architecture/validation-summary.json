@@ -1,0 +1,89 @@
+{
+  "repositoryRevision": "ac4575df870cc48d3db0b67b3daf8e0930bc8e50",
+  "diagrams": [
+    {
+      "diagram": "daubert-hub-v1-architecture",
+      "type": "architecture",
+      "specification": {
+        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.json",
+        "sha256": "f2362de229fc8b96fb79313d13c53a36c2096369e3ffe57b22fa47ea51be96a1",
+        "bytes": 9697
+      },
+      "artifact": {
+        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.html",
+        "sha256": "9e720c8ecae05c8c307cf97629c613bda0ee08ed1ff62aed68d3d6f735879a9d",
+        "bytes": 777359
+      },
+      "gates": {
+        "validate": "pass",
+        "deliver": "pass",
+        "check": "pass",
+        "browser-check": "pass"
+      },
+      "visualReview": {
+        "status": "passed",
+        "scope": "Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320."
+      },
+      "svg": {
+        "file": "daubert-hub-v1-architecture.svg",
+        "method": "Inline SVG + embedded stylesheet from checked HTML; static derivative, not a separate Archify finalize."
+      }
+    },
+    {
+      "diagram": "daubert-hub-v1-dataflow",
+      "type": "architecture",
+      "specification": {
+        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.json",
+        "sha256": "38c31c9782025bb7cc07ea540a4289250fa27b8455a533fcd1a282d18d683f91",
+        "bytes": 6344
+      },
+      "artifact": {
+        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.html",
+        "sha256": "8326c6bd26d4f2a7dde4f3fdb47b3e045adc06f146a7f8395d30f3de72a074a0",
+        "bytes": 764072
+      },
+      "gates": {
+        "validate": "pass",
+        "deliver": "pass",
+        "check": "pass",
+        "browser-check": "pass"
+      },
+      "visualReview": {
+        "status": "passed",
+        "scope": "Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320."
+      },
+      "svg": {
+        "file": "daubert-hub-v1-dataflow.svg",
+        "method": "Inline SVG + embedded stylesheet from checked HTML; static derivative, not a separate Archify finalize."
+      }
+    },
+    {
+      "diagram": "daubert-hub-deployment",
+      "type": "workflow",
+      "specification": {
+        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.json",
+        "sha256": "77882c980ad471d8017ccbd6ddd6d56c48bce200a05de6a257a3391ebac6111f",
+        "bytes": 10885
+      },
+      "artifact": {
+        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.html",
+        "sha256": "4824c57f73cdcf626a504649f78783e0b80f958198cad651c214c3caff94f3a4",
+        "bytes": 774135
+      },
+      "gates": {
+        "validate": "pass",
+        "deliver": "pass",
+        "check": "pass",
+        "browser-check": "pass"
+      },
+      "visualReview": {
+        "status": "passed",
+        "scope": "Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320."
+      },
+      "svg": {
+        "file": "daubert-hub-deployment.svg",
+        "method": "Inline SVG + embedded stylesheet from checked HTML; static derivative, not a separate Archify finalize."
+      }
+    }
+  ]
+}

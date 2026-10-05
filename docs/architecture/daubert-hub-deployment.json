@@ -1,0 +1,469 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Daubert Hub · deployment y recuperación",
+    "output": "docs/architecture/daubert-hub-deployment.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/InternMX/daubert-hub.git",
+      "revision": "ac4575df870cc48d3db0b67b3daf8e0930bc8e50",
+      "link_mode": "local-only"
+    }
+  },
+  "lanes": [
+    {
+      "id": "prepare",
+      "label": "Candidato / preflight"
+    },
+    {
+      "id": "runtime",
+      "label": "Deployment · Web/API"
+    },
+    {
+      "id": "rollback",
+      "label": "Recuperación manual",
+      "variant": "exception"
+    },
+    {
+      "id": "data",
+      "label": "PostgreSQL · respaldo independiente"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "github",
+      "lane": "prepare",
+      "col": 0,
+      "type": "external",
+      "label": "GitHub",
+      "sublabel": "Origen · candidato local",
+      "width": 168,
+      "sources": [
+        {
+          "path": "docs/deployments/2026-10-01-hub-v1-prod.md",
+          "line": 3,
+          "end_line": 6
+        }
+      ]
+    },
+    {
+      "id": "runner",
+      "lane": "prepare",
+      "col": 1,
+      "type": "backend",
+      "label": "Runner Windows",
+      "sublabel": "Deploy-DaubertHub.ps1",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 1,
+          "end_line": 1
+        }
+      ]
+    },
+    {
+      "id": "preflight",
+      "lane": "prepare",
+      "col": 2,
+      "type": "security",
+      "label": "Preflight",
+      "sublabel": "Solo lectura",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 516,
+          "end_line": 539
+        }
+      ]
+    },
+    {
+      "id": "validation",
+      "lane": "prepare",
+      "col": 3,
+      "type": "security",
+      "label": "Validaciones",
+      "sublabel": "HEAD / PROD / imágenes",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 288,
+          "end_line": 324
+        }
+      ]
+    },
+    {
+      "id": "anchors",
+      "lane": "prepare",
+      "col": 4,
+      "type": "database",
+      "label": "Rollback anchors",
+      "sublabel": "Tags de imágenes actuales",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 389,
+          "end_line": 407
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "lane": "runtime",
+      "col": 4,
+      "type": "backend",
+      "label": "Docker build",
+      "sublabel": "Compose up --build",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 469,
+          "end_line": 487
+        }
+      ]
+    },
+    {
+      "id": "containers",
+      "lane": "runtime",
+      "col": 3,
+      "type": "backend",
+      "label": "Docker Web/API",
+      "sublabel": "Solo api y web",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 338,
+          "end_line": 359
+        }
+      ]
+    },
+    {
+      "id": "health",
+      "lane": "runtime",
+      "col": 2,
+      "type": "security",
+      "label": "Health checks",
+      "sublabel": "API healthy / Web HTTP",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 408,
+          "end_line": 427
+        }
+      ]
+    },
+    {
+      "id": "post",
+      "lane": "runtime",
+      "col": 1,
+      "type": "security",
+      "label": "Post-deploy",
+      "sublabel": "Commit / versión / PROD",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 428,
+          "end_line": 452
+        }
+      ]
+    },
+    {
+      "id": "release",
+      "lane": "runtime",
+      "col": 0,
+      "type": "frontend",
+      "label": "Release funcionando",
+      "sublabel": "Verificada en host",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 496,
+          "end_line": 505
+        }
+      ]
+    },
+    {
+      "id": "failure",
+      "lane": "rollback",
+      "col": 1,
+      "type": "security",
+      "label": "Post-deploy failure",
+      "sublabel": "Sin rollback automático",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 458,
+          "end_line": 465
+        }
+      ]
+    },
+    {
+      "id": "anchor",
+      "lane": "rollback",
+      "col": 2,
+      "type": "database",
+      "label": "Rollback anchor",
+      "sublabel": "Recuperar tag anterior",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 326,
+          "end_line": 334
+        }
+      ]
+    },
+    {
+      "id": "previous",
+      "lane": "rollback",
+      "col": 3,
+      "type": "backend",
+      "label": "Previous image",
+      "sublabel": "up --no-build api web",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 326,
+          "end_line": 334
+        }
+      ]
+    },
+    {
+      "id": "recovered",
+      "lane": "rollback",
+      "col": 4,
+      "type": "frontend",
+      "label": "Release anterior",
+      "sublabel": "Verificar /api/health",
+      "width": 168,
+      "sources": [
+        {
+          "path": "scripts/deploy/Deploy-DaubertHub.ps1",
+          "line": 326,
+          "end_line": 334
+        }
+      ]
+    },
+    {
+      "id": "pg",
+      "lane": "data",
+      "col": 0,
+      "type": "database",
+      "label": "PostgreSQL 18",
+      "sublabel": "Datos fuera de Docker",
+      "width": 168,
+      "sources": [
+        {
+          "path": "docs/operations/database-backup-restore.md",
+          "line": 7,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "schedule",
+      "lane": "data",
+      "col": 1,
+      "type": "backend",
+      "label": "Task Scheduler",
+      "sublabel": "Frequent / Daily / Monthly",
+      "width": 168,
+      "sources": [
+        {
+          "path": "docs/operations/postgresql-backup-automation.md",
+          "line": 59,
+          "end_line": 70
+        }
+      ]
+    },
+    {
+      "id": "dump",
+      "lane": "data",
+      "col": 2,
+      "type": "backend",
+      "label": "pg_dump / age",
+      "sublabel": "Dump + cifrado + SHA-256",
+      "width": 168,
+      "sources": [
+        {
+          "path": "docs/operations/postgresql-backup-automation.md",
+          "line": 59,
+          "end_line": 70
+        }
+      ]
+    },
+    {
+      "id": "backup",
+      "lane": "data",
+      "col": 3,
+      "type": "database",
+      "label": "Backup en Dropbox",
+      "sublabel": ".age + .sha256",
+      "width": 168,
+      "sources": [
+        {
+          "path": "docs/operations/postgresql-backup-automation.md",
+          "line": 16,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "restore",
+      "lane": "data",
+      "col": 4,
+      "type": "backend",
+      "label": "Restore manual",
+      "sublabel": "Base nueva + verificar",
+      "width": 168,
+      "sources": [
+        {
+          "path": "docs/operations/postgresql-backup-automation.md",
+          "line": 497,
+          "end_line": 518
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "github",
+      "to": "runner",
+      "role": "main"
+    },
+    {
+      "from": "runner",
+      "to": "preflight",
+      "role": "main"
+    },
+    {
+      "from": "preflight",
+      "to": "validation",
+      "role": "main"
+    },
+    {
+      "from": "validation",
+      "to": "anchors",
+      "role": "main"
+    },
+    {
+      "from": "anchors",
+      "to": "build",
+      "role": "main"
+    },
+    {
+      "from": "build",
+      "to": "containers",
+      "role": "main"
+    },
+    {
+      "from": "containers",
+      "to": "health",
+      "role": "main"
+    },
+    {
+      "from": "health",
+      "to": "post",
+      "role": "main"
+    },
+    {
+      "from": "post",
+      "to": "release",
+      "role": "main"
+    },
+    {
+      "from": "post",
+      "to": "failure",
+      "label": "Falla",
+      "role": "error",
+      "variant": "security"
+    },
+    {
+      "from": "failure",
+      "to": "anchor",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "anchor",
+      "to": "previous",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "previous",
+      "to": "recovered",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "pg",
+      "to": "schedule",
+      "role": "branch"
+    },
+    {
+      "from": "schedule",
+      "to": "dump",
+      "role": "branch"
+    },
+    {
+      "from": "dump",
+      "to": "backup",
+      "role": "branch"
+    },
+    {
+      "from": "backup",
+      "to": "restore",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Deployment implementado",
+      "items": [
+        "GitHub es el origen; el runner trabaja con un candidato ya presente localmente (HEAD). No es un runner GitHub Actions.",
+        "Build y recreación se ejecutan juntos mediante docker compose up -d --build api web.",
+        "Health checks validan disponibilidad local y PostgreSQL conectado; no prueban acceso desde otro dispositivo LAN."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Rollback del runtime · manual",
+      "items": [
+        "El script conserva anclas antes del build y muestra el procedimiento si falla. No revierte automáticamente.",
+        "Operador: preservar imagen fallida → retag de anclas → up --no-build → verificar release anterior.",
+        "Rollback Web/API no restaura PostgreSQL, SQLite n8n, Dropbox ni configuración del servidor."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Persistent data · recuperación separada",
+      "items": [
+        "Backups PostgreSQL periódicos y tareas registrados: validaciones reales 29-09 y 01-10 documentadas.",
+        "Restore Daily probado 01-10 en base temporal del mismo clúster; roles/globals en clúster independiente pendientes.",
+        "n8n: backup SQLite/config/storage/nodes con Weekly y OnChange manual implementados; restore manual."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Objetivo primer servidor LAN",
+      "items": [
+        "Una release PROD ya existe; habilitación LAN y prueba tras reinicio siguen pendientes.",
+        "Diagnose-DaubertServer es diagnóstico. Configure-DaubertServer local solo plan -WhatIf; aplicación mutante pendiente.",
+        "Instalar PostgreSQL/n8n/Dropbox, configurar firewall y supervisor no forma parte de este deployment."
+      ]
+    }
+  ]
+}

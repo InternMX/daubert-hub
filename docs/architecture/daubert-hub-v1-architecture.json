@@ -1,0 +1,445 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Daubert Hub V1 · arquitectura y estado",
+    "output": "docs/architecture/daubert-hub-v1-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/InternMX/daubert-hub.git",
+      "revision": "ac4575df870cc48d3db0b67b3daf8e0930bc8e50",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {
+      "id": "clients",
+      "type": "external",
+      "label": "Clientes LAN",
+      "sublabel": "PC / Android · navegador",
+      "pos": [
+        60,
+        70
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "router",
+      "type": "external",
+      "label": "ZTE F689",
+      "sublabel": "192.168.1.1 · DHCP activo",
+      "pos": [
+        430,
+        70
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "firewall",
+      "type": "security",
+      "label": "Windows Firewall",
+      "sublabel": "8082 LAN: regla pendiente",
+      "pos": [
+        430,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "desktop",
+      "type": "backend",
+      "label": "Docker Desktop",
+      "sublabel": "AutoStart habilitado",
+      "pos": [
+        60,
+        490
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/deployments/2026-10-01-hub-v1-prod.md",
+          "line": 47,
+          "end_line": 59
+        }
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Web / Nginx",
+      "sublabel": "React · host 8082 → 80",
+      "pos": [
+        430,
+        490
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docker/web.Dockerfile",
+          "line": 13,
+          "end_line": 18
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API / NestJS",
+      "sublabel": "3000 · solo red Docker",
+      "pos": [
+        800,
+        490
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "compose.pilot.yaml",
+          "line": 29,
+          "end_line": 36
+        }
+      ]
+    },
+    {
+      "id": "dropbox",
+      "type": "backend",
+      "label": "Dropbox en Windows",
+      "sublabel": "Archivos origen y PDFs",
+      "pos": [
+        60,
+        770
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/automations/n8n-paths.md",
+          "line": 1,
+          "end_line": 7
+        }
+      ]
+    },
+    {
+      "id": "n8n",
+      "type": "backend",
+      "label": "n8n en Windows",
+      "sublabel": "5678 · arranque manual",
+      "pos": [
+        430,
+        770
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/deployments/2026-10-01-hub-v1-prod.md",
+          "line": 47,
+          "end_line": 59
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL 18",
+      "sublabel": "5432 · daubert_global",
+      "pos": [
+        800,
+        770
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/operations/database-backup-restore.md",
+          "line": 7,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "type": "database",
+      "label": "Archivos Dropbox",
+      "sublabel": "Persistencia externa a Docker",
+      "pos": [
+        60,
+        1000
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/automations/n8n-paths.md",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "Datos n8n",
+      "sublabel": "SQLite + config + storage/nodes",
+      "pos": [
+        430,
+        1000
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/operations/n8n-backup-automation.md",
+          "line": 9,
+          "end_line": 23
+        }
+      ]
+    },
+    {
+      "id": "backups",
+      "type": "database",
+      "label": "Backups PostgreSQL",
+      "sublabel": "age + SHA-256 · Dropbox",
+      "pos": [
+        800,
+        1000
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "docs/operations/postgresql-backup-automation.md",
+          "line": 59,
+          "end_line": 70
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "LAN de empresa",
+      "wraps": [
+        "clients",
+        "router"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Windows 11 Pro · Wi-Fi · IP actual 192.168.1.11",
+      "wraps": [
+        "firewall",
+        "desktop",
+        "web",
+        "api",
+        "dropbox",
+        "n8n",
+        "postgres",
+        "files",
+        "sqlite",
+        "backups"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "security-group",
+      "label": "Security boundary · perfil Public",
+      "wraps": [
+        "firewall"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Docker Compose · Application runtime",
+      "wraps": [
+        "web",
+        "api"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Servicios del host · fuera de Docker",
+      "wraps": [
+        "dropbox",
+        "n8n",
+        "postgres"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "Persistent data · fuera de los contenedores",
+      "wraps": [
+        "files",
+        "sqlite",
+        "backups"
+      ],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    {
+      "id": "clients-router",
+      "from": "clients",
+      "to": "router",
+      "label": "LAN",
+      "variant": "default"
+    },
+    {
+      "id": "router-firewall",
+      "from": "router",
+      "to": "firewall",
+      "label": "Wi-Fi · 8082 pendiente",
+      "variant": "dashed"
+    },
+    {
+      "id": "firewall-web",
+      "from": "firewall",
+      "to": "web",
+      "label": "Objetivo: Allow LAN",
+      "variant": "security"
+    },
+    {
+      "id": "desktop-web",
+      "from": "desktop",
+      "to": "web",
+      "label": "Compose",
+      "variant": "default"
+    },
+    {
+      "id": "web-api",
+      "from": "web",
+      "to": "api",
+      "label": "/api → 3000",
+      "variant": "default"
+    },
+    {
+      "id": "api-postgres",
+      "from": "api",
+      "to": "postgres",
+      "label": "SQL · 5432",
+      "variant": "default"
+    },
+    {
+      "id": "api-n8n",
+      "from": "api",
+      "to": "n8n",
+      "label": "Reproceso",
+      "variant": "dashed"
+    },
+    {
+      "id": "n8n-postgres",
+      "from": "n8n",
+      "to": "postgres",
+      "label": "SQL",
+      "variant": "default"
+    },
+    {
+      "id": "n8n-dropbox",
+      "from": "n8n",
+      "to": "dropbox",
+      "label": "Lee / escribe",
+      "variant": "default"
+    },
+    {
+      "id": "dropbox-files",
+      "from": "dropbox",
+      "to": "files",
+      "label": "Archivos",
+      "variant": "default"
+    },
+    {
+      "id": "n8n-sqlite",
+      "from": "n8n",
+      "to": "sqlite",
+      "label": "Estado local",
+      "variant": "default"
+    },
+    {
+      "id": "postgres-backups",
+      "from": "postgres",
+      "to": "backups",
+      "label": "Backup periódico",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "EXISTE · código y release documentada",
+      "items": [
+        "Web/API en Docker; Nginx forma parte de Web. Contenedores esencialmente stateless.",
+        "PROD documentado el 01-10-2026: compose.pilot.yaml + override local; proyecto daubert-hub; 8082.",
+        "API → host.docker.internal para PostgreSQL y n8n. n8n accede a PostgreSQL y Dropbox."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "OBJETIVO V1 · pendiente",
+      "items": [
+        "Solo TCP 8082: Allow, RemoteAddress LocalSubnet; cubrir perfil Public sin cambiarlo.",
+        "3000 sin publicación Docker; 5432 y 5678 sin acceso LAN. Internet → Hub: no expuesto.",
+        "Reserva DHCP B0-19-21-04-D8-6F → 192.168.1.11 pendiente de autorización; IP todavía dinámica."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Estado reportado · sin nueva auditoría del host",
+      "items": [
+        "Diagnóstico aportado: 62 PASS / 13 WARN / 2 FAIL: regla 8082 ausente y n8n sin autoarranque.",
+        "Android 192.168.1.16: timeout 8082/5432/5678 y ping sin respuesta; no demuestra aislamiento del router.",
+        "WARN: regla Node.js amplia, sesión de usuario, rutas fijas, Dropbox sin inicio detectado, Compose y ACL/env."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Arranque objetivo · no implementado completo",
+      "items": [
+        "Windows → PostgreSQL → Docker Desktop → Web/API → supervisor n8n → disponibilidad LAN.",
+        "Docker AutoStart no demuestra arranque desatendido: depende de inicio de sesión.",
+        "Supervisor n8n y prueba después de reinicio pendientes; Dropbox también requiere validar inicio."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "FUTURO / OPCIONAL · fuera de la ruta LAN",
+      "items": [
+        "Cloudflare Tunnel + Access: usuarios remotos, solo si se requiere.",
+        "Tailscale: administración remota. DNS interno / hostname: decisión futura, sin dominio inventado.",
+        "Primero validar http://192.168.1.11:8082; Wi-Fi es válido para V1."
+      ]
+    }
+  ]
+}
