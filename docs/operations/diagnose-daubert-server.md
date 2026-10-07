@@ -4,6 +4,23 @@ Diagnóstico formal, **de solo lectura**, del PC que actúa (o actuará) como **
 
 > Este script **todavía no configura nada**. No existen `-Configure`, `-Repair` ni `-Uninstall`; pasarlos es un error de uso (exit 3). Configurar el servidor será un paso posterior y separado.
 
+## Red objetivo de V1: Wi-Fi
+
+Para el primer deployment, este PC es provisionalmente el host del Hub y funciona **solo por Wi-Fi** (router ZTE F689). Por tanto:
+
+- **Wi-Fi es válido**: se exige que el adaptador esté activo y conectado, con IPv4 válida, gateway y DHCP.
+- **Ethernet es solo una recomendación de disponibilidad**: aparece como `INFO` y nunca como `WARN` ni `FAIL`.
+- **Conectividad local** al gateway sin depender de ICMP: se usa un intento TCP a 80/443 del router (una respuesta o un rechazo prueban que está alcanzable) y la tabla de vecinos ARP. Un `ping` sin respuesta no es evidencia de fallo; el Firewall de Windows bloquea el eco entrante por defecto, igual que bloquea TCP 8082/5432/5678 mientras no exista una regla.
+- **Ahorro de energía del Wi-Fi**: se lee si Windows puede apagar el adaptador (`Permitir que el equipo apague este dispositivo`, requiere sesión elevada; si no se puede leer sale `INFO`) y el modo de ahorro del adaptador inalámbrico del plan de energía activo.
+- **Perfil de red**: se mantiene **Public** (decisión de V1); es `INFO`, no advertencia. La regla del Hub debe cubrir Public (`Profile Any`).
+- **Arranque desatendido**: sin auto-logon, tras un reinicio solo arranca lo que es servicio (PostgreSQL); Docker Desktop, n8n y Dropbox dependen del logon de un usuario. Se reporta como `WARN` (decisión de inicio de sesión de Windows pendiente; no se habilita AutoAdminLogon y no se lee ninguna credencial).
+- **DNS interno**: fuera de V1.
+- **Reserva DHCP**: se reporta siempre como `INFO` **PENDIENTE**. Requiere administrar el router y todavía no hay autorización; el diagnóstico solo informa la MAC y la IP actuales (`B0-19-21-04-D8-6F → 192.168.1.11` en este host). Hasta que exista, la IP puede cambiar.
+
+El plan para corregir lo que el diagnóstico encuentra está en [configure-daubert-server.md](configure-daubert-server.md) (solo `-WhatIf`).
+
+Siguen siendo **bloqueantes (`FAIL`)** la ausencia de regla de entrada LAN para TCP 8082 y la ausencia de arranque automático/supervisor de n8n. Para n8n, en V1 (una persona enciende el equipo e inicia sesión en horario de oficina) cuenta como `PASS` un servicio automático, o una tarea programada habilitada con disparador *Al iniciar sesión* para el usuario con que se ejecuta (`Daubert - n8n Supervisor`); no se exige AutoAdminLogon ni un servicio de Windows. Que el arranque no sea totalmente desatendido hasta que alguien inicie sesión se informa aparte como `WARN` (`Sesion interactiva`, `Arranque desatendido`). El resto de hallazgos (Docker AutoStart, secretos, Dropbox, rutas fijas…) se mantienen como `WARN`/`INFO` hasta que exista el configurador. Cuando se necesite una prueba de alcanzabilidad real (por ejemplo desde un teléfono de la LAN), es una verificación externa: el script no puede hacerla desde el propio servidor.
+
 ## Propósito
 
 Responder, con evidencia y sin tocar el equipo: ¿este PC está preparado para ser el servidor del Hub? Reúne los datos que después necesitará el instalador (MAC, IP actual, gateway, DHCP) y marca lo que falta respecto al **estado objetivo** (sección final del informe).
@@ -30,13 +47,13 @@ Pruebas: `Import-Module Pester -RequiredVersion 3.4.0; Invoke-Pester scripts\ser
 | Área | Comprobaciones |
 | --- | --- |
 | Host | Windows (edición/build), arquitectura, RAM, CPU, espacio libre, hostname, usuario, elevación, dominio/workgroup, firmware, BitLocker, Windows Update, reinicio pendiente |
-| Network | Ethernet/Wi-Fi (disponible/conectado), ruta por defecto, IPv4/IPv6, gateway, DNS, DHCP, MAC, perfil de red |
+| Network | Wi-Fi activo y conectado (red de V1), Ethernet (solo recomendación), ruta por defecto, IPv4/IPv6, gateway, DNS, DHCP, MAC, conectividad local al gateway sin ICMP, ahorro de energía del adaptador Wi-Fi, reserva DHCP (INFO/PENDIENTE), perfil de red |
 | Firewall | Perfiles habilitados; regla específica **TCP 8082 con `RemoteAddress=LocalSubnet`** (y que cubra el perfil activo); puertos **3000, 5432, 5678** prohibidos en la LAN; **listener separado de regla**; reglas por programa (p. ej. `node.exe` en cualquier puerto) |
 | Docker | Instalado, versión, daemon, backend WSL2, proyectos Compose, contenedores PROD (api `healthy`, web), puertos publicados, redes |
 | PostgreSQL | Servicio, versión, listener 5432, `listen_addresses`/`port` (leídos de `postgresql.conf`, sin SQL), `pg_hba.conf` (reglas, `trust`, includes) |
 | n8n | Proceso, versión, listener 5678, carpeta/config/SQLite, servicio o supervisor, dependencia de sesión interactiva, número de referencias a la ruta del perfil de usuario (solo el conteo) |
 | Dropbox | Instalado, proceso, ruta, carpeta de backups |
-| Energy | Plan, suspensión e hibernación con corriente (recomendado: nunca), pantalla |
+| Energy | Plan, suspensión e hibernación con corriente (recomendado: nunca), pantalla, modo de ahorro del Wi-Fi del plan |
 | Startup | Docker Desktop, `restart` de los contenedores PROD, servicio PostgreSQL, n8n, Dropbox, Programador de tareas y tareas `Daubert - …` |
 | Hub | Rama, working tree, HEAD, origin, compose PROD/TEST, versión, `scripts/deploy`, `/api/health` |
 | TEST/PROD | `COMPOSE_PROJECT_NAME`, nombre del proyecto, puertos/BD/usuario distintos (solo claves no secretas de los env), redes |
@@ -70,7 +87,7 @@ Conclusión y exit code (un diagnóstico exitoso **no** significa servidor prepa
 | `SERVIDOR PREPARADO CON ADVERTENCIAS` (`WARN` sin `FAIL`) | 2 |
 | Error de uso (argumento no soportado, `-RepoPath` inexistente, nombre inválido) | 3 |
 
-Las filas que dependen de algo externo se marcan como tales: por ejemplo, la **DHCP reservation** vive en el router y se reporta como "reserva NO COMPROBABLE"; que un puerto sea alcanzable desde otra máquina no se prueba desde el propio servidor (solo se compara listener y reglas).
+Las filas que dependen de algo externo se marcan como tales: por ejemplo, la **DHCP reservation** vive en el router y se reporta como `INFO` pendiente; que un puerto sea alcanzable desde otra máquina no se prueba desde el propio servidor (solo se compara listener y reglas).
 
 ## Uso del JSON
 
@@ -86,4 +103,4 @@ $d.checks | Where-Object status -eq 'FAIL'
 
 ## Estado objetivo (informativo)
 
-Al final del informe se lista el estado objetivo del Daubert Hub Server (Ethernet, DHCP reservation, TCP 8082 en LAN, 3000/5432/5678 prohibidos en LAN, Docker, PostgreSQL y n8n en el host, sin suspensión, arranque automático, BitLocker, Cloudflare/Tailscale futuros) con el estado actual de cada punto. **No se aplica nada.**
+Al final del informe se lista el estado objetivo del Daubert Hub Server (Wi-Fi requerido en V1, conectividad local, DHCP, DHCP reservation pendiente, Ethernet recomendado, TCP 8082 en LAN, 3000/5432/5678 prohibidos en LAN, Docker, PostgreSQL y n8n en el host, sin suspensión, arranque automático, BitLocker, Cloudflare/Tailscale futuros) con el estado actual de cada punto. **No se aplica nada.**

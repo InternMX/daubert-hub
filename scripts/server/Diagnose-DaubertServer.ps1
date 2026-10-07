@@ -170,6 +170,36 @@ function Invoke-DiagHttp {
     } catch { return $null }
 }
 
+function Test-DiagTcp {
+    # Read-only TCP connect probe (no ICMP). Returns 'open', 'refused' (host answered with RST) or 'timeout'.
+    param([string]$HostName, [int]$Port, [int]$TimeoutMs = 1500)
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return 'timeout' }
+        try { $client.EndConnect($iar); return 'open' } catch { return 'refused' }
+    } catch { return 'timeout' } finally { $client.Close() }
+}
+
+function Get-DiagNeighbor {
+    # Read-only ARP/neighbor cache entry for an IPv4 address: @{ State; Mac } or $null.
+    param([string]$Ip)
+    try {
+        $n = @(Get-NetNeighbor -IPAddress $Ip -AddressFamily IPv4 -ErrorAction Stop) | Select-Object -First 1
+        if ($n) { return @{ State = [string]$n.State; Mac = [string]$n.LinkLayerAddress } }
+    } catch { }
+    return $null
+}
+
+function Get-DiagAdapterPower {
+    # Read-only: 'Enabled' when Windows may turn the adapter off to save power, 'Disabled', or '' when unknown.
+    param([string]$Name)
+    try {
+        $pm = Get-NetAdapterPowerManagement -Name $Name -ErrorAction Stop
+        return [string]$pm.AllowComputerToTurnOffDevice
+    } catch { return '' }
+}
+
 function Resolve-DiagName {
     param([string]$Name)
     try {
@@ -207,7 +237,7 @@ function ConvertFrom-PowerCfgQuery {
     if ($hex.Count -lt 2) { return $null }
     $ac = [Convert]::ToInt64($hex[$hex.Count - 2].Substring(2), 16)
     $dc = [Convert]::ToInt64($hex[$hex.Count - 1].Substring(2), 16)
-    return @{ AcMinutes = [int]($ac / 60); DcMinutes = [int]($dc / 60) }
+    return @{ AcMinutes = [int]($ac / 60); DcMinutes = [int]($dc / 60); AcRaw = $ac; DcRaw = $dc }
 }
 
 function ConvertFrom-HbaText {
@@ -293,7 +323,7 @@ function Get-HostFacts {
 }
 
 function Get-NetworkFacts {
-    $f = @{ Adapters = @(); DefaultAdapter = ''; ActiveProfiles = @() }
+    $f = @{ Adapters = @(); DefaultAdapter = ''; ActiveProfiles = @(); GatewayCheck = @{ Gateway = ''; Tcp = ''; TcpPort = 0; NeighborState = ''; NeighborMac = '' } }
     $list = @()
     try {
         $route = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object { $_.RouteMetric + $_.InterfaceMetric }) | Select-Object -First 1
@@ -320,10 +350,25 @@ function Get-NetworkFacts {
             if ($iface) { $dhcp = ([string]$iface.Dhcp -eq 'Enabled') }
             $list += @{ Name = [string]$a.Name; Kind = $kind; Status = [string]$a.Status; Mac = [string]$a.MacAddress; IPv4 = $v4; IPv6 = $v6
                 Gateway = $gw; Dns = $dns; Dhcp = $dhcp; Profile = $(if ($prof) { [string]$prof.NetworkCategory } else { '' })
-                IsDefault = ([string]$a.Name -eq $f.DefaultAdapter) }
+                IsDefault = ([string]$a.Name -eq $f.DefaultAdapter)
+                PowerSaving = $(if ($kind -eq 'Wi-Fi' -and [string]$a.Status -eq 'Up') { Get-DiagAdapterPower ([string]$a.Name) } else { '' }) }
         }
     } catch { }
     $f.Adapters = $list
+    $f.GatewayCheck = @{ Gateway = ''; Tcp = ''; TcpPort = 0; NeighborState = ''; NeighborMac = '' }
+    $up = @($list | Where-Object { $_.Status -eq 'Up' -and $_.Gateway })
+    $primary = @($up | Where-Object { $_.IsDefault }) | Select-Object -First 1
+    if (-not $primary) { $primary = @($up) | Select-Object -First 1 }
+    if ($primary) {
+        $f.GatewayCheck.Gateway = [string]$primary.Gateway
+        foreach ($port in 80, 443) {
+            $r = Test-DiagTcp $primary.Gateway $port
+            if ($r -ne 'timeout') { $f.GatewayCheck.Tcp = $r; $f.GatewayCheck.TcpPort = $port; break }
+        }
+        if (-not $f.GatewayCheck.Tcp) { $f.GatewayCheck.Tcp = 'timeout' }
+        $nb = Get-DiagNeighbor $primary.Gateway
+        if ($nb) { $f.GatewayCheck.NeighborState = $nb.State; $f.GatewayCheck.NeighborMac = $nb.Mac }
+    }
     $f.ActiveProfiles = @($list | Where-Object { $_.Status -eq 'Up' -and $_.Profile } | ForEach-Object { $_.Profile -replace 'DomainAuthenticated', 'Domain' } | Select-Object -Unique)
     return $f
 }
@@ -473,11 +518,27 @@ function Get-ScheduledTaskFacts {
             $xml = ''
             $actions = ''
             try { $actions = (@($t.Actions) | ForEach-Object { [string]$_.Execute + ' ' + [string]$_.Arguments }) -join ' ' } catch { }
-            $out += @{ Name = [string]$t.TaskName; State = [string]$t.State; LogonType = [string](Get-Prop (Get-Prop $t 'Principal') 'LogonType' ''); Actions = $actions
-                LastRun = $(if ($info) { $info.LastRunTime } else { $null }); LastResult = $(if ($info) { [int]$info.LastTaskResult } else { $null }) }
+            $triggers = @()
+            try { $triggers = @(@($t.Triggers) | ForEach-Object { @{ Type = [string]$_.CimClass.CimClassName; UserId = [string](Get-Prop $_ 'UserId' ''); Delay = [string](Get-Prop $_ 'Delay' ''); Enabled = [bool](Get-Prop $_ 'Enabled' $true) } }) } catch { }
+            $out += @{ Name = [string]$t.TaskName; State = [string]$t.State; Triggers = $triggers; LogonType = [string](Get-Prop (Get-Prop $t 'Principal') 'LogonType' ''); UserId = [string](Get-Prop (Get-Prop $t 'Principal') 'UserId' ''); Actions = $actions
+                LastRun = $(if ($info) { $info.LastRunTime } else { $null }); LastResult = $(if ($info) { [uint32]$info.LastTaskResult } else { $null }) }
         }
     } catch { }
     return $out
+}
+
+function Test-LogonTaskForUser {
+    # True when the task is enabled and has an enabled AtLogOn trigger for the user it runs as
+    # (or for any user when the trigger names none).
+    param($Task)
+    if ([string]$Task.State -eq 'Disabled') { return $false }
+    $principal = ([string](Get-Prop $Task 'UserId' '')) -replace '^.*\\', ''
+    foreach ($tr in @(Get-Prop $Task 'Triggers' @())) {
+        if ([string]$tr.Type -notmatch 'LogonTrigger' -or -not [bool](Get-Prop $tr 'Enabled' $true)) { continue }
+        $trUser = ([string](Get-Prop $tr 'UserId' '')) -replace '^.*\\', ''
+        if (-not $trUser -or -not $principal -or $trUser -eq $principal) { return $true }
+    }
+    return $false
 }
 
 function Get-UserPathReferenceCount {
@@ -504,7 +565,7 @@ function Get-UserPathReferenceCount {
 function Get-N8nFacts {
     param([string]$RepoRoot)
     $f = @{ Running = $false; Pid = 0; SessionId = 0; Version = ''; UserDir = ''; UserDirExists = $false; ConfigExists = $false; SqliteExists = $false; Listener = $null
-        Services = @(); Tasks = @(); StartupEntries = @(); SupervisorProcess = ''; AutoStart = $false; UserPathRefs = @() }
+        Services = @(); Tasks = @(); StartupEntries = @(); SupervisorProcess = ''; LogonTask = ''; AutoStart = $false; UserPathRefs = @() }
     try {
         $proc = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction Stop | Where-Object { [string]$_.CommandLine -match '[\\/]n8n[\\/]bin[\\/]n8n' }) | Select-Object -First 1
         if ($proc) { $f.Running = $true; $f.Pid = [int]$proc.ProcessId; $f.SessionId = [int]$proc.SessionId }
@@ -521,7 +582,9 @@ function Get-N8nFacts {
     $f.StartupEntries = @(Get-StartupEntries | Where-Object { $_ -match 'n8n' })
     $sup = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(pm2|nssm|winsw)' }) | Select-Object -First 1
     if ($sup) { $f.SupervisorProcess = [string]$sup.Name }
-    $f.AutoStart = ((@($f.Services | Where-Object { $_.StartType -eq 'Automatic' }).Count -gt 0) -or (@($f.Tasks).Count -gt 0) -or (@($f.StartupEntries).Count -gt 0))
+    $f.LogonTask = ''
+    foreach ($t in @($f.Tasks)) { if (Test-LogonTaskForUser $t) { $f.LogonTask = [string]$t.Name; break } }
+    $f.AutoStart = ((@($f.Services | Where-Object { $_.StartType -eq 'Automatic' }).Count -gt 0) -or [bool]$f.LogonTask -or (@($f.StartupEntries).Count -gt 0))
     $refs = @()
     $backupCfg = 'C:\ProgramData\DaubertHub\Backup'
     $refs += @{ Location = 'ProgramData\DaubertHub\Backup'; Count = (Get-UserPathReferenceCount @($backupCfg)) }
@@ -558,7 +621,7 @@ function Get-DropboxFacts {
 }
 
 function Get-EnergyFacts {
-    $f = @{ Plan = ''; AcSleepMinutes = $null; AcHibernateMinutes = $null; AcDisplayMinutes = $null; HibernateEnabled = $null; IsPortable = $false }
+    $f = @{ Plan = ''; AcSleepMinutes = $null; AcHibernateMinutes = $null; AcDisplayMinutes = $null; HibernateEnabled = $null; IsPortable = $false; WifiPowerSavingAc = $null }
     if (-not (Test-ToolAvailable 'powercfg')) { return $f }
     $plan = Invoke-DiagRead 'powercfg' @('/getactivescheme')
     if ($plan.Out.Count -gt 0 -and $plan.Out[0] -match '\(([^)]+)\)\s*\*?\s*$') { $f.Plan = $Matches[1] }
@@ -568,6 +631,9 @@ function Get-EnergyFacts {
         $parsed = ConvertFrom-PowerCfgQuery $q.Out
         if ($parsed) { $f[$key] = $parsed.AcMinutes }
     }
+    $q = Invoke-DiagRead 'powercfg' @('/query', 'SCHEME_CURRENT', '19cbb8fa-5279-450e-9fac-8a3d5fedd0c1', '12bbebe6-58d6-4636-95bb-3217ef867c1a')
+    $raw = ConvertFrom-PowerCfgQuery $q.Out
+    if ($raw) { $f.WifiPowerSavingAc = [int]$raw.AcRaw }
     $h = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -ErrorAction SilentlyContinue
     if ($h -and $h.PSObject.Properties.Name -contains 'HibernateEnabled') { $f.HibernateEnabled = ([int]$h.HibernateEnabled -eq 1) }
     elseif ($h -and $h.PSObject.Properties.Name -contains 'HibernateEnabledDefault') { $f.HibernateEnabled = ([int]$h.HibernateEnabledDefault -eq 1) }
@@ -716,6 +782,14 @@ function Get-DnsFacts {
     return $f
 }
 
+function Get-SessionFacts {
+    # Reads only the AutoAdminLogon flag (never DefaultPassword or any credential value).
+    $f = @{ AutoLogon = $false }
+    $w = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name AutoAdminLogon -ErrorAction SilentlyContinue
+    if ($w -and [string]$w.AutoAdminLogon -eq '1') { $f.AutoLogon = $true }
+    return $f
+}
+
 function Get-DiagFacts {
     param([string]$RepoRoot, [string]$Hostname)
     $net = Get-NetworkFacts
@@ -734,6 +808,7 @@ function Get-DiagFacts {
     $facts.Secrets = Get-SecretFacts $RepoRoot $cfg
     $facts.Storage = Get-StorageFacts $cfg
     $facts.Dns = Get-DnsFacts $Hostname $net
+    $facts.Session = Get-SessionFacts
     return $facts
 }
 
@@ -771,36 +846,56 @@ function Test-HostChecks {
 }
 
 function Test-NetworkChecks {
+    # V1 runs on Wi-Fi: Wi-Fi is a valid target network; Ethernet is only an availability recommendation.
     param($N)
     $adapters = @($N.Adapters)
     $eth = @($adapters | Where-Object { $_.Kind -eq 'Ethernet' })
     $wifi = @($adapters | Where-Object { $_.Kind -eq 'Wi-Fi' })
     $ethUp = @($eth | Where-Object { $_.Status -eq 'Up' })
     $wifiUp = @($wifi | Where-Object { $_.Status -eq 'Up' })
-    if ($ethUp.Count -gt 0) { Save-Check 'Network' 'Ethernet' 'PASS' ('conectado: ' + $ethUp[0].Name) }
-    elseif ($eth.Count -gt 0) { Save-Check 'Network' 'Ethernet' 'WARN' ('disponible pero desconectado: ' + $eth[0].Name + ' (recomendado: Ethernet + DHCP reservation)') }
-    else { Save-Check 'Network' 'Ethernet' 'WARN' 'sin adaptador Ethernet fisico' }
-    if ($wifi.Count -eq 0) { Save-Check 'Network' 'Wi-Fi' 'INFO' 'sin adaptador Wi-Fi' }
-    else { Save-Check 'Network' 'Wi-Fi' 'INFO' $(if ($wifiUp.Count -gt 0) { 'conectado: ' + $wifiUp[0].Name } else { 'disponible, desconectado' }) }
+    if ($wifiUp.Count -gt 0) { Save-Check 'Network' 'Wi-Fi' 'PASS' ('adaptador activo y conectado: ' + $wifiUp[0].Name + ' (red objetivo de V1)') }
+    elseif ($wifi.Count -gt 0) {
+        $why = if ($wifi[0].Status -eq 'Disabled') { 'deshabilitado' } else { 'desconectado' }
+        Save-Check 'Network' 'Wi-Fi' $(if ($ethUp.Count -gt 0) { 'INFO' } else { 'FAIL' }) ('adaptador ' + $wifi[0].Name + ' ' + $why + $(if ($ethUp.Count -eq 0) { ': V1 necesita el Wi-Fi activo y conectado' } else { ' (se usa Ethernet)' }))
+    } else { Save-Check 'Network' 'Wi-Fi' $(if ($ethUp.Count -gt 0) { 'INFO' } else { 'FAIL' }) 'sin adaptador Wi-Fi' }
+    if ($ethUp.Count -gt 0) { Save-Check 'Network' 'Ethernet' 'INFO' ('conectado: ' + $ethUp[0].Name + ' (recomendado para disponibilidad; no requerido en V1)') }
+    elseif ($eth.Count -gt 0) { Save-Check 'Network' 'Ethernet' 'INFO' ('disponible pero desconectado: ' + $eth[0].Name + ' (recomendacion de disponibilidad, no requisito en V1)') }
+    else { Save-Check 'Network' 'Ethernet' 'INFO' 'sin adaptador Ethernet (no requerido en V1; recomendado para disponibilidad)' }
     $active = @($ethUp) + @($wifiUp)
     $primary = $null
-    if (@($adapters | Where-Object { $_.IsDefault -and $_.Status -eq 'Up' }).Count -gt 0) { $primary = @($adapters | Where-Object { $_.IsDefault -and $_.Status -eq 'Up' })[0] }
-    elseif ($active.Count -gt 0) { $primary = $active[0] }
-    if ($ethUp.Count -eq 0 -and $wifiUp.Count -gt 0) { Save-Check 'Network' 'Conexion principal' 'WARN' 'solo Wi-Fi: funciona pero es menos fiable para un servidor (preferir Ethernet)' }
-    elseif ($null -eq $primary) { Save-Check 'Network' 'Conexion principal' 'FAIL' 'ningun adaptador conectado'; return }
-    else { Save-Check 'Network' 'Conexion principal' 'PASS' ('ruta por defecto: ' + $primary.Name + ' (' + $primary.Kind + ')') }
-    if ($null -eq $primary) { return }
+    $defaults = @($adapters | Where-Object { $_.IsDefault -and $_.Status -eq 'Up' })
+    if ($defaults.Count -gt 0) { $primary = $defaults[0] } elseif ($active.Count -gt 0) { $primary = $active[0] }
+    if ($null -eq $primary) { Save-Check 'Network' 'Conexion principal' 'FAIL' 'ningun adaptador conectado'; return }
+    Save-Check 'Network' 'Conexion principal' 'PASS' ('ruta por defecto: ' + $primary.Name + ' (' + $primary.Kind + ')' + $(if ($primary.Kind -eq 'Wi-Fi') { ' - red objetivo de V1' } else { '' }))
     $ip4 = @($primary.IPv4 | Where-Object { $_ -and $_ -notmatch '^169\.254\.' })
-    Save-Check 'Network' 'IP actual' 'INFO' $(if ($ip4.Count -gt 0) { $ip4 -join ', ' } else { 'sin IPv4 valida' })
+    Save-Check 'Network' 'IP actual' $(if ($ip4.Count -gt 0) { 'INFO' } else { 'FAIL' }) $(if ($ip4.Count -gt 0) { $ip4 -join ', ' } else { 'sin IPv4 valida (solo APIPA o ninguna)' })
     $ip6 = @($primary.IPv6 | Where-Object { $_ -and $_ -notmatch '^fe80:' })
     Save-Check 'Network' 'IPv6' 'INFO' $(if ($ip6.Count -gt 0) { $ip6 -join ', ' } else { 'solo link-local o ninguna' })
-    Save-Check 'Network' 'Gateway' 'INFO' $(if ($primary.Gateway) { [string]$primary.Gateway } else { 'sin gateway' })
-    Save-Check 'Network' 'DNS' 'INFO' $(if (@($primary.Dns).Count -gt 0) { @($primary.Dns) -join ', ' } else { 'sin servidores DNS' })
+    Save-Check 'Network' 'Gateway' $(if ($primary.Gateway) { 'PASS' } else { 'FAIL' }) $(if ($primary.Gateway) { [string]$primary.Gateway } else { 'sin gateway: no hay salida de la LAN' })
+    Save-Check 'Network' 'DNS' $(if (@($primary.Dns).Count -gt 0) { 'INFO' } else { 'WARN' }) $(if (@($primary.Dns).Count -gt 0) { @($primary.Dns) -join ', ' } else { 'sin servidores DNS' })
     Save-Check 'Network' 'MAC' 'INFO' ([string]$primary.Mac)
     if ($null -eq $primary.Dhcp) { Save-Check 'Network' 'DHCP' 'INFO' 'no determinado' }
-    elseif ($primary.Dhcp) { Save-Check 'Network' 'DHCP' 'PASS' 'habilitado (usar DHCP reservation en el router con la MAC e IP indicadas)' }
-    else { Save-Check 'Network' 'DHCP' 'WARN' 'IP fija configurada en Windows: se prefiere DHCP reservation en el router' }
-    Save-Check 'Network' 'Perfil de red' $(if ($primary.Profile -eq 'Public') { 'WARN' } else { 'INFO' }) ($(if ($primary.Profile) { [string]$primary.Profile } else { 'desconocido' }) + $(if ($primary.Profile -eq 'Public') { ' - el perfil Publico es el mas restrictivo; la regla del Hub debe cubrirlo' } else { '' }))
+    elseif ($primary.Dhcp) { Save-Check 'Network' 'DHCP' 'PASS' 'habilitado' }
+    else { Save-Check 'Network' 'DHCP' 'WARN' 'IP fija configurada en Windows: se prefiere DHCP (con reserva en el router)' }
+    $gc = Get-Prop $N 'GatewayCheck'
+    if ($primary.Gateway -and $gc -and [string](Get-Prop $gc 'Gateway' '')) {
+        $tcp = [string](Get-Prop $gc 'Tcp' ''); $nbState = [string](Get-Prop $gc 'NeighborState' ''); $nbMac = [string](Get-Prop $gc 'NeighborMac' '')
+        $nbOk = (@('Reachable', 'Stale', 'Delay', 'Probe', 'Permanent') -contains $nbState) -and $nbMac -and $nbMac -notmatch '^(00-?)+$'
+        $tcpOk = (@('open', 'refused') -contains $tcp)
+        $evidence = 'TCP ' + $(if ($tcp) { $tcp } else { 'n/d' }) + $(if ((Get-Prop $gc 'TcpPort' 0)) { ' (puerto ' + (Get-Prop $gc 'TcpPort' 0) + ')' } else { '' }) + ', vecino ARP ' + $(if ($nbState) { $nbState } else { 'sin entrada' })
+        if ($tcpOk -or $nbOk) { Save-Check 'Network' 'Conectividad local' 'PASS' ('el gateway ' + $gc.Gateway + ' responde en la LAN (' + $evidence + '; sin depender de ICMP)') }
+        else { Save-Check 'Network' 'Conectividad local' 'WARN' ('no se pudo confirmar el gateway ' + $gc.Gateway + ' (' + $evidence + '); ICMP no se usa, el router puede filtrar TCP 80/443') }
+    }
+    $wifiPrimary = @($wifiUp | Where-Object { $_.Name -eq $primary.Name }) | Select-Object -First 1
+    if ($wifiPrimary -or $wifiUp.Count -gt 0) {
+        $ps = [string](Get-Prop (@($wifiUp)[0]) 'PowerSaving' '')
+        if ($ps -eq 'Enabled') { Save-Check 'Network' 'Wi-Fi ahorro de energia' 'WARN' 'Windows puede apagar el adaptador Wi-Fi para ahorrar energia ("Permitir que el equipo apague este dispositivo"); desactivarlo en una fase posterior' }
+        elseif ($ps -eq 'Disabled') { Save-Check 'Network' 'Wi-Fi ahorro de energia' 'PASS' 'Windows no puede apagar el adaptador Wi-Fi para ahorrar energia' }
+        else { Save-Check 'Network' 'Wi-Fi ahorro de energia' 'INFO' 'no determinado (puede requerir sesion elevada)' }
+    }
+    $mac = [string]$primary.Mac; $ip = $(if ($ip4.Count -gt 0) { $ip4[0] } else { '?' })
+    Save-Check 'Network' 'DHCP reservation' 'INFO' ('PENDIENTE (requiere administrar el router ZTE F689; sin autorizacion todavia): reservar ' + $mac + ' -> ' + $ip + '. Hasta entonces la IP puede cambiar')
+    Save-Check 'Network' 'Perfil de red' 'INFO' ($(if ($primary.Profile) { [string]$primary.Profile } else { 'desconocido' }) + $(if ($primary.Profile -eq 'Public') { ' - decision de V1: se mantiene Public (no cambiar a Private); la regla del Hub debe cubrir Public (Profile Any)' } else { '' }))
 }
 
 function Test-FirewallChecks {
@@ -834,7 +929,7 @@ function Test-FirewallChecks {
             Save-Check 'Firewall' ('Regla ' + $port) 'FAIL' ('regla de entrada "' + $rules[0].Name + '" permite TCP ' + $port + ' a ' + (@($rules[0].Remote) -join ',') + ' (puerto PROHIBIDO en la LAN)')
         } elseif ($wide -and $listener.Process -and @($F.Rules | Where-Object { $_.Program -match ('(?i)\\' + [regex]::Escape($listener.Process) + '\.exe$') -and (@($_.LocalPort) -contains 'Any') -and ($_.Protocol -eq 'TCP' -or $_.Protocol -eq 'Any') }).Count -gt 0) {
             $pr = @($F.Rules | Where-Object { $_.Program -match ('(?i)\\' + [regex]::Escape($listener.Process) + '\.exe$') -and (@($_.LocalPort) -contains 'Any') })[0]
-            Save-Check 'Firewall' ('Regla ' + $port) 'WARN' ('sin regla por puerto, pero la regla por programa "' + $pr.Name + '" (perfil ' + $pr.Profile + ', remoto ' + (@($pr.Remote) -join ',') + ') permitiria acceso LAN al listener de ' + $listener.Process + ' cuando la red use ese perfil; confirmar con una prueba desde otra maquina')
+            Save-Check 'Firewall' ('Regla ' + $port) 'WARN' ('sin regla por puerto, pero la regla por programa "' + $pr.Name + '" (perfil ' + $pr.Profile + ', remoto ' + (@($pr.Remote) -join ',') + ') permitiria acceso LAN al listener de ' + $listener.Process + ' cuando la red use ese perfil (el API Docker llega por loopback 127.0.0.1 via el proxy de Docker Desktop y no depende de esta regla); confirmar con una prueba desde otra maquina')
         } elseif ($wide) {
             Save-Check 'Firewall' ('Regla ' + $port) 'PASS' 'sin regla de entrada: el firewall por defecto bloquea la LAN (el listener en todas las interfaces no es accesible; se apoya solo en el firewall)'
         } else { Save-Check 'Firewall' ('Regla ' + $port) 'PASS' 'sin regla de entrada permisiva' }
@@ -913,6 +1008,7 @@ function Test-N8nChecks {
     $sup = @()
     if (@($M.Services).Count -gt 0) { $sup += 'servicio ' + $M.Services[0].Name }
     if ($M.SupervisorProcess) { $sup += 'supervisor ' + $M.SupervisorProcess }
+    if ((Get-Prop $M 'LogonTask' '')) { $sup += 'tarea al iniciar sesion "' + (Get-Prop $M 'LogonTask' '') + '"' }
     Save-Check 'n8n' 'Supervisor' $(if ($sup.Count -gt 0) { 'PASS' } else { 'WARN' }) $(if ($sup.Count -gt 0) { $sup -join ', ' } else { 'sin servicio ni supervisor: si el proceso cae no se reinicia' })
     $interactive = ($M.Running -and [int]$M.SessionId -gt 0 -and @($M.Services).Count -eq 0)
     Save-Check 'n8n' 'Sesion interactiva' $(if ($interactive) { 'WARN' } else { 'PASS' }) $(if ($interactive) { 'corre en la sesion de usuario ' + $M.SessionId + ': depende de que el usuario inicie sesion' } else { 'no depende de una sesion interactiva' })
@@ -940,6 +1036,10 @@ function Test-EnergyChecks {
     else { Save-Check 'Energy' 'Hibernacion (CA)' 'FAIL' ('hiberna tras ' + $E.AcHibernateMinutes + ' min con corriente') }
     Save-Check 'Energy' 'Hibernacion disponible' 'INFO' $(if ($null -eq $E.HibernateEnabled) { 'no determinado' } elseif ($E.HibernateEnabled) { 'habilitada en el sistema (no se usa si el temporizador es 0)' } else { 'deshabilitada' })
     Save-Check 'Energy' 'Pantalla (CA)' 'INFO' $(if ($null -eq $E.AcDisplayMinutes) { 'no determinado' } elseif ([int]$E.AcDisplayMinutes -eq 0) { 'nunca se apaga' } else { 'se apaga tras ' + $E.AcDisplayMinutes + ' min (no afecta al servidor)' })
+    $psm = Get-Prop $E 'WifiPowerSavingAc'
+    if ($null -eq $psm) { Save-Check 'Energy' 'Wi-Fi modo ahorro (plan)' 'INFO' 'no determinado en el plan activo' }
+    elseif ([int]$psm -eq 0) { Save-Check 'Energy' 'Wi-Fi modo ahorro (plan)' 'PASS' 'maximo rendimiento con corriente' }
+    else { Save-Check 'Energy' 'Wi-Fi modo ahorro (plan)' 'WARN' ('el plan activo usa ahorro de energia del adaptador inalambrico con corriente (modo ' + $psm + '); puede degradar o cortar el Wi-Fi del servidor') }
     if ($E.IsPortable) { Save-Check 'Energy' 'Equipo portatil' 'WARN' 'hay bateria: revisar tambien la accion al cerrar la tapa' }
 }
 
@@ -957,7 +1057,7 @@ function Test-StartupChecks {
     }
     if (-not $P.ServiceFound) { Save-Check 'Startup' 'PostgreSQL' 'FAIL' 'sin servicio' }
     else { Save-Check 'Startup' 'PostgreSQL' $(if ($P.StartType -eq 'Automatic') { 'PASS' } else { 'FAIL' }) ('StartType=' + $P.StartType) }
-    Save-Check 'Startup' 'n8n' $(if ($M.AutoStart) { 'PASS' } else { 'FAIL' }) $(if ($M.AutoStart) { 'tiene servicio automatico, tarea programada o entrada de inicio' } else { 'no arranca automaticamente (ni servicio, ni tarea, ni inicio)' })
+    Save-Check 'Startup' 'n8n' $(if ($M.AutoStart) { 'PASS' } else { 'FAIL' }) $(if ((Get-Prop $M 'LogonTask' '')) { 'tarea habilitada "' + (Get-Prop $M 'LogonTask' '') + '" al iniciar sesion (modelo V1: una persona inicia sesion en horario de oficina)' } elseif ($M.AutoStart) { 'tiene servicio automatico o entrada de inicio' } else { 'no arranca automaticamente (ni servicio, ni tarea, ni inicio)' })
     Save-Check 'Startup' 'Dropbox' $(if ($B.AutoStart) { 'PASS' } else { 'WARN' }) $(if ($B.AutoStart) { 'arranca automaticamente' } else { 'sin entrada de inicio detectada' })
     Save-Check 'Startup' 'Programador de tareas' $(if ($S.SchedulerRunning) { 'PASS' } else { 'FAIL' }) $(if ($S.SchedulerRunning) { 'servicio Schedule en ejecucion' } else { 'servicio Schedule detenido' })
     foreach ($name in $script:BackupTaskNames) {
@@ -966,6 +1066,15 @@ function Test-StartupChecks {
         $okResult = ($null -eq $t.LastResult -or [int]$t.LastResult -eq 0 -or [int]$t.LastResult -eq 267011)
         $st = if ($t.State -eq 'Disabled') { 'FAIL' } elseif (-not $okResult) { 'WARN' } else { 'PASS' }
         Save-Check 'Startup' ('Tarea ' + $name) $st ('estado ' + $t.State + ', ultimo resultado ' + $(if ($null -eq $t.LastResult) { 'n/d' } else { [string]$t.LastResult }))
+    }
+}
+
+function Test-SessionChecks {
+    param($S)
+    if ($S.AutoLogon) {
+        Save-Check 'Startup' 'Arranque desatendido' 'INFO' 'AutoAdminLogon esta configurado en Windows (no se audita ni se muestra ninguna credencial)'
+    } else {
+        Save-Check 'Startup' 'Arranque desatendido' 'WARN' 'sin inicio de sesion automatico: tras un reinicio solo arranca lo que es servicio (PostgreSQL); Docker Desktop, n8n y Dropbox dependen del logon de un usuario. Decision de inicio de sesion de Windows pendiente (no se habilita AutoAdminLogon)'
     }
 }
 
@@ -1071,6 +1180,7 @@ function Invoke-DiagEvaluation {
     Test-DropboxChecks $Facts.Dropbox
     Test-EnergyChecks $Facts.Energy
     Test-StartupChecks $Facts.Docker $Facts.Postgres $Facts.N8n $Facts.Dropbox $Facts.Storage $RepoRoot
+    Test-SessionChecks (Get-Prop $Facts 'Session' @{ AutoLogon = $false })
     Test-RepoChecks $Facts.Repo
     Test-SeparationChecks $Facts.Separation $Facts.Docker $Facts.Repo
     Test-SecretChecks $Facts.Secrets
@@ -1097,9 +1207,13 @@ function Get-DiagSummary {
 function Get-TargetState {
     param([int]$HubPort)
     $targets = @(
-        @{ Item = 'Ethernet'; Requirement = 'REQUIRED'; Area = 'Network'; Check = 'Ethernet' }
-        @{ Item = 'DHCP reservation'; Requirement = 'REQUIRED'; Area = 'Network'; Check = 'DHCP'; Note = 'la reserva se configura en el router; aqui solo se verifica DHCP' }
-        @{ Item = 'DNS interno'; Requirement = 'RECOMMENDED'; Area = 'DNS'; Check = 'Nombre del Hub' }
+        @{ Item = 'Wi-Fi (red de V1)'; Requirement = 'REQUIRED (V1)'; Area = 'Network'; Check = 'Wi-Fi' }
+        @{ Item = 'Conectividad local'; Requirement = 'REQUIRED'; Area = 'Network'; Check = 'Conectividad local' }
+        @{ Item = 'DHCP'; Requirement = 'REQUIRED'; Area = 'Network'; Check = 'DHCP' }
+        @{ Item = 'DHCP reservation'; Requirement = 'PENDING (router)'; Area = 'Network'; Check = 'DHCP reservation' }
+        @{ Item = 'Ethernet'; Requirement = 'RECOMMENDED (availability)'; Area = 'Network'; Check = 'Ethernet' }
+        @{ Item = 'Wi-Fi sin ahorro de energia'; Requirement = 'RECOMMENDED'; Area = 'Network'; Check = 'Wi-Fi ahorro de energia' }
+        @{ Item = 'DNS interno'; Requirement = 'OUT OF V1'; Area = ''; Check = ''; State = 'FUERA DE V1 (por ahora)' }
         @{ Item = ('TCP ' + $HubPort + ' LAN'); Requirement = 'REQUIRED'; Area = 'Firewall'; Check = ('Hub ' + $HubPort) }
         @{ Item = 'TCP 3000 LAN'; Requirement = 'FORBIDDEN'; Area = 'Firewall'; Check = 'Regla 3000' }
         @{ Item = 'TCP 5432 LAN'; Requirement = 'FORBIDDEN'; Area = 'Firewall'; Check = 'Regla 5432' }
@@ -1108,7 +1222,9 @@ function Get-TargetState {
         @{ Item = 'PostgreSQL host'; Requirement = 'CURRENT ARCHITECTURE'; Area = 'PostgreSQL'; Check = 'Servicio' }
         @{ Item = 'n8n host'; Requirement = 'CURRENT ARCHITECTURE'; Area = 'n8n'; Check = 'Proceso' }
         @{ Item = 'No sleep'; Requirement = 'REQUIRED'; Area = 'Energy'; Check = 'Suspension (CA)' }
-        @{ Item = 'Automatic startup'; Requirement = 'REQUIRED'; Area = 'Startup'; Check = 'Docker Desktop' }
+        @{ Item = 'Docker arranque automatico'; Requirement = 'REQUIRED'; Area = 'Startup'; Check = 'Docker Desktop' }
+        @{ Item = 'n8n arranque automatico'; Requirement = 'REQUIRED'; Area = 'Startup'; Check = 'n8n' }
+        @{ Item = 'Arranque desatendido'; Requirement = 'DECISION PENDING'; Area = 'Startup'; Check = 'Arranque desatendido' }
         @{ Item = 'BitLocker'; Requirement = 'RECOMMENDED/REQUIRED'; Area = 'Host'; Check = 'BitLocker' }
         @{ Item = 'Cloudflare'; Requirement = 'FUTURE/OPTIONAL'; Area = ''; Check = '' }
         @{ Item = 'Tailscale'; Requirement = 'FUTURE/OPTIONAL'; Area = ''; Check = '' }
@@ -1116,13 +1232,15 @@ function Get-TargetState {
     $rows = @()
     foreach ($t in $targets) {
         $state = 'NO EVALUADO'
-        if ($t.Area) {
+        if ($t.ContainsKey('State')) { $state = $t.State }
+        elseif ($t.Area) {
             $s = Get-CheckStatus $t.Area $t.Check
             if ($null -eq $s) { $state = 'DESCONOCIDO' }
             elseif ($s -eq 'PASS') { $state = 'CUMPLE' }
-            elseif ($s -eq 'INFO') { $state = $(if ($t.Item -eq 'DHCP reservation') { 'NO COMPROBABLE' } else { 'INFO' }) }
+            elseif ($s -eq 'INFO') { $state = 'INFO' }
             else { $state = $(if ($s -eq 'WARN') { 'CUMPLE PARCIALMENTE' } else { 'NO CUMPLE' }) }
-            if ($t.Item -eq 'DHCP reservation' -and $s -eq 'PASS') { $state = 'DHCP ACTIVO (reserva NO COMPROBABLE)' }
+            if ($t.Item -eq 'DHCP reservation') { $state = 'PENDIENTE (requiere autorizacion en el ZTE F689; no comprobable desde el host)' }
+            if ($t.Item -eq 'Ethernet') { $state = $(if ($s -eq 'INFO') { 'OPCIONAL (no bloquea V1)' } else { $state }) }
             if ($t.Item -eq 'DNS interno' -and $s -eq 'INFO') { $state = 'NO EVALUADO' }
         }
         $rows += [pscustomobject]@{ Item = $t.Item; Requirement = $t.Requirement; State = $state }

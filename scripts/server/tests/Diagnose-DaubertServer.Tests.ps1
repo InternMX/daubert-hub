@@ -19,9 +19,10 @@ function New-HealthyFacts {
         Host       = @{ Edition = 'Microsoft Windows 11 Pro'; Version = '10.0.26200'; Build = '26200'; Arch = '64 bits'; RamGB = 16; Cpu = 'Test CPU'; CpuCores = 6
             Disks = @(@{ Name = 'C:'; SizeGB = 465; FreeGB = 280; IsSystem = $true }); Hostname = 'HUB-PC'; User = 'svc'; IsAdmin = $true; Domain = 'WORKGROUP'; PartOfDomain = $false
             Firmware = 'UEFI'; BitLocker = @{ Known = $true; Volumes = @(@{ Mount = $env:SystemDrive; Protection = 1 }) }; LastHotfix = (Get-Date).AddDays(-10); PendingReboot = $false; IsPortable = $false }
-        Network    = @{ DefaultAdapter = 'Ethernet'; ActiveProfiles = @('Private'); Adapters = @(
-                @{ Name = 'Ethernet'; Kind = 'Ethernet'; Status = 'Up'; Mac = 'AA-BB-CC-DD-EE-FF'; IPv4 = @('192.168.1.50'); IPv6 = @('fe80::1'); Gateway = '192.168.1.1'; Dns = @('192.168.1.1'); Dhcp = $true; Profile = 'Private'; IsDefault = $true }
-                @{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Disconnected'; Mac = '11-22-33-44-55-66'; IPv4 = @(); IPv6 = @(); Gateway = ''; Dns = @(); Dhcp = $true; Profile = ''; IsDefault = $false }) }
+        Network    = @{ DefaultAdapter = 'Wi-Fi'; ActiveProfiles = @('Private'); GatewayCheck = @{ Gateway = '192.168.1.1'; Tcp = 'open'; TcpPort = 80; NeighborState = 'Reachable'; NeighborMac = 'AA-BB-CC-00-00-01' }
+            Adapters = @(
+                @{ Name = 'Ethernet'; Kind = 'Ethernet'; Status = 'Disconnected'; Mac = 'AA-BB-CC-DD-EE-FF'; IPv4 = @('169.254.1.2'); IPv6 = @(); Gateway = ''; Dns = @(); Dhcp = $true; Profile = ''; IsDefault = $false; PowerSaving = '' }
+                @{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Up'; Mac = 'B0-19-21-04-D8-6F'; IPv4 = @('192.168.1.11'); IPv6 = @('fe80::1'); Gateway = '192.168.1.1'; Dns = @('192.168.1.1'); Dhcp = $true; Profile = 'Private'; IsDefault = $true; PowerSaving = 'Disabled' }) }
         Firewall   = @{ Available = $true; Profiles = @{ Domain = $true; Private = $true; Public = $true }
             Rules = @(@{ Name = 'Daubert Hub 8082'; Profile = 'Private'; Protocol = 'TCP'; LocalPort = @('8082'); Remote = @('LocalSubnet'); Program = 'Any' })
             Listeners = @(@{ Port = 8082; Addresses = @('0.0.0.0'); Pid = 1; Process = 'com.docker.backend' }, @{ Port = 3000; Addresses = @(); Pid = 0; Process = '' },
@@ -37,7 +38,7 @@ function New-HealthyFacts {
             Listener = @{ Port = 5678; Addresses = @('127.0.0.1'); Pid = 3; Process = 'node' }; Services = @(@{ Name = 'n8n'; Status = 'Running'; StartType = 'Automatic' }); Tasks = @(); StartupEntries = @(); SupervisorProcess = ''
             AutoStart = $true; UserPathRefs = @(@{ Location = 'repo'; Count = 0 }) }
         Dropbox    = @{ Installed = $true; Running = $true; Path = 'C:\Dropbox'; PathExists = $true; AutoStart = $true; Folders = @(@{ Name = 'Backups Daubert'; Path = 'C:\Dropbox\B'; Exists = $true }) }
-        Energy     = @{ Plan = 'Alto rendimiento'; AcSleepMinutes = 0; AcHibernateMinutes = 0; AcDisplayMinutes = 30; HibernateEnabled = $false; IsPortable = $false }
+        Energy     = @{ Plan = 'Alto rendimiento'; AcSleepMinutes = 0; AcHibernateMinutes = 0; AcDisplayMinutes = 30; HibernateEnabled = $false; IsPortable = $false; WifiPowerSavingAc = 0 }
         Repo       = @{ Path = 'C:\repo'; IsRepo = $true; Branch = 'main'; Head = 'abc1234'; DirtyCount = 0; Origin = 'https://example.test/daubert-hub.git'; ComposePilot = $true; ComposeProdTemp = $true; ComposeBase = $true
             PackageVersion = '1.0.0'; DeployScripts = $true; HubPort = 8082; ComposeHasName = $true
             Health = @{ Code = 200; Status = 'ok'; Database = 'connected'; Environment = 'PRODUCTION'; Version = '1.0.0'; Commit = 'abc1234' } }
@@ -48,7 +49,8 @@ function New-HealthyFacts {
             Tiers = @(@{ Name = 'FREQUENT'; Exists = $true; Latest = (Get-Date).AddHours(-2); Count = 3 }, @{ Name = 'DAILY'; Exists = $true; Latest = (Get-Date).AddHours(-5); Count = 3 },
                 @{ Name = 'MONTHLY'; Exists = $true; Latest = (Get-Date).AddDays(-3); Count = 3 }, @{ Name = 'N8N'; Exists = $true; Latest = (Get-Date).AddDays(-2); Count = 1 })
             Tasks = @($script:BackupTaskNames | ForEach-Object { @{ Name = $_; State = 'Ready'; LogonType = 'S4U'; Actions = ''; LastRun = (Get-Date).AddHours(-2); LastResult = 0 } }) }
-        Dns        = @{ Hostname = 'HUB-PC'; Servers = @('192.168.1.1'); Ip = @('192.168.1.50'); Requested = ''; Resolved = @() }
+        Session    = @{ AutoLogon = $true }
+        Dns        = @{ Hostname = 'HUB-PC'; Servers = @('192.168.1.1'); Ip = @('192.168.1.11'); Requested = ''; Resolved = @() }
     }
 }
 
@@ -77,60 +79,174 @@ Describe 'Healthy server' {
     }
 }
 
-Describe 'Network' {
-    It '1. Ethernet connected -> PASS, DHCP PASS and the data needed for the router' {
+function New-EthernetUpAdapter {
+    return @{ Name = 'Ethernet'; Kind = 'Ethernet'; Status = 'Up'; Mac = 'AA-BB-CC-DD-EE-FF'; IPv4 = @('192.168.1.50'); IPv6 = @(); Gateway = '192.168.1.1'; Dns = @('192.168.1.1'); Dhcp = $true; Profile = 'Private'; IsDefault = $true; PowerSaving = '' }
+}
+
+Describe 'Network (V1: Wi-Fi is the target network)' {
+    It 'Wi-Fi connected and primary -> PASS, with IP/MAC/gateway/DHCP reported for the router' {
         $c = Invoke-Eval (New-HealthyFacts)
-        (Get-Row $c 'Network' 'Ethernet').Status | Should Be 'PASS'
+        (Get-Row $c 'Network' 'Wi-Fi').Status | Should Be 'PASS'
+        (Get-Row $c 'Network' 'Wi-Fi').Detail | Should Match 'V1'
+        (Get-Row $c 'Network' 'Conexion principal').Status | Should Be 'PASS'
         (Get-Row $c 'Network' 'DHCP').Status | Should Be 'PASS'
-        (Get-Row $c 'Network' 'MAC').Detail | Should Be 'AA-BB-CC-DD-EE-FF'
-        (Get-Row $c 'Network' 'IP actual').Detail | Should Be '192.168.1.50'
+        (Get-Row $c 'Network' 'MAC').Detail | Should Be 'B0-19-21-04-D8-6F'
+        (Get-Row $c 'Network' 'IP actual').Detail | Should Be '192.168.1.11'
         (Get-Row $c 'Network' 'Gateway').Detail | Should Be '192.168.1.1'
     }
-    It '2. only Wi-Fi -> Ethernet WARN and primary connection WARN' {
-        $f = New-HealthyFacts
-        $f.Network.Adapters = @(
-            @{ Name = 'Ethernet'; Kind = 'Ethernet'; Status = 'Disconnected'; Mac = 'AA'; IPv4 = @(); IPv6 = @(); Gateway = ''; Dns = @(); Dhcp = $true; Profile = ''; IsDefault = $false }
-            @{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Up'; Mac = 'BB'; IPv4 = @('192.168.1.11'); IPv6 = @(); Gateway = '192.168.1.1'; Dns = @('192.168.1.1'); Dhcp = $true; Profile = 'Private'; IsDefault = $true })
-        $c = Invoke-Eval $f
-        (Get-Row $c 'Network' 'Ethernet').Status | Should Be 'WARN'
-        (Get-Row $c 'Network' 'Conexion principal').Status | Should Be 'WARN'
+    It 'Wi-Fi only (Ethernet disconnected) produces no WARN or FAIL in the network rows that matter for V1' {
+        $c = Invoke-Eval (New-HealthyFacts)
+        (Get-Row $c 'Network' 'Ethernet').Status | Should Be 'INFO'
+        (Get-Row $c 'Network' 'Ethernet').Detail | Should Match 'no requisito|no requerido'
+        @($c | Where-Object { $_.Area -eq 'Network' -and ($_.Status -eq 'FAIL' -or $_.Status -eq 'WARN') }).Count | Should Be 0
     }
-    It 'no connected adapter at all -> FAIL' {
+    It 'Ethernet is never WARN/FAIL: absent, disconnected or connected' {
         $f = New-HealthyFacts
-        $f.Network.Adapters = @(@{ Name = 'Ethernet'; Kind = 'Ethernet'; Status = 'Disconnected'; Mac = 'AA'; IPv4 = @(); IPv6 = @(); Gateway = ''; Dns = @(); Dhcp = $true; Profile = ''; IsDefault = $false })
-        (Get-Row (Invoke-Eval $f) 'Network' 'Conexion principal').Status | Should Be 'FAIL'
+        $f.Network.Adapters = @($f.Network.Adapters | Where-Object { $_.Kind -ne 'Ethernet' })
+        (Get-Row (Invoke-Eval $f) 'Network' 'Ethernet').Status | Should Be 'INFO'
+        $f = New-HealthyFacts
+        $f.Network.Adapters[0] = New-EthernetUpAdapter
+        (Get-Row (Invoke-Eval $f) 'Network' 'Ethernet').Status | Should Be 'INFO'
+    }
+    It 'Ethernet connected and used -> Conexion principal PASS, Wi-Fi disconnected is only INFO' {
+        $f = New-HealthyFacts
+        $f.Network.Adapters = @((New-EthernetUpAdapter), @{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Disconnected'; Mac = 'B'; IPv4 = @(); IPv6 = @(); Gateway = ''; Dns = @(); Dhcp = $true; Profile = ''; IsDefault = $false; PowerSaving = '' })
+        $c = Invoke-Eval $f
+        (Get-Row $c 'Network' 'Conexion principal').Status | Should Be 'PASS'
+        (Get-Row $c 'Network' 'Wi-Fi').Status | Should Be 'INFO'
+    }
+    It 'Wi-Fi disconnected or disabled with no other connection -> FAIL' {
+        $f = New-HealthyFacts
+        $f.Network.Adapters[1].Status = 'Disconnected'
+        $c = Invoke-Eval $f
+        (Get-Row $c 'Network' 'Wi-Fi').Status | Should Be 'FAIL'
+        (Get-Row $c 'Network' 'Conexion principal').Status | Should Be 'FAIL'
+        $f = New-HealthyFacts
+        $f.Network.Adapters[1].Status = 'Disabled'
+        (Get-Row (Invoke-Eval $f) 'Network' 'Wi-Fi').Detail | Should Match 'deshabilitado'
     }
     It 'static IP configured in Windows -> DHCP WARN' {
         $f = New-HealthyFacts
-        $f.Network.Adapters[0].Dhcp = $false
+        $f.Network.Adapters[1].Dhcp = $false
         (Get-Row (Invoke-Eval $f) 'Network' 'DHCP').Status | Should Be 'WARN'
     }
-    It 'Public network profile -> WARN' {
+    It 'no gateway or only an APIPA address -> FAIL' {
         $f = New-HealthyFacts
-        $f.Network.Adapters[0].Profile = 'Public'
-        (Get-Row (Invoke-Eval $f) 'Network' 'Perfil de red').Status | Should Be 'WARN'
+        $f.Network.Adapters[1].Gateway = ''
+        (Get-Row (Invoke-Eval $f) 'Network' 'Gateway').Status | Should Be 'FAIL'
+        $f = New-HealthyFacts
+        $f.Network.Adapters[1].IPv4 = @('169.254.9.9')
+        (Get-Row (Invoke-Eval $f) 'Network' 'IP actual').Status | Should Be 'FAIL'
     }
-    It 'collector: classifies an Ethernet adapter that is Up and reads its DHCP/IP data (mocked cmdlets)' {
-        Mock Get-NetRoute { [pscustomobject]@{ InterfaceIndex = 5; RouteMetric = 0; InterfaceMetric = 25 } }
+    It 'Public network profile is a V1 decision: INFO (kept as Public), never WARN' {
+        $f = New-HealthyFacts
+        $f.Network.Adapters[1].Profile = 'Public'
+        $row = Get-Row (Invoke-Eval $f) 'Network' 'Perfil de red'
+        $row.Status | Should Be 'INFO'
+        $row.Detail | Should Match 'se mantiene Public'
+    }
+    It 'without auto-logon the unattended boot is a WARN that states the dependency on a Windows logon decision' {
+        $f = New-HealthyFacts
+        $f.Session.AutoLogon = $false
+        $row = Get-Row (Invoke-Eval $f) 'Startup' 'Arranque desatendido'
+        $row.Status | Should Be 'WARN'
+        $row.Detail | Should Match 'Docker Desktop, n8n y Dropbox dependen del logon'
+        $row.Detail | Should Match 'no se habilita AutoAdminLogon'
+        $f.Session.AutoLogon = $true
+        (Get-Row (Invoke-Eval $f) 'Startup' 'Arranque desatendido').Status | Should Be 'INFO'
+    }
+    It 'collector reads only the AutoAdminLogon flag' {
+        Mock Get-ItemProperty { [pscustomobject]@{ AutoAdminLogon = '0' } }
+        (Get-SessionFacts).AutoLogon | Should Be $false
+    }
+    It 'local connectivity: gateway TCP open, TCP refused or a resolved ARP neighbor -> PASS (never depends on ICMP)' {
+        $f = New-HealthyFacts
+        (Get-Row (Invoke-Eval $f) 'Network' 'Conectividad local').Status | Should Be 'PASS'
+        $f.Network.GatewayCheck = @{ Gateway = '192.168.1.1'; Tcp = 'refused'; TcpPort = 80; NeighborState = ''; NeighborMac = '' }
+        (Get-Row (Invoke-Eval $f) 'Network' 'Conectividad local').Status | Should Be 'PASS'
+        $f.Network.GatewayCheck = @{ Gateway = '192.168.1.1'; Tcp = 'timeout'; TcpPort = 0; NeighborState = 'Stale'; NeighborMac = 'AA-BB-CC-00-00-01' }
+        $row = Get-Row (Invoke-Eval $f) 'Network' 'Conectividad local'
+        $row.Status | Should Be 'PASS'
+        $row.Detail | Should Match 'sin depender de ICMP'
+    }
+    It 'local connectivity not confirmed (TCP timeout and no neighbor entry) -> WARN, not FAIL' {
+        $f = New-HealthyFacts
+        $f.Network.GatewayCheck = @{ Gateway = '192.168.1.1'; Tcp = 'timeout'; TcpPort = 0; NeighborState = 'Incomplete'; NeighborMac = '00-00-00-00-00-00' }
+        $row = Get-Row (Invoke-Eval $f) 'Network' 'Conectividad local'
+        $row.Status | Should Be 'WARN'
+        $row.Detail | Should Match 'ICMP no se usa'
+    }
+    It 'Wi-Fi power saving: adapter may be turned off -> WARN; disabled -> PASS; unknown -> INFO' {
+        $f = New-HealthyFacts
+        $f.Network.Adapters[1].PowerSaving = 'Enabled'
+        (Get-Row (Invoke-Eval $f) 'Network' 'Wi-Fi ahorro de energia').Status | Should Be 'WARN'
+        $f.Network.Adapters[1].PowerSaving = 'Disabled'
+        (Get-Row (Invoke-Eval $f) 'Network' 'Wi-Fi ahorro de energia').Status | Should Be 'PASS'
+        $f.Network.Adapters[1].PowerSaving = ''
+        (Get-Row (Invoke-Eval $f) 'Network' 'Wi-Fi ahorro de energia').Status | Should Be 'INFO'
+    }
+    It 'active power plan with wireless power saving -> WARN; maximum performance -> PASS; unknown -> INFO' {
+        $f = New-HealthyFacts
+        $f.Energy.WifiPowerSavingAc = 2
+        (Get-Row (Invoke-Eval $f) 'Energy' 'Wi-Fi modo ahorro (plan)').Status | Should Be 'WARN'
+        $f.Energy.WifiPowerSavingAc = 0
+        (Get-Row (Invoke-Eval $f) 'Energy' 'Wi-Fi modo ahorro (plan)').Status | Should Be 'PASS'
+        $f.Energy.WifiPowerSavingAc = $null
+        (Get-Row (Invoke-Eval $f) 'Energy' 'Wi-Fi modo ahorro (plan)').Status | Should Be 'INFO'
+    }
+    It 'DHCP reservation is reported as INFO/PENDING (needs the ZTE F689), with MAC and IP, and never as PASS/FAIL' {
+        $row = Get-Row (Invoke-Eval (New-HealthyFacts)) 'Network' 'DHCP reservation'
+        $row.Status | Should Be 'INFO'
+        $row.Detail | Should Match 'PENDIENTE'
+        $row.Detail | Should Match 'ZTE F689'
+        $row.Detail | Should Match 'B0-19-21-04-D8-6F -> 192\.168\.1\.11'
+    }
+    It 'collector: Wi-Fi Up as default route, gateway evidence and power saving (mocked cmdlets and seams)' {
+        Mock Get-NetRoute { [pscustomobject]@{ InterfaceIndex = 7; RouteMetric = 0; InterfaceMetric = 40 } }
         Mock Get-NetAdapter {
-            if ($Physical) { [pscustomobject]@{ Name = 'Ethernet'; ifIndex = 5; Status = 'Up'; MacAddress = 'AA-BB-CC-DD-EE-FF'; PhysicalMediaType = '802.3' } }
-            else { [pscustomobject]@{ Name = 'Ethernet'; ifIndex = 5 } }
+            if ($Physical) { [pscustomobject]@{ Name = 'Wi-Fi'; ifIndex = 7; Status = 'Up'; MacAddress = 'B0-19-21-04-D8-6F'; PhysicalMediaType = 'Native 802.11' } }
+            else { [pscustomobject]@{ Name = 'Wi-Fi'; ifIndex = 7 } }
         }
         Mock Get-NetIPConfiguration {
-            [pscustomobject]@{ IPv4Address = @([pscustomobject]@{ IPAddress = '192.168.1.50' }); IPv6Address = @(); IPv4DefaultGateway = @([pscustomobject]@{ NextHop = '192.168.1.1' })
+            [pscustomobject]@{ IPv4Address = @([pscustomobject]@{ IPAddress = '192.168.1.11' }); IPv6Address = @(); IPv4DefaultGateway = @([pscustomobject]@{ NextHop = '192.168.1.1' })
                 DnsServer = @([pscustomobject]@{ AddressFamily = 2; ServerAddresses = @('192.168.1.1') }) }
         }
         Mock Get-NetIPInterface { [pscustomobject]@{ Dhcp = 'Enabled' } }
-        Mock Get-NetConnectionProfile { [pscustomobject]@{ NetworkCategory = 'Private' } }
+        Mock Get-NetConnectionProfile { [pscustomobject]@{ NetworkCategory = 'Public' } }
+        Mock Test-DiagTcp { 'open' }
+        Mock Get-DiagNeighbor { @{ State = 'Reachable'; Mac = 'AA-BB-CC-00-00-01' } }
+        Mock Get-DiagAdapterPower { 'Enabled' }
         $n = Get-NetworkFacts
-        $n.Adapters[0].Kind | Should Be 'Ethernet'
+        $n.Adapters[0].Kind | Should Be 'Wi-Fi'
         $n.Adapters[0].Status | Should Be 'Up'
         $n.Adapters[0].Dhcp | Should Be $true
         $n.Adapters[0].IsDefault | Should Be $true
         $n.Adapters[0].Gateway | Should Be '192.168.1.1'
+        $n.Adapters[0].PowerSaving | Should Be 'Enabled'
+        $n.GatewayCheck.Tcp | Should Be 'open'
+        $n.GatewayCheck.NeighborState | Should Be 'Reachable'
         $f = New-HealthyFacts
         $f.Network = $n
-        (Get-Row (Invoke-Eval $f) 'Network' 'Ethernet').Status | Should Be 'PASS'
+        $c = Invoke-Eval $f
+        (Get-Row $c 'Network' 'Wi-Fi').Status | Should Be 'PASS'
+        (Get-Row $c 'Network' 'Conectividad local').Status | Should Be 'PASS'
+        (Get-Row $c 'Network' 'Wi-Fi ahorro de energia').Status | Should Be 'WARN'
+    }
+    It 'collector: probes the gateway with TCP only (no ICMP) and keeps working when 80 times out but 443 answers' {
+        Mock Get-NetRoute { [pscustomobject]@{ InterfaceIndex = 7; RouteMetric = 0; InterfaceMetric = 40 } }
+        Mock Get-NetAdapter {
+            if ($Physical) { [pscustomobject]@{ Name = 'Wi-Fi'; ifIndex = 7; Status = 'Up'; MacAddress = 'B0'; PhysicalMediaType = 'Native 802.11' } }
+            else { [pscustomobject]@{ Name = 'Wi-Fi'; ifIndex = 7 } }
+        }
+        Mock Get-NetIPConfiguration { [pscustomobject]@{ IPv4Address = @([pscustomobject]@{ IPAddress = '192.168.1.11' }); IPv6Address = @(); IPv4DefaultGateway = @([pscustomobject]@{ NextHop = '192.168.1.1' }); DnsServer = @() } }
+        Mock Get-NetIPInterface { [pscustomobject]@{ Dhcp = 'Enabled' } }
+        Mock Get-NetConnectionProfile { [pscustomobject]@{ NetworkCategory = 'Private' } }
+        Mock Test-DiagTcp { if ($Port -eq 80) { 'timeout' } else { 'refused' } }
+        Mock Get-DiagNeighbor { $null }
+        Mock Get-DiagAdapterPower { '' }
+        $n = Get-NetworkFacts
+        $n.GatewayCheck.Tcp | Should Be 'refused'
+        $n.GatewayCheck.TcpPort | Should Be 443
     }
 }
 
@@ -337,6 +453,29 @@ Describe 'n8n' {
         (Get-Row $c 'n8n' 'Supervisor').Status | Should Be 'WARN'
         (Get-Row $c 'n8n' 'Proceso').Status | Should Be 'PASS'
     }
+    It 'n8n supervised by an enabled AtLogOn task (no service, no AutoAdminLogon) -> Startup PASS, Supervisor PASS, interactive WARN stays separate' {
+        $f = New-HealthyFacts
+        $f.N8n.Services = @(); $f.N8n.AutoStart = $true; $f.N8n.LogonTask = 'Daubert - n8n Supervisor'; $f.N8n.SessionId = 2
+        $f.Session.AutoLogon = $false
+        $c = Invoke-Eval $f
+        (Get-Row $c 'Startup' 'n8n').Status | Should Be 'PASS'
+        (Get-Row $c 'Startup' 'n8n').Detail | Should Match 'Daubert - n8n Supervisor'
+        (Get-Row $c 'n8n' 'Supervisor').Status | Should Be 'PASS'
+        (Get-Row $c 'n8n' 'Sesion interactiva').Status | Should Be 'WARN'
+        (Get-Row $c 'Startup' 'Arranque desatendido').Status | Should Be 'WARN'
+    }
+    It 'Test-LogonTaskForUser accepts an enabled logon trigger for the principal (domain-qualified or not)' {
+        $t = @{ Name = 'x'; State = 'Running'; UserId = '06'; Triggers = @(@{ Type = 'MSFT_TaskLogonTrigger'; UserId = 'DESKTOP-4UP0ELC\06'; Delay = 'PT1M'; Enabled = $true }) }
+        (Test-LogonTaskForUser $t) | Should Be $true
+    }
+    It 'Test-LogonTaskForUser rejects disabled tasks, other users, disabled triggers and non-logon triggers' {
+        $trg = @{ Type = 'MSFT_TaskLogonTrigger'; UserId = 'PC\06'; Delay = ''; Enabled = $true }
+        (Test-LogonTaskForUser @{ State = 'Disabled'; UserId = '06'; Triggers = @($trg) }) | Should Be $false
+        (Test-LogonTaskForUser @{ State = 'Ready'; UserId = 'other'; Triggers = @($trg) }) | Should Be $false
+        (Test-LogonTaskForUser @{ State = 'Ready'; UserId = '06'; Triggers = @(@{ Type = 'MSFT_TaskLogonTrigger'; UserId = 'PC\06'; Enabled = $false }) }) | Should Be $false
+        (Test-LogonTaskForUser @{ State = 'Ready'; UserId = '06'; Triggers = @(@{ Type = 'MSFT_TaskDailyTrigger'; UserId = ''; Enabled = $true }) }) | Should Be $false
+        (Test-LogonTaskForUser @{ State = 'Ready'; UserId = '06'; Triggers = @() }) | Should Be $false
+    }
     It 'n8n not running -> FAIL' {
         $f = New-HealthyFacts
         $f.N8n.Running = $false
@@ -505,10 +644,41 @@ Describe 'TEST/PROD separation, secrets, backups, DNS' {
     It 'DNS: no hostname requested -> INFO; resolves to this IP -> PASS; does not resolve -> WARN' {
         (Get-Row (Invoke-Eval (New-HealthyFacts)) 'DNS' 'Nombre del Hub').Status | Should Be 'INFO'
         $f = New-HealthyFacts
-        $f.Dns.Requested = 'hub.dauberthub.app'; $f.Dns.Resolved = @('192.168.1.50')
+        $f.Dns.Requested = 'hub.dauberthub.app'; $f.Dns.Resolved = @('192.168.1.11')
         (Get-Row (Invoke-Eval $f) 'DNS' 'Resolver hub.dauberthub.app').Status | Should Be 'PASS'
         $f.Dns.Resolved = @()
         (Get-Row (Invoke-Eval $f) 'DNS' 'Resolver hub.dauberthub.app').Status | Should Be 'WARN'
+    }
+}
+
+Describe 'V1 blockers vs warnings (Wi-Fi host)' {
+    It 'a healthy Wi-Fi-only host is SERVIDOR PREPARADO (Ethernet absence does not block)' {
+        $s = Get-DiagSummary (Invoke-Eval (New-HealthyFacts))
+        $s.Conclusion | Should Be 'SERVIDOR PREPARADO'
+    }
+    It 'the current blockers: missing LAN rule for TCP 8082 and n8n without automatic startup are FAIL' {
+        $f = New-HealthyFacts
+        $f.Firewall.Rules = @()
+        $f.N8n.Services = @(); $f.N8n.AutoStart = $false
+        $c = Invoke-Eval $f
+        (Get-Row $c 'Firewall' 'Hub 8082').Status | Should Be 'FAIL'
+        (Get-Row $c 'Startup' 'n8n').Status | Should Be 'FAIL'
+        (Get-DiagSummary $c).Conclusion | Should Be 'SERVIDOR NO PREPARADO'
+    }
+    It 'Docker AutoStart, secrets, Dropbox and hardcoded paths stay as WARN/FAIL-free warnings with only the two blockers present' {
+        $f = New-HealthyFacts
+        $f.Dropbox.AutoStart = $false
+        $f.Secrets.Files[0].AclRisk = @('BUILTIN\Users')
+        $f.N8n.UserPathRefs = @(@{ Location = 'repo'; Count = 5 })
+        $c = Invoke-Eval $f
+        @($c | Where-Object { $_.Status -eq 'FAIL' }).Count | Should Be 0
+        @($c | Where-Object { $_.Status -eq 'WARN' }).Count | Should BeGreaterThan 2
+        (Get-DiagSummary $c).Conclusion | Should Be 'SERVIDOR PREPARADO CON ADVERTENCIAS'
+    }
+    It 'nothing in the network area can modify IP, DHCP, DNS or the router: only read seams are used' {
+        $text = Get-Content -LiteralPath $scriptPath -Raw
+        $text | Should Not Match '(?i)(Set|New|Remove)-Net(IPAddress|IPInterface|Route|Adapter|FirewallRule|Neighbor)|Set-DnsClient|Disable-NetAdapter|Enable-NetAdapter|netsh\s+(interface|advfirewall)\s+set'
+        (Get-Content -LiteralPath $scriptPath -Raw) | Should Not Match 'Invoke-WebRequest[^\n]*192\.168'
     }
 }
 
@@ -526,8 +696,13 @@ Describe 'Summary, target state and conclusions' {
         $t = @(Get-TargetState 8082)
         (@($t | Where-Object { $_.Item -eq 'TCP 5432 LAN' })[0]).Requirement | Should Be 'FORBIDDEN'
         (@($t | Where-Object { $_.Item -eq 'TCP 8082 LAN' })[0]).State | Should Be 'CUMPLE'
-        (@($t | Where-Object { $_.Item -eq 'DHCP reservation' })[0]).State | Should Match 'NO COMPROBABLE'
+        (@($t | Where-Object { $_.Item -eq 'DHCP reservation' })[0]).Requirement | Should Be 'PENDING (router)'
+        (@($t | Where-Object { $_.Item -eq 'DHCP reservation' })[0]).State | Should Match 'PENDIENTE'
+        (@($t | Where-Object { $_.Item -eq 'Wi-Fi (red de V1)' })[0]).Requirement | Should Be 'REQUIRED (V1)'
+        (@($t | Where-Object { $_.Item -eq 'Ethernet' })[0]).Requirement | Should Be 'RECOMMENDED (availability)'
+        (@($t | Where-Object { $_.Item -eq 'Ethernet' })[0]).State | Should Match 'OPCIONAL'
         (@($t | Where-Object { $_.Item -eq 'Cloudflare' })[0]).Requirement | Should Be 'FUTURE/OPTIONAL'
+        (@($t | Where-Object { $_.Item -eq 'DNS interno' })[0]).State | Should Match 'FUERA DE V1'
     }
 }
 
@@ -546,7 +721,7 @@ Describe 'Main: output, JSON and exit codes' {
         $doc.schemaVersion | Should Be 1
         $doc.readOnly | Should Be $true
         $doc.conclusion | Should Be 'SERVIDOR PREPARADO'
-        $doc.network.Mac | Should Be 'AA-BB-CC-DD-EE-FF'
+        $doc.network.Mac | Should Be 'B0-19-21-04-D8-6F'
         @($doc.checks).Count | Should BeGreaterThan 20
         @($doc.target).Count | Should BeGreaterThan 5
         ($script:Printed -join "`n") | Should Not Match 'Area\s+Check\s+Status'
