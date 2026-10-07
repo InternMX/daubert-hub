@@ -148,7 +148,7 @@ async function run() {
     assert(back.status === 200 && back.body.data.paymentRecipientType === 'PARA' && back.body.data.isPrimary === false, 'Restoring PARA failed.');
 
     // 7. Dropbox path validation, then the real path (destination derived and synced).
-    for (const bad of ['C:\\Users\\06\\Documents\\Dropbox\\FLETES', '\\\\server\\share\\FLETES', '/abs/path', 'FLETES/../x']) {
+    for (const bad of ['C:\\Users\\example\\Documents\\Dropbox\\FLETES', '\\\\server\\share\\FLETES', '/abs/path', 'FLETES/../x']) {
       const rejected = await request('PATCH', `/providers/${companyId}`, { rutaDropbox: bad });
       assert(rejected.status === 400 && /^DROPBOX_PATH_/.test(rejected.body.code), `Unsafe path ${bad} was not rejected: ${JSON.stringify(rejected.body)}`);
     }

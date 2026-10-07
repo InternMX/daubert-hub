@@ -128,7 +128,7 @@ describe('ProvidersService — rutaDropbox', () => {
     expect(response.data.rutaDropbox).toBe('FLETES/TRANSPORTES KARINA');
   });
 
-  it.each([['C:\\Users\\06\\Documents\\Dropbox\\FLETES'], ['\\\\server\\share\\x'], ['/etc/x'], ['FLETES/../x']])('create rejects %s with a stable code and never reaches the repository', async (rutaDropbox) => {
+  it.each([['C:\\Users\\example\\Documents\\Dropbox\\FLETES'], ['\\\\server\\share\\x'], ['/etc/x'], ['FLETES/../x']])('create rejects %s with a stable code and never reaches the repository', async (rutaDropbox) => {
     const create = vi.fn();
     const service = new ProvidersService({ create } as never);
     await expect(service.create({ ...input, rutaDropbox }, 'req', identity)).rejects.toMatchObject({ status: 400, response: { code: expect.stringMatching(/^DROPBOX_PATH_/) } });

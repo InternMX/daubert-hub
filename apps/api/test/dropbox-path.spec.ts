@@ -41,7 +41,7 @@ describe('normalizeDropboxPath', () => {
   });
 
   it.each([
-    ['C:\\Users\\06\\Documents\\Dropbox\\FLETES'],
+    ['C:\\Users\\example\\Documents\\Dropbox\\FLETES'],
     ['D:\\FLETES'],
     ['c:/fletes'],
     ['C:FLETES']

@@ -60,7 +60,7 @@ describe('ProviderForm — Ruta de Dropbox', () => {
     await user.click(screen.getByRole('radio', { name: 'Configurar ahora' }));
     await user.type(screen.getByRole('textbox', { name: /Nombre comercial/ }), 'X');
     await selectType(user, 'Flete');
-    await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), 'C:\\Users\\06\\Dropbox');
+    await user.type(screen.getByRole('textbox', { name: 'Ruta de Dropbox' }), 'C:\\Users\\example\\Dropbox');
     await user.click(screen.getByRole('button', { name: 'Guardar y continuar' }));
     expect(await screen.findByText(/ruta relativa a Dropbox válida/)).toBeInTheDocument();
   });

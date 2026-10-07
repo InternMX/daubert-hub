@@ -23,8 +23,8 @@ $script:NodeRuleObj = @{ Name = 'TCP Query User{A}C:\program files\nodejs\node.e
 function New-ConfigFacts {
     return @{
         Elevated = $true; User = 'PC\svc'; UserSid = 'S-1-5-21-1000'
-        Network = @{ DefaultAdapter = 'Wi-Fi'; ActiveProfiles = @('Public'); GatewayCheck = @{ Gateway = '192.168.1.1'; Tcp = 'open'; TcpPort = 80; NeighborState = 'Reachable'; NeighborMac = 'AA-BB-CC-00-00-01' }
-            Adapters = @(@{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Up'; Mac = 'B0-19-21-04-D8-6F'; IPv4 = @('192.168.1.11'); IPv6 = @(); Gateway = '192.168.1.1'; Dns = @('192.168.1.1'); Dhcp = $true; Profile = 'Public'; IsDefault = $true; PowerSaving = 'Disabled' }) }
+        Network = @{ DefaultAdapter = 'Wi-Fi'; ActiveProfiles = @('Public'); GatewayCheck = @{ Gateway = '192.0.2.1'; Tcp = 'open'; TcpPort = 80; NeighborState = 'Reachable'; NeighborMac = 'AA-BB-CC-00-00-01' }
+            Adapters = @(@{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Up'; Mac = '02-00-5E-00-00-01'; IPv4 = @('192.0.2.11'); IPv6 = @(); Gateway = '192.0.2.1'; Dns = @('192.0.2.1'); Dhcp = $true; Profile = 'Public'; IsDefault = $true; PowerSaving = 'Disabled' }) }
         Energy = @{ Plan = 'Alto rendimiento'; WifiPowerSavingAc = 0 }
         Firewall = @{ Available = $true; Profiles = @{}; Rules = @(); Listeners = @() }
         HubRules = @(); BlockRules = @()
@@ -288,7 +288,7 @@ Describe 'Plan: general (Wi-Fi, router, compose, boot)' {
         $d = Get-Step $p 'Red' 'DHCP reservation*'
         $d.Action | Should Be 'INFO'
         $d.Detail | Should Match 'PENDIENTE'
-        $d.Detail | Should Match 'B0-19-21-04-D8-6F -> 192\.168\.1\.11'
+        $d.Detail | Should Match '02-00-5E-00-00-01 -> 192\.0\.2\.11'
         $d.Detail | Should Match 'NO toca el router'
         @($p | Where-Object { $_.Command -match '(?i)NetIPAddress|NetIPInterface|DnsClient|NetRoute|NetConnectionProfile|netsh|dhcp|router' }).Count | Should Be 0
     }
@@ -321,7 +321,7 @@ Describe 'Firewall rule logic and loopback protection' {
     }
     It 'the block rule protects loopback only when RemoteAddress is exactly LocalSubnet' {
         (Test-RuleProtectsLoopback $script:BlockRuleObj) | Should Be $true
-        foreach ($bad in @('Any'), @('*'), @('127.0.0.1'), @('::1'), @('LocalSubnet', '127.0.0.1'), @('192.168.1.0/24')) {
+        foreach ($bad in @('Any'), @('*'), @('127.0.0.1'), @('::1'), @('LocalSubnet', '127.0.0.1'), @('192.0.2.0/24')) {
             $r = @{} + $script:BlockRuleObj; $r.RemoteAddress = $bad
             (Test-RuleProtectsLoopback $r) | Should Be $false
         }
@@ -513,7 +513,7 @@ Describe 'Phase 5 Verify (read-only)' {
         Mock Get-ApiHealthFacts { @{ Code = 200; Status = 'ok'; Database = 'connected' } }
         Mock Get-ContainerState { if ($Name -match 'api') { return @{ State = 'running'; Health = 'healthy' } } return @{ State = 'running'; Health = '' } }
         Mock Get-Service { [pscustomobject]@{ Name = 'postgresql-x64-18'; Status = 'Running' } }
-        Mock Get-NetworkFacts { @{ Adapters = @(@{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Up'; IPv4 = @('192.168.1.11') }) } }
+        Mock Get-NetworkFacts { @{ Adapters = @(@{ Name = 'Wi-Fi'; Kind = 'Wi-Fi'; Status = 'Up'; IPv4 = @('192.0.2.11') }) } }
         Mock Get-DiagFacts { @{} }
         Mock Invoke-DiagEvaluation { @([pscustomobject]@{ Area = 'X'; Check = 'Y'; Status = 'PASS'; Detail = '' }) }
     }
@@ -550,8 +550,8 @@ Describe 'Phase 5 and Diagnose stay aligned (n8n logon-task startup)' {
     }
     It 'the real Diagnose evaluation of an n8n host supervised by an enabled AtLogOn task (no AutoAdminLogon) has no FAIL for Startup/n8n and keeps Arranque desatendido as WARN' {
         $script:Checks = New-Object System.Collections.ArrayList
-        $task = @{ Name = 'Daubert - n8n Supervisor'; State = 'Running'; LogonType = 'Interactive'; UserId = '06'
-            Triggers = @(@{ Type = 'MSFT_TaskLogonTrigger'; UserId = 'DESKTOP-4UP0ELC\06'; Delay = 'PT1M'; Enabled = $true })
+        $task = @{ Name = 'Daubert - n8n Supervisor'; State = 'Running'; LogonType = 'Interactive'; UserId = 'hubuser'
+            Triggers = @(@{ Type = 'MSFT_TaskLogonTrigger'; UserId = 'HUB-PC\hubuser'; Delay = 'PT1M'; Enabled = $true })
             Actions = 'powershell.exe -File "C:\ProgramData\DaubertHub\Server\Start-DaubertN8nSupervisor.ps1" n8n' }
         Mock Get-ScheduledTaskFacts { return @($task) }
         Mock Get-CimInstance { return @() }

@@ -438,7 +438,7 @@ function Get-GeneralSteps {
     $steps += New-Step 'Red' 'INFO' 'Perfil de red' 'se mantiene Public (decision de V1): la regla del Hub usa Profile Any y no depende de cambiarlo a Private'
     $primary = @($Facts.Network.Adapters | Where-Object { $_.Status -eq 'Up' -and @($_.IPv4).Count -gt 0 }) | Select-Object -First 1
     $mac = $(if ($primary) { [string]$primary.Mac } else { '?' }); $ip = $(if ($primary -and @($primary.IPv4).Count -gt 0) { [string]$primary.IPv4[0] } else { '?' })
-    $steps += New-Step 'Red' 'INFO' 'DHCP reservation (router ZTE F689)' ('PENDIENTE de autorizacion: ' + $mac + ' -> ' + $ip + '. El script NO toca el router ni la IP/DHCP/DNS del equipo. Hasta que exista la IP puede cambiar')
+    $steps += New-Step 'Red' 'INFO' 'DHCP reservation (router de la LAN)' ('PENDIENTE de autorizacion: ' + $mac + ' -> ' + $ip + '. El script NO toca el router ni la IP/DHCP/DNS del equipo. Hasta que exista la IP puede cambiar')
     $steps += New-Step 'Red' 'INFO' 'DNS interno' 'fuera de V1 por ahora'
     $steps += New-Step 'Red' 'INFO' 'Ethernet' 'no es requisito en V1 (recomendado para disponibilidad)'
     $steps += New-Step 'Compose' 'INFO' 'Proyecto PROD' 'se mantiene "daubert-hub"; renombrarlo a daubert-hub-prod queda para un release controlado posterior'
@@ -519,7 +519,7 @@ function Get-PhaseSteps {
         }
         'Verify' {
             $steps += New-Step 'Verificacion' 'CHECK' 'Fase 5' 'solo lectura: diagnostico completo; 8082 responde en el servidor; 3000/5432/5678 sin regla de entrada LAN; API -> PostgreSQL (/api/health database=connected); API -> n8n:5678; contenedores healthy/running; n8n activo y una sola instancia; PostgreSQL activo; Wi-Fi conectado' '' 5
-            $steps += New-Step 'Verificacion' 'INFO' 'Accesibilidad desde la LAN' 'desde el propio servidor no se puede probar el firewall (el trafico a la propia IP no pasa por el filtrado); queda como verificacion EXTERNA desde un cliente de la LAN (192.168.1.x): 8082 debe abrir; 3000, 5432 y 5678 deben dar timeout' '' 5
+            $steps += New-Step 'Verificacion' 'INFO' 'Accesibilidad desde la LAN' 'desde el propio servidor no se puede probar el firewall (el trafico a la propia IP no pasa por el filtrado); queda como verificacion EXTERNA desde un cliente de la LAN: 8082 debe abrir; 3000, 5432 y 5678 deben dar timeout' '' 5
             $steps += New-Step 'Verificacion' 'SKIP' 'DHCP/DNS/router' 'no se tocan' '' 5
         }
     }

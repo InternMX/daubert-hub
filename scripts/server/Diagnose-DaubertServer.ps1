@@ -31,7 +31,7 @@
     Daubert Hub repository. Default: the repository that contains this script.
 
 .PARAMETER DaubertHubHostname
-    Optional name (for example hub.dauberthub.app) to test whether it currently resolves.
+    Optional name (for example hub.example.internal) to test whether it currently resolves.
 #>
 [CmdletBinding()]
 param(
@@ -894,7 +894,7 @@ function Test-NetworkChecks {
         else { Save-Check 'Network' 'Wi-Fi ahorro de energia' 'INFO' 'no determinado (puede requerir sesion elevada)' }
     }
     $mac = [string]$primary.Mac; $ip = $(if ($ip4.Count -gt 0) { $ip4[0] } else { '?' })
-    Save-Check 'Network' 'DHCP reservation' 'INFO' ('PENDIENTE (requiere administrar el router ZTE F689; sin autorizacion todavia): reservar ' + $mac + ' -> ' + $ip + '. Hasta entonces la IP puede cambiar')
+    Save-Check 'Network' 'DHCP reservation' 'INFO' ('PENDIENTE (requiere administrar el router de la LAN; sin autorizacion todavia): reservar ' + $mac + ' -> ' + $ip + '. Hasta entonces la IP puede cambiar')
     Save-Check 'Network' 'Perfil de red' 'INFO' ($(if ($primary.Profile) { [string]$primary.Profile } else { 'desconocido' }) + $(if ($primary.Profile -eq 'Public') { ' - decision de V1: se mantiene Public (no cambiar a Private); la regla del Hub debe cubrir Public (Profile Any)' } else { '' }))
 }
 
@@ -1239,7 +1239,7 @@ function Get-TargetState {
             elseif ($s -eq 'PASS') { $state = 'CUMPLE' }
             elseif ($s -eq 'INFO') { $state = 'INFO' }
             else { $state = $(if ($s -eq 'WARN') { 'CUMPLE PARCIALMENTE' } else { 'NO CUMPLE' }) }
-            if ($t.Item -eq 'DHCP reservation') { $state = 'PENDIENTE (requiere autorizacion en el ZTE F689; no comprobable desde el host)' }
+            if ($t.Item -eq 'DHCP reservation') { $state = 'PENDIENTE (requiere autorizacion en el router; no comprobable desde el host)' }
             if ($t.Item -eq 'Ethernet') { $state = $(if ($s -eq 'INFO') { 'OPCIONAL (no bloquea V1)' } else { $state }) }
             if ($t.Item -eq 'DNS interno' -and $s -eq 'INFO') { $state = 'NO EVALUADO' }
         }

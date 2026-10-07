@@ -487,7 +487,7 @@ async function run() {
     // without reapplying or otherwise touching them.
     // =========================================================
     {
-      const migrationsDir = 'C:\\Users\\06\\Documents\\Dropbox\\Pruebas\\BASE DE DATOS\\MIGRACIONES\\daubert_hub_test';
+      const migrationsDir = path.join(require('os').homedir(), 'Documents', 'Dropbox', 'Pruebas', 'BASE DE DATOS', 'MIGRACIONES', 'daubert_hub_test');
       const phase11a3Files = [
         '20260917_001_caterpillar_execution_finalization.up.sql',
         '20260917_002_caterpillar_execution_finalization_n8n_permissions.up.sql'
