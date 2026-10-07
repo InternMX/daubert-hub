@@ -32,6 +32,13 @@
 .PARAMETER Candidate
     Commit to deploy. It must be exactly HEAD (the build takes GIT_COMMIT from HEAD).
 
+.PARAMETER AcknowledgeN8nAlreadyApplied
+    Explicit acknowledgement that the n8n/ files in the release are versioned exports of workflows
+    that are ALREADY applied and verified in PROD. Without it, any change under n8n/ blocks the
+    deployment. With it, only that one gate reason is lifted: the script still never imports,
+    activates, deactivates or modifies anything in n8n. It does NOT affect the migrations gate
+    (migrations always block) or any other validation.
+
 .PARAMETER HealthTimeoutSeconds
     How long -Deploy waits for api to become healthy and web to answer. Default: 180.
 #>
@@ -41,7 +48,8 @@ param(
     [switch]$WhatIf,
     [switch]$Deploy,
     [string]$Candidate = 'HEAD',
-    [int]$HealthTimeoutSeconds = 180
+    [int]$HealthTimeoutSeconds = 180,
+    [switch]$AcknowledgeN8nAlreadyApplied
 )
 
 Set-StrictMode -Version Latest
@@ -287,7 +295,8 @@ function Get-DeployContext {
 # ================================================================== Validation
 function Test-DeployGate {
     # Pure: turns facts into a list of blocking reasons. Empty list = may proceed.
-    param($Context)
+    # $AcknowledgeN8n lifts ONLY the n8n/ reason; migrations and every other check are unaffected.
+    param($Context, [bool]$AcknowledgeN8n = $false)
     $reasons = @()
     if (-not $Context.CandidateFull -or $Context.CandidateFull -ne $Context.HeadFull) { $reasons += 'El candidato no es exactamente HEAD (GIT_COMMIT se toma de HEAD al construir).' }
     if (@($Context.Dirty).Count -gt 0) { $reasons += 'El arbol de trabajo no esta limpio.' }
@@ -318,7 +327,7 @@ function Test-DeployGate {
         if ($s.AnchorExists) { $reasons += ('La etiqueta ' + $s.Anchor + ' ya existe: nunca se sobrescribe.') }
     }
     if (@($Context.MigrationFiles).Count -gt 0) { $reasons += 'El release incluye migraciones: este script no las aplica; seguir el checklist manual.' }
-    if (@($Context.N8nFiles).Count -gt 0) { $reasons += 'El release incluye cambios de n8n: este script no los aplica; seguir el checklist manual.' }
+    if (@($Context.N8nFiles).Count -gt 0 -and -not $AcknowledgeN8n) { $reasons += 'El release incluye cambios de n8n: este script no los aplica; seguir el checklist manual, o confirmar que ya estan aplicados y verificados en PROD con -AcknowledgeN8nAlreadyApplied.' }
     return $reasons
 }
 
@@ -510,6 +519,7 @@ function Show-Usage {
     Write-Host '  -WhatIf     Valida y muestra el plan completo sin ejecutar ninguna operacion mutante.'
     Write-Host '  -Deploy     Unico modo que modifica PROD; pide escribir exactamente: DEPLOY DAUBERT HUB.'
     Write-Host 'Opciones: -Candidate <commit> (debe ser HEAD), -HealthTimeoutSeconds <n>.'
+    Write-Host '  -AcknowledgeN8nAlreadyApplied  Reconoce que los archivos n8n/ del release ya estan aplicados y verificados en PROD (no aplica ni toca n8n; no afecta a las migraciones).'
     Write-Host 'Sin modo no se hace nada. Detalle: docs/operations/deployment-checklist.md'
 }
 
@@ -522,7 +532,7 @@ function Invoke-Preflight {
 }
 
 function Invoke-DeployMain {
-    param([bool]$DoPreflight, [bool]$DoWhatIf, [bool]$DoDeploy, [string]$Candidate, [int]$TimeoutSeconds)
+    param([bool]$DoPreflight, [bool]$DoWhatIf, [bool]$DoDeploy, [string]$Candidate, [int]$TimeoutSeconds, [bool]$AcknowledgeN8n = $false)
 
     $selected = @(@($DoPreflight, $DoWhatIf, $DoDeploy) | Where-Object { $_ })
     if ($selected.Count -eq 0) { Show-Usage; return 0 }
@@ -553,12 +563,17 @@ function Invoke-DeployMain {
         Write-Safe 'SIN CAMBIOS DE HUB/DOCKER - NO HAY NADA QUE DESPLEGAR'
         return 2
     }
-    $reasons = @(Test-DeployGate $ctx)
+    $reasons = @(Test-DeployGate $ctx $AcknowledgeN8n)
     if ($reasons.Count -gt 0) {
         Write-Safe ''
         Write-Safe 'DEPLOYMENT BLOQUEADO. PROD no cambio:'
         foreach ($r in $reasons) { Write-Safe ('  - ' + $r) }
         return 1
+    }
+    if ($AcknowledgeN8n -and @($ctx.N8nFiles).Count -gt 0) {
+        Write-Safe ''
+        Write-Safe ('ADVERTENCIA: el release incluye ' + @($ctx.N8nFiles).Count + ' archivo(s) bajo n8n/. Se reconocen (-AcknowledgeN8nAlreadyApplied) como YA APLICADOS y VERIFICADOS en PROD.')
+        Write-Safe 'Este script NO importa, activa, desactiva ni modifica workflows de n8n; solo despliega api y web.'
     }
 
     $plan = New-DeployPlan $ctx
@@ -585,5 +600,5 @@ function Invoke-DeployMain {
 # Dot-sourcing (tests) only defines the functions above.
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
-    exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds)
+    exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied))
 }

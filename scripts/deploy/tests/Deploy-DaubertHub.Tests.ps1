@@ -85,10 +85,10 @@ function Get-FakeHttp {
 }
 
 function Invoke-Main {
-    param([bool]$P = $false, [bool]$W = $false, [bool]$D = $false, [string]$C = 'HEAD', [int]$T = 0)
+    param([bool]$P = $false, [bool]$W = $false, [bool]$D = $false, [string]$C = 'HEAD', [int]$T = 0, [bool]$N8nAck = $false)
     $script:Printed = @()
     $script:Mutations = @()
-    $result = @(Invoke-DeployMain $P $W $D $C $T)
+    $result = @(Invoke-DeployMain $P $W $D $C $T $N8nAck)
     return $result[-1]
 }
 
@@ -242,6 +242,88 @@ Describe 'Validaciones previas (Deploy)' {
         (Invoke-Main -D $true) | Should Be 1
         (Get-PrintedText) | Should Match 'n8n'
         Assert-MockCalled Invoke-DeployMutation -Times 0 -Exactly
+    }
+}
+
+Describe '-AcknowledgeN8nAlreadyApplied' {
+    BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'A) cambios de n8n SIN el switch: bloqueado, razon clara y ninguna mutacion' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json')
+        (Invoke-Main -D $true) | Should Be 1
+        (Get-PrintedText) | Should Match 'DEPLOYMENT BLOQUEADO'
+        (Get-PrintedText) | Should Match 'cambios de n8n: este script no los aplica'
+        (Get-PrintedText) | Should Match 'AcknowledgeN8nAlreadyApplied'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'B) cambios de n8n CON el switch: el gate ya no bloquea por n8n (Test-DeployGate)' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json')
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx) -join '|') | Should Match 'n8n'
+        (@(Test-DeployGate $ctx $false) -join '|') | Should Match 'n8n'
+        (@(Test-DeployGate $ctx $true) -join '|') | Should Not Match 'n8n'
+        @(Test-DeployGate $ctx $true).Count | Should Be 0
+    }
+
+    It 'B) con el switch y -WhatIf: muestra la advertencia, imprime el plan y no muta' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json')
+        (Invoke-Main -W $true -N8nAck $true) | Should Be 0
+        (Get-PrintedText) | Should Match 'ADVERTENCIA'
+        (Get-PrintedText) | Should Match 'YA APLICADOS y VERIFICADOS en PROD'
+        (Get-PrintedText) | Should Match 'NO importa, activa, desactiva ni modifica workflows de n8n'
+        (Get-PrintedText) | Should Match 'PLAN'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'B) con el switch y -Deploy confirmado: solo las mutaciones permitidas (tag de anclas y compose up api web)' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json')
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 0
+        (Get-PrintedText) | Should Match 'ADVERTENCIA'
+        foreach ($m in $script:Mutations) { (Test-AllowedMutation $m.Exe $m.Args) | Should BeNullOrEmpty }
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Not Match 'n8n'
+    }
+
+    It 'C) migraciones + el switch: sigue bloqueado por migraciones' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'database/migrations/daubert_global/20261002_012_x_prod.up.sql')
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        (Get-PrintedText) | Should Match 'migraciones'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'C) migraciones + n8n + el switch: bloquea por migraciones y no por n8n' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json', 'database/migrations/daubert_global/20261002_012_x_prod.up.sql')
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        (Get-PrintedText) | Should Match 'migraciones'
+        (Get-PrintedText) | Should Not Match 'cambios de n8n'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'el switch no relaja otras validaciones (HEAD distinto, arbol sucio, health, anclas)' {
+        $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json')
+        $script:Fake.CandidateFull = 'ffffffffffffffffffffffffffffffffffffffff'
+        (Invoke-Main -D $true -C 'HEAD~1' -N8nAck $true) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+        $script:Fake = New-Fake; $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json'); $script:Fake.Dirty = @(' M a.txt')
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+        $script:Fake = New-Fake; $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json'); $script:Fake.HealthEnv = 'TEST'
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+        $script:Fake = New-Fake; $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json'); $script:Fake.HealthDatabase = 'disconnected'
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+        $script:Fake = New-Fake; $script:Fake.Files = @('apps/api/src/x.ts', 'n8n/workflows/x.json'); $script:Fake.Running['api'] = 'sha256:cccccccccccccccc'
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'D) release sin n8n: igual que antes, con o sin el switch, y sin advertencia' {
+        (Invoke-Main -W $true) | Should Be 0
+        (Get-PrintedText) | Should Not Match 'ADVERTENCIA'
+        (Invoke-Main -W $true -N8nAck $true) | Should Be 0
+        (Get-PrintedText) | Should Not Match 'ADVERTENCIA'
+        @(Test-DeployGate (Get-DeployContext 'HEAD')).Count | Should Be 0
     }
 }
 
