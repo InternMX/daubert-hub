@@ -29,8 +29,8 @@
     {
       "id": "router",
       "type": "external",
-      "label": "ZTE F689",
-      "sublabel": "192.168.1.1 · DHCP activo",
+      "label": "Router de la LAN",
+      "sublabel": "DHCP activo",
       "pos": [
         430,
         70
@@ -44,7 +44,7 @@
       "id": "firewall",
       "type": "security",
       "label": "Windows Firewall",
-      "sublabel": "8082 LAN: regla pendiente",
+      "sublabel": "TCP 8082 · LocalSubnet",
       "pos": [
         430,
         270
@@ -142,7 +142,7 @@
       "id": "n8n",
       "type": "backend",
       "label": "n8n en Windows",
-      "sublabel": "5678 · arranque manual",
+      "sublabel": "5678 · supervisor (Task Scheduler)",
       "pos": [
         430,
         770
@@ -256,7 +256,7 @@
     },
     {
       "kind": "region",
-      "label": "Windows 11 Pro · Wi-Fi · IP actual 192.168.1.11",
+      "label": "Windows 11 Pro · Wi-Fi · servidor LAN",
       "wraps": [
         "firewall",
         "desktop",
@@ -321,14 +321,14 @@
       "id": "router-firewall",
       "from": "router",
       "to": "firewall",
-      "label": "Wi-Fi · 8082 pendiente",
-      "variant": "dashed"
+      "label": "Wi-Fi · 8082",
+      "variant": "default"
     },
     {
       "id": "firewall-web",
       "from": "firewall",
       "to": "web",
-      "label": "Objetivo: Allow LAN",
+      "label": "Allow LocalSubnet",
       "variant": "security"
     },
     {
@@ -406,30 +406,30 @@
       ]
     },
     {
-      "dot": "amber",
-      "title": "OBJETIVO V1 · pendiente",
+      "dot": "emerald",
+      "title": "V1 · configuración del servidor implementada y validada",
       "items": [
-        "Solo TCP 8082: Allow, RemoteAddress LocalSubnet; cubrir perfil Public sin cambiarlo.",
+        "Solo TCP 8082 hacia la LAN: Allow, RemoteAddress LocalSubnet, perfil Public sin cambiarlo. Bloqueo LAN de 5678 sin afectar el loopback de Docker.",
         "3000 sin publicación Docker; 5432 y 5678 sin acceso LAN. Internet → Hub: no expuesto.",
-        "Reserva DHCP B0-19-21-04-D8-6F → 192.168.1.11 pendiente de autorización; IP todavía dinámica."
+        "Verificar el acceso desde un cliente de la LAN es una prueba externa: no puede hacerse desde el propio servidor."
       ]
     },
     {
-      "dot": "rose",
-      "title": "Estado reportado · sin nueva auditoría del host",
+      "dot": "slate",
+      "title": "Diagnóstico histórico · previo a la configuración",
       "items": [
-        "Diagnóstico aportado: 62 PASS / 13 WARN / 2 FAIL: regla 8082 ausente y n8n sin autoarranque.",
-        "Android 192.168.1.16: timeout 8082/5432/5678 y ping sin respuesta; no demuestra aislamiento del router.",
-        "WARN: regla Node.js amplia, sesión de usuario, rutas fijas, Dropbox sin inicio detectado, Compose y ACL/env."
+        "Un diagnóstico anterior reportó 62 PASS / 13 WARN / 2 FAIL: regla 8082 ausente y n8n sin autoarranque.",
+        "Ambos FAIL corresponden a lo que el configurador y el supervisor de n8n ya resolvieron; Diagnose-DaubertServer permite re-verificar.",
+        "WARN conocidos: regla Node.js amplia, dependencia de sesión de usuario, rutas fijas, Dropbox, nombre de proyecto Compose y ACL/env."
       ]
     },
     {
-      "dot": "amber",
-      "title": "Arranque objetivo · no implementado completo",
+      "dot": "emerald",
+      "title": "Arranque · supervisor de n8n implementado",
       "items": [
-        "Windows → PostgreSQL → Docker Desktop → Web/API → supervisor n8n → disponibilidad LAN.",
-        "Docker AutoStart no demuestra arranque desatendido: depende de inicio de sesión.",
-        "Supervisor n8n y prueba después de reinicio pendientes; Dropbox también requiere validar inicio."
+        "Windows → PostgreSQL (servicio) → Docker Desktop → Web/API → n8n supervisado por la tarea Daubert - n8n Supervisor → disponibilidad LAN.",
+        "El supervisor inicia al iniciar sesión (retraso de 1 min), evita instancias duplicadas, adopta un n8n existente y reinicia con espera creciente.",
+        "Docker Desktop, el supervisor y Dropbox dependen del inicio de sesión de un usuario; tras un reinicio sin sesión solo PostgreSQL arranca solo."
       ]
     },
     {
@@ -438,7 +438,7 @@
       "items": [
         "Cloudflare Tunnel + Access: usuarios remotos, solo si se requiere.",
         "Tailscale: administración remota. DNS interno / hostname: decisión futura, sin dominio inventado.",
-        "Primero validar http://192.168.1.11:8082; Wi-Fi es válido para V1."
+        "Reserva DHCP: mejora posterior. Primero validar el acceso por IP en el puerto 8082; Wi-Fi es válido para V1."
       ]
     }
   ]

@@ -6,14 +6,14 @@
   "type": "workflow",
   "quality": "showcase",
   "specification": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.json",
-    "sha256": "77882c980ad471d8017ccbd6ddd6d56c48bce200a05de6a257a3391ebac6111f",
-    "bytes": 10885
+    "path": "docs/architecture/daubert-hub-deployment.json",
+    "sha256": "fd205f6a467883a739a3609e5a54c3b67ae62922d9bef4ffb787eb57fd554a3a",
+    "bytes": 10982
   },
   "artifact": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.html",
-    "sha256": "4824c57f73cdcf626a504649f78783e0b80f958198cad651c214c3caff94f3a4",
-    "bytes": 774135
+    "path": "docs/architecture/daubert-hub-deployment.html",
+    "sha256": "9cac18f28e26bea2b2fcde91800c8f3a2a5da613e7cebd14bbcba69adde158c2",
+    "bytes": 774232
   },
   "gates": {
     "validate": "pass",
@@ -28,21 +28,20 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.finalize.json",
-    "summaryReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.finalize-summary.json",
-    "browserCheckReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.browser-check.json"
+    "receipt": "docs/architecture/daubert-hub-deployment.finalize.json",
+    "summaryReceipt": "docs/architecture/daubert-hub-deployment.finalize-summary.json",
+    "browserCheckReceipt": "docs/architecture/daubert-hub-deployment.browser-check.json"
   },
   "update": {
-    "status": "unavailable",
-    "installedVersion": null,
-    "availableVersion": null,
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
     "releaseNotes": null,
-    "checkedAt": null,
-    "source": null,
+    "checkedAt": "2026-10-07T19:52:10.677Z",
+    "source": "cache",
     "noticeRequired": false,
-    "noticeText": null,
-    "reason": "cache-valid"
+    "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 3201
+  "durationMs": 2878
 }

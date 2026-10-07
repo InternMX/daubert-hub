@@ -2,6 +2,8 @@
 
 Fuentes: `deploy/README.md` (referencia de comandos, **no se duplica aquí**), `compose.pilot.yaml`, `docker/*`, `deploy/pilot.*.env.example`. Este documento aporta el orden, los chequeos y las trampas conocidas.
 
+> **Documento genérico (TEST) + orden de PROD.** Los nombres `daubert-hub-prod` y puerto `8080` de los ejemplos **no son los de PROD real**. PROD corre como proyecto Compose `daubert-hub`, puerto `8082`, con `compose.pilot.yaml` + `compose.prod-temp.yaml`, y se despliega con `scripts/deploy/Deploy-DaubertHub.ps1`. El procedimiento vigente de PROD (preflight, deploy, rollback manual y operaciones prohibidas, entre ellas `docker compose down`) está en [deployment-checklist.md](deployment-checklist.md).
+
 ## Qué se despliega
 
 Dos contenedores por entorno: `api` (NestJS, healthcheck contra `/api/health` que exige `database: connected`) y `web` (Nginx + SPA, sólo éste publica puerto). PostgreSQL y n8n **no** se despliegan aquí.
@@ -20,12 +22,12 @@ Dos contenedores por entorno: `api` (NestJS, healthcheck contra `/api/health` qu
 1. Confirmar que el archivo de entorno apunta a `daubert_global` y a `daubert_hub_app`.
 2. Si el cambio requiere BD: aplicar antes la migración con su proceso ([migrations](../database/migrations.md)).
 3. Si el cambio requiere n8n (p. ej. webhook nuevo): preparar/activar el workflow y su credencial **antes** de desplegar el Hub que lo llama.
-4. `docker compose --project-name daubert-hub-prod --env-file deploy/pilot.prod.env -f compose.pilot.yaml config` (**cuidado**: imprime secretos interpolados).
-5. `… up -d --build` (ver `deploy/README.md`). Opcional: fijar `APP_VERSION` y `GIT_COMMIT` en el shell antes del build para que `/api/health` los muestre.
+4. Ejecutar el preflight y `Deploy-DaubertHub.ps1 -Preflight` / `-WhatIf` según [deployment-checklist.md](deployment-checklist.md). Evitar `docker compose … config` a mano: imprime secretos interpolados.
+5. `Deploy-DaubertHub.ps1 -Deploy` (recrea solo `api` y `web`; ver la checklist). Opcional: fijar `APP_VERSION` y `GIT_COMMIT` en el shell antes del build para que `/api/health` los muestre.
 6. Verificar (abajo).
 7. Registrar en `docs/deployments/`.
 
-TEST es análogo con `daubert-hub-test` y `pilot.test.env`.
+TEST es análogo, con un proyecto Compose y un puerto propios y `pilot.test.env`; sus comandos están en `deploy/README.md`.
 
 ## Verificación posterior
 
@@ -39,14 +41,17 @@ TEST es análogo con `daubert-hub-test` y `pilot.test.env`.
 
 ## Rollback del Hub
 
-Volver a construir/levantar la versión anterior del código con el mismo `--project-name`/`--env-file`. Si el cambio incluyó migración o n8n, aplicar antes los rollbacks correspondientes con sus guards ([migrations](../database/migrations.md), [runbook Caterpillar](../automations/caterpillar/production-runbook.md#rollback)).
+En PROD el rollback es **manual** y está en [deployment-checklist.md](deployment-checklist.md) (recrear `api` y `web` con las imágenes ancla anteriores; sin `down`). En TEST basta con volver a construir/levantar la versión anterior del código con el mismo `--project-name`/`--env-file`. Si el cambio incluyó migración o n8n, aplicar antes los rollbacks correspondientes con sus guards ([migrations](../database/migrations.md), [runbook Caterpillar](../automations/caterpillar/production-runbook.md#rollback)).
 
 ## Exposición externa (Cloudflare u otro)
 
-Documentado sólo lo que dice el código para TEST (Cloudflare Quick Tunnel temporal). Procedimiento de exposición y TLS de PROD: **PENDIENTE**. Regla: sólo se publica el puerto `HUB_PORT` del contenedor `web`; ni la API, ni PostgreSQL, ni n8n.
+Fuera de V1: el acceso es solo por LAN (TCP 8082). Cloudflare Quick Tunnel es historia de TEST; Cloudflare/Tailscale y HTTPS son mejoras posteriores y no hay procedimiento de PROD. Regla: sólo se publica el puerto `HUB_PORT` del contenedor `web`; ni la API, ni PostgreSQL, ni n8n.
+
+## Arranque del host Windows
+
+El arranque tras reiniciar el host está cubierto por la configuración del servidor: PostgreSQL arranca como servicio; Docker Desktop (los contenedores tienen `restart: unless-stopped`) y n8n (tarea `Daubert - n8n Supervisor`) arrancan cuando un usuario inicia sesión. Ver [configure-daubert-server.md](configure-daubert-server.md).
 
 ## PENDIENTE
 
-- Procedimiento de arranque automático al reiniciar el host Windows.
 - Rotación de secretos (`DB_PASSWORD`, tokens de webhooks) y coordinación con n8n.
 - Estrategia de logs y retención.

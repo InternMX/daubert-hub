@@ -4,8 +4,8 @@ Runbooks generales. Si no hay evidencia suficiente para un procedimiento exacto,
 
 | Documento | Estado |
 | --- | --- |
-| [deployment.md](deployment.md) | Documentado (Docker Compose del piloto). Referencia de comandos: [`deploy/README.md`](../../deploy/README.md) |
-| [deployment-checklist.md](deployment-checklist.md) | Checklist PRE-DEPLOY / DEPLOY / POST-DEPLOY / ROLLBACK de PROD con el preflight de solo lectura `scripts/deploy/Test-DaubertDeployPreflight.ps1` (preparado, **no ejecutado** en PROD) |
+| [deployment.md](deployment.md) | Documentado (Docker Compose del piloto; genérico/TEST + orden de PROD). Referencia de comandos: [`deploy/README.md`](../../deploy/README.md) |
+| [deployment-checklist.md](deployment-checklist.md) | Procedimiento vigente de PROD (proyecto `daubert-hub`, puerto `8082`): PRE-DEPLOY / DEPLOY / POST-DEPLOY / ROLLBACK, operaciones prohibidas (incluye `docker compose down`), preflight de solo lectura `scripts/deploy/Test-DaubertDeployPreflight.ps1` y runner `Deploy-DaubertHub.ps1` (preparado, **no ejecutado** en PROD) |
 | [diagnose-daubert-server.md](diagnose-daubert-server.md) | Diagnóstico **de solo lectura** del host (`scripts/server/Diagnose-DaubertServer.ps1`): red, firewall, Docker, PostgreSQL, n8n, Dropbox, energía, arranque, backups y estado objetivo del servidor. **No configura nada** |
 | [configure-daubert-server.md](configure-daubert-server.md) | Configuración por fases del servidor V1 (`scripts/server/Configure-DaubertServer.ps1 -WhatIf|-Apply -Phase`): firewall 8082, bloqueo LAN de 5678, supervisor de n8n, ACL de secretos, verificación. **`-WhatIf` no modifica nada; `-Apply` es explícito, por fases y con confirmación** |
 | [backup-restore.md](backup-restore.md) | **PENDIENTE** (sólo requisitos conocidos) |
@@ -22,12 +22,16 @@ Runbooks generales. Si no hay evidencia suficiente para un procedimiento exacto,
 | Series/folios | [database/document-series](../database/document-series.md) |
 | Base de datos (diagnóstico) | [database/troubleshooting](../database/troubleshooting.md) |
 | Notificaciones de pago | [production-runbook](../automations/payment-notifications/production-runbook.md) · alta de empresas: [company-configuration](../automations/payment-notifications/company-configuration.md) |
-| Audi | PENDIENTE |
+| Audi | [production-runbook](../automations/audi/production-runbook.md) |
+
+## Validación actual
+
+La configuración del servidor y el supervisor de n8n (tarea `Daubert - n8n Supervisor`) ya están implementados y validados. El diagnóstico de solo lectura permite re-verificar el host; el acceso desde otro equipo de la LAN se comprueba externamente.
 
 ## Principios operativos
 
-1. PostgreSQL y n8n están **fuera de Docker**; reiniciar el stack Docker no los afecta.
-2. TEST y PROD se despliegan con `--project-name` y archivo `--env-file` distintos; verifica siempre `environment` en `/api/health` después de desplegar.
+1. PostgreSQL (servicio de Windows) y n8n (Windows, supervisado por Task Scheduler) están **fuera de Docker**; reiniciar el stack Docker no los afecta.
+2. TEST y PROD se despliegan con proyecto Compose, puerto y archivo `--env-file` distintos (PROD: proyecto `daubert-hub`, puerto `8082`); verifica siempre `environment` en `/api/health` después de desplegar. No se usa `docker compose down` en PROD.
 3. Ningún despliegue del Hub ejecuta migraciones, ni cambia n8n, ni cambia firewall/router.
 4. Los cambios en PROD se registran en `docs/deployments/`.
 5. Los secretos viven sólo en los archivos de entorno no versionados y en las credenciales de n8n.

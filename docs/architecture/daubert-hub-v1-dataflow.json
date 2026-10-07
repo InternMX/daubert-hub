@@ -30,7 +30,7 @@
       "id": "firewall",
       "type": "security",
       "label": "Windows Firewall",
-      "sublabel": "TCP 8082 · regla pendiente",
+      "sublabel": "TCP 8082 · LocalSubnet",
       "pos": [
         430,
         80
@@ -164,7 +164,7 @@
     },
     {
       "kind": "security-group",
-      "label": "Security boundary · objetivo V1",
+      "label": "Security boundary · V1",
       "wraps": [
         "firewall"
       ],
@@ -206,14 +206,14 @@
       "id": "employee-firewall",
       "from": "employee",
       "to": "firewall",
-      "label": "8082: Allow pendiente",
-      "variant": "dashed"
+      "label": "8082: Allow LocalSubnet",
+      "variant": "default"
     },
     {
       "id": "firewall-web",
       "from": "firewall",
       "to": "web",
-      "label": "Objetivo permitido",
+      "label": "Permitido",
       "variant": "security"
     },
     {
@@ -263,12 +263,12 @@
       ]
     },
     {
-      "dot": "amber",
-      "title": "Permitido es objetivo · todavía pendiente",
+      "dot": "emerald",
+      "title": "Acceso LAN · solo 8082",
       "items": [
-        "8082 está publicado por Docker, pero falta la regla Windows de entrada LAN.",
-        "Regla objetivo: TCP 8082, RemoteAddress LocalSubnet, Action Allow; debe cubrir Public.",
-        "Los timeout desde Android son consistentes con firewall; no prueban aislamiento Wi-Fi."
+        "8082 está publicado por Docker y la fase Network del configurador crea la regla de entrada: TCP 8082, RemoteAddress LocalSubnet, Action Allow, cubriendo Public.",
+        "3000, 5432 y 5678 no tienen regla de entrada LAN: un cliente de la LAN debe recibir timeout en esos puertos.",
+        "La prueba desde un cliente de la LAN es externa; no puede hacerse desde el propio servidor."
       ]
     },
     {

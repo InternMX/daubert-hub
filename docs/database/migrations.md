@@ -13,7 +13,7 @@ Fuentes: `database/migrations/daubert_global/*`, `README.md` raíz, nota de desp
 | Ubicación | Contenido | En el repo |
 | --- | --- | --- |
 | `database/migrations/daubert_global/` | **Sólo** la migración `20260923_009` (PROD) con `up`, `down`, `precheck`, `postcheck` | ✔ |
-| Directorio externo `…/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES` (en el `README.md` raíz aparece como ruta WSL `/mnt/c/Users/06/Documents/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES`) | Resto de migraciones PROD (`*_prod.*`) y TEST (`daubert_hub_test/` y `*_test.*`), paquete `daubert_global/caterpillar_pg_20260921/` | ✘ (fuera del repositorio) |
+| Directorio externo `…/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES` (en el `README.md` raíz aparece como ruta WSL `/mnt/c/Users/<WINDOWS_USER>/Documents/Dropbox/Pruebas/BASE DE DATOS/MIGRACIONES`) | Resto de migraciones PROD (`*_prod.*`) y TEST (`daubert_hub_test/` y `*_test.*`), paquete `daubert_global/caterpillar_pg_20260921/` | ✘ (fuera del repositorio) |
 
 **Pendiente (Fase D2):** versionar en `database/migrations/` el resto, o definir formalmente la referencia al directorio externo.
 

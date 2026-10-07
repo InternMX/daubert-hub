@@ -14,7 +14,7 @@ flowchart LR
     end
     subgraph Host["Host Windows (fuera de Docker)"]
         PG[("PostgreSQL<br/>daubert_hub_test / daubert_global")]
-        N8N["n8n<br/>workflows"]
+        N8N["n8n :5678<br/>workflows<br/>(supervisor: Task Scheduler)"]
         DBX[["Carpetas Dropbox<br/>archivos origen y PDFs"]]
     end
 
@@ -29,7 +29,7 @@ flowchart LR
 
 ## Flujo Browser → Web → API → PostgreSQL / n8n
 
-1. El navegador sólo habla con el puerto publicado por el contenedor `web` (`HUB_PORT`, 8080 PROD / 8081 TEST en los ejemplos).
+1. El navegador sólo habla con el puerto publicado por el contenedor `web` (`HUB_PORT`: 8082 en PROD real; 8081 en el ejemplo de TEST). En la LAN solo se accede por ese puerto.
 2. Nginx sirve la SPA compilada (`try_files … /index.html`) y reenvía `/api` y `/api/*` sin modificar a `api:3000` en la red bridge `pilot`, preservando el `Host` del navegador (lo necesita la protección CSRF por Origin, ver [authentication](../hub/authentication.md)).
 3. La API no publica puerto al host. Se conecta a PostgreSQL en `host.docker.internal:5432`.
 4. La API **nunca** deja que el navegador llame a n8n: cuando hay que pedirle algo a n8n (reproceso manual de Caterpillar o de Notificaciones de pago), lo hace **server-to-server** con un token que sólo existe en el entorno de la API.
@@ -47,7 +47,7 @@ Dos bases, dos roles de aplicación, dos stacks Docker con `--project-name` dist
 
 ## Cloudflare
 
-Los comentarios del código (`apps/api/src/main.ts`, `security/csrf-origin.guard.ts`) describen una topología TEST con **Cloudflare Quick Tunnel** (temporal, TLS termina en el túnel y el salto local hacia Nginx es HTTP). Por eso HSTS está desactivado en la API y la comparación de Origin ignora el esquema. La topología de exposición de PROD (túnel permanente, LAN, otro proxy) **no está documentada en el repositorio**: PENDIENTE.
+Los comentarios del código (`apps/api/src/main.ts`, `security/csrf-origin.guard.ts`) describen una topología TEST histórica con **Cloudflare Quick Tunnel** (temporal, TLS termina en el túnel y el salto local hacia Nginx es HTTP). Por eso HSTS está desactivado en la API y la comparación de Origin ignora el esquema. En PROD V1 el acceso es **solo por LAN** (TCP 8082, HTTP); Cloudflare/Tailscale y HTTPS son mejoras posteriores. Ver [arquitectura self-hosted V1](../architecture/README.md).
 
 ## Qué NO hace cada capa
 

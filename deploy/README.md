@@ -2,6 +2,8 @@
 
 This deployment runs the compiled Daubert Hub web and API applications in Docker while continuing to use PostgreSQL on the Windows host. It does not containerize or expose PostgreSQL or n8n.
 
+> **Scope of this guide (Spanish docs: [`docs/operations/deployment.md`](../docs/operations/deployment.md)).** This is the **generic** Compose reference, used mainly for TEST and for understanding the stack. The commands below use the example names `daubert-hub-prod` and port `8080`; they are **not** the real PROD values. Real PROD runs as Compose project `daubert-hub`, published on host port `8082`, with `compose.pilot.yaml` plus the host-local `compose.prod-temp.yaml`, and is deployed with `scripts/deploy/Deploy-DaubertHub.ps1`. For PROD follow [`docs/operations/deployment-checklist.md`](../docs/operations/deployment-checklist.md). Do not run `docker compose down` or `--remove-orphans` against PROD (the project name is shared with the development `compose.yaml`).
+
 ## Architecture
 
 The browser connects only to the host port published by `web`. Nginx serves the compiled Vite SPA and forwards `/api` and `/api/*` unchanged to `api:3000` on the Compose bridge network. The API has no published host port and connects to Windows PostgreSQL at `host.docker.internal:5432`.
@@ -29,12 +31,13 @@ The real files are explicitly ignored by Git. Do not put secrets in the example 
 
 ## Validate configuration
 
-Render each configuration before deployment:
+Render the configuration before deployment. TEST example:
 
 ```bash
 docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml config
-docker compose --project-name daubert-hub-prod --env-file deploy/pilot.prod.env -f compose.pilot.yaml config
 ```
+
+For PROD, use the preflight and the deploy runner described in [`docs/operations/deployment-checklist.md`](../docs/operations/deployment-checklist.md) instead of rendering the PROD configuration by hand.
 
 Review rendered output carefully because `docker compose config` includes interpolated secrets.
 
@@ -48,27 +51,19 @@ TEST is available on the host at `http://localhost:8081` with the example port.
 
 ## Deploy PROD
 
-Confirm the PROD file targets `daubert_global` and uses the dedicated production application role before running:
+PROD is **not** deployed with a hand-typed `docker compose` command. Real PROD uses project `daubert-hub`, host port `8082` (`HUB_PORT` in `deploy/pilot.prod.env`), `compose.pilot.yaml` + `compose.prod-temp.yaml`, and the database `daubert_global` with the dedicated production application role. The only supported procedure is `scripts/deploy/Deploy-DaubertHub.ps1` (modes `-Preflight`, `-WhatIf`, `-Deploy`), documented in [`docs/operations/deployment-checklist.md`](../docs/operations/deployment-checklist.md). It recreates only `api` and `web`.
 
-```bash
-docker compose --project-name daubert-hub-prod --env-file deploy/pilot.prod.env -f compose.pilot.yaml up -d --build
-```
-
-PROD is available on the host at `http://localhost:8080` with the example port. The distinct `daubert-hub-test` and `daubert-hub-prod` project names isolate container and network names so both stacks can coexist when their host ports differ.
+`deploy/pilot.prod.env.example` carries the generic example port `8080`; the real file sets `8082`. The distinct project names isolate container and network names so TEST and PROD can coexist when their host ports differ.
 
 ## Operations
 
-Inspect status and logs without exposing internal services:
+Inspect status and logs without exposing internal services (TEST example):
 
 ```bash
 docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml ps
 docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml logs
 ```
 
-Stop a stack with the same project name and environment file:
-
-```bash
-docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml down
-```
+Stopping a TEST stack is a TEST-only operation (use the TEST project name and env file). `docker compose down` is **not** an operation for PROD: see the PROD prohibited operations in [`docs/operations/deployment-checklist.md`](../docs/operations/deployment-checklist.md#operaciones-prohibidas).
 
 Only the configured `HUB_PORT` is published. The stack makes no Windows Firewall, router, PostgreSQL, migration, n8n, or production-data changes.

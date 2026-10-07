@@ -5015,7 +5015,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <!-- Boundaries (behind everything) -->
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" data-composition-frame-label="LAN" x="32" y="52" width="276" height="124" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" data-composition-frame-label="Security boundary · objetivo V1" x="402" y="52" width="276" height="124" rx="8" class="c-security-group" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" data-composition-frame-label="Security boundary · V1" x="402" y="52" width="276" height="124" rx="8" class="c-security-group" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="2" data-composition-frame-label="Windows host" x="402" y="38" width="646" height="668" rx="12" class="c-region" stroke-width="1"/>
 
@@ -5026,11 +5026,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <!-- Connection paths (before components for correct z-order) -->
         <g data-graph-role="automatic-crossover" style="--step:0">
           <path data-graph-role="automatic-crossover-underlay" d="M 280 118 L 430 118" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="employee" data-edge-to="firewall" data-edge-label="8082: Allow pendiente" data-edge-key="0" data-edge-id="employee-firewall" data-composition-points="280,118;430,118" data-composition-crossover="halo" data-composition-independent="true" d="M 280 118 L 430 118" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+          <path data-edge-from="employee" data-edge-to="firewall" data-edge-label="8082: Allow LocalSubnet" data-edge-key="0" data-edge-id="employee-firewall" data-composition-points="280,118;430,118" data-composition-crossover="halo" data-composition-independent="true" d="M 280 118 L 430 118" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:1">
           <path data-graph-role="automatic-crossover-underlay" d="M 650 118 L 800 118" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="firewall" data-edge-to="web" data-edge-label="Objetivo permitido" data-edge-key="1" data-edge-id="firewall-web" data-composition-points="650,118;800,118" data-composition-crossover="halo" data-composition-independent="true" d="M 650 118 L 800 118" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+          <path data-edge-from="firewall" data-edge-to="web" data-edge-label="Permitido" data-edge-key="1" data-edge-id="firewall-web" data-composition-points="650,118;800,118" data-composition-crossover="halo" data-composition-independent="true" d="M 650 118 L 800 118" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:2">
           <path data-graph-role="automatic-crossover-underlay" d="M 910 156 L 910 340" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
@@ -5066,8 +5066,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="170" y="132" class="t-muted" font-size="9" text-anchor="middle">Navegador · LAN</text>
         </g>
 
-        <g id="node-firewall" data-node-id="firewall" data-node-label="Windows Firewall" tabindex="0" role="button" aria-label="Focus Windows Firewall, TCP 8082 · regla pendiente, Windows host › Security boundary · objetivo V1" aria-pressed="false" data-node-kind="security" data-node-sublabel="TCP 8082 · regla pendiente" data-node-context="Windows host › Security boundary · objetivo V1">
-          <title>Windows Firewall · TCP 8082 · regla pendiente · Windows host › Security boundary · objetivo V1</title>
+        <g id="node-firewall" data-node-id="firewall" data-node-label="Windows Firewall" tabindex="0" role="button" aria-label="Focus Windows Firewall, TCP 8082 · LocalSubnet, Windows host › Security boundary · V1" aria-pressed="false" data-node-kind="security" data-node-sublabel="TCP 8082 · LocalSubnet" data-node-context="Windows host › Security boundary · V1">
+          <title>Windows Firewall · TCP 8082 · LocalSubnet · Windows host › Security boundary · V1</title>
           <rect x="430" y="80" width="220" height="76" rx="6" class="c-mask"/>
           <rect x="430" y="80" width="220" height="76" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(436 86) scale(0.6875)">
@@ -5075,7 +5075,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="540" y="116" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Windows Firewall</text>
-        <text data-detail="context" x="540" y="132" class="t-muted" font-size="9" text-anchor="middle">TCP 8082 · regla pendiente</text>
+        <text data-detail="context" x="540" y="132" class="t-muted" font-size="9" text-anchor="middle">TCP 8082 · LocalSubnet</text>
         </g>
 
         <g id="node-web" data-node-id="web" data-node-label="Web / Nginx" tabindex="0" role="button" aria-label="Focus Web / Nginx, HTTP 8082 → contenedor 80, Windows host › Docker · Application runtime" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="HTTP 8082 → contenedor 80" data-node-context="Windows host › Docker · Application runtime">
@@ -5151,13 +5151,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="employee" data-edge-to="firewall" data-edge-label="8082: Allow pendiente" data-edge-key="0" data-edge-id="employee-firewall">
-          <rect x="299.6" y="98" width="110.8" height="14" rx="3" class="c-mask"/>
-          <text x="355" y="108" class="t-edge-dashed" font-size="8" text-anchor="middle">8082: Allow pendiente</text>
+        <g data-detail="context" data-edge-from="employee" data-edge-to="firewall" data-edge-label="8082: Allow LocalSubnet" data-edge-key="0" data-edge-id="employee-firewall">
+          <rect x="294.8" y="98" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="355" y="108" class="t-edge-default" font-size="8" text-anchor="middle">8082: Allow LocalSubnet</text>
         </g>
-        <g data-detail="context" data-edge-from="firewall" data-edge-to="web" data-edge-label="Objetivo permitido" data-edge-key="1" data-edge-id="firewall-web">
-          <rect x="676.8" y="98" width="96.39999999999999" height="14" rx="3" class="c-mask"/>
-          <text x="725" y="108" class="t-edge-security" font-size="8" text-anchor="middle">Objetivo permitido</text>
+        <g data-detail="context" data-edge-from="firewall" data-edge-to="web" data-edge-label="Permitido" data-edge-key="1" data-edge-id="firewall-web">
+          <rect x="698.4" y="98" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="725" y="108" class="t-edge-security" font-size="8" text-anchor="middle">Permitido</text>
         </g>
         <g data-detail="context" data-edge-from="web" data-edge-to="api" data-edge-label="/api → api:3000" data-edge-key="2" data-edge-id="web-api">
           <rect x="822" y="241" width="82" height="14" rx="3" class="c-mask"/>
@@ -5186,9 +5186,9 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-boundary-label="" x="40" y="73" class="t-cloud" font-size="9" font-weight="600">LAN</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="1" data-composition-frame-kind="security-group" data-composition-frame-label="Security boundary · objetivo V1">
-          <rect data-graph-role="structural-frame-label-mask" x="406" y="60" width="177.4" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="410" y="73" class="t-security" font-size="9" font-weight="600">Security boundary · objetivo V1</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="1" data-composition-frame-kind="security-group" data-composition-frame-label="Security boundary · V1">
+          <rect data-graph-role="structural-frame-label-mask" x="406" y="60" width="128.8" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="410" y="73" class="t-security" font-size="9" font-weight="600">Security boundary · V1</text>
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="region" data-composition-frame-label="Windows host">
@@ -5420,13 +5420,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
       <div class="card">
         <div class="card-header">
-          <div class="card-dot amber"></div>
-          <h3>Permitido es objetivo · todavía pendiente</h3>
+          <div class="card-dot emerald"></div>
+          <h3>Acceso LAN · solo 8082</h3>
         </div>
         <ul>
-          <li>8082 está publicado por Docker, pero falta la regla Windows de entrada LAN.</li>
-          <li>Regla objetivo: TCP 8082, RemoteAddress LocalSubnet, Action Allow; debe cubrir Public.</li>
-          <li>Los timeout desde Android son consistentes con firewall; no prueban aislamiento Wi-Fi.</li>
+          <li>8082 está publicado por Docker y la fase Network del configurador crea la regla de entrada: TCP 8082, RemoteAddress LocalSubnet, Action Allow, cubriendo Public.</li>
+          <li>3000, 5432 y 5678 no tienen regla de entrada LAN: un cliente de la LAN debe recibir timeout en esos puertos.</li>
+          <li>La prueba desde un cliente de la LAN es externa; no puede hacerse desde el propio servidor.</li>
         </ul>
       </div>
 

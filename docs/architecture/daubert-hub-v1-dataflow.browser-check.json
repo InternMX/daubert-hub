@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "55528666-a16e-4a07-a327-94a353da85d3",
+  "deliveryReceiptId": "c70ba876-18c5-4823-8f8a-d60701d95647",
   "artifact": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.html",
-    "sha256": "8326c6bd26d4f2a7dde4f3fdb47b3e045adc06f146a7f8395d30f3de72a074a0",
-    "bytes": 764072
+    "path": "docs/architecture/daubert-hub-v1-dataflow.html",
+    "sha256": "745166507df9cdfddb2ad2a6ae97a13ff14658efc2e4149a69b59d1bfa155e55",
+    "bytes": 764084
   },
   "state": {
     "detail": "read",
@@ -55,7 +55,7 @@
         "minimumProjectedNodeTextPx": 7.713235294117647,
         "minimumProjectedNonEdgeTextPx": 8.677389705882353,
         "minimumProjectedEdgeTextPx": 7.713235294117647,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -107,7 +107,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -159,7 +159,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -211,7 +211,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -316,7 +316,7 @@
         "minimumProjectedNodeTextPx": 7.713235294117647,
         "minimumProjectedNonEdgeTextPx": 8.677389705882353,
         "minimumProjectedEdgeTextPx": 7.713235294117647,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -368,7 +368,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -420,7 +420,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -472,7 +472,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -529,7 +529,7 @@
         "minimumProjectedNodeTextPx": 7.713235294117647,
         "minimumProjectedNonEdgeTextPx": 8.677389705882353,
         "minimumProjectedEdgeTextPx": 7.713235294117647,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -581,7 +581,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -633,7 +633,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",
@@ -685,7 +685,7 @@
         "minimumProjectedNodeTextPx": 8,
         "minimumProjectedNonEdgeTextPx": 9,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "8082: Allow pendiente",
+        "minimumProjectedNodeText": "8082: Allow LocalSubnet",
         "minimumProjectedNodeTextDetail": "edge",
         "minimumProjectedNodeTextOwner": {
           "kind": "edge",

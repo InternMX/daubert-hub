@@ -2,28 +2,32 @@
 
 Diagnóstico formal, **de solo lectura**, del PC que actúa (o actuará) como **Daubert Hub Server**. Complementa el deployment (`scripts/deploy/`), pero su objetivo es el **host**, no una release.
 
-> Este script **todavía no configura nada**. No existen `-Configure`, `-Repair` ni `-Uninstall`; pasarlos es un error de uso (exit 3). Configurar el servidor será un paso posterior y separado.
+> Este script **no configura nada**: es solo de lectura. No existen `-Configure`, `-Repair` ni `-Uninstall`; pasarlos es un error de uso (exit 3). La configuración del servidor es un paso separado, con su propio script: [configure-daubert-server.md](configure-daubert-server.md).
+
+## Validación actual
+
+La configuración del servidor (firewall 8082, bloqueo LAN de 5678, ACL de secretos) y el supervisor de n8n (tarea `Daubert - n8n Supervisor`) ya fueron implementados y validados en el servidor. Este diagnóstico sirve para **re-verificar** el estado del host en cualquier momento. Los ejemplos de hallazgos `FAIL` de n8n/arranque descritos abajo corresponden a un host que aún no tiene el supervisor. Lo que no puede comprobarse desde el propio servidor (acceso desde otro equipo de la LAN) sigue siendo una verificación externa.
 
 ## Red objetivo de V1: Wi-Fi
 
-Para el primer deployment, este PC es provisionalmente el host del Hub y funciona **solo por Wi-Fi** (router ZTE F689). Por tanto:
+Para V1, este PC es provisionalmente el host del Hub y funciona **solo por Wi-Fi** (router de la LAN). Por tanto:
 
 - **Wi-Fi es válido**: se exige que el adaptador esté activo y conectado, con IPv4 válida, gateway y DHCP.
 - **Ethernet es solo una recomendación de disponibilidad**: aparece como `INFO` y nunca como `WARN` ni `FAIL`.
 - **Conectividad local** al gateway sin depender de ICMP: se usa un intento TCP a 80/443 del router (una respuesta o un rechazo prueban que está alcanzable) y la tabla de vecinos ARP. Un `ping` sin respuesta no es evidencia de fallo; el Firewall de Windows bloquea el eco entrante por defecto, igual que bloquea TCP 8082/5432/5678 mientras no exista una regla.
 - **Ahorro de energía del Wi-Fi**: se lee si Windows puede apagar el adaptador (`Permitir que el equipo apague este dispositivo`, requiere sesión elevada; si no se puede leer sale `INFO`) y el modo de ahorro del adaptador inalámbrico del plan de energía activo.
 - **Perfil de red**: se mantiene **Public** (decisión de V1); es `INFO`, no advertencia. La regla del Hub debe cubrir Public (`Profile Any`).
-- **Arranque desatendido**: sin auto-logon, tras un reinicio solo arranca lo que es servicio (PostgreSQL); Docker Desktop, n8n y Dropbox dependen del logon de un usuario. Se reporta como `WARN` (decisión de inicio de sesión de Windows pendiente; no se habilita AutoAdminLogon y no se lee ninguna credencial).
+- **Arranque desatendido**: sin auto-logon, tras un reinicio solo arranca lo que es servicio (PostgreSQL); Docker Desktop, la tarea del supervisor de n8n y Dropbox dependen del logon de un usuario. Se reporta como `WARN` (decisión de inicio de sesión de Windows pendiente; no se habilita AutoAdminLogon y no se lee ninguna credencial).
 - **DNS interno**: fuera de V1.
-- **Reserva DHCP**: se reporta siempre como `INFO` **PENDIENTE**. Requiere administrar el router y todavía no hay autorización; el diagnóstico solo informa la MAC y la IP actuales (`B0-19-21-04-D8-6F → 192.168.1.11` en este host). Hasta que exista, la IP puede cambiar.
+- **Reserva DHCP**: se reporta siempre como `INFO` **PENDIENTE**. Requiere administrar el router y todavía no hay autorización; el diagnóstico solo informa la MAC y la IP actuales (la MAC del adaptador y `<SERVER_IP>`). Hasta que exista, la IP puede cambiar.
 
-El plan para corregir lo que el diagnóstico encuentra está en [configure-daubert-server.md](configure-daubert-server.md) (solo `-WhatIf`).
+La corrección de lo que el diagnóstico encuentra está en [configure-daubert-server.md](configure-daubert-server.md) (`-WhatIf` para planear, `-Apply` por fases para aplicar).
 
-Siguen siendo **bloqueantes (`FAIL`)** la ausencia de regla de entrada LAN para TCP 8082 y la ausencia de arranque automático/supervisor de n8n. Para n8n, en V1 (una persona enciende el equipo e inicia sesión en horario de oficina) cuenta como `PASS` un servicio automático, o una tarea programada habilitada con disparador *Al iniciar sesión* para el usuario con que se ejecuta (`Daubert - n8n Supervisor`); no se exige AutoAdminLogon ni un servicio de Windows. Que el arranque no sea totalmente desatendido hasta que alguien inicie sesión se informa aparte como `WARN` (`Sesion interactiva`, `Arranque desatendido`). El resto de hallazgos (Docker AutoStart, secretos, Dropbox, rutas fijas…) se mantienen como `WARN`/`INFO` hasta que exista el configurador. Cuando se necesite una prueba de alcanzabilidad real (por ejemplo desde un teléfono de la LAN), es una verificación externa: el script no puede hacerla desde el propio servidor.
+Siguen siendo **bloqueantes (`FAIL`)** la ausencia de regla de entrada LAN para TCP 8082 y la ausencia de arranque automático/supervisor de n8n. Para n8n, en V1 (una persona enciende el equipo e inicia sesión en horario de oficina) cuenta como `PASS` un servicio automático, o una tarea programada habilitada con disparador *Al iniciar sesión* para el usuario con que se ejecuta (`Daubert - n8n Supervisor`); no se exige AutoAdminLogon ni un servicio de Windows. Que el arranque no sea totalmente desatendido hasta que alguien inicie sesión se informa aparte como `WARN` (`Sesion interactiva`, `Arranque desatendido`). El resto de hallazgos (Docker AutoStart, secretos, Dropbox, rutas fijas…) se mantienen como `WARN`/`INFO`; el configurador ([configure-daubert-server.md](configure-daubert-server.md)) atiende los que son corregibles desde el host. Cuando se necesite una prueba de alcanzabilidad real (por ejemplo desde un teléfono de la LAN), es una verificación externa: el script no puede hacerla desde el propio servidor.
 
 ## Propósito
 
-Responder, con evidencia y sin tocar el equipo: ¿este PC está preparado para ser el servidor del Hub? Reúne los datos que después necesitará el instalador (MAC, IP actual, gateway, DHCP) y marca lo que falta respecto al **estado objetivo** (sección final del informe).
+Responder, con evidencia y sin tocar el equipo: ¿este PC está preparado para ser el servidor del Hub? Reúne los datos de red (MAC, IP actual, gateway, DHCP), por ejemplo para una futura reserva DHCP, y marca lo que falta respecto al **estado objetivo** (sección final del informe).
 
 ## Comandos
 
@@ -31,11 +35,11 @@ Responder, con evidencia y sin tocar el equipo: ¿este PC está preparado para s
 # Tabla legible + resumen + conclusión + estado objetivo
 .\scripts\server\Diagnose-DaubertServer.ps1
 
-# Un único documento JSON (sin tabla), para el futuro instalador
+# Un único documento JSON (sin tabla), para automatizar su lectura
 .\scripts\server\Diagnose-DaubertServer.ps1 -Json
 
 # Otro repositorio / comprobar si un nombre ya resuelve
-.\scripts\server\Diagnose-DaubertServer.ps1 -RepoPath D:\daubert-hub -DaubertHubHostname hub.dauberthub.app
+.\scripts\server\Diagnose-DaubertServer.ps1 -RepoPath D:\daubert-hub -DaubertHubHostname hub.example.internal
 ```
 
 Se recomienda ejecutarlo también **elevado (administrador)**: sin elevación no se puede leer BitLocker y puede no leerse `pg_hba.conf`; esas filas salen como `INFO` (nunca como `PASS`).

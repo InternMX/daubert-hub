@@ -8,8 +8,8 @@ Workflow: `Remisiones AUDI PRODUCCION` ([export](../../../n8n/workflows/remision
 | --- | --- |
 | Base | `daubert_global` (credencial `Postgres produccion`) |
 | Schedule | Cada 15 min (zona `America/Mexico_City`) |
-| Origen | `C:\Users\06\Documents\Dropbox\CLIENTES\AUDI\<año>\…` |
-| Base de trabajo | `C:\Users\06\Documents\Dropbox\HERRAMIENTAS AUTOMATIZACION\REMISIONES AUDI` |
+| Origen | `C:\Users\<WINDOWS_USER>\Documents\Dropbox\CLIENTES\AUDI\<año>\…` |
+| Base de trabajo | `C:\Users\<WINDOWS_USER>\Documents\Dropbox\HERRAMIENTAS AUTOMATIZACION\REMISIONES AUDI` |
 | Subworkflows | `Generación PDFs`, `Generación Hojas Identificación` |
 | Manejador de errores | `Manejador de errores Audi Remisiones` |
 

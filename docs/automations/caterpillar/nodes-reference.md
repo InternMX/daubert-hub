@@ -93,7 +93,7 @@ Workflow PROD: `Remisiones CAT Produccion PG` (58 nodos; [export](../../../n8n/w
 
 | Recurso | Ubicación (PROD) | Usado por |
 | --- | --- | --- |
-| Base de trabajo | `C:\Users\06\Documents\Dropbox\HERRAMIENTAS AUTOMATIZACION\REMISIONES CAT` | Todos los nodos de archivos |
+| Base de trabajo | `C:\Users\<WINDOWS_USER>\Documents\Dropbox\HERRAMIENTAS AUTOMATIZACION\REMISIONES CAT` | Todos los nodos de archivos |
 | Scripts PowerShell | `…\05_ARCHIVOS AUXILIARES\SCRIPTS\convertir-cat-pdf.ps1`, `limpiar-temp-cat.ps1` | `Convertir PDF CAT`, `Eliminar HTML temporal CAT` |
 | Catálogo | `…\05_ARCHIVOS AUXILIARES\CATALOGO\Catalogo_Caterpillar.xlsx` | Catálogo |
 | Plantillas | `…\05_ARCHIVOS AUXILIARES\TEMPLATES\REM-Plantilla-CAT(.html / -TORREON.html)` | `Renderizar HTML` |

@@ -5537,13 +5537,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
       <div class="card">
         <div class="card-header">
-          <div class="card-dot amber"></div>
-          <h3>Objetivo primer servidor LAN</h3>
+          <div class="card-dot slate"></div>
+          <h3>Servidor LAN · fuera de este deployment</h3>
         </div>
         <ul>
-          <li>Una release PROD ya existe; habilitación LAN y prueba tras reinicio siguen pendientes.</li>
-          <li>Diagnose-DaubertServer es diagnóstico. Configure-DaubertServer local solo plan -WhatIf; aplicación mutante pendiente.</li>
+          <li>Diagnose-DaubertServer (solo lectura) y Configure-DaubertServer (-WhatIf / -Apply por fases) preparan el host; el supervisor de n8n está implementado y validado.</li>
           <li>Instalar PostgreSQL/n8n/Dropbox, configurar firewall y supervisor no forma parte de este deployment.</li>
+          <li>Un reinicio del host sin sesión de usuario solo recupera PostgreSQL; Docker Desktop, n8n y Dropbox esperan el inicio de sesión.</li>
         </ul>
       </div>
     </div>

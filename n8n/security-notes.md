@@ -15,7 +15,7 @@ Para cada export se recorrió el JSON completo (nodos, parámetros, código, met
 | `pinData` / `staticData` / binarios / base64 | Ninguno (`pinData` vacío; sin `staticData`) | — |
 | `meta.instanceId` | Presente en los 12 (idéntico en todos: **TEST y PROD viven en la misma instancia n8n**) | Se elimina en las copias |
 | IDs internos de credencial (`credentials.*.id`) | Presentes en los exports con credenciales | Se eliminan en las copias (se conserva el nombre) |
-| Rutas locales | Rutas Dropbox de Windows del equipo servidor, y usuario de Windows en la ruta | Se conservan: son configuración funcional, no secreto |
+| Rutas locales | Rutas Dropbox de Windows del equipo servidor, con el usuario de Windows en la ruta | Las rutas son configuración funcional, no secreto. En las copias versionadas solo el segmento de usuario se sustituyó por `<WINDOWS_USER>` (sin otro cambio): **al importar, hay que restituir el usuario real del servidor en esas rutas** |
 | IDs de carpetas de buzón Outlook (Graph) | Sólo en Notificaciones de pago | Identificadores de carpeta, no credenciales; se conservan si el export se versiona |
 
 ## Clasificación por export

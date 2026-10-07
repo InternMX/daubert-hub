@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "21adc105-6f0d-4cf6-a830-9618e2b90557",
+  "deliveryReceiptId": "120cb560-055a-47ac-b977-3d15c18004e6",
   "artifact": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.html",
-    "sha256": "4824c57f73cdcf626a504649f78783e0b80f958198cad651c214c3caff94f3a4",
-    "bytes": 774135
+    "path": "docs/architecture/daubert-hub-deployment.html",
+    "sha256": "9cac18f28e26bea2b2fcde91800c8f3a2a5da613e7cebd14bbcba69adde158c2",
+    "bytes": 774232
   },
   "state": {
     "detail": "read",

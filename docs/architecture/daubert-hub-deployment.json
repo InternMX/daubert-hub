@@ -457,12 +457,12 @@
       ]
     },
     {
-      "dot": "amber",
-      "title": "Objetivo primer servidor LAN",
+      "dot": "slate",
+      "title": "Servidor LAN · fuera de este deployment",
       "items": [
-        "Una release PROD ya existe; habilitación LAN y prueba tras reinicio siguen pendientes.",
-        "Diagnose-DaubertServer es diagnóstico. Configure-DaubertServer local solo plan -WhatIf; aplicación mutante pendiente.",
-        "Instalar PostgreSQL/n8n/Dropbox, configurar firewall y supervisor no forma parte de este deployment."
+        "Diagnose-DaubertServer (solo lectura) y Configure-DaubertServer (-WhatIf / -Apply por fases) preparan el host; el supervisor de n8n está implementado y validado.",
+        "Instalar PostgreSQL/n8n/Dropbox, configurar firewall y supervisor no forma parte de este deployment.",
+        "Un reinicio del host sin sesión de usuario solo recupera PostgreSQL; Docker Desktop, n8n y Dropbox esperan el inicio de sesión."
       ]
     }
   ]

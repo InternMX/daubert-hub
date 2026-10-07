@@ -6,14 +6,14 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.json",
-    "sha256": "f2362de229fc8b96fb79313d13c53a36c2096369e3ffe57b22fa47ea51be96a1",
-    "bytes": 9697
+    "path": "docs/architecture/daubert-hub-v1-architecture.json",
+    "sha256": "123001e1626ed5c3d3ac39dd75d4195068692f0156090ae7aba8631d1c9e7e67",
+    "bytes": 10058
   },
   "artifact": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.html",
-    "sha256": "9e720c8ecae05c8c307cf97629c613bda0ee08ed1ff62aed68d3d6f735879a9d",
-    "bytes": 777359
+    "path": "docs/architecture/daubert-hub-v1-architecture.html",
+    "sha256": "bc53e94ab5f0e1418c6931e92dc2a7e9fc53770dffef9d588753798afff58327",
+    "bytes": 777364
   },
   "gates": {
     "validate": "pass",
@@ -28,21 +28,20 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.finalize.json",
-    "summaryReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.finalize-summary.json",
-    "browserCheckReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.browser-check.json"
+    "receipt": "docs/architecture/daubert-hub-v1-architecture.finalize.json",
+    "summaryReceipt": "docs/architecture/daubert-hub-v1-architecture.finalize-summary.json",
+    "browserCheckReceipt": "docs/architecture/daubert-hub-v1-architecture.browser-check.json"
   },
   "update": {
-    "status": "unavailable",
-    "installedVersion": null,
-    "availableVersion": null,
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
     "releaseNotes": null,
-    "checkedAt": null,
-    "source": null,
+    "checkedAt": "2026-10-07T19:52:10.677Z",
+    "source": "cache",
     "noticeRequired": false,
-    "noticeText": null,
-    "reason": "check-failed"
+    "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 3405
+  "durationMs": 2794
 }

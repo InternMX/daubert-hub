@@ -6,8 +6,8 @@ Fuente: exploración recursiva de Dropbox el 2026-09-24. Sólo lectura; nada se 
 
 | Raíz | Entorno inferido | Archivos `.json` | Exports n8n válidos | No son workflows |
 | --- | --- | --- | --- | --- |
-| `C:\Users\06\Documents\Dropbox\HERRAMIENTAS AUTOMATIZACION\` | PROD | 154 | 8 | 146 |
-| `C:\Users\06\Documents\Dropbox\PRUEBAS\` | TEST | 27 | 4 | 23 |
+| `C:\Users\<WINDOWS_USER>\Documents\Dropbox\HERRAMIENTAS AUTOMATIZACION\` | PROD | 154 | 8 | 146 |
+| `C:\Users\<WINDOWS_USER>\Documents\Dropbox\PRUEBAS\` | TEST | 27 | 4 | 23 |
 | **Total** | | **181** | **12** | **169** |
 
 Criterio de export válido: JSON que parsea, con `nodes` (array) y `connections` (objeto), además de `name`/`settings`/`versionId`/`id` cuando existen. Ningún JSON dejó de parsear.
@@ -35,7 +35,7 @@ Leyenda: **Nodos** = total de nodos (incluye notas adhesivas); **Con. ** = nodos
 | 11 | Notificaciones de pago | Produccion Notificacion de pagos a Proveedores | PROD | **PROD actual** | sí | 100 | 91 | Schedule, manual, Webhook | intervalo sin valor explícito (default de n8n) | `POST daubert-hub/notificaciones-pago/reprocesar` (Header Auth, responde 202) | Postgres produccion | Outlook LOGIN OAUT2; Daubert Hub - n8n PROD | **Ausente** (id referenciado sin export) | **No** (DO_NOT_VERSION, ver [security-notes](security-notes.md)) | `HERRAMIENTAS AUTOMATIZACION\NOTIFICACIONES DE PAGO\Produccion Notificacion de pagos a Proveedores.json` | 2026-09-24 21:44 | Etiquetado "Prueba" en n8n; nodo suelto "BASELINE CORREOS" |
 | 12 | Notificaciones de pago | Test Notificacion de pagos a Proveedores | TEST | **TEST actual** | no | 100 | 91 | Schedule, manual, Webhook | ídem | **mismo `path`** que PROD | Postgres pruebas | Outlook LOGIN OAUT2 (la misma); Daubert Hub - n8n TEST | — (ninguno) | **No** (DO_NOT_VERSION) | `PRUEBAS\NOTIFICACIONES DE PAGO\Test Notificacion de pagos a Proveedores.json` | 2026-09-24 21:46 | PROD tiene lógica que TEST no tiene (ver drift) |
 
-Rutas: anteponer `C:\Users\06\Documents\Dropbox\` a las rutas de la columna "Archivo fuente"; `…` equivale a `HERRAMIENTAS AUTOMATIZACION`.
+Rutas: anteponer `C:\Users\<WINDOWS_USER>\Documents\Dropbox\` a las rutas de la columna "Archivo fuente"; `…` equivale a `HERRAMIENTAS AUTOMATIZACION`.
 
 ## Automatizaciones detectadas
 

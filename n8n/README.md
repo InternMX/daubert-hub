@@ -52,4 +52,6 @@ Los nombres son **estables** (`workflow.json`); el historial lo lleva Git. No se
 
 ## Importar un export versionado
 
+Las rutas de Windows de los nodos conservan la estructura real, pero el usuario de Windows aparece como `<WINDOWS_USER>`: reemplázalo por el usuario del servidor antes de activar el workflow.
+
 Al importar, n8n no tiene los IDs de credencial: **vuelve a asignar las credenciales por nombre** ([credentials.md](credentials.md)) antes de activar. Verifica el `errorWorkflow` de la configuración del workflow (referencia por ID de instancia; ver [n8n-dependencies](../docs/automations/n8n-dependencies.md)).

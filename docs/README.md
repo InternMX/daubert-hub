@@ -17,7 +17,9 @@ Este directorio es la **fuente de verdad documental** de Daubert Hub y de las au
 | Entender la base de datos (catálogo D3) | [database/README.md](database/README.md) → [data-dictionary](database/data-dictionary.md) |
 | Diagnosticar un problema de base de datos | [database/troubleshooting.md](database/troubleshooting.md) |
 | Backup/restore de PostgreSQL | [operations/database-backup-restore.md](operations/database-backup-restore.md) |
-| Desplegar el Hub (Docker) | [operations/deployment.md](operations/deployment.md) |
+| Ver la arquitectura self-hosted V1 (LAN, puertos, servidor) | [architecture/README.md](architecture/README.md) |
+| Desplegar el Hub (Docker) | [operations/deployment.md](operations/deployment.md) → [deployment-checklist.md](operations/deployment-checklist.md) (PROD) |
+| Diagnosticar o configurar el servidor (incluye el supervisor de n8n) | [diagnose-daubert-server](operations/diagnose-daubert-server.md) · [configure-daubert-server](operations/configure-daubert-server.md) |
 | Saber por qué algo se diseñó así | [decisions/README.md](decisions/README.md) |
 | Ver qué se promovió a PROD y cuándo | [deployments/](deployments/) |
 
@@ -44,10 +46,12 @@ docs/
 ├── automations/                  automatizaciones n8n
 │   ├── README.md
 │   ├── caterpillar/              módulo piloto (documentado de extremo a extremo)
-│   ├── audi/README.md            esqueleto (pendiente)
+│   ├── audi/README.md            documentado (D2)
 │   └── payment-notifications/         documentado (incluye company-configuration.md: configuración por empresa desde el Hub)
+├── architecture/                 arquitectura self-hosted V1 (LAN, servidor Windows, diagramas)
 ├── operations/                   runbooks generales
-│   └── README.md · deployment.md · backup-restore.md · database-backup-restore.md · troubleshooting.md
+│   └── README.md · deployment.md · deployment-checklist.md · diagnose/configure-daubert-server.md
+│       · backup-restore.md · database-backup-restore.md · troubleshooting.md
 ├── decisions/                    ADRs
 │   └── README.md · ADR-001 … ADR-005
 └── deployments/                  notas de despliegue puntuales (existentes)
@@ -73,7 +77,7 @@ Leyenda de fuentes usada en todo el árbol:
 | Caterpillar | Completo, **verificado contra el export** (D2) | [automations/caterpillar/](automations/caterpillar/README.md) |
 | Audi | Completo (D2) | [automations/audi/README.md](automations/audi/README.md) |
 | Notificaciones de pago | Completo (D2); export **no versionado**. Configuración por empresa desde el Hub: implementada y en PROD (2026-09-25), ver [company-configuration](automations/payment-notifications/company-configuration.md). Evolución futura: integración directa con Dropbox | [automations/payment-notifications/README.md](automations/payment-notifications/README.md) |
-| Operaciones | Parcial | Deploy Docker documentado; backup/restore exacto: PENDIENTE |
+| Operaciones | Parcial | Deploy Docker, diagnóstico/configuración del servidor (incluido el supervisor de n8n) y backups automatizados documentados; ver [operations/README.md](operations/README.md) |
 | ADRs | 5 creados | Sólo con evidencia en código/documentos |
 
 ## Pendientes transversales (candidatos a Fase D3 y posteriores)

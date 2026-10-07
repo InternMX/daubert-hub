@@ -1,6 +1,6 @@
 # n8n — Rutas y archivos
 
-Fuente: código de los nodos de los exports reales (Fase D2). Se listan **rutas y estructura**, nunca contenido. Todas cuelgan de `C:\Users\06\Documents\Dropbox\` (equipo servidor de n8n; los exports asumen Windows).
+Fuente: código de los nodos de los exports reales (Fase D2). Se listan **rutas y estructura**, nunca contenido. Todas cuelgan de `C:\Users\<WINDOWS_USER>\Documents\Dropbox\` (equipo servidor de n8n; los exports asumen Windows).
 
 Tipos: **INPUT** · **PROCESADOS/COPIA** · **SALIDAS** · **LOGS** · **ERRORES** · **AUXILIARES** · **TEMP** · **LEGACY**.
 

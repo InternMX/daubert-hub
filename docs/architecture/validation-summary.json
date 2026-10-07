@@ -5,14 +5,14 @@
       "diagram": "daubert-hub-v1-architecture",
       "type": "architecture",
       "specification": {
-        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.json",
-        "sha256": "f2362de229fc8b96fb79313d13c53a36c2096369e3ffe57b22fa47ea51be96a1",
-        "bytes": 9697
+        "path": "docs/architecture/daubert-hub-v1-architecture.json",
+        "sha256": "123001e1626ed5c3d3ac39dd75d4195068692f0156090ae7aba8631d1c9e7e67",
+        "bytes": 10058
       },
       "artifact": {
-        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-architecture.html",
-        "sha256": "9e720c8ecae05c8c307cf97629c613bda0ee08ed1ff62aed68d3d6f735879a9d",
-        "bytes": 777359
+        "path": "docs/architecture/daubert-hub-v1-architecture.html",
+        "sha256": "bc53e94ab5f0e1418c6931e92dc2a7e9fc53770dffef9d588753798afff58327",
+        "bytes": 777364
       },
       "gates": {
         "validate": "pass",
@@ -21,8 +21,8 @@
         "browser-check": "pass"
       },
       "visualReview": {
-        "status": "passed",
-        "scope": "Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320."
+        "status": "not-performed",
+        "scope": "Solo comprobaciones automáticas de Archify (validate, deliver, check, browser-check); sin inspección visual manual ni capturas."
       },
       "svg": {
         "file": "daubert-hub-v1-architecture.svg",
@@ -33,14 +33,14 @@
       "diagram": "daubert-hub-v1-dataflow",
       "type": "architecture",
       "specification": {
-        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.json",
-        "sha256": "38c31c9782025bb7cc07ea540a4289250fa27b8455a533fcd1a282d18d683f91",
-        "bytes": 6344
+        "path": "docs/architecture/daubert-hub-v1-dataflow.json",
+        "sha256": "88df271a23ecd445450c082283610cf944076510874dffdc0829255a6e408c71",
+        "bytes": 6419
       },
       "artifact": {
-        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.html",
-        "sha256": "8326c6bd26d4f2a7dde4f3fdb47b3e045adc06f146a7f8395d30f3de72a074a0",
-        "bytes": 764072
+        "path": "docs/architecture/daubert-hub-v1-dataflow.html",
+        "sha256": "745166507df9cdfddb2ad2a6ae97a13ff14658efc2e4149a69b59d1bfa155e55",
+        "bytes": 764084
       },
       "gates": {
         "validate": "pass",
@@ -49,8 +49,8 @@
         "browser-check": "pass"
       },
       "visualReview": {
-        "status": "passed",
-        "scope": "Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320."
+        "status": "not-performed",
+        "scope": "Solo comprobaciones automáticas de Archify (validate, deliver, check, browser-check); sin inspección visual manual ni capturas."
       },
       "svg": {
         "file": "daubert-hub-v1-dataflow.svg",
@@ -61,14 +61,14 @@
       "diagram": "daubert-hub-deployment",
       "type": "workflow",
       "specification": {
-        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.json",
-        "sha256": "77882c980ad471d8017ccbd6ddd6d56c48bce200a05de6a257a3391ebac6111f",
-        "bytes": 10885
+        "path": "docs/architecture/daubert-hub-deployment.json",
+        "sha256": "fd205f6a467883a739a3609e5a54c3b67ae62922d9bef4ffb787eb57fd554a3a",
+        "bytes": 10982
       },
       "artifact": {
-        "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-deployment.html",
-        "sha256": "4824c57f73cdcf626a504649f78783e0b80f958198cad651c214c3caff94f3a4",
-        "bytes": 774135
+        "path": "docs/architecture/daubert-hub-deployment.html",
+        "sha256": "9cac18f28e26bea2b2fcde91800c8f3a2a5da613e7cebd14bbcba69adde158c2",
+        "bytes": 774232
       },
       "gates": {
         "validate": "pass",
@@ -77,8 +77,8 @@
         "browser-check": "pass"
       },
       "visualReview": {
-        "status": "passed",
-        "scope": "Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320."
+        "status": "not-performed",
+        "scope": "Solo comprobaciones automáticas de Archify (validate, deliver, check, browser-check); sin inspección visual manual ni capturas."
       },
       "svg": {
         "file": "daubert-hub-deployment.svg",

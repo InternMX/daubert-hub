@@ -6,14 +6,14 @@
   "type": "architecture",
   "quality": "showcase",
   "specification": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.json",
-    "sha256": "38c31c9782025bb7cc07ea540a4289250fa27b8455a533fcd1a282d18d683f91",
-    "bytes": 6344
+    "path": "docs/architecture/daubert-hub-v1-dataflow.json",
+    "sha256": "88df271a23ecd445450c082283610cf944076510874dffdc0829255a6e408c71",
+    "bytes": 6419
   },
   "artifact": {
-    "path": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.html",
-    "sha256": "8326c6bd26d4f2a7dde4f3fdb47b3e045adc06f146a7f8395d30f3de72a074a0",
-    "bytes": 764072
+    "path": "docs/architecture/daubert-hub-v1-dataflow.html",
+    "sha256": "745166507df9cdfddb2ad2a6ae97a13ff14658efc2e4149a69b59d1bfa155e55",
+    "bytes": 764084
   },
   "gates": {
     "validate": "pass",
@@ -28,21 +28,20 @@
     "truncated": false
   },
   "evidence": {
-    "receipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.finalize.json",
-    "summaryReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.finalize-summary.json",
-    "browserCheckReceipt": "C:\\Users\\06\\Documents\\Daubert\\daubert-hub\\docs\\architecture\\daubert-hub-v1-dataflow.browser-check.json"
+    "receipt": "docs/architecture/daubert-hub-v1-dataflow.finalize.json",
+    "summaryReceipt": "docs/architecture/daubert-hub-v1-dataflow.finalize-summary.json",
+    "browserCheckReceipt": "docs/architecture/daubert-hub-v1-dataflow.browser-check.json"
   },
   "update": {
-    "status": "unavailable",
-    "installedVersion": null,
-    "availableVersion": null,
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
     "releaseNotes": null,
-    "checkedAt": null,
-    "source": null,
+    "checkedAt": "2026-10-07T19:52:10.677Z",
+    "source": "cache",
     "noticeRequired": false,
-    "noticeText": null,
-    "reason": "cache-valid"
+    "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 2923
+  "durationMs": 2970
 }

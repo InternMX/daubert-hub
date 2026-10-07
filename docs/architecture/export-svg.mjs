@@ -12,6 +12,6 @@ for(const slug of slugs){
  fs.writeFileSync(dir+slug+'.svg','<?xml version="1.0" encoding="UTF-8"?>\n'+exported+'\n');
  const receipt=JSON.parse(fs.readFileSync(dir+slug+'.finalize-summary.json','utf8'));
  if(!receipt.ok) throw new Error('Non-passing finalize: '+slug);
- receipts.push({diagram:slug,type:receipt.type,specification:receipt.specification,artifact:receipt.artifact,gates:receipt.gates,visualReview:{status:'passed',scope:'Inspección de capturas light 1440x900; comprobaciones automáticas light/dark a 1440x900 y 2048x1320.'},svg:{file:slug+'.svg',method:'Inline SVG + embedded stylesheet from checked HTML; static derivative, not a separate Archify finalize.'}});
+ receipts.push({diagram:slug,type:receipt.type,specification:receipt.specification,artifact:receipt.artifact,gates:receipt.gates,visualReview:{status:'not-performed',scope:'Solo comprobaciones automáticas de Archify (validate, deliver, check, browser-check); sin inspección visual manual ni capturas.'},svg:{file:slug+'.svg',method:'Inline SVG + embedded stylesheet from checked HTML; static derivative, not a separate Archify finalize.'}});
 }
 fs.writeFileSync(dir+'validation-summary.json',JSON.stringify({repositoryRevision:'ac4575df870cc48d3db0b67b3daf8e0930bc8e50',diagrams:receipts},null,2)+'\n');

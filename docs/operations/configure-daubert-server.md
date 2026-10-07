@@ -14,10 +14,14 @@ Configuración **por fases** del **Daubert Hub Server V1**. Cada fase se puede e
 
 **Reglas de `-Apply`**: exige `-Phase` explícita (sin fase es error de uso); las fases 1, 2 y 3 requieren una sesión **elevada**; pide escribir exactamente `CONFIGURE DAUBERT SERVER`; `-WhatIf` y `-Apply` son excluyentes. Exit codes: `0` ok · `1` bloqueado antes de cambiar nada (precondición, elevación, confirmación) · `3` error de uso · `5` una fase falló después de empezar (`CONFIGURATION FAILED`; las fases posteriores **no se ejecutan**).
 
+## Validación actual
+
+La configuración del servidor y el supervisor de n8n (fase 3, tarea `Daubert - n8n Supervisor`) ya fueron **implementados y validados** en el servidor. La fase 5 (`Verify`) permite repetir las comprobaciones locales cuando se quiera, y la verificación desde un cliente de la LAN sigue siendo externa (ver la limitación al final de las fases).
+
 ## Objetivo V1 (confirmado)
 
-- Este PC es el servidor V1 provisional, por **Wi-Fi** (Ethernet no es requisito). IP `192.168.1.11`, MAC `B0-19-21-04-D8-6F`, gateway `192.168.1.1`, DHCP activo, router ZTE F689.
-- **Reserva DHCP** `B0-19-21-04-D8-6F → 192.168.1.11`: pendiente de autorización; el script **no toca** el router, la IP, el DHCP ni el DNS. DNS interno: fuera de V1.
+- Este PC es el servidor V1 provisional, por **Wi-Fi** (Ethernet no es requisito). IP `<SERVER_IP>`, gateway `<GATEWAY_IP>`, DHCP activo (los valores reales no se publican).
+- **Reserva DHCP** (MAC del adaptador → `<SERVER_IP>`): pendiente de autorización; el script **no toca** el router, la IP, el DHCP ni el DNS. DNS interno: fuera de V1.
 - Perfil de red de Windows: se **mantiene Public**.
 - Web/API en Docker (AutoStart ya activo); PostgreSQL y n8n en Windows.
 - Solo **TCP 8082** accesible desde la LAN; 3000, 5432 y 5678 no accesibles directamente por clientes LAN.
@@ -46,9 +50,11 @@ Restringe la ACL de `deploy\pilot.prod.env`, `deploy\pilot.test.env`, `.env.prod
 ### 5 · Verify (solo lectura)
 Diagnóstico completo + comprobaciones: 8082 responde en el servidor; 3000/5432/5678 sin regla de entrada LAN; API → PostgreSQL (`/api/health` con `database=connected`); API → n8n; Docker api `healthy` y web `running`; n8n activo (una instancia); PostgreSQL activo; Wi-Fi conectado. La fase falla si falla alguna comprobación o si el diagnóstico completo aún reporta `FAIL`.
 
-> **Limitación honesta**: desde el propio servidor no se puede probar su firewall (el tráfico a su propia IP no pasa por el filtrado de entrada). Por eso "8082 accesible desde la LAN" y "3000/5432/5678 no accesibles desde la LAN" se reportan como **`EXTERNAL` — pendiente de verificación desde un cliente de la LAN** (p. ej. el Android `192.168.1.16`: 8082 debe abrir; 3000, 5432 y 5678 deben dar timeout). No se dan por verificados.
+> **Limitación honesta**: desde el propio servidor no se puede probar su firewall (el tráfico a su propia IP no pasa por el filtrado de entrada). Por eso "8082 accesible desde la LAN" y "3000/5432/5678 no accesibles desde la LAN" se reportan como **`EXTERNAL` — pendiente de verificación desde un cliente de la LAN** (p. ej. un teléfono Android de la LAN: 8082 debe abrir; 3000, 5432 y 5678 deben dar timeout). No se dan por verificados.
 
 ## Auditoría 5678 / regla Node.js (solo lectura, 2026-10-05)
+
+> Auditoría **histórica**, previa a la instalación del supervisor: el listener descrito como "n8n manual" se iniciaba a mano; hoy n8n lo inicia y supervisa la tarea `Daubert - n8n Supervisor`. Las conclusiones sobre la regla de Node.js y el tráfico loopback de Docker siguen vigentes.
 
 **Regla existente** (TCP y UDP, creadas por el aviso de Windows al lanzar `node.exe`): `Node.js JavaScript Runtime`, Enabled, Inbound, **Allow**, **Profile Private**, program `C:\program files\nodejs\node.exe`, LocalPort **Any**, RemoteAddress **Any**, Service Any, EdgeTraversal DeferToUser. Hoy la red es **Public**, así que no aplica; si el perfil pasara a Private expondría a la LAN cualquier puerto en el que escuche `node.exe` (incluido 5678). La fase 2 añade un bloqueo (Block gana a Allow) sin tocarla.
 
@@ -72,4 +78,4 @@ Windows **ve la conexión del API como `127.0.0.1` originada por `com.docker.bac
 - Pruebas Pester (`scripts/server/tests`): el plan y `-WhatIf` con todos los cmdlets mutantes simulados (ninguno se invoca); la selección de fases; la parada tras un fallo; las propiedades exactas de las reglas y la protección de loopback; que las reglas de Node.js no se modifiquen; la ACL propuesta y aplicada (incluida una prueba sobre un archivo temporal real); y la ausencia de AutoAdminLogon y de contraseñas almacenadas.
 
 ## Sin cambios en esta versión
-Router/DHCP/DNS, energía (el ahorro del adaptador Wi-Fi solo se reporta), perfil de red (se mantiene Public), proyecto Compose (sigue `daubert-hub`), rutas `C:\Users\06\…` de n8n y workflows (solo se documentan), y el inicio de sesión de Windows: tras un reinicio solo PostgreSQL (servicio) arranca solo; Docker Desktop, la tarea del supervisor y Dropbox esperan a que un usuario inicie sesión. Eso depende de una decisión de inicio de sesión de Windows y **no se habilita AutoAdminLogon**.
+Router/DHCP/DNS, energía (el ahorro del adaptador Wi-Fi solo se reporta), perfil de red (se mantiene Public), proyecto Compose (sigue `daubert-hub`), rutas `C:\Users\<WINDOWS_USER>\…` de n8n y workflows (solo se documentan), y el inicio de sesión de Windows: tras un reinicio solo PostgreSQL (servicio) arranca solo; Docker Desktop, la tarea del supervisor y Dropbox esperan a que un usuario inicie sesión. Eso depende de una decisión de inicio de sesión de Windows y **no se habilita AutoAdminLogon**.
