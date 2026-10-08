@@ -81,6 +81,19 @@ describe('validateEnvironment', () => {
     });
   });
 
+  describe('n8nHealthWebhook', () => {
+    it('defaults to null and never fails validation when unset', () => {
+      expect(validateEnvironment(valid)).toMatchObject({ n8nHealthWebhook: { url: null, token: null } });
+    });
+
+    it('reads and trims the two variables; whitespace-only counts as unset', () => {
+      expect(validateEnvironment({ ...valid, N8N_HEALTH_WEBHOOK_URL: ' http://host.docker.internal:5678/webhook/daubert-hub/health ', N8N_HEALTH_WEBHOOK_TOKEN: ' s ' })).toMatchObject({
+        n8nHealthWebhook: { url: 'http://host.docker.internal:5678/webhook/daubert-hub/health', token: 's' }
+      });
+      expect(validateEnvironment({ ...valid, N8N_HEALTH_WEBHOOK_TOKEN: '   ' })).toMatchObject({ n8nHealthWebhook: { token: null } });
+    });
+  });
+
   describe('caterpillarReprocessWebhook (Phase 12C)', () => {
     it('defaults every field to null when unset, and never fails validation solely because they are missing', () => {
       expect(() => validateEnvironment(valid)).not.toThrow();

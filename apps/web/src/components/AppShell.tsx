@@ -18,12 +18,14 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import { AUTOMATION_ROUTE_BY_CODE } from '../automations/automationRoutes';
 import { useAuth } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
+import { getSystemStatus, type SystemStatus } from '../services/systemStatus';
 import { roleLabels } from '../services/userLabels';
 import { appTokens, useColorMode } from '../theme';
 import { SidebarContext } from './sidebarContext.core';
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
 const sidebarPreferenceKey = 'daubertHub.sidebarCollapsed';
+const systemStatusPollIntervalMs = 30_000;
 const expandedWidth = 256;
 const collapsedWidth = 72;
 
@@ -65,6 +67,16 @@ const environmentPresentation: Record<RuntimeEnvironment, { label: string; compa
   PRODUCTION: { label: 'PRODUCCIÓN', compactLabel: 'PROD', color: 'error', variant: 'filled', title: 'Daubert Hub · PROD' },
   TEST: { label: 'PRUEBAS', compactLabel: 'TEST', color: 'info', variant: 'outlined', title: 'Daubert Hub · TEST' },
   UNKNOWN: { label: 'ENTORNO DESCONOCIDO', compactLabel: '?', color: 'warning', variant: 'outlined', title: 'Daubert Hub · UNKNOWN' }
+};
+
+// 'UNKNOWN' = the status endpoint itself could not be read (not the same as n8n being down).
+type N8nIndicatorState = SystemStatus['n8n']['status'] | 'UNKNOWN';
+
+const n8nPresentation: Record<N8nIndicatorState, { label: string; color: string }> = {
+  UP: { label: 'n8n conectado', color: 'success.main' },
+  DOWN: { label: 'n8n no disponible', color: 'error.main' },
+  NOT_CONFIGURED: { label: 'n8n sin configurar', color: 'warning.main' },
+  UNKNOWN: { label: 'n8n sin verificar', color: 'grey.500' }
 };
 
 function storedPreference(): boolean | undefined {
@@ -225,6 +237,27 @@ function VersionFooter({ version, commit, collapsed }: { version: string | null;
   );
 }
 
+// Small status dot + label. Purely informational: renders nothing until the first check resolves,
+// and a failed check never blocks or throws — it just shows "sin verificar".
+function N8nStatusIndicator({ status, collapsed }: { status: SystemStatus['n8n'] | 'UNKNOWN' | null; collapsed: boolean }) {
+  if (!status) return null;
+  const state: N8nIndicatorState = status === 'UNKNOWN' ? 'UNKNOWN' : status.status;
+  const { label, color } = n8nPresentation[state];
+  const details = status !== 'UNKNOWN' && status.status === 'UP' && status.latencyMs !== null ? ` · ${status.latencyMs} ms` : '';
+  const checked = status !== 'UNKNOWN' && !Number.isNaN(new Date(status.checkedAt).getTime())
+    ? ` · Última comprobación: ${new Date(status.checkedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+    : '';
+
+  return (
+    <Tooltip title={`${label}${details}${checked}`} placement="right">
+      <Box role="status" aria-label={label} sx={{ display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 1, px: collapsed ? 0 : 1, mb: 1, cursor: 'default' }}>
+        <Box aria-hidden data-testid="n8n-status-dot" sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
+        {!collapsed && <Typography noWrap variant="caption" color={appTokens.navigationText} sx={{ fontSize: '0.75rem' }}>{label}{details}</Typography>}
+      </Box>
+    </Tooltip>
+  );
+}
+
 // Icon-only, tooltip-labeled — mirrors the collapse/expand control at the
 // top of the sidebar (same pattern: no visible text, just an icon +
 // tooltip/aria-label), which keeps it visually secondary to the more
@@ -346,6 +379,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [runtimeEnvironment, setRuntimeEnvironment] = useState<RuntimeEnvironment | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [appCommit, setAppCommit] = useState<string | null>(null);
+  const [n8nStatus, setN8nStatus] = useState<SystemStatus['n8n'] | 'UNKNOWN' | null>(null);
   const sidebarWidth = collapsed ? collapsedWidth : expandedWidth;
 
   useEffect(() => {
@@ -363,6 +397,25 @@ export function AppShell({ children }: { children: ReactNode }) {
       })
       .catch(() => { if (active) setRuntimeEnvironment('UNKNOWN'); });
     return () => { active = false; };
+  }, []);
+
+  // n8n availability: checked on mount, then roughly every 30s. Failures are swallowed (shown as
+  // "sin verificar") and the timer + any in-flight request are always cleaned up on unmount.
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    function check() {
+      getSystemStatus(controller.signal)
+        .then((status) => { if (active) setN8nStatus(status.n8n); })
+        .catch(() => { if (active) setN8nStatus('UNKNOWN'); });
+    }
+    check();
+    const timer = setInterval(check, systemStatusPollIntervalMs);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -423,6 +476,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </>
           )}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
+          <N8nStatusIndicator status={n8nStatus} collapsed={collapsed} />
           <AppearanceToggle collapsed={collapsed} />
           <UserAccountControl collapsed={collapsed} />
           <VersionFooter version={appVersion} commit={appCommit} collapsed={collapsed} />

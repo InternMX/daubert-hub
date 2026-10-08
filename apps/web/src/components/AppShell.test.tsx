@@ -4,11 +4,13 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextValue } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
+import { getSystemStatus, type SystemStatus } from '../services/systemStatus';
 import { createAuthContextValue, testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
 import { ColorModeProvider } from '../theme';
 import { AppShell } from './AppShell';
 
 vi.mock('../services/health', () => ({ getHealth: vi.fn() }));
+vi.mock('../services/systemStatus', () => ({ getSystemStatus: vi.fn() }));
 
 function mockHealth(environment: RuntimeEnvironment, version: string | null = null, commit: string | null = null) {
   vi.mocked(getHealth).mockResolvedValue({ environment, version, commit });
@@ -54,6 +56,8 @@ beforeEach(() => {
   document.title = 'Daubert Hub';
   vi.mocked(getHealth).mockReset();
   vi.mocked(getHealth).mockImplementation(() => new Promise<never>(() => undefined));
+  vi.mocked(getSystemStatus).mockReset();
+  vi.mocked(getSystemStatus).mockImplementation(() => new Promise<never>(() => undefined));
 });
 afterEach(() => { localStorage.clear(); document.title = 'Daubert Hub'; vi.unstubAllGlobals(); });
 
@@ -1044,5 +1048,87 @@ describe('AppShell Automatizaciones submenu — current-route awareness', () => 
 
     expect(currentItem).toHaveAttribute('aria-current', 'page');
     expect(currentItem.tagName).not.toBe('A');
+  });
+});
+
+function n8nStatus(status: SystemStatus['n8n']['status'], latencyMs: number | null = null): SystemStatus {
+  return { n8n: { status, latencyMs, checkedAt: '2026-01-01T12:00:00.000Z' } };
+}
+
+describe('AppShell n8n availability indicator', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('shows nothing while the first check is pending', () => {
+    mockWideViewport(true);
+    renderShell();
+    expect(screen.queryByText(/n8n/)).not.toBeInTheDocument();
+  });
+
+  it('shows "n8n conectado" with latency when n8n is UP', async () => {
+    mockWideViewport(true);
+    vi.mocked(getSystemStatus).mockResolvedValue(n8nStatus('UP', 42));
+    renderShell();
+    expect(await screen.findByText('n8n conectado · 42 ms')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'n8n conectado' })).toBeInTheDocument();
+  });
+
+  it('shows "n8n no disponible" when n8n is DOWN', async () => {
+    mockWideViewport(true);
+    vi.mocked(getSystemStatus).mockResolvedValue(n8nStatus('DOWN'));
+    renderShell();
+    expect(await screen.findByText('n8n no disponible')).toBeInTheDocument();
+  });
+
+  it('shows "n8n sin configurar" when NOT_CONFIGURED', async () => {
+    mockWideViewport(true);
+    vi.mocked(getSystemStatus).mockResolvedValue(n8nStatus('NOT_CONFIGURED'));
+    renderShell();
+    expect(await screen.findByText('n8n sin configurar')).toBeInTheDocument();
+  });
+
+  it('shows the dot only (still labelled) when the sidebar is collapsed', async () => {
+    mockWideViewport(false);
+    vi.mocked(getSystemStatus).mockResolvedValue(n8nStatus('UP', 10));
+    renderShell();
+    expect(await screen.findByRole('status', { name: 'n8n conectado' })).toBeInTheDocument();
+    expect(screen.queryByText(/n8n conectado/)).not.toBeInTheDocument();
+  });
+
+  it('does not break the shell when the status request fails', async () => {
+    mockWideViewport(true);
+    vi.mocked(getSystemStatus).mockRejectedValue(new Error('SYSTEM_STATUS_UNAVAILABLE'));
+    renderShell();
+    expect(await screen.findByText('n8n sin verificar')).toBeInTheDocument();
+    expect(screen.getByText('Inicio page')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Proveedores' })).toBeInTheDocument();
+  });
+
+  it('checks on load, polls about every 30 seconds, and clears the timer on unmount', async () => {
+    mockWideViewport(true);
+    vi.useFakeTimers();
+    vi.mocked(getSystemStatus).mockResolvedValue(n8nStatus('UP', 5));
+    const { unmount } = renderShell();
+
+    expect(getSystemStatus).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_999); });
+    expect(getSystemStatus).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(getSystemStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(getSystemStatus).toHaveBeenCalledTimes(3);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(getSystemStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('aborts the in-flight request on unmount', () => {
+    mockWideViewport(true);
+    const { unmount } = renderShell();
+    const signal = vi.mocked(getSystemStatus).mock.calls[0]![0]!;
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
   });
 });

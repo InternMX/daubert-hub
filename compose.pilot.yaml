@@ -28,6 +28,12 @@ services:
       # deploy/README.md) — never hardcoded here, never committed.
       CATERPILLAR_REPROCESS_WEBHOOK_URL: "${CATERPILLAR_REPROCESS_WEBHOOK_URL:?CATERPILLAR_REPROCESS_WEBHOOK_URL is required}"
       CATERPILLAR_REPROCESS_WEBHOOK_TOKEN: "${CATERPILLAR_REPROCESS_WEBHOOK_TOKEN:?CATERPILLAR_REPROCESS_WEBHOOK_TOKEN is required}"
+      # Hub -> n8n availability check (GET /api/system/status, apps/api/src/system). Optional by
+      # design: unset reports "n8n sin configurar" in the UI instead of blocking startup. The
+      # token is the value of the n8n "Daubert Hub - n8n PROD" Header Auth credential and comes
+      # only from the untracked env file passed via --env-file — never committed.
+      N8N_HEALTH_WEBHOOK_URL: "${N8N_HEALTH_WEBHOOK_URL:-}"
+      N8N_HEALTH_WEBHOOK_TOKEN: "${N8N_HEALTH_WEBHOOK_TOKEN:-}"
     expose:
       - "3000"
     extra_hosts:

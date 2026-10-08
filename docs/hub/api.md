@@ -24,6 +24,12 @@ Prefijo global: `/api`. Fuente: decoradores de `apps/api/src/**/*.controller.ts`
 | GET | `/api/auth/me` | Auth (permitido aun con cambio de contraseña pendiente) |
 | POST | `/api/auth/change-password` | Auth (permitido con cambio pendiente) |
 
+## Estado del sistema — Auth (ADMIN y GENERAL)
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| GET | `/api/system/status` | Disponibilidad de n8n: `{ status: "operational" \| "degraded", n8n: { status: "UP" \| "DOWN" \| "NOT_CONFIGURED", latencyMs, checkedAt } }`. La API llama (GET, timeout 3 s, header `X-Daubert-Automation-Token`) al webhook del workflow n8n **Daubert Hub - n8n Health Check**, que sólo responde `200 {"status":"ok","service":"n8n","workflow":"daubert-hub-health"}` con el token correcto (`403` sin él). Cualquier fallo (no 2xx, red, timeout) se devuelve como `DOWN` con `latencyMs: null`; sin variables, `NOT_CONFIGURED`. Nunca expone el token, la URL ni detalles de n8n, y es independiente de `/api/health` (que no depende de n8n). El AppShell lo consulta al cargar y cada ~30 s para mostrar el indicador «n8n conectado / no disponible / sin configurar». |
+
 ## Usuarios — sólo `ADMIN` (clase completa)
 
 | Método | Ruta |

@@ -45,6 +45,13 @@ export interface EnvironmentConfig {
     url: string | null;
     token: string | null;
   };
+  // Hub -> n8n availability check (GET /api/system/status). Optional like the other n8n webhook
+  // configs: missing values report NOT_CONFIGURED at call time, never a boot-time crash. Never
+  // logged, never returned in any API response.
+  n8nHealthWebhook: {
+    url: string | null;
+    token: string | null;
+  };
 }
 
 function required(value: string | undefined, name: string): string {
@@ -106,6 +113,10 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
     caterpillarReprocessWebhook: {
       url: env.CATERPILLAR_REPROCESS_WEBHOOK_URL?.trim() || null,
       token: env.CATERPILLAR_REPROCESS_WEBHOOK_TOKEN?.trim() || null
+    },
+    n8nHealthWebhook: {
+      url: env.N8N_HEALTH_WEBHOOK_URL?.trim() || null,
+      token: env.N8N_HEALTH_WEBHOOK_TOKEN?.trim() || null
     }
   };
 }

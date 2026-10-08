@@ -206,7 +206,7 @@ docker save "daubert-hub-api:rollback-$prev" "daubert-hub-web:rollback-$prev" -o
 **Deploy:**
 
 ```powershell
-$env:APP_VERSION = (node -p "require('./package.json').version")   # = package.json raiz (hoy 1.0.2)
+$env:APP_VERSION = (node -p "require('./package.json').version")   # = package.json raiz (hoy 1.0.3)
 $env:GIT_COMMIT  = (git rev-parse --short HEAD)                     # = el candidato (el preflight exige candidato == HEAD)
 docker compose @cf up -d --build api web                            # solo api y web; nunca down
 ```
