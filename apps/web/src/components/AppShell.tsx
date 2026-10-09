@@ -14,6 +14,7 @@ import { useTheme } from '@mui/material/styles';
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
 import { AUTOMATION_ROUTE_BY_CODE } from '../automations/automationRoutes';
 import { useAuth } from '../auth/authContext.core';
@@ -37,6 +38,7 @@ const navigation: Array<{ to: string; label: string; end: boolean; icon: SvgIcon
 ];
 
 const usersNavigation = { to: '/users', label: 'Usuarios', end: false, icon: PeopleAltRoundedIcon };
+const auditNavigation = { to: '/audit', label: 'Auditoría', end: false, icon: FactCheckRoundedIcon };
 
 // The paths come from AUTOMATION_ROUTE_BY_CODE (shared with AutomationsPage.tsx) rather than
 // being retyped here — the same string mismatch/staleness bug this file previously had for
@@ -473,6 +475,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <>
               {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, pt: 2, mb: 0.75 }}>Administración</Typography>}
               <NavigationItem {...usersNavigation} collapsed={collapsed} />
+              <NavigationItem {...auditNavigation} collapsed={collapsed} />
             </>
           )}
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />

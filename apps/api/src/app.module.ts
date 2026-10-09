@@ -16,6 +16,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { ContactMethodsModule } from './contact-methods/contact-methods.module';
 import { ClientsModule } from './clients/clients.module';
 import { RecentActivityModule } from './recent-activity/recent-activity.module';
+import { AuditModule } from './audit/audit.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { AliasesModule } from './aliases/aliases.module';
@@ -34,6 +35,7 @@ import { SystemModule } from './system/system.module';
     CompaniesModule,
     ContactMethodsModule,
     RecentActivityModule,
+    AuditModule,
     AutomationsModule,
     AddressesModule,
     AliasesModule,

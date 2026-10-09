@@ -6,6 +6,7 @@ import { App } from './App';
 import { getDocumentSeries } from './services/automations';
 import { listAutomationsOverview, type AutomationOverview } from './services/automationsOverview';
 import { listAudiExecutions } from './services/audiExecutions';
+import { listAuditEvents } from './services/audit';
 import { listCaterpillarExecutions, listCaterpillarSeries } from './services/caterpillarRemissions';
 import { listPaymentNotificationExecutions } from './services/paymentNotifications';
 import { listRecentActivity } from './services/recentActivity';
@@ -14,6 +15,7 @@ import { TestAuthProvider, testAdminUser, testGeneralUser } from './test/authTes
 import { ColorModeProvider } from './theme';
 
 vi.mock('./services/recentActivity', () => ({ listRecentActivity: vi.fn() }));
+vi.mock('./services/audit', async (importOriginal) => ({ ...(await importOriginal<typeof import('./services/audit')>()), listAuditEvents: vi.fn() }));
 vi.mock('./services/users', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./services/users')>()),
   listUsers: vi.fn()
@@ -40,6 +42,7 @@ vi.mock('./services/caterpillarRemissions', async (importOriginal) => ({
   listCaterpillarExecutions: vi.fn()
 }));
 const activityMock = vi.mocked(listRecentActivity);
+const auditEventsMock = vi.mocked(listAuditEvents);
 const listUsersMock = vi.mocked(listUsers);
 const paymentNotificationsMock = vi.mocked(listPaymentNotificationExecutions);
 const automationsOverviewMock = vi.mocked(listAutomationsOverview);
@@ -314,6 +317,7 @@ describe('Caterpillar navigation (Phase 12A.4b)', () => {
 
 describe('admin-only routing (/users)', () => {
   beforeEach(() => {
+    auditEventsMock.mockReset();
     listUsersMock.mockResolvedValue([]);
     activityMock.mockResolvedValue([]);
     automationsOverviewMock.mockResolvedValue([]);
@@ -326,6 +330,19 @@ describe('admin-only routing (/users)', () => {
   it('renders /users for an authenticated ADMIN', async () => {
     renderWithAuth('/users', { isLoading: false });
     expect(await screen.findByRole('heading', { level: 1, name: 'Usuarios' })).toBeInTheDocument();
+  });
+
+  it('renders /audit for an authenticated ADMIN', async () => {
+    auditEventsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 25, total: 0, totalPages: 0 } });
+    renderWithAuth('/audit', { isLoading: false });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Auditoría' })).toBeInTheDocument();
+  });
+
+  it('redirects a GENERAL user away from /audit to home without requesting any audit data', () => {
+    renderWithAuth('/audit', { isLoading: false, user: testGeneralUser });
+    expect(screen.getByRole('heading', { level: 1, name: 'Hola, Ana Ruiz' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Auditoría' })).not.toBeInTheDocument();
+    expect(auditEventsMock).not.toHaveBeenCalled();
   });
 
   it('redirects a GENERAL user away from /users to home', () => {

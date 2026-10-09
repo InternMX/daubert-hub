@@ -605,6 +605,7 @@ describe('AppShell navigation grouping (Operación vs Administración)', () => {
     expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('href', '/automations');
     expect(screen.queryByText('Administración')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Usuarios' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Auditoría' })).not.toBeInTheDocument();
   });
 
   it('shows ADMIN both the Operación section (Automatizaciones) and the Administración section (Usuarios)', () => {
@@ -615,6 +616,7 @@ describe('AppShell navigation grouping (Operación vs Administración)', () => {
     expect(screen.getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('href', '/automations');
     expect(screen.getByText('Administración')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Usuarios' })).toHaveAttribute('href', '/users');
+    expect(screen.getByRole('link', { name: 'Auditoría' })).toHaveAttribute('href', '/audit');
   });
 
   it('places Automatizaciones before Usuarios in document order (Operación above Administración)', () => {

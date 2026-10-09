@@ -19,6 +19,7 @@ import { AudiRemissionsPage } from './automations/AudiRemissionsPage';
 import { CaterpillarRemissionsPage } from './automations/CaterpillarRemissionsPage';
 import { PaymentNotificationsPage } from './automations/PaymentNotificationsPage';
 import { PaymentNotificationExecutionDetailPage } from './automations/PaymentNotificationExecutionDetailPage';
+import { AuditPage } from './audit/AuditPage';
 import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
@@ -75,6 +76,7 @@ export function App() {
         <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />
         <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
+          <Route path="/audit" element={<AuditPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
           <Route path="/users/:userId/edit" element={<EditUserPage />} />
