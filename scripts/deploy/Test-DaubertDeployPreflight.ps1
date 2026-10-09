@@ -204,7 +204,7 @@ Invoke-Safe 'Config' 'archivo de entorno' {
     Add-Result 'Config' ($EnvFile + ' ignorado por git') $(if ($ignored.Code -eq 0) { 'PASS' } else { 'FAIL' }) ''
     $names = Read-EnvNames $envPath
     $required = 'HUB_PORT', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'API_PORT', 'CATERPILLAR_REPROCESS_WEBHOOK_URL', 'CATERPILLAR_REPROCESS_WEBHOOK_TOKEN'
-    $recommended = 'AUTH_COOKIE_SECURE', 'PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL', 'PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN'
+    $recommended = 'AUTH_COOKIE_SECURE', 'PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL', 'PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN', 'N8N_HEALTH_WEBHOOK_URL', 'N8N_HEALTH_WEBHOOK_TOKEN'
     $missing = @($required | Where-Object { -not ($names.ContainsKey($_) -and $names[$_]) })
     Add-Result 'Config' 'variables obligatorias con valor' $(if ($missing.Count -eq 0) { 'PASS' } else { 'FAIL' }) $(if ($missing.Count -eq 0) { ($required.Count.ToString() + ' presentes') } else { 'faltan: ' + ($missing -join ', ') })
     $missingRec = @($recommended | Where-Object { -not ($names.ContainsKey($_) -and $names[$_]) })
