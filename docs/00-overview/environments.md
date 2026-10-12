@@ -44,6 +44,7 @@ Las rutas de archivos (carpetas Dropbox de origen y destino de PDFs) son configu
 1. `GET /api/health` → campo `environment` (derivado de `current_database()`; nunca expone el nombre de la base).
 2. En desarrollo, `npm run dev` **falla al arrancar** si `TEST_DATABASE_URL` no decodifica exactamente a `daubert_hub_test`, y la API re-verifica la base viva (`EXPECTED_DATABASE_NAME`).
 3. Las migraciones PROD tienen guard `current_database() <> 'daubert_global'` ([migrations](../database/migrations.md)).
+4. **Guarda de arranque de la API (independiente del lanzador):** antes de escuchar peticiones, un proceso que **no** sea el runtime de producción rechaza `daubert_global` (y el rol `daubert_hub_app`) tanto en `DB_NAME`/`DB_USER` como en la base realmente conectada (`SELECT current_database(), current_user`, solo lectura). El runtime de producción es `NODE_ENV=production` **dentro de un contenedor** (`/.dockerenv` o `/run/.containerenv`); `NODE_ENV` solo no basta. En el contenedor de PROD no añade consultas ni modos de fallo. Si falla o no puede verificar, la API cierra sin escuchar y el mensaje solo incluye nombres, nunca credenciales (código: `apps/api/src/config/production-database-guard.ts`). **Limitación:** no distingue el contenedor de PROD de otro contenedor al que se le den deliberadamente `NODE_ENV=production` y credenciales de PROD; esa última defensa es la propia base de datos (credenciales separadas, `CONNECT`).
 
 ## Variables de entorno de la API (sólo nombres)
 
