@@ -15,8 +15,9 @@ export interface PaymentNotificationExecutionRow extends QueryResultRow {
   manual_count: number;
   error_count: number;
   omitted_count: number;
-  // Raw core.correos_notificacion_pago.detalle_error (same row, no extra query). Parsed into
-  // structured file errors by the service (payment-notification-file-errors.ts), never in SQL.
+  // Raw core.correos_notificacion_pago.detalle_error (same row, no extra query). The structured
+  // parsing into file errors stays in TypeScript (the service, payment-notification-file-errors.ts);
+  // only the detection of a pending HASH= (has_pending_file_hash below) is done in SQL.
   file_error_detail: string | null;
   // Internal inputs to deriveReprocessAvailability only — never part of the public summary.
   // reactivated_omitted_count: OMITIDO results whose company is CURRENTLY enabled (see
