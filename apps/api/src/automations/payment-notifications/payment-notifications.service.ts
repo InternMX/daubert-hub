@@ -42,11 +42,11 @@ export interface PaymentNotificationExecutionSummary {
   // the row currently resolved as the outstanding problem by findLatestReviewWorthyExecution().
   // Every older PARTIAL/FAILED row is null — never independently actionable.
   reviewStatus: PaymentNotificationReviewStatus;
-  // PN1.2 correction §3: a plain per-row fact computed from persisted state (correo.estado plus
-  // provider-result counts), independently of outcomeStatus/reviewStatus — see
-  // deriveReprocessAvailability's comment for why those must never be conflated. Unlike
-  // reviewStatus this is never limited to "at most one row": any row with recoverable unresolved
-  // work (technical ERROR, or a MANUAL/ERROR provider result) reports true.
+  // PN1.2 correction §3: a plain per-row fact computed from persisted state (correo.estado,
+  // provider-result counts, currently-enabled OMITIDO results and pending file HASHes),
+  // independently of outcomeStatus/reviewStatus — see deriveReprocessAvailability's comment for
+  // why those must never be conflated. Unlike reviewStatus this is never limited to "at most one
+  // row": any row with recoverable unresolved work reports true.
   reprocessAvailable: boolean;
 }
 
@@ -207,7 +207,10 @@ export class PaymentNotificationsService {
       summarySent: execution.summary_sent,
       summarySentAt: execution.summary_sent_at ? new Date(execution.summary_sent_at).toISOString() : null,
       reviewStatus: currentProblemExecutionId && execution.execution_id === currentProblemExecutionId ? currentProblemStatus : null,
-      reprocessAvailable: deriveReprocessAvailability(execution.processing_status, counts)
+      reprocessAvailable: deriveReprocessAvailability(execution.processing_status, counts, {
+        reactivatedOmittedCount: execution.reactivated_omitted_count,
+        hasPendingFileHash: execution.has_pending_file_hash
+      })
     };
   }
 

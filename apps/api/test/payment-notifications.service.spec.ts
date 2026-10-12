@@ -5,6 +5,7 @@ import { PaymentNotificationsService } from '../src/automations/payment-notifica
 function execution(overrides: Partial<{
   execution_id: string; created_at: string; processed_at: string | null; processing_status: 'PENDIENTE' | 'PROCESADO' | 'ERROR';
   summary_sent: boolean; summary_sent_at: string | null; total_results: number; ready_count: number; manual_count: number; error_count: number; omitted_count: number; file_error_detail: string | null;
+  reactivated_omitted_count: number; has_pending_file_hash: boolean;
 }> = {}) {
   return {
     execution_id: '32',
@@ -19,6 +20,8 @@ function execution(overrides: Partial<{
     error_count: 0,
     omitted_count: 0,
     file_error_detail: null,
+    reactivated_omitted_count: 0,
+    has_pending_file_hash: false,
     ...overrides
   };
 }
@@ -241,7 +244,7 @@ describe('PaymentNotificationsService', () => {
       expect(data.results).toHaveLength(1);
     });
 
-    it('global outcome and reprocessAvailable are identical with and without file errors (PARTIAL stays PARTIAL)', async () => {
+    it('global outcome is identical with and without file errors (PARTIAL stays PARTIAL); only a pending HASH flag can change reprocessAvailable', async () => {
       const cases = [
         { row: { manual_count: 1, ready_count: 4 }, expected: 'PARTIAL' },
         { row: { processing_status: 'ERROR' as const, total_results: 0, ready_count: 0, manual_count: 0 }, expected: 'FAILED' },
@@ -254,12 +257,20 @@ describe('PaymentNotificationsService', () => {
         const withErrors = await setup({ listResult: { total: 1, executions: [execution({ ...row, file_error_detail: twoFileErrors })] } }).service.list({ page: 1, pageSize: 25 });
         expect(withErrors.data[0]?.outcomeStatus).toBe(expected);
         expect(withErrors.data[0]?.outcomeStatus).toBe(withoutErrors.data[0]?.outcomeStatus);
+        // The text of detalle_error alone never changes eligibility: SQL reports has_pending_file_hash.
         expect(withErrors.data[0]?.reprocessAvailable).toBe(withoutErrors.data[0]?.reprocessAvailable);
       }
     });
 
-    it('a COMPLETED execution with file errors is still COMPLETED and does not become reprocessable by itself', async () => {
-      const { service } = setup({ listResult: { total: 1, executions: [execution(elevenReady)] } });
+    it('a COMPLETED execution with a pending file HASH keeps outcome COMPLETED but becomes reprocessAvailable', async () => {
+      const { service } = setup({ listResult: { total: 1, executions: [execution({ ...elevenReady, has_pending_file_hash: true })] } });
+      const [row] = (await service.list({ page: 1, pageSize: 25 })).data;
+      expect(row?.outcomeStatus).toBe('COMPLETED');
+      expect(row?.reprocessAvailable).toBe(true);
+    });
+
+    it('a COMPLETED execution whose detalle_error has no valid HASH (has_pending_file_hash=false) is not reprocessable', async () => {
+      const { service } = setup({ listResult: { total: 1, executions: [execution({ ...elevenReady, has_pending_file_hash: false })] } });
       const [row] = (await service.list({ page: 1, pageSize: 25 })).data;
       expect(row?.outcomeStatus).toBe('COMPLETED');
       expect(row?.reprocessAvailable).toBe(false);
@@ -377,6 +388,32 @@ describe('PaymentNotificationsService', () => {
     expect((service as unknown as Record<string, unknown>).run).toBeUndefined();
   });
 
+  describe('list: reprocessAvailable from current OMITIDO configuration and pending HASH', () => {
+    const scenarios: Array<[string, Parameters<typeof execution>[0], boolean]> = [
+      ['PROCESADO + OMITIDO whose company is still disabled', { total_results: 1, ready_count: 0, manual_count: 0, omitted_count: 1, reactivated_omitted_count: 0 }, false],
+      ['PROCESADO + OMITIDO whose company is now enabled (correo 42 case)', { total_results: 1, ready_count: 0, manual_count: 0, omitted_count: 1, reactivated_omitted_count: 1 }, true],
+      ['PROCESADO + several LISTO and one re-enabled OMITIDO', { total_results: 6, ready_count: 5, manual_count: 0, omitted_count: 1, reactivated_omitted_count: 1 }, true],
+      ['PROCESADO + several LISTO and a pending HASH', { total_results: 5, ready_count: 5, manual_count: 0, has_pending_file_hash: true }, true],
+      ['PROCESADO + only LISTO', { total_results: 5, ready_count: 5, manual_count: 0 }, false],
+      ['PROCESADO + ERROR result', { total_results: 2, ready_count: 1, manual_count: 0, error_count: 1 }, true],
+      ['ERROR correo without results', { processing_status: 'ERROR', total_results: 0, ready_count: 0, manual_count: 0 }, true],
+      ['PENDIENTE with MANUAL results and a pending HASH', { processing_status: 'PENDIENTE', total_results: 1, ready_count: 0, manual_count: 1, has_pending_file_hash: true, reactivated_omitted_count: 1 }, false]
+    ];
+    it.each(scenarios)('%s', async (_name, row, expected) => {
+      const { service } = setup({ listResult: { total: 1, executions: [execution(row)] } });
+      expect((await service.list({ page: 1, pageSize: 25 })).data[0]?.reprocessAvailable).toBe(expected);
+    });
+
+    it('does not expose the internal indicators in the public summary or change visible counts', async () => {
+      const { service } = setup({ listResult: { total: 1, executions: [execution({ total_results: 1, ready_count: 0, manual_count: 0, omitted_count: 1, reactivated_omitted_count: 1, has_pending_file_hash: true })] } });
+      const [row] = (await service.list({ page: 1, pageSize: 25 })).data;
+      expect(row).not.toHaveProperty('reactivatedOmittedCount');
+      expect(row).not.toHaveProperty('hasPendingFileHash');
+      expect(row).not.toHaveProperty('canReprocess');
+      expect(row).toMatchObject({ totalResults: 1, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 1, outcomeStatus: 'COMPLETED', reprocessAvailable: true });
+    });
+  });
+
   describe('reprocess (PN1.2 targeting fix §4/§5/§6)', () => {
     it('resolves the requested executionId, forwards its correo_id to the webhook, and records TRIGGERED with the internal target_reference', async () => {
       const { service, repository, webhookClient, triggerRequests } = setup({ findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '77' }, triggerReprocessOutcome: 'ACCEPTED' });
@@ -431,6 +468,25 @@ describe('PaymentNotificationsService', () => {
       expect(lookup).not.toHaveBeenCalledWith('exec-A');
       expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('correo-B');
       expect(webhookClient.triggerReprocess).not.toHaveBeenCalledWith('correo-A');
+    });
+
+    it('re-queries PostgreSQL at click time: a row listed as reprocessable returns NOT_ELIGIBLE (409) once the company is disabled again, and the webhook is never called', async () => {
+      const { service, repository, webhookClient, triggerRequests } = setup({
+        listResult: { total: 1, executions: [execution({ total_results: 1, ready_count: 0, manual_count: 0, omitted_count: 1, reactivated_omitted_count: 1 })] },
+        findReprocessableCorreoByExecutionId: { status: 'NOT_ELIGIBLE' }
+      });
+      expect((await service.list({ page: 1, pageSize: 25 })).data[0]?.reprocessAvailable).toBe(true);
+      expect(await service.reprocess('32', 'req-late', identity)).toEqual({ status: 'NOT_ELIGIBLE' });
+      expect(repository.findReprocessableCorreoByExecutionId).toHaveBeenCalledWith('32');
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
+      expect(triggerRequests.record).toHaveBeenCalledWith('PAYMENT_NOTIFICATIONS', 'REPROCESS', 'NOTHING_TO_REPROCESS', 'req-late', identity, null);
+    });
+
+    it('when the company is still enabled at click time, the request is accepted and only { correo_id } reaches the webhook client', async () => {
+      const { service, webhookClient } = setup({ findReprocessableCorreoByExecutionId: { status: 'FOUND', correoId: '42' } });
+      expect(await service.reprocess('42', 'req-ok', identity)).toEqual({ status: 'TRIGGERED' });
+      expect(webhookClient.triggerReprocess).toHaveBeenCalledTimes(1);
+      expect(webhookClient.triggerReprocess.mock.calls[0]).toEqual(['42']);
     });
 
     it('returns NOT_FOUND and never calls the webhook when the requested executionId does not exist', async () => {

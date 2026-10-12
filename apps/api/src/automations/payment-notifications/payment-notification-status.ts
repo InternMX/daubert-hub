@@ -36,16 +36,30 @@ export function derivePaymentNotificationOutcome(processingStatus: PaymentNotifi
   return null;
 }
 
-// PN1.2 correction: reprocessAvailable is a plain per-row fact derived from the underlying
-// persisted business state (correo.estado plus the per-provider result counts already computed
-// for outcome derivation) — deliberately NOT derived from outcomeStatus/reviewStatus themselves.
-// It is its own independent predicate, sharing inputs with derivePaymentNotificationOutcome but
-// not reusing its output, so a future change to outcome labeling can never silently change
-// reprocess eligibility. True when there is recoverable unresolved work: the email itself is in
-// estado='ERROR' (covers technical failures and alias/classification failures — n8n's
-// "Marcar correo con error" sets estado='ERROR' for both), OR any provider result is MANUAL
-// (recoverable once master data — alias, contacts, recipients — is corrected) OR ERROR. LISTO and
-// OMITIDO results never make a row reprocessable on their own.
-export function deriveReprocessAvailability(processingStatus: PaymentNotificationProcessingStatus, counts: PaymentNotificationResultCounts): boolean {
-  return processingStatus === 'ERROR' || counts.manualCount > 0 || counts.errorCount > 0;
+// reprocessAvailable is a plain per-row fact derived from persisted state — deliberately NOT
+// derived from outcomeStatus/reviewStatus themselves. It is its own independent predicate, so a
+// future change to outcome labeling can never silently change reprocess eligibility. It mirrors
+// the rule n8n applies when it picks a correo up for reprocess:
+//   - estado='ERROR' (technical failures and alias/classification failures alike), OR
+//   - estado='PROCESADO' and at least one of: a MANUAL or ERROR provider result (recoverable once
+//     master data is corrected), an OMITIDO result whose company is CURRENTLY enabled
+//     (procesa_comprobantes_pago AND notificaciones_activas — the omission may no longer apply),
+//     or a pending HASH in detalle_error (a file n8n could not process yet).
+// PENDIENTE is never reprocessable. LISTO results, and OMITIDO results of companies that are still
+// disabled, never make a row reprocessable on their own. The Hub does not decide which results or
+// files n8n will actually retry, and never changes the historical state of any result.
+//
+// The click-time check (PaymentNotificationsRepository.findReprocessableCorreoByExecutionId)
+// re-evaluates the same rule in SQL against current data; keep the two in sync.
+export interface PaymentNotificationReprocessSignals {
+  // OMITIDO results whose company currently has procesa_comprobantes_pago AND notificaciones_activas.
+  reactivatedOmittedCount: number;
+  // detalle_error currently holds a HASH= token (same expression n8n uses).
+  hasPendingFileHash: boolean;
+}
+
+export function deriveReprocessAvailability(processingStatus: PaymentNotificationProcessingStatus, counts: PaymentNotificationResultCounts, signals: PaymentNotificationReprocessSignals): boolean {
+  if (processingStatus === 'ERROR') return true;
+  if (processingStatus !== 'PROCESADO') return false;
+  return counts.manualCount > 0 || counts.errorCount > 0 || signals.reactivatedOmittedCount > 0 || signals.hasPendingFileHash;
 }

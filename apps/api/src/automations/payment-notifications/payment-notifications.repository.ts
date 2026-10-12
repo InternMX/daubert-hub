@@ -18,6 +18,12 @@ export interface PaymentNotificationExecutionRow extends QueryResultRow {
   // Raw core.correos_notificacion_pago.detalle_error (same row, no extra query). Parsed into
   // structured file errors by the service (payment-notification-file-errors.ts), never in SQL.
   file_error_detail: string | null;
+  // Internal inputs to deriveReprocessAvailability only — never part of the public summary.
+  // reactivated_omitted_count: OMITIDO results whose company is CURRENTLY enabled (see
+  // OMITTED_COMPANY_ENABLED_SQL). has_pending_file_hash: detalle_error holds a HASH= token (see
+  // PENDING_FILE_HASH_SQL).
+  reactivated_omitted_count: number;
+  has_pending_file_hash: boolean;
 }
 
 export interface ListedPaymentNotificationExecutions {
@@ -37,6 +43,21 @@ export interface PaymentNotificationProviderResultRow extends QueryResultRow {
   motivo: string | null;
 }
 
+// Shared SQL fragments so the list (aggregate counts feeding deriveReprocessAvailability) and the
+// click-time check (findReprocessableCorreoByExecutionId) evaluate the exact same conditions. Both
+// use the aliases `correo`, `resultado` and `np` (core.empresas_notificacion_pago).
+//
+// np is joined 1:1 on its primary key (empresa_id), so joining it never multiplies result rows. A
+// company with no configuration row has NULL flags, and `IS TRUE` makes that NOT enabled.
+const OMITTED_COMPANY_ENABLED_SQL = `resultado.estado = 'OMITIDO'
+        AND np.procesa_comprobantes_pago IS TRUE
+        AND np.notificaciones_activas IS TRUE`;
+const MANUAL_OR_ERROR_RESULT_SQL = `resultado.estado IN ('MANUAL', 'ERROR')`;
+// Same expression n8n uses to find files to retry. A HASH stays pending while it is present in
+// detalle_error (n8n clears detalle_error when it picks the correo up for reprocess); the Hub does
+// not try to know whether the file will end up resolved.
+const PENDING_FILE_HASH_SQL = `COALESCE(correo.detalle_error ~ 'HASH=[0-9A-Fa-f]{64}', FALSE)`;
+
 // Deliberately NOT the Recent Activity aggregate query: that query's HAVING clause hides
 // PROCESADO executions with zero provider results (see payment-notification-activity.repository.ts).
 // The dashboard must show every execution (Phase 10B §3), so this selects all rows unconditionally.
@@ -52,7 +73,14 @@ const EXECUTION_COLUMNS = `
     count(*) FILTER (WHERE resultado.estado = 'MANUAL')::int AS manual_count,
     count(*) FILTER (WHERE resultado.estado = 'ERROR')::int AS error_count,
     count(*) FILTER (WHERE resultado.estado = 'OMITIDO')::int AS omitted_count,
-    correo.detalle_error AS file_error_detail`;
+    correo.detalle_error AS file_error_detail,
+    (count(*) FILTER (WHERE ${OMITTED_COMPANY_ENABLED_SQL}))::int AS reactivated_omitted_count,
+    ${PENDING_FILE_HASH_SQL} AS has_pending_file_hash`;
+
+// Shared FROM/JOIN for every EXECUTION_COLUMNS query. np only feeds reactivated_omitted_count.
+const EXECUTION_FROM = `FROM core.correos_notificacion_pago correo
+      LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
+      LEFT JOIN core.empresas_notificacion_pago np ON np.empresa_id = resultado.empresa_id`;
 
 @Injectable()
 export class PaymentNotificationsRepository {
@@ -65,8 +93,7 @@ export class PaymentNotificationsRepository {
     const [totalRow] = await this.database.query<{ total: number }>('SELECT count(*)::int AS total FROM core.correos_notificacion_pago');
     const executions = await this.database.query<PaymentNotificationExecutionRow>(`
       SELECT ${EXECUTION_COLUMNS}
-      FROM core.correos_notificacion_pago correo
-      LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
+      ${EXECUTION_FROM}
       GROUP BY correo.correo_id
       ORDER BY correo.correo_id DESC
       LIMIT $1 OFFSET $2`, [pageSize, (page - 1) * pageSize]);
@@ -80,8 +107,7 @@ export class PaymentNotificationsRepository {
   async listRecent(limit: number): Promise<PaymentNotificationExecutionRow[]> {
     return this.database.query<PaymentNotificationExecutionRow>(`
       SELECT ${EXECUTION_COLUMNS}
-      FROM core.correos_notificacion_pago correo
-      LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
+      ${EXECUTION_FROM}
       GROUP BY correo.correo_id
       ORDER BY correo.correo_id DESC
       LIMIT $1`, [limit]);
@@ -89,29 +115,40 @@ export class PaymentNotificationsRepository {
 
   // PN1.2 targeting fix: resolves the internal correo_id for exactly the requested execution and
   // confirms it is currently eligible, instead of always picking the newest eligible row across
-  // the whole table (the prior findLatestReprocessableCorreoId behavior let clicking Reprocesar
-  // on an older eligible row silently reprocess a newer one). Same WHERE correo.correo_id =
-  // $1::bigint scoping as findExecutionById below, and the same eligibility predicate as before:
-  // the email itself is estado='ERROR' (covers technical failures and alias/classification
-  // failures alike, per "Marcar correo con error"), OR it has at least one joined resultado in
-  // estado MANUAL or ERROR. A PENDIENTE email is never eligible on either side. Intentionally NOT
-  // wrapped in a locking SELECT ... FOR UPDATE transaction: the real reprocess idempotency/claim
-  // gate lives entirely in n8n's own atomic state-transition guard for whichever eligibility path
-  // applies to the targeted row, running on a separate connection entirely (PN1.2 §6). Deliberately
-  // not describing that guard as one fixed SQL statement here — n8n's own reevaluation logic can
-  // evolve independently of this predicate, and a hardcoded mechanism description would go stale.
-  // Two concurrent Hub requests targeting the same executionId may both resolve it and both call
-  // the webhook; n8n's own atomic state transition guarantees only one actual business retry
-  // happens.
+  // the whole table. Same WHERE correo.correo_id = $1::bigint scoping as findExecutionById below.
+  //
+  // Eligibility mirrors deriveReprocessAvailability and is re-evaluated here against current
+  // PostgreSQL data (including the company's CURRENT configuration), never trusting what the list
+  // showed earlier: the correo is estado='ERROR', OR it is PROCESADO and has a MANUAL/ERROR
+  // result, an OMITIDO result whose company is currently enabled, or a pending HASH in
+  // detalle_error. PENDIENTE is never eligible. The fragments are the same ones EXECUTION_COLUMNS
+  // uses, so list and click cannot drift apart.
+  //
+  // Intentionally NOT wrapped in a locking SELECT ... FOR UPDATE transaction: the real reprocess
+  // idempotency/claim gate lives entirely in n8n's own atomic state-transition guard, running on a
+  // separate connection (PN1.2 §6). Two concurrent Hub requests targeting the same executionId may
+  // both resolve it and both call the webhook; n8n guarantees only one actual business retry
+  // happens. Read-only: nothing here ever writes core.resultados_notificacion_pago.
   async findReprocessableCorreoByExecutionId(executionId: string): Promise<ReprocessableCorreoLookup> {
     const [row] = await this.database.query<{ correo_id: string; eligible: boolean }>(`
       SELECT
         correo.correo_id::text AS correo_id,
-        (correo.estado = 'ERROR' OR EXISTS (
-              SELECT 1 FROM core.resultados_notificacion_pago resultado
-              WHERE resultado.correo_id = correo.correo_id
-                AND resultado.estado IN ('MANUAL', 'ERROR')
-            )) AS eligible
+        (
+          correo.estado = 'ERROR'
+          OR (
+            correo.estado = 'PROCESADO'
+            AND (
+              ${PENDING_FILE_HASH_SQL}
+              OR EXISTS (
+                SELECT 1
+                FROM core.resultados_notificacion_pago resultado
+                LEFT JOIN core.empresas_notificacion_pago np ON np.empresa_id = resultado.empresa_id
+                WHERE resultado.correo_id = correo.correo_id
+                  AND (${MANUAL_OR_ERROR_RESULT_SQL} OR (${OMITTED_COMPANY_ENABLED_SQL}))
+              )
+            )
+          )
+        ) AS eligible
       FROM core.correos_notificacion_pago correo
       WHERE correo.correo_id = $1::bigint`, [executionId]);
     if (!row) return { status: 'NOT_FOUND' };
@@ -121,8 +158,7 @@ export class PaymentNotificationsRepository {
   async findExecutionById(executionId: string): Promise<PaymentNotificationExecutionRow | null> {
     const [execution] = await this.database.query<PaymentNotificationExecutionRow>(`
       SELECT ${EXECUTION_COLUMNS}
-      FROM core.correos_notificacion_pago correo
-      LEFT JOIN core.resultados_notificacion_pago resultado USING (correo_id)
+      ${EXECUTION_FROM}
       WHERE correo.correo_id = $1::bigint
       GROUP BY correo.correo_id`, [executionId]);
     return execution ?? null;
