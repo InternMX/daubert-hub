@@ -20,7 +20,7 @@ Formato: **síntoma → causa probable → qué revisar → acción segura → q
 ## 3. El Hub dice "iniciado" pero no pasó nada
 
 - **Síntoma:** el Hub responde 202 (`TRIGGERED`), pero el correo sigue igual.
-- **Causa probable:** n8n contesta 202 **antes** de evaluar. `Preparar correo para reproceso` no encontró filas: el correo está `PENDIENTE` (regla del Hub más laxa que la de n8n), ya lo tomó otra solicitud (`SKIP LOCKED`), o dejó de ser elegible.
+- **Causa probable:** n8n contesta 202 **antes** de evaluar. `Preparar correo para reproceso` no encontró filas: ya lo tomó otra solicitud (`SKIP LOCKED`), n8n decidió que no había nada que reintentar (p. ej. un `OMITIDO` que sigue sin poder procesarse), o dejó de ser elegible. El Hub ya no ofrece Reprocesar en un correo `PENDIENTE` ([regla](reprocessing.md#elegibilidad-hub)).
 - **Qué revisar:** estado del correo y de sus resultados; ejecuciones recientes del webhook en n8n.
 - **Acción segura:** si está `PENDIENTE` sin actividad, ver el caso 4.
 - **Qué NO hacer:** no repetir el clic en bucle; no editar estados por SQL.

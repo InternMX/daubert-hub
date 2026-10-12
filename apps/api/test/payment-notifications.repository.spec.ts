@@ -78,6 +78,7 @@ describe('PaymentNotificationsRepository', () => {
       await expect(repository.findReprocessableCorreoByExecutionId('77')).resolves.toEqual({ status: 'FOUND', correoId: '77' });
       const [sql, values] = query.mock.calls[0]!;
       expect(sql).toContain("correo.estado = 'ERROR'");
+      expect(sql).toContain("correo.estado = 'PROCESADO'");
       expect(sql).toContain("resultado.estado IN ('MANUAL', 'ERROR')");
       expect(sql).toContain('WHERE correo.correo_id = $1::bigint');
       expect(sql).not.toContain('ORDER BY');
@@ -105,6 +106,56 @@ describe('PaymentNotificationsRepository', () => {
       await expect(repository.findReprocessableCorreoByExecutionId('40')).resolves.toEqual({ status: 'FOUND', correoId: '40' });
       const [, values] = query.mock.calls[0]!;
       expect(values).toEqual(['40']);
+    });
+  });
+
+  describe('reprocess eligibility SQL: list and click-time share the same conditions', () => {
+    const ENABLED_OMITIDO = /resultado\.estado = 'OMITIDO'\s+AND np\.procesa_comprobantes_pago IS TRUE\s+AND np\.notificaciones_activas IS TRUE/;
+    const HASH_EXPRESSION = "correo.detalle_error ~ 'HASH=[0-9A-Fa-f]{64}'";
+
+    async function capture() {
+      const query = vi.fn().mockResolvedValue([]);
+      const repository = new PaymentNotificationsRepository({ query } as never);
+      await repository.list(1, 25);
+      await repository.listRecent(10);
+      await repository.findExecutionById('42');
+      await repository.findReprocessableCorreoByExecutionId('42');
+      await repository.findResultsByExecutionId('42');
+      return query.mock.calls.map(([sql]) => sql as string);
+    }
+
+    it('list queries count OMITIDO results of currently enabled companies (both flags IS TRUE) through a LEFT JOIN on the primary key, without touching other counts', async () => {
+      const listSql = (await capture())[1]!;
+      expect(listSql).toMatch(ENABLED_OMITIDO);
+      expect(listSql).toContain('LEFT JOIN core.empresas_notificacion_pago np ON np.empresa_id = resultado.empresa_id');
+      expect(listSql).toContain('AS reactivated_omitted_count');
+      expect(listSql).toContain("count(*) FILTER (WHERE resultado.estado = 'OMITIDO')::int AS omitted_count");
+      expect(listSql).toContain('count(resultado.correo_id)::int AS total_results');
+      expect(listSql).toContain('GROUP BY correo.correo_id');
+    });
+
+    it('list and detail queries expose the pending-HASH flag with the exact n8n expression (HASH=([0-9A-Fa-f]{64}))', async () => {
+      const calls = await capture();
+      for (const sql of [calls[1]!, calls[2]!, calls[3]!]) {
+        expect(sql).toContain(HASH_EXPRESSION);
+        expect(sql).toContain('AS has_pending_file_hash');
+      }
+    });
+
+    it('the click-time query re-evaluates ERROR, MANUAL/ERROR results, enabled OMITIDO and pending HASH against current data, and PENDIENTE is not admitted', async () => {
+      const clickSql = (await capture())[4]!;
+      expect(clickSql).toContain("correo.estado = 'ERROR'");
+      expect(clickSql).toContain("correo.estado = 'PROCESADO'");
+      expect(clickSql).not.toContain('PENDIENTE');
+      expect(clickSql).toContain("resultado.estado IN ('MANUAL', 'ERROR')");
+      expect(clickSql).toMatch(ENABLED_OMITIDO);
+      expect(clickSql).toContain('LEFT JOIN core.empresas_notificacion_pago np ON np.empresa_id = resultado.empresa_id');
+      expect(clickSql).toContain(HASH_EXPRESSION);
+      expect(clickSql).not.toMatch(/\bLISTO\b/);
+    });
+
+    it('never writes: no repository query contains INSERT/UPDATE/DELETE or locking clauses', async () => {
+      for (const sql of await capture()) expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|FOR UPDATE)\b/i);
     });
   });
 
