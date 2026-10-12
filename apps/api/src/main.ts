@@ -3,39 +3,37 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import type { QueryResultRow } from 'pg';
 import { AppModule } from './app.module';
 import { SafeExceptionFilter } from './common/http-exception.filter';
 import type { EnvironmentConfig } from './config/environment';
-import { assertLiveDatabaseMatches } from './config/live-database-guard';
+import { detectContainer, ProductionDatabaseGuardError, verifyDatabaseBeforeListening } from './config/production-database-guard';
 import { DatabaseService } from './database/database.service';
 
-interface CurrentDatabaseRow extends QueryResultRow {
-  database_name: string;
-}
-
-// Opt-in, dev-only live guard: the safe local-development launcher (scripts/dev-test-only.cjs
-// at the repo root, including root `dev:api`) sets EXPECTED_DATABASE_NAME. It is absent in Docker
-// TEST/PROD and in the integration runners, so this is a no-op there — parsing the connection
-// URL is not enough on its own, this confirms the live connection actually landed on the
-// intended database before the API starts serving traffic.
-async function assertExpectedDatabaseIfConfigured(app: Awaited<ReturnType<typeof NestFactory.create>>): Promise<void> {
-  const expected = process.env.EXPECTED_DATABASE_NAME?.trim();
-  if (!expected) return;
-
+// Mandatory startup guard (independent of the npm launcher), awaited BEFORE app.listen(): a
+// non-production process refuses daubert_global — both the configured DB_NAME/DB_USER and the
+// database the connection really reached (read-only SELECT current_database()). In the real
+// PRODUCTION container (NODE_ENV=production + container marker) nothing new happens. The opt-in
+// EXPECTED_DATABASE_NAME from the safe dev launcher keeps applying in every runtime. Messages carry
+// names only, never credentials. See config/production-database-guard.ts.
+async function assertDatabaseSafeBeforeListening(app: Awaited<ReturnType<typeof NestFactory.create>>): Promise<void> {
   const logger = new Logger('Bootstrap');
+  const configured = app.get(ConfigService<EnvironmentConfig, true>).get('database', { infer: true });
   const database = app.get(DatabaseService);
-  let actual: string | undefined;
+  let liveDatabaseName: string | undefined;
   try {
-    const [row] = await database.query<CurrentDatabaseRow>('SELECT current_database() AS database_name');
-    actual = row?.database_name;
-    assertLiveDatabaseMatches(actual, expected);
+    ({ liveDatabaseName } = await verifyDatabaseBeforeListening(database, {
+      configured: { name: configured.name, user: configured.user },
+      runtime: { nodeEnv: process.env.NODE_ENV, inContainer: detectContainer() },
+      expectedDatabaseName: process.env.EXPECTED_DATABASE_NAME
+    }));
   } catch (error) {
-    logger.error(error instanceof Error ? error.message : 'Refusing to start: could not verify the live database.');
+    // Known guard errors are safe by construction; anything unexpected is not echoed.
+    const known = error instanceof ProductionDatabaseGuardError || (error instanceof Error && error.message.startsWith('Refusing to start'));
+    logger.error(known ? (error as Error).message : 'Refusing to start: could not verify the live database.');
     await app.close();
     process.exit(1);
   }
-  logger.log(`Live database guard passed: connected to "${actual}".`);
+  logger.log(liveDatabaseName ? `Live database guard passed: connected to "${liveDatabaseName}".` : 'Database guard: production runtime, no additional check required.');
 }
 
 async function bootstrap(): Promise<void> {
@@ -55,7 +53,7 @@ async function bootstrap(): Promise<void> {
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
   app.useGlobalFilters(new SafeExceptionFilter());
 
-  await assertExpectedDatabaseIfConfigured(app);
+  await assertDatabaseSafeBeforeListening(app);
 
   const config = app.get(ConfigService<EnvironmentConfig, true>);
   const port = config.get('apiPort', { infer: true });
