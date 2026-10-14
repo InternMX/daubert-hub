@@ -1,5 +1,5 @@
-    /* Dibujo Hoja: contenedor de 400.4 x 92 pt (igual al ancho B:I); el viewBox coincide con el contenedor. */
-    .dibujo-hoja-caja { width: 400.4pt; max-width: 100%; height: 92pt; }
+    /* Dibujo Hoja: contenedor de 400.4 x 84 pt (igual al ancho B:I); el viewBox coincide con el contenedor. */
+    .dibujo-hoja-caja { width: 400.4pt; max-width: 100%; height: 84pt; }
     .dibujo-svg { display: block; width: 100%; }
     .dibujo-svg text { font-family: var(--fuente); }
     /* Vista previa de la plantilla sin datos: si el fill sigue siendo el placeholder "{{color_bolsa_hex}}", se muestra gris claro. */

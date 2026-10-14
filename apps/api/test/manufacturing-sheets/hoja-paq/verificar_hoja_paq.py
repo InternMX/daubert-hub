@@ -30,6 +30,7 @@ RE_HEX = re.compile(r'^#[0-9A-Fa-f]{6}$')
 BLOQUES_PERMITIDOS = {'<span class="sin-firma">SIN FIRMA</span>'}               # pruebas: solo marcadores, nunca firmas reales
 LIMITE_Y = 792 - 0.55 * 72                    # margen inferior de 0.55 in
 ANCHO_BLOQUE = 400.4
+HOLGURA_MINIMA = 20.0                         # espacio libre mínimo al final de la página, también en el caso de textos extensos
 IZQ_BLOQUE = (612 - ANCHO_BLOQUE) / 2
 ETIQUETAS = ['Cliente:', 'Fecha:', 'Resina VCI:', 'Producto:', 'Color:', 'Código DCMX:', 'Descripción:', 'Composición:', 'PMG', 'CP5000', 'Natural',
              'Presentación:', 'Rollo', 'Paquete', 'Cantidad Por Rollo o Paquete:', 'Hoja:', 'Doblada', 'Extendida', 'Medidas:',
@@ -97,8 +98,11 @@ def verificar(datos_ruta, perfil):
     sc = sin_comentarios(h)
     doblado = 'data-modalidad="doblado"' in sc
     if doblado != (modalidad == 'DOBLADA') or ('data-modalidad="extendido"' in sc) != (modalidad == 'EXTENDIDA'): fallos.append('variante de rollo incorrecta para %s' % modalidad)
-    if doblado and ('<circle' not in sc or '<ellipse' in sc): fallos.append('el rollo doblado debe usar extremo circular y no elipses')
-    if not doblado and ('<ellipse' not in sc or '<circle' in sc): fallos.append('el rollo extendido debe usar cilindro de elipses y no círculos')
+    rollo_svg = sc[sc.index('data-modalidad='):sc.index('data-seccion="firmas"')] if 'data-seccion="firmas"' in sc else sc[sc.index('data-modalidad='):]
+    for prohibido in ('<circle', 'stroke-dasharray'):
+        if prohibido in rollo_svg: fallos.append('el dibujo de rollo contiene %s, que no existe en las referencias' % prohibido)
+    if doblado and ('class="rollo-cuerpo"' not in rollo_svg or 'fill="{{color_bolsa_hex}}"' not in rollo_svg): fallos.append('el rollo doblado debe rellenarse con {{color_bolsa_hex}}')
+    if not doblado and 'color_bolsa_hex' in rollo_svg: fallos.append('el rollo extendido no debe depender de color_bolsa_hex hasta contrastarlo con su referencia')
     for k, v in datos['datos'].items(): h = h.replace('{{%s}}' % k, html.escape(str(v), quote=True))
     for k, v in datos['visual'].items():
         if not RE_HEX.match(v): fallos.append('color inválido %s' % k)
@@ -186,6 +190,11 @@ def verificar(datos_ruta, perfil):
     if ' '.join(str(datos['datos']['ancho_rollo']).split()) not in tr_txt: fallos.append('el dibujo del rollo no muestra ancho_rollo (%s)' % datos['datos']['ancho_rollo'])
     hx0, hy0, hx1, hy1 = geo['seccion-dibujo-hoja']
     if not cerca(px(hx0 + 200, hy0 + 55), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno de la hoja %s != %s' % (px(hx0 + 200, hy0 + 55), datos['visual']['color_bolsa_hex']))
+    rx0, ry0, rx1, ry1 = geo['seccion-dibujo-rollo']
+    if doblado:
+        c = px(rx0 + 200, ry0 + 44)
+        if not cerca(c, hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno del rollo doblado %s != %s' % (c, datos['visual']['color_bolsa_hex']))
+        if not cerca(px(rx0 + 155, ry0 + 44), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('el rollo doblado no es un cuerpo liso del color del producto')
     # 9. firmas: dos zonas separadas, con su marcador, simétricas y dentro del bloque
     f1, f2 = geo['firma_elaboro'], geo['firma_aprobo']
     for nombre, r in (('firma_elaboro', f1), ('firma_aprobo', f2)):
@@ -196,6 +205,7 @@ def verificar(datos_ruta, perfil):
         fallos.append('las firmas no son simétricas respecto al bloque')
     # 10. altura ocupada
     fin = geo['seccion-firmas'][3]
+    if LIMITE_Y - fin < HOLGURA_MINIMA: fallos.append('holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, HOLGURA_MINIMA))
     if fin > LIMITE_Y: fallos.append('el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y))
     alto = lambda s: geo[s][3] - geo[s][1]
     print('%-30s %s | págs %d | pend. %d | márgenes %.1f/%.1f | etiqueta y %.1f | hoja %.1f pt | rollo %.1f pt | firmas y %.1f-%.1f | libre %.1f pt | %s%s' % (
