@@ -1,5 +1,5 @@
     <!-- DIBUJO DE BOLSA PLANA (BOLSA_PLANA_1): cuerpo rectangular con cota horizontal {{ancho}} (arriba) y cota vertical {{largo}} (izquierda),
-         relleno {{color_bolsa_hex}} (código CSS del producto) y una única línea horizontal fina próxima al borde inferior que representa el sello de fondo (sin segunda cara, base ni relleno propio: la bolsa es plana, vista de frente).
+         relleno {{color_bolsa_hex}} (código CSS del producto) y un rectángulo muy delgado (6 pt) pegado al borde inferior, del mismo relleno y con bordes negros marcados, que representa el sello de fondo como parte del frente de la bolsa (sin sombras, perspectiva ni volumen).
          Esquemático y sin escala: no hay distancias técnicas del sello. Sin fuelles ni curvas de coextrusión. Parámetros: id (marcador de flecha). -->
     <div class="dibujo-bolsa-plana-caja" id="seccion-dibujo-bolsa" data-seccion="dibujo-bolsa" data-plantilla="bolsa-plana">
       <svg class="dibujo-bolsa-plana-svg" viewBox="0 0 400.4 130" role="img" aria-label="Dibujo de la bolsa plana: ancho, largo y sello de fondo">
@@ -10,8 +10,8 @@
         </defs>
         <text x="200" y="7" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{ancho}}</text>
         <line x1="140" y1="17" x2="260" y2="17" stroke="#4A7EBB" stroke-width="0.9" marker-start="url(#@{id})" marker-end="url(#@{id})"/>
-        <rect class="bolsa-plana" x="140" y="23" width="120" height="95" fill="{{color_bolsa_hex}}" stroke="#000" stroke-width="0.84"/>
-        <line class="sello-fondo" x1="140" y1="113" x2="260" y2="113" stroke="#000" stroke-width="0.5"/>
+        <rect class="bolsa-plana" x="140" y="23" width="120" height="89" fill="{{color_bolsa_hex}}" stroke="#000" stroke-width="1"/>
+        <rect class="sello-fondo" x="140" y="112" width="120" height="6" fill="{{color_bolsa_hex}}" stroke="#000" stroke-width="1.2"/>
         <line x1="122" y1="23" x2="122" y2="118" stroke="#4A7EBB" stroke-width="0.9" marker-start="url(#@{id})" marker-end="url(#@{id})"/>
         <text x="70" y="70.5" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{largo}}</text>
       </svg>

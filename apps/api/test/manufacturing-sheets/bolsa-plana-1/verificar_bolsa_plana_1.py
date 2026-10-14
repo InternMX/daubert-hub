@@ -176,18 +176,23 @@ def verificar(datos_ruta, perfil):
             if ' '.join(str(datos['datos'][k]).split()) not in th: fallos.append('el dibujo no muestra %s (%s)' % (k, datos['datos'][k]))
         color = hexrgb(datos['visual']['color_bolsa_hex'])
         if not cerca(px(dx0 + 200, dy0 + 55), color): fallos.append('relleno de la bolsa %s != %s' % (px(dx0 + 200, dy0 + 55), datos['visual']['color_bolsa_hex']))
-        # línea del sello: una fila oscura dentro de la bolsa, cerca del borde inferior, y relleno de color por debajo de ella
-        col = [px(dx0 + 200, dy0 + 23 + k * 0.25) for k in range(0, 4 * 92)]      # de la parte alta de la bolsa hasta 3 pt sobre el borde inferior
-        oscuros = [k for k, c in enumerate(col) if k > 20 and sum(c) < sum(color) * 0.8]   # k > 20 excluye el borde superior
-        if not oscuros: fallos.append('no se imprime la línea del sello de fondo')
+        # sello de fondo: rectángulo muy delgado pegado al borde inferior, mismo relleno, bordes negros marcados y sin efectos de volumen
+        m_sello = re.search(r'<rect class="sello-fondo"([^>]*)/>', sc)
+        if not m_sello: fallos.append('el sello de fondo debe ser un rectángulo delgado (rect.sello-fondo)')
         else:
-            sello = sum(oscuros) / len(oscuros) * 0.25                                # pt bajo el borde superior de la bolsa
-            if not (73 <= sello <= 91): fallos.append('la línea del sello no está cerca del borde inferior (a %.1f pt del borde superior; bolsa de 95 pt)' % sello)
-            if oscuros[-1] - oscuros[0] > 4 * 2: fallos.append('el sello debe ser una línea fina, no una franja (%.1f pt de grosor)' % ((oscuros[-1] - oscuros[0]) / 4))
-            for dy in (2.0, 4.0):                                                     # bajo la línea el relleno sigue siendo el de la bolsa: sin base ni segunda cara
-                c = px(dx0 + 200, dy0 + 23 + sello + dy)
-                if dy0 + 23 + sello + dy < dy0 + 116 and not cerca(c, color): fallos.append('bajo el sello el relleno difiere del color de la bolsa: %s' % (c,))
-        if 'class="sello-fondo"' in sc and not re.search(r'class="sello-fondo"[^>]*stroke-width="0\.[0-6]\d*"', sc): fallos.append('el sello debe tener un trazo fino (<= 0.6 pt)')
+            atr = m_sello.group(1)
+            alto = float(re.search(r'height="([\d.]+)"', atr).group(1))
+            if alto > 8: fallos.append('el rectángulo del sello debe ser muy delgado (%.1f pt)' % alto)
+            if 'fill="{{color_bolsa_hex}}"' not in atr: fallos.append('el sello debe usar el mismo relleno que la bolsa')
+            if 'stroke="#000"' not in atr: fallos.append('los bordes del sello deben ser negros')
+        if re.search(r'filter|gradient|shadow|transform|skew|perspective|opacity', re.search(r'<svg class="dibujo-bolsa-plana-svg".*?</svg>', sc, re.S).group(0)): fallos.append('el dibujo no debe tener sombras, degradados ni transformaciones')
+        sx, sy = dx0 + 200, dy0 + 23 + 89                                              # borde superior del sello (y = 112 en el SVG)
+        col = [px(sx, sy - 1.5 + k * 0.25) for k in range(0, 4 * 3)]
+        if not any(sum(c) < sum(color) * 0.5 for c in col): fallos.append('no se distingue el borde negro superior del sello')
+        if not cerca(px(sx, sy + 3), color): fallos.append('el interior del sello difiere del relleno de la bolsa: %s' % (px(sx, sy + 3),))
+        col = [px(sx, sy + 5 + k * 0.25) for k in range(0, 4 * 3)]
+        if not any(sum(c) < sum(color) * 0.5 for c in col): fallos.append('no se distingue el borde negro inferior del sello')
+        if any(max(px(sx + dx, sy + 3)) < 60 for dx in range(-50, 51, 10)): fallos.append('el interior del sello contiene líneas o sombras oscuras')
         nota = geo['seccion-nota']
         if not cerca(px(nota[0] + 5, (nota[1] + nota[3]) / 2), (255, 255, 0)): fallos.append('la nota no es amarilla')
         region = img[int(nota[1] * escala):int(nota[3] * escala), int(nota[0] * escala):int(nota[2] * escala)]
