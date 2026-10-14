@@ -191,6 +191,12 @@ def verificar(datos_ruta, perfil):
     hx0, hy0, hx1, hy1 = geo['seccion-dibujo-hoja']
     if not cerca(px(hx0 + 200, hy0 + 55), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno de la hoja %s != %s' % (px(hx0 + 200, hy0 + 55), datos['visual']['color_bolsa_hex']))
     rx0, ry0, rx1, ry1 = geo['seccion-dibujo-rollo']
+    if '#FFC000' in rollo_svg: fallos.append('el contorno dorado intenso #FFC000 ya no se usa')
+    if doblado and 'stroke="#C4BD97"' not in rollo_svg: fallos.append('el contorno del rollo doblado debe ser #C4BD97')
+    if not doblado:
+        if 'stroke="#4F81BD"' not in rollo_svg or '#000' in rollo_svg.replace('fill="#000"', ''): fallos.append('el rollo extendido debe tener contorno azul #4F81BD y no negro')
+        c = px(rx0 + 200, ry0 + 44)
+        if not cerca(c, (245, 243, 237)): fallos.append('relleno del rollo extendido %s != #F5F3ED' % (c,))
     if doblado:
         c = px(rx0 + 200, ry0 + 44)
         if not cerca(c, hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno del rollo doblado %s != %s' % (c, datos['visual']['color_bolsa_hex']))
