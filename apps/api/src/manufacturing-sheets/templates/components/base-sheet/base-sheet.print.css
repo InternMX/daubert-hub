@@ -1,0 +1,6 @@
+    @page { size: letter portrait; margin: 0; }
+    @media print {
+      html, body { margin: 0; padding: 0; background: white; }
+      .hoja { width: 8.5in; min-height: 11in; margin: 0; padding: 0.55in 0.7in 0.55in 18.5pt; box-shadow: none; }
+      .rotulo, .fecha-label, .tipo, .marca, .seccion-titulo, .destacado { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }

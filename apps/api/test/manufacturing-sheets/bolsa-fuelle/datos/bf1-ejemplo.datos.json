@@ -1,0 +1,30 @@
+{
+  "caso": "BF-1 ejemplo",
+  "formato": "BOLSA_FUELLE",
+  "nota": "Datos de prueba realistas (no corresponden a un pedido real). BF-1 solo usa el grupo `datos`; no hay colores ni firmas todavía.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Bolsa Con Fuelle",
+    "color": "AZUL",
+    "codigo": "BFPMG-0042",
+    "descripcion": "Bolsa VCI PMG con fuelles laterales 24 x 36 x 6\" Cal. 4 mil, Rollo con 100 bolsas, Color Azul",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "100 Bolsas",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "24\"",
+    "largo": "36\"",
+    "fuelle_derecho": "6\"",
+    "fuelle_izquierdo": "6\"",
+    "calibre": "4 MIL",
+    "peso_bolsa_lb": "0.4120"
+  },
+  "visual": {},
+  "firmas": {}
+}

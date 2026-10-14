@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de Instrucción de Manufactura{{sufijo_titulo}}</title>
+  <style>
+    /* @include components/base-sheet/base-sheet.css */
+    /* @include components/header/header.css */
+
+    /* @include components/base-sheet/base-sheet.print.css */
+    @media screen and (max-width: 816px) {
+      .hoja { width: 100%; margin: 0; padding: 14px; }
+      /* @include components/header/header.mobile.css */
+    }
+  </style>
+</head>
+<body>
+  <!-- Formato BOLSA_FUELLE · etapa BF-1 (estructura general). Pendiente (BF-2): Dibujo Bolsa y Etiqueta, dibujo técnico
+       con fuelles, nota de manufactura y firmas. -->
+  <main class="hoja">
+    <!-- @include components/header/header.html -->
+
+    <!-- @include components/general-info-vci/general-info-vci.html -->
+
+    <!-- @include components/measures-gussets/measures-gussets.html -->
+
+    <!-- @include components/weight-row/weight-row.html -->
+  </main>
+</body>
+</html>

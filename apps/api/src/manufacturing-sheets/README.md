@@ -1,13 +1,24 @@
 # manufacturing-sheets
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
-Estado: solo **COEX Verde** (validado contra CONFPMG04). Bolsa Fuelle y Hoja Paq aún no existen.
+Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-1** (estructura general; sin línea base validada).
+Hoja Paq aún no existe.
+
+**Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
+generales, Medidas, pesos, etiqueta y firmas), conservando las características y la información técnica de cada formato. No se
+reproduce el Excel celda por celda.
 
 ## Estructura
 
 ```
+profiles/                # identifican el formato de forma explícita (nunca por el color) y listan sus placeholders
+  coex.profile.json  bolsa-fuelle.profile.json
 templates/
   components/            # piezas reutilizables (HTML y CSS)
+    base-sheet/              estilos base corporativos de las hojas nuevas (tokens, tablas, alturas) + reglas de impresión
+    general-info-vci/        datos generales con Resina VCI, Composición, Presentación y Cantidad
+    measures-gussets/        Medidas con ambos fuelles (Unidad, Ancho/Fuelle Derecho, Largo/Fuelle Izquierdo, Calibre)
+    weight-row/              fila de peso en libras ({{peso_bolsa_lb}})
     header/
       header.html            logotipo + título (placeholder {{sufijo_titulo}})
       header.css             estilos propios del encabezado
@@ -27,6 +38,9 @@ templates/
   coex/
     coex.template.html   # plantilla fuente con marcadores @include
     images/              # DC_logo.jpg y COEX_Curvas_Trazado_Original.svg (fuente de las curvas)
+  bolsa-fuelle/
+    bolsa-fuelle.template.html   # BF-1: encabezado, datos generales, Medidas y Peso lb
+    images/DC_logo.jpg
 tools/
   compose-template.mjs   # compositor (Node, sin dependencias)
 ```
@@ -91,6 +105,21 @@ porque comparten columnas y comportamiento de bordes).
   - La regla de impresión que fuerza colores (`print-color-adjust`) incluye `.etiqueta-seccion`.
   - Los paddings de `.titulo-dibujo` copian los anchos de las columnas B y J:K: si cambia la cuadrícula hay que sincronizarlos.
 
+## BOLSA_FUELLE (etapa BF-1)
+
+Perfil: `profiles/bolsa-fuelle.profile.json` (`"formato": "BOLSA_FUELLE"`). Compone con el mismo compositor, sin dependencias nuevas.
+
+- **Incluye:** encabezado (componente `header`, el mismo de COEX; `sufijo_titulo` va vacío), datos generales con **Resina VCI**
+  (`{{resina_vci}}`, campo nuevo), Composición, Presentación, Cantidad, Medidas con ambos fuelles y **Peso lb**
+  (`{{peso_bolsa_lb}}`, el mismo dato que «PESO BOLSA LB» de COEX).
+- **No incluye (BF-2):** Dibujo Bolsa y Etiqueta, dibujo técnico con fuelles, nota de manufactura y firmas.
+- **Apariencia:** mismos tokens, tipografía, alturas de fila, colores corporativos y cuadrícula B:I que COEX, para que ambas
+  hojas se vean como un mismo sistema. `base-sheet/` repite los estilos base de COEX; COEX no se tocó (deuda: unificar con
+  una prueba de regresión explícita).
+- **Diferencia estructural:** Resina VCI va en una fila propia bajo Cliente/Fecha (en el Excel está junto a la fecha).
+- **Verificación:** `npm run test:sheets-bolsa-fuelle` (sin línea base; comprueba placeholders, campos, una página carta,
+  ausencia de superposiciones y colores impresos). Ver `test/manufacturing-sheets/bolsa-fuelle/README.md`.
+
 ## Componente `gusset-bag-drawing`
 
 Dibujo técnico de bolsa con fuelles (debajo de Etiqueta).
@@ -118,6 +147,8 @@ Se ejecutan desde `apps/api` (`npm run <script>`) o desde la raíz del monorepo 
 |---|---|
 | `sheets:compose` | Compone `templates/coex/coex.template.html` en `tmp/manufacturing-sheets/coex.composed.html` (carpeta ignorada por Git). |
 | `test:sheets-regression` | Compone, renderiza CONFPMG04 y compara contra la línea base de COEX. Código de salida 0 = OK, 1 = falla. |
+| `sheets:compose:bolsa-fuelle` | Compone la plantilla de BOLSA_FUELLE en `tmp/manufacturing-sheets/bolsa-fuelle.composed.html`. |
+| `test:sheets-bolsa-fuelle` | Verifica BOLSA_FUELLE BF-1 con datos de ejemplo (no es regresión píxel a píxel). |
 
 Requisitos:
 - `sheets:compose`: Node (probado con v24). Sin dependencias.

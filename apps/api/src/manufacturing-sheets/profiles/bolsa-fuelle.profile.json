@@ -1,0 +1,29 @@
+{
+  "formato": "BOLSA_FUELLE",
+  "etapa": "BF-1",
+  "nota": "El formato se identifica de forma explícita; nunca se deduce del color del producto.",
+  "plantilla": "templates/bolsa-fuelle/bolsa-fuelle.template.html",
+  "titulo": { "base": "Hoja de Instrucción de Manufactura", "sufijo_titulo": "" },
+  "componentes": [
+    { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)" },
+    { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión" },
+    { "ruta": "components/header/header.html", "uso": "encabezado compartido con COEX", "compartido": true },
+    { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad" },
+    { "ruta": "components/measures-gussets/measures-gussets.html", "uso": "Medidas con ambos fuelles" },
+    { "ruta": "components/weight-row/weight-row.html", "uso": "Peso lb" }
+  ],
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo", "cliente", "fecha_", "resina_vci", "producto", "color", "codigo", "descripcion",
+      "comp_pmg", "comp_cp5000", "comp_natural", "pres_rollo", "pres_paquete", "cantidad",
+      "unidad_medidas", "ancho", "largo", "fuelle_derecho", "fuelle_izquierdo", "calibre", "peso_bolsa_lb"
+    ],
+    "color": [],
+    "bloques_html": []
+  },
+  "campos_nuevos": ["resina_vci"],
+  "pendiente": {
+    "BF-2": ["Dibujo Bolsa y Etiqueta", "dibujo técnico con fuelles", "nota de manufactura", "firmas"],
+    "medicion": ["dimensiones definitivas frente a un PDF exportado del Excel original (área A1:J43, márgenes de 0.25 in)"]
+  }
+}

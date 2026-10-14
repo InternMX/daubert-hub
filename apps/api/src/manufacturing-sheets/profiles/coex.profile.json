@@ -1,0 +1,62 @@
+{
+  "formato": "COEXTRUSION",
+  "variantes": [
+    "COEX_VERDE",
+    "COEX_AZUL"
+  ],
+  "nota": "Perfil descriptivo de la plantilla COEX ya validada. No la modifica. El formato se identifica de forma explícita; nunca por el color.",
+  "plantilla": "templates/coex/coex.template.html",
+  "titulo": {
+    "base": "Hoja de Instrucción de Manufactura",
+    "sufijo_titulo": " - COEXTRUSIÓN"
+  },
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo",
+      "cliente",
+      "fecha_",
+      "producto",
+      "color",
+      "codigo",
+      "descripcion",
+      "comp_pmg",
+      "comp_cp5000",
+      "comp_natural",
+      "pres_rollo",
+      "pres_paquete",
+      "cantidad",
+      "unidad_medidas",
+      "ancho",
+      "largo",
+      "fuelle_derecho",
+      "fuelle_izquierdo",
+      "calibre",
+      "peso_capa_interior",
+      "peso_capa_intermedia",
+      "peso_capa_exterior",
+      "resina_capa_interior",
+      "resina_capa_intermedia",
+      "resina_capa_exterior",
+      "resaltar_resina_capa_interior",
+      "resaltar_resina_capa_intermedia",
+      "resaltar_resina_capa_exterior",
+      "lb_vci_interior",
+      "lb_vci_intermedia",
+      "lb_vci_exterior",
+      "peso_bolsa_lb",
+      "etiqueta"
+    ],
+    "color": [
+      "color_bolsa_hex",
+      "color_capa_exterior",
+      "color_capa_interior",
+      "color_capa_intermedia",
+      "color_cotas_internas_hex"
+    ],
+    "bloques_html": [
+      "bloque_firma_aprobo",
+      "bloque_firma_elaboro"
+    ]
+  },
+  "regresion": "test/manufacturing-sheets/regression/coex-confpmg04"
+}
