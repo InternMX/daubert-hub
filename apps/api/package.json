@@ -12,7 +12,7 @@
     "sheets:compose": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/coex/coex.template.html --out tmp/manufacturing-sheets/coex.composed.html",
     "test:sheets-regression": "python test/manufacturing-sheets/regression/coex-confpmg04/comparar_regresion.py",
     "sheets:compose:bolsa-fuelle": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/bolsa-fuelle/bolsa-fuelle.template.html --out tmp/manufacturing-sheets/bolsa-fuelle.composed.html",
-    "test:sheets-bolsa-fuelle": "python test/manufacturing-sheets/bolsa-fuelle/verificar_bf1.py",
+    "test:sheets-bolsa-fuelle": "python test/manufacturing-sheets/bolsa-fuelle/verificar_bolsa_fuelle.py",
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "security:bootstrap-admin:prod": "ts-node --transpile-only scripts/bootstrap-admin-prod.ts",
     "security:reset-admin-password": "ts-node --transpile-only scripts/reset-admin-password.ts",

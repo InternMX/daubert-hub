@@ -1,7 +1,7 @@
 # manufacturing-sheets
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
-Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-1** (estructura general; sin línea base validada).
+Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-2** (hoja completa; sin línea base validada).
 Hoja Paq aún no existe.
 
 **Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
@@ -25,16 +25,20 @@ templates/
       header.mobile.css      reglas del encabezado para @media screen (≤ 816 px)
     signatures/
       signatures.html        zona de firmas: bloques de elaboración y aprobación
-      signatures.css         posiciones y tamaños de los bloques
+      signatures.css         posiciones y tamaños de los bloques (COEX)
+      signatures.bolsa-fuelle.css  variante de posiciones de BOLSA_FUELLE (se incluye después de signatures.css)
     label-section/
       label-section.html         encabezado «Dibujo Bolsa» (franja azul claro B:K) + fila Etiqueta, en una sola tabla
       label-section.css          estilos de la franja y de la fila Etiqueta
       label-section.heights.css  altura de la fila del encabezado (va dentro del bloque de alturas de la plantilla)
+      label-section.bi.html/.css variante B:I (BOLSA_FUELLE): franja y Etiqueta del mismo ancho que las tablas de datos
+    note-seal-height/        nota de manufactura de BOLSA_FUELLE (texto fijo)
     gusset-bag-drawing/
       gusset-bag-drawing.html  contenedor del dibujo técnico de bolsa con fuelles (incluye la geometría elegida)
       gusset-bag-drawing.css   estilos comunes del dibujo
       geometry/coex.html       SVG con la geometría de COEX (viewBox, marcadores, bolsa, cotas, barra)
       geometry/coex.css        dimensiones del contenedor para esa geometría
+      geometry/bolsa-fuelle.html / .css   geometría propia de BOLSA_FUELLE
   coex/
     coex.template.html   # plantilla fuente con marcadores @include
     images/              # DC_logo.jpg y COEX_Curvas_Trazado_Original.svg (fuente de las curvas)
@@ -105,6 +109,49 @@ porque comparten columnas y comportamiento de bordes).
   - La regla de impresión que fuerza colores (`print-color-adjust`) incluye `.etiqueta-seccion`.
   - Los paddings de `.titulo-dibujo` copian los anchos de las columnas B y J:K: si cambia la cuadrícula hay que sincronizarlos.
 
+## BOLSA_FUELLE (etapa BF-2: hoja completa)
+
+Perfil: `profiles/bolsa-fuelle.profile.json` (`"formato": "BOLSA_FUELLE"`). Compone con el mismo compositor, sin dependencias nuevas.
+
+Orden de la hoja: encabezado, datos generales con **Resina VCI**, Medidas con ambos fuelles, **Peso lb**, Dibujo Bolsa y Etiqueta,
+dibujo técnico con fuelles, nota de manufactura y firmas. Una sola página carta.
+
+- **Campos:** los comunes de COEX con el mismo significado (`cliente`, `fecha_`, `producto`, `color`, `codigo`, `descripcion`,
+  `comp_*`, `pres_*`, `cantidad`, `unidad_medidas`, `ancho`, `largo`, `fuelle_*`, `calibre`, `peso_bolsa_lb`, `etiqueta`,
+  `color_bolsa_hex`, `color_cotas_internas_hex`, `bloque_firma_*`) y uno nuevo: `resina_vci`. 26 placeholders en total.
+- **Componentes compartidos con COEX** (sin modificar los de COEX): `header`; `label-section` mediante la variante
+  `label-section.bi.html` (franja y Etiqueta de ancho B:I); `gusset-bag-drawing` con la geometría `geometry/bolsa-fuelle`;
+  `signatures` con la variante de posiciones `signatures.bolsa-fuelle.css`.
+- **Componentes propios:** `base-sheet`, `general-info-vci`, `measures-gussets`, `weight-row` y `note-seal-height`
+  (nota amarilla de texto fijo: «Notas: Considerar la altura total de la bolsa a partir del sello»; no existe en COEX).
+- **Geometría del dibujo:** SVG `viewBox 0 0 400.4 189.8` (contenedor de 400.4 × 189.8 pt). Esquemática, sin escala: bolsa
+  con fuelles simétricos, dos líneas punteadas, cota de ancho (arriba), de largo (izquierda), dos cotas internas de fuelle y barra
+  azul oscuro inferior. Los valores de las cotas son placeholders; el relleno viene de `{{color_bolsa_hex}}` y las flechas
+  internas de `{{color_cotas_internas_hex}}`. Los textos de fuelle llevan una pastilla blanca para leerse con cualquier color.
+- **Firmas:** dos bloques de 105 × 70 pt centrados bajo cada mitad del ancho B:I. El HTML solo recibe `{{bloque_firma_*}}`; las
+  imágenes autorizadas las entrega el backend y la plantilla no decide quién puede aprobar.
+- **Apariencia:** mismos tokens, tipografía, alturas de fila, colores corporativos y cuadrícula B:I que COEX. `base-sheet/` repite
+  los estilos base de COEX; COEX no se tocó (deuda: unificar con una regresión explícita).
+- **Diferencia estructural con el Excel:** Resina VCI va en una fila propia bajo Cliente/Fecha.
+- **Verificación:** `npm run test:sheets-bolsa-fuelle` (5 casos, sin línea base). Ver `test/manufacturing-sheets/bolsa-fuelle/README.md`.
+
+## Componente `label-section`
+
+Encabezado «Dibujo Bolsa» y fila Etiqueta, **una sola tabla** (cuadrícula B:K compartida con la tabla general; no se separan
+porque comparten columnas y comportamiento de bordes).
+
+- **Datos:** `{{etiqueta}}`.
+- **Geometría validada:** franja azul claro `#366092` de B a K en una sola celda (13.6 pt de alto; paddings de 15.350 % y 18.846 %
+  mantienen «Dibujo Bolsa» centrado en C:I); fila Etiqueta B:I rosa `#DA9694`, 27.3 pt, sin borde.
+- **`label-section.heights.css`:** la regla de altura de la franja se mantiene en un archivo aparte porque debe quedar dentro del
+  bloque de alturas de la plantilla; así el HTML compuesto conserva el orden de la cascada (idéntico byte a byte).
+- **Dependencias que el componente no define:**
+  - `:root`: `--rosa` y `--fs-etiqueta`.
+  - Clases compartidas: `.seccion-titulo` y `.titulo-claro` (también usadas por Medidas y capas), `.t-general` y las columnas `k-*`
+    (cuadrícula B:K), y `.seccion-pegada` (margen de −1 px).
+  - La regla de impresión que fuerza colores (`print-color-adjust`) incluye `.etiqueta-seccion`.
+  - Los paddings de `.titulo-dibujo` copian los anchos de las columnas B y J:K: si cambia la cuadrícula hay que sincronizarlos.
+
 ## BOLSA_FUELLE (etapa BF-1)
 
 Perfil: `profiles/bolsa-fuelle.profile.json` (`"formato": "BOLSA_FUELLE"`). Compone con el mismo compositor, sin dependencias nuevas.
@@ -148,7 +195,7 @@ Se ejecutan desde `apps/api` (`npm run <script>`) o desde la raíz del monorepo 
 | `sheets:compose` | Compone `templates/coex/coex.template.html` en `tmp/manufacturing-sheets/coex.composed.html` (carpeta ignorada por Git). |
 | `test:sheets-regression` | Compone, renderiza CONFPMG04 y compara contra la línea base de COEX. Código de salida 0 = OK, 1 = falla. |
 | `sheets:compose:bolsa-fuelle` | Compone la plantilla de BOLSA_FUELLE en `tmp/manufacturing-sheets/bolsa-fuelle.composed.html`. |
-| `test:sheets-bolsa-fuelle` | Verifica BOLSA_FUELLE BF-1 con datos de ejemplo (no es regresión píxel a píxel). |
+| `test:sheets-bolsa-fuelle` | Verifica BOLSA_FUELLE (BF-2) con 5 casos de datos (no es regresión píxel a píxel). |
 
 Requisitos:
 - `sheets:compose`: Node (probado con v24). Sin dependencias.
