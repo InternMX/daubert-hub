@@ -2,7 +2,7 @@
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
 Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-2** (hoja completa; sin línea base validada).
-**HOJA_PAQ etapa HP-C** (hoja completa con un solo dibujo; sin línea base validada). **ROLLO_CONTINUO etapa RC-1** (hasta Peso; sin fila Cantidad).
+**HOJA_PAQ etapa HP-C** (hoja completa con un solo dibujo; sin línea base validada). **ROLLO_CONTINUO etapa RC-2** (hoja completa; solo modalidad DOBLADA con variante gráfica; sin fila Cantidad).
 
 **Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
 generales, Medidas, pesos, etiqueta y firmas), conservando las características y la información técnica de cada formato. No se

@@ -8,7 +8,7 @@ python verificar_rollo_continuo.py [--datos RUTA.json ...]      # o: npm run tes
 ```
 
 Requiere Node, Google Chrome (`CHROME_PATH`), PyMuPDF y numpy. Salida en `test-results/<caso>/` (ignorada por Git). La etapa verificada
-(RC-1 hasta Peso, RC-2 hoja completa) se toma del perfil.
+(RC-1 hasta Peso, RC-2 hoja completa con Etiqueta, Dibujo de hoja, Dibujo de rollo doblado y firmas) se toma del perfil.
 
 ## Contrato
 `modalidad` (`DOBLADA` | `EXTENDIDA`) explícita, validada contra `hoja_doblada`/`hoja_extendida`; `ancho_rollo` obligatorio e independiente de
