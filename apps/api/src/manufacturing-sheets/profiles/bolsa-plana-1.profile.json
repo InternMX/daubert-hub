@@ -1,27 +1,126 @@
 {
   "formato": "BOLSA_PLANA_1",
-  "etapa": "BP-1",
+  "etapa": "BP-2",
   "nota": "Familia independiente (pestaña «Bolsa Plana 1» del Excel). El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. No tiene Doblada/Extendida, fuelles, coextrusión ni dibujo de rollo. La plantilla no contiene lógica de negocio ni de autorización.",
   "plantilla": "templates/bolsa-plana-1/bolsa-plana-1.template.html",
-  "titulo": { "base": "Hoja de Instrucción de Manufactura", "sufijo_titulo": "" },
+  "titulo": {
+    "base": "Hoja de Instrucción de Manufactura",
+    "sufijo_titulo": ""
+  },
   "componentes": [
-    { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)", "compartido": true },
-    { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión", "compartido": true },
-    { "ruta": "components/base-sheet/base-sheet.centered.css", "uso": "centrado horizontal del bloque de 400.4 pt en la carta", "compartido": true },
-    { "ruta": "components/header/header.html", "uso": "encabezado compartido", "compartido": true },
-    { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad (cantidad_fila=con)", "compartido": true },
-    { "ruta": "components/measures-simple/measures-simple.html", "uso": "Medidas: Unidad, Ancho, Largo y Calibre", "compartido": true },
-    { "ruta": "components/weight-row/weight-row.html", "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)", "compartido": true }
+    {
+      "ruta": "components/base-sheet/base-sheet.css",
+      "uso": "estilos base corporativos (tokens, tablas, alturas)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.print.css",
+      "uso": "@page y reglas de impresión",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.centered.css",
+      "uso": "centrado horizontal del bloque de 400.4 pt en la carta",
+      "compartido": true
+    },
+    {
+      "ruta": "components/header/header.html",
+      "uso": "encabezado compartido",
+      "compartido": true
+    },
+    {
+      "ruta": "components/general-info-vci/general-info-vci.html",
+      "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad (cantidad_fila=con)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/measures-simple/measures-simple.html",
+      "uso": "Medidas: Unidad, Ancho, Largo y Calibre",
+      "compartido": true
+    },
+    {
+      "ruta": "components/weight-row/weight-row.html",
+      "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/drawing-title/drawing-title.html",
+      "uso": "franja «Dibujo Hoja» antes de Etiqueta (parámetros id y titulo)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.solo.html",
+      "uso": "Etiqueta (fila rosa B:I)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.css",
+      "uso": "estilos de Etiqueta",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.bi.css",
+      "uso": "título de dibujo centrado y en negritas",
+      "compartido": true
+    },
+    {
+      "ruta": "components/flat-bag-drawing/flat-bag-drawing.html",
+      "uso": "bolsa plana: rectángulo con cotas {{ancho}} y {{largo}}, relleno {{color_bolsa_hex}} y línea del sello de fondo"
+    },
+    {
+      "ruta": "components/note-seal-height/note-seal-height.bolsa-plana-1.html",
+      "uso": "nota de manufactura (texto fijo de este perfil)"
+    },
+    {
+      "ruta": "components/signatures/signatures.html",
+      "uso": "bloques de firma; variante signatures.hoja-paq.css (105 x 70 pt)",
+      "compartido": true
+    }
   ],
   "placeholders": {
     "texto": [
-      "sufijo_titulo", "cliente", "fecha_", "resina_vci", "producto", "color", "codigo", "descripcion",
-      "comp_pmg", "comp_cp5000", "comp_natural", "pres_rollo", "pres_paquete", "cantidad",
-      "unidad_medidas", "ancho", "largo", "calibre", "peso_bolsa_lb"
+      "sufijo_titulo",
+      "cliente",
+      "fecha_",
+      "resina_vci",
+      "producto",
+      "color",
+      "codigo",
+      "descripcion",
+      "comp_pmg",
+      "comp_cp5000",
+      "comp_natural",
+      "pres_rollo",
+      "pres_paquete",
+      "cantidad",
+      "unidad_medidas",
+      "ancho",
+      "largo",
+      "calibre",
+      "peso_bolsa_lb",
+      "etiqueta"
+    ],
+    "color": [
+      "color_bolsa_hex"
+    ],
+    "bloques_html": [
+      "bloque_firma_elaboro",
+      "bloque_firma_aprobo"
     ]
   },
   "pendiente": {
-    "medicion": ["dimensiones definitivas frente a un PDF exportado del Excel de Bolsa Plana 1"],
-    "datos": ["el Código DCMX real del ejemplo no es legible en la captura: las pruebas usan un identificador ficticio", "código de color de «AZUL DAUBERT»: las pruebas usan el azul confirmado #538DD5 de forma provisional"]
+    "medicion": [
+      "dimensiones definitivas frente a un PDF exportado del Excel de Bolsa Plana 1"
+    ],
+    "datos": [
+      "el Código DCMX real del ejemplo no es legible en la captura: las pruebas usan un identificador ficticio",
+      "código de color de «AZUL DAUBERT»: las pruebas usan el azul confirmado #538DD5 de forma provisional"
+    ],
+    "dibujo": [
+      "la línea del sello es esquemática: no se conocen distancias técnicas"
+    ]
+  },
+  "textos_fijos": {
+    "nota_manufactura": "Notas: En caso de que se fabrique con sello de fondo, considerar la altura total de la bolsa a partir del sello de fondo"
   }
 }

@@ -7,6 +7,12 @@
   <style>
     /* @include components/base-sheet/base-sheet.css */
     /* @include components/header/header.css */
+    /* @include components/label-section/label-section.css */
+    /* @include components/label-section/label-section.bi.css */
+    /* @include components/flat-bag-drawing/flat-bag-drawing.css */
+    /* @include components/note-seal-height/note-seal-height.css */
+    /* @include components/signatures/signatures.css */
+    /* @include components/signatures/signatures.hoja-paq.css */
 
     /* @include components/base-sheet/base-sheet.print.css */
     /* @include components/base-sheet/base-sheet.centered.css */
@@ -17,8 +23,8 @@
   </style>
 </head>
 <body>
-  <!-- Formato BOLSA_PLANA_1 · BP-1. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad),
-       Medidas sin fuelles y Peso lb. BP-2 añadirá Dibujo Hoja, Etiqueta, dibujo de bolsa plana con sello, nota y firmas.
+  <!-- Formato BOLSA_PLANA_1 · BP-2. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad), Medidas,
+       Peso lb, encabezado Dibujo Hoja, Etiqueta, dibujo de bolsa plana con línea de sello, nota de manufactura y firmas.
        Sin Doblada/Extendida, fuelles, capas de coextrusión ni dibujo de rollo. -->
   <main class="hoja">
     <!-- @include components/header/header.html -->
@@ -28,6 +34,16 @@
     <!-- @include components/measures-simple/measures-simple.html -->
 
     <!-- @include components/weight-row/weight-row.html rotulo=Peso&#32;lb: -->
+
+    <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-hoja titulo=Dibujo&#32;Hoja -->
+
+    <!-- @include components/label-section/label-section.solo.html -->
+
+    <!-- @include components/flat-bag-drawing/flat-bag-drawing.html id=flecha-bolsa-plana -->
+
+    <!-- @include components/note-seal-height/note-seal-height.bolsa-plana-1.html -->
+
+    <!-- @include components/signatures/signatures.html -->
   </main>
 </body>
 </html>

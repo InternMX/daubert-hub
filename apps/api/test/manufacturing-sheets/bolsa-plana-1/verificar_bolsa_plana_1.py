@@ -176,11 +176,11 @@ def verificar(datos_ruta, perfil):
         if not cerca(px(dx0 + 200, dy0 + 55), color): fallos.append('relleno de la bolsa %s != %s' % (px(dx0 + 200, dy0 + 55), datos['visual']['color_bolsa_hex']))
         # línea del sello: una fila oscura dentro de la bolsa, cerca del borde inferior, y relleno de color por debajo de ella
         col = [px(dx0 + 200, dy0 + 23 + k * 0.5) for k in range(0, 2 * 95)]
-        oscuros = [k for k, c in enumerate(col) if max(c) < 90]
+        oscuros = [k for k, c in enumerate(col) if max(c) < 90 and k > 10]        # k > 10 excluye el borde superior
         if not oscuros: fallos.append('no se imprime la línea del sello de fondo')
         else:
-            y_sello = 23 + oscuros[-1] / 2 if False else 23 + (oscuros[-2] if len(oscuros) > 1 else oscuros[-1]) * 0.5
-            if not (95 - 22 <= y_sello - 23 <= 95 - 4): fallos.append('la línea del sello no está cerca del borde inferior (a %.1f pt del borde)' % (118 - y_sello))
+            sello = sum(oscuros) / len(oscuros) * 0.5                                 # pt bajo el borde superior de la bolsa
+            if not (73 <= sello <= 91): fallos.append('la línea del sello no está cerca del borde inferior (a %.1f pt del borde superior; bolsa de 95 pt)' % sello)
         nota = geo['seccion-nota']
         if not cerca(px(nota[0] + 5, (nota[1] + nota[3]) / 2), (255, 255, 0)): fallos.append('la nota no es amarilla')
         f1, f2 = geo['firma_elaboro'], geo['firma_aprobo']
