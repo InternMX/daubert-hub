@@ -1,14 +1,16 @@
 {
-  "caso": "ejemplo-doblada",
+  "caso": "doblada-pulgadas",
   "formato": "HOJA_PAQ",
-  "nota": "Medidas del ejemplo del machote (58 x 43, 2 MIL), hoja doblada, presentación en rollo. Datos de prueba, no son un pedido real.",
+  "esperado": "valido",
+  "modalidad": "DOBLADA",
+  "nota": "Hoja doblada en pulgadas con ancho de rollo que NO es la mitad del ancho de la hoja (el ancho del rollo es un dato independiente); color rojo solo de prueba.",
   "datos": {
     "sufijo_titulo": "",
     "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
     "fecha_": "14/10/2026",
     "resina_vci": "VCI PMG al 4%",
     "producto": "Hoja Plástica",
-    "color": "NATURAL",
+    "color": "ROJO",
     "codigo": "HPMG-0017",
     "descripcion": "Hoja VCI PMG doblada 58 x 43\" Cal. 2 mil, Rollo con 250 hojas",
     "comp_pmg": "X",
@@ -23,6 +25,15 @@
     "ancho": "58\"",
     "largo": "43\"",
     "calibre": "2 MIL",
-    "peso_bolsa_lb": "0.7400"
+    "ancho_rollo": "25\"",
+    "peso_bolsa_lb": "0.7400",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#C0504D"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
   }
 }

@@ -1,0 +1,39 @@
+{
+  "caso": "doblada-2x230",
+  "formato": "HOJA_PAQ",
+  "esperado": "valido",
+  "modalidad": "DOBLADA",
+  "nota": "Referencia de la captura: hoja doblada 2 mts x 230 mts, rollo doblado de 1 metro. Datos de prueba.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Hoja Plástica",
+    "color": "VERDE",
+    "codigo": "HPMG-0017",
+    "descripcion": "Hoja VCI PMG doblada 2 x 230 mts Cal. 2 mil, Rollo con 1 hoja",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "1 Rollo",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "Metros (MTS)",
+    "ancho": "2 mts",
+    "largo": "230 mts",
+    "calibre": "2 MIL",
+    "ancho_rollo": "1 metro",
+    "peso_bolsa_lb": "12.5000",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#00B050"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

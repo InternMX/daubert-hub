@@ -2,7 +2,7 @@
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
 Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-2** (hoja completa; sin línea base validada).
-**HOJA_PAQ etapa HP-1** (parte superior: sin dibujos, Etiqueta ni firmas; sin línea base validada).
+**HOJA_PAQ etapa HP-2** (hoja completa, modalidades DOBLADA y EXTENDIDA; sin línea base validada).
 
 **Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
 generales, Medidas, pesos, etiqueta y firmas), conservando las características y la información técnica de cada formato. No se
@@ -21,6 +21,9 @@ templates/
     weight-row/              fila de peso en libras ({{peso_bolsa_lb}}); el rótulo llega por el parámetro rotulo
     sheet-type-row/          Hoja: Doblada / Extendida (HOJA_PAQ)
     measures-simple/         Medidas sin fuelles: Unidad, Ancho, Largo, Calibre (HOJA_PAQ)
+    drawing-title/           franja azul claro de dibujo (parámetros id y titulo)
+    sheet-drawing/           Dibujo Hoja: rectángulo con cotas ancho y largo (HOJA_PAQ)
+    roll-drawing/            Dibujo de rollo; geometry/extendido.html y geometry/doblado.html, cota ancho_rollo (HOJA_PAQ)
     header/
       header.html            logotipo + título (placeholder {{sufijo_titulo}})
       header.css             estilos propios del encabezado

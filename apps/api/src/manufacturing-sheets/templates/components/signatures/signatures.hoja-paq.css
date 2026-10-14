@@ -1,0 +1,5 @@
+    /* Variante HOJA_PAQ de las firmas: dos bloques iguales (105 x 70 pt, tamaño completo para las imágenes autorizadas) centrados bajo cada
+       mitad del ancho B:I (400.4 pt). Va después de signatures.css y solo redefine posiciones y tamaños. La zona (74 pt) deja 4 pt sobre los bloques. */
+    .firmas-zona { height: 74pt; }
+    .firma-elaboro { left: 47.6pt; top: 4pt; width: 105pt; height: 70pt; }
+    .firma-aprobo { left: 247.8pt; top: 4pt; width: 105pt; height: 70pt; }

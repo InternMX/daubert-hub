@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Compone una plantilla de hoja de manufactura a partir de un archivo fuente con marcadores @include.
 //
-//   node compose-template.mjs --source <plantilla.fuente.html> --out <salida.html>
+//   node compose-template.mjs --source <plantilla.fuente.html> --out <salida.html> [--param nombre=valor ...]
+//   Los --param son los parámetros de la plantilla fuente (p. ej. la variante de dibujo de una modalidad validada).
 //
 // Marcadores (una línea completa; la indentación del marcador se descarta, el contenido se inserta tal cual):
 //   <!-- @include components/header/header.html -->                       (HTML)
@@ -11,7 +12,7 @@
 // Reglas (determinista, sin dependencias):
 //   - Las rutas son relativas a la carpeta `templates/` (el padre de la carpeta del archivo fuente).
 //   - Cada archivo incluido debe existir, usar LF y terminar en salto de línea.
-//   - Parámetros: `nombre=valor` con valor [A-Za-z0-9_.-]. En el archivo incluido, cada `@{nombre}` se sustituye por el valor
+//   - Parámetros: `nombre=valor` con valor [A-Za-z0-9_.@{}&#;:-] (sin espacios: use &#32;). En el archivo incluido, cada `@{nombre}` se sustituye por el valor
 //     (error si falta) ANTES de procesar sus propios marcadores. No hay herencia: cada inclusión recibe solo sus parámetros.
 //   - Un archivo incluido puede incluir otros (máximo 4 niveles); su ruta puede usar `@{nombre}` para elegir, por ejemplo, la
 //     geometría de un dibujo.
@@ -71,10 +72,10 @@ function comprobarIdsUnicos(html) {
   if (duplicados.length) throw new Error(`Atributos id duplicados en el HTML compuesto: ${duplicados.join(', ')}`);
 }
 
-export function componer(fuenteRuta) {
+export function componer(fuenteRuta, parametros = {}) {
   const fuente = resolve(fuenteRuta);
   const raiz = resolve(dirname(fuente), '..');
-  const html = expandir(leerLF(fuente, fuente), {}, raiz, 0, fuente);
+  const html = expandir(leerLF(fuente, fuente), parametros, raiz, 0, fuente);
   comprobarIdsUnicos(html);
   return html;
 }
@@ -88,10 +89,17 @@ if (args.includes('--source') || args.includes('--out')) {
   const fuente = valor('--source');
   const salida = valor('--out');
   if (!fuente || !salida) {
-    console.error('Uso: node compose-template.mjs --source <fuente.html> --out <salida.html>');
+    console.error('Uso: node compose-template.mjs --source <fuente.html> --out <salida.html> [--param nombre=valor ...]');
     process.exit(2);
   }
-  const html = componer(fuente);
+  const parametros = {};
+  args.forEach((a, i) => {
+    if (a !== '--param') return;
+    const [nombre, ...resto] = (args[i + 1] ?? '').split('=');
+    if (!/^[A-Za-z0-9_]+$/.test(nombre) || !resto.length) throw new Error(`--param requiere nombre=valor: ${args[i + 1]}`);
+    parametros[nombre] = resto.join('=');
+  });
+  const html = componer(fuente, parametros);
   mkdirSync(dirname(resolve(salida)), { recursive: true });
   writeFileSync(resolve(salida), html, 'utf8');
   console.log(`Plantilla compuesta: ${resolve(salida)} (${Buffer.byteLength(html)} bytes)`);

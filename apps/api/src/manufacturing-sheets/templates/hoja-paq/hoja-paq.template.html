@@ -7,6 +7,12 @@
   <style>
     /* @include components/base-sheet/base-sheet.css */
     /* @include components/header/header.css */
+    /* @include components/label-section/label-section.css */
+    /* @include components/label-section/label-section.bi.css */
+    /* @include components/sheet-drawing/sheet-drawing.css */
+    /* @include components/roll-drawing/roll-drawing.css */
+    /* @include components/signatures/signatures.css */
+    /* @include components/signatures/signatures.hoja-paq.css */
 
     /* @include components/base-sheet/base-sheet.print.css */
     /* @include components/base-sheet/base-sheet.centered.css */
@@ -17,8 +23,10 @@
   </style>
 </head>
 <body>
-  <!-- Formato HOJA_PAQ · HP-1. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad),
-       tipo de hoja, Medidas sin fuelles y peso. HP-2 añadirá Dibujo Hoja, Dibujo de rollo, Etiqueta y firmas debajo del peso. -->
+  <!-- Formato HOJA_PAQ · HP-2. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad),
+       tipo de hoja, Medidas sin fuelles, peso, Etiqueta, Dibujo Hoja, dibujo de rollo (variante según la modalidad) y firmas.
+       Parámetros de composición (los entrega un perfil validado, ver tools/validate-hoja-paq-data.mjs): rollo = extendido | doblado y
+       titulo_rollo (con &#32; por espacio). La plantilla no decide la modalidad ni valida los datos. -->
   <main class="hoja">
     <!-- @include components/header/header.html -->
 
@@ -29,6 +37,18 @@
     <!-- @include components/measures-simple/measures-simple.html -->
 
     <!-- @include components/weight-row/weight-row.html rotulo=PESO&#32;BOLSA&#32;LB: -->
+
+    <!-- @include components/label-section/label-section.solo.html -->
+
+    <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-hoja titulo=Dibujo&#32;Hoja -->
+
+    <!-- @include components/sheet-drawing/sheet-drawing.html id=flecha-hoja -->
+
+    <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-rollo titulo=@{titulo_rollo} -->
+
+    <!-- @include components/roll-drawing/roll-drawing.html id=flecha-rollo rollo=@{rollo} -->
+
+    <!-- @include components/signatures/signatures.html -->
   </main>
 </body>
 </html>
