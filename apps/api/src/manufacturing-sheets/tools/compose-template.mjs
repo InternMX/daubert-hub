@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve, relative, isAbsolute } from 'node:path';
 
-const MARCADOR = /^[ \t]*(?:<!--|\/\*) @include ([A-Za-z0-9_./@{}-]+)((?: [A-Za-z0-9_]+=[A-Za-z0-9_.@{}-]+)*) (?:-->|\*\/)[ \t]*$/;
+const MARCADOR = /^[ \t]*(?:<!--|\/\*) @include ([A-Za-z0-9_./@{}-]+)((?: [A-Za-z0-9_]+=[A-Za-z0-9_.@{}&#;:-]+)*) (?:-->|\*\/)[ \t]*$/;
 const TOKEN = /@\{([A-Za-z0-9_]+)\}/g;
 const MAX_PROFUNDIDAD = 4;
 

@@ -1,0 +1,29 @@
+{
+  "formato": "HOJA_PAQ",
+  "etapa": "HP-1",
+  "nota": "El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. La plantilla no contiene lógica de negocio ni de autorización. HP-2 añadirá Dibujo Hoja, Dibujo de rollo, Etiqueta y firmas.",
+  "plantilla": "templates/hoja-paq/hoja-paq.template.html",
+  "titulo": { "base": "Hoja de Instrucción de Manufactura", "sufijo_titulo": "" },
+  "componentes": [
+    { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)", "compartido": true },
+    { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión", "compartido": true },
+    { "ruta": "components/base-sheet/base-sheet.centered.css", "uso": "centrado horizontal del bloque de 400.4 pt en la carta" },
+    { "ruta": "components/header/header.html", "uso": "encabezado compartido", "compartido": true },
+    { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad", "compartido": true },
+    { "ruta": "components/sheet-type-row/sheet-type-row.html", "uso": "Hoja: Doblada / Extendida" },
+    { "ruta": "components/measures-simple/measures-simple.html", "uso": "Medidas sin fuelles: Unidad, Ancho, Largo y Calibre" },
+    { "ruta": "components/weight-row/weight-row.html", "uso": "peso; rótulo «PESO BOLSA LB:» (parámetro rotulo)", "compartido": true }
+  ],
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo", "cliente", "fecha_", "resina_vci", "producto", "color", "codigo", "descripcion",
+      "comp_pmg", "comp_cp5000", "comp_natural", "pres_rollo", "pres_paquete", "cantidad",
+      "hoja_doblada", "hoja_extendida", "unidad_medidas", "ancho", "largo", "calibre", "peso_bolsa_lb"
+    ]
+  },
+  "campos_nuevos": ["hoja_doblada", "hoja_extendida"],
+  "reservado_hp2": ["Dibujo Hoja", "Dibujo de rollo", "Etiqueta", "Firmas de Elaboró y Aprobó"],
+  "pendiente": {
+    "medicion": ["dimensiones definitivas frente a un PDF exportado del Excel original de Hoja Paq"]
+  }
+}

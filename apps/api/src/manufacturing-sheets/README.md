@@ -2,7 +2,7 @@
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
 Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-2** (hoja completa; sin línea base validada).
-Hoja Paq aún no existe.
+**HOJA_PAQ etapa HP-1** (parte superior: sin dibujos, Etiqueta ni firmas; sin línea base validada).
 
 **Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
 generales, Medidas, pesos, etiqueta y firmas), conservando las características y la información técnica de cada formato. No se
@@ -12,13 +12,15 @@ reproduce el Excel celda por celda.
 
 ```
 profiles/                # identifican el formato de forma explícita (nunca por el color) y listan sus placeholders
-  coex.profile.json  bolsa-fuelle.profile.json
+  coex.profile.json  bolsa-fuelle.profile.json  hoja-paq.profile.json
 templates/
   components/            # piezas reutilizables (HTML y CSS)
     base-sheet/              estilos base corporativos de las hojas nuevas (tokens, tablas, alturas) + reglas de impresión
     general-info-vci/        datos generales con Resina VCI, Composición, Presentación y Cantidad
     measures-gussets/        Medidas con ambos fuelles (Unidad, Ancho/Fuelle Derecho, Largo/Fuelle Izquierdo, Calibre)
-    weight-row/              fila de peso en libras ({{peso_bolsa_lb}})
+    weight-row/              fila de peso en libras ({{peso_bolsa_lb}}); el rótulo llega por el parámetro rotulo
+    sheet-type-row/          Hoja: Doblada / Extendida (HOJA_PAQ)
+    measures-simple/         Medidas sin fuelles: Unidad, Ancho, Largo, Calibre (HOJA_PAQ)
     header/
       header.html            logotipo + título (placeholder {{sufijo_titulo}})
       header.css             estilos propios del encabezado

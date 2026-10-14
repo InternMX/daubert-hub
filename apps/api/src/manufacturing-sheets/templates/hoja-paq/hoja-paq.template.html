@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de Instrucción de Manufactura{{sufijo_titulo}}</title>
+  <style>
+    /* @include components/base-sheet/base-sheet.css */
+    /* @include components/header/header.css */
+
+    /* @include components/base-sheet/base-sheet.print.css */
+    /* @include components/base-sheet/base-sheet.centered.css */
+    @media screen and (max-width: 816px) {
+      .hoja { width: 100%; margin: 0; padding: 14px; }
+      /* @include components/header/header.mobile.css */
+    }
+  </style>
+</head>
+<body>
+  <!-- Formato HOJA_PAQ · HP-1. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad),
+       tipo de hoja, Medidas sin fuelles y peso. HP-2 añadirá Dibujo Hoja, Dibujo de rollo, Etiqueta y firmas debajo del peso. -->
+  <main class="hoja">
+    <!-- @include components/header/header.html -->
+
+    <!-- @include components/general-info-vci/general-info-vci.html -->
+
+    <!-- @include components/sheet-type-row/sheet-type-row.html -->
+
+    <!-- @include components/measures-simple/measures-simple.html -->
+
+    <!-- @include components/weight-row/weight-row.html rotulo=PESO&#32;BOLSA&#32;LB: -->
+  </main>
+</body>
+</html>

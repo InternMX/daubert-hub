@@ -1,0 +1,28 @@
+{
+  "caso": "descripcion-extensa",
+  "formato": "HOJA_PAQ",
+  "nota": "Cliente, producto y descripción muy largos: las filas crecen sin superponerse ni salir de la página.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Industrializadora de Empaques Plásticos y Servicios Integrales del Centro y Bajío de México S.A.P.I. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Hoja plástica con inhibidor de corrosión en fase vapor para protección de piezas metálicas de maquinaria pesada",
+    "color": "NATURAL",
+    "codigo": "HPMG-0017",
+    "descripcion": "Hoja VCI PMG doblada 58 x 43\" Cal. 2 mil, suministrada en rollo con 250 hojas individuales perforadas, para protección anticorrosiva de componentes maquinados de acero y hierro fundido durante almacenamiento y transporte marítimo de largo plazo, incluye instrucciones de empaque y desempaque",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "250 Hojas",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "58\"",
+    "largo": "43\"",
+    "calibre": "2 MIL",
+    "peso_bolsa_lb": "0.7400"
+  }
+}
