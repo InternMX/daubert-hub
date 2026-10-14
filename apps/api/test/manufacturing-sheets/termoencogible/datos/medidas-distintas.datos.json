@@ -1,0 +1,38 @@
+{
+  "caso": "medidas-distintas",
+  "formato": "TERMOENCOGIBLE",
+  "esperado": "valido",
+  "modalidad": "DOBLADA",
+  "nota": "Otras medidas y otras cotas técnicas (independientes de ancho y largo); composición CP5000 y paquete.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "DANA CV COMPONENTES",
+    "fecha_": "13/10/2026",
+    "resina_vci": "NA",
+    "producto": "ROLLO VCI + UV TERMOENCOGIBLE",
+    "color": "",
+    "codigo": "",
+    "descripcion": "",
+    "comp_pmg": "NA",
+    "comp_cp5000": "X",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "236\"",
+    "largo": "984\"",
+    "calibre": "6 MIL",
+    "peso_bolsa_lb": "30.1000",
+    "etiqueta": "Normal",
+    "ancho_doblado": "47.2\"",
+    "medida_pliegue": "19.7\"",
+    "largo_presentacion_final": "984\"",
+    "ancho_presentacion_final": "47.2\""
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}
