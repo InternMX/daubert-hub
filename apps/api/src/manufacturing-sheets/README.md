@@ -15,6 +15,11 @@ templates/
     signatures/
       signatures.html        zona de firmas: bloques de elaboración y aprobación
       signatures.css         posiciones y tamaños de los bloques
+    gusset-bag-drawing/
+      gusset-bag-drawing.html  contenedor del dibujo técnico de bolsa con fuelles (incluye la geometría elegida)
+      gusset-bag-drawing.css   estilos comunes del dibujo
+      geometry/coex.html       SVG con la geometría de COEX (viewBox, marcadores, bolsa, cotas, barra)
+      geometry/coex.css        dimensiones del contenedor para esa geometría
   coex/
     coex.template.html   # plantilla fuente con marcadores @include
     images/              # DC_logo.jpg y COEX_Curvas_Trazado_Original.svg (fuente de las curvas)
@@ -29,8 +34,15 @@ node tools/compose-template.mjs --source templates/coex/coex.template.html --out
 ```
 
 Cada línea `<!-- @include ruta -->` (HTML) o `/* @include ruta */` (dentro de `<style>`) se sustituye por el contenido exacto del
-archivo, con ruta relativa a `templates/`. No transforma, minifica ni reordena. Falla si falta un archivo, si no termina en
-salto de línea, si usa CRLF, si sale de `templates/` o si anida inclusiones. La salida no contiene JavaScript.
+archivo, con ruta relativa a `templates/`. No transforma, minifica ni reordena. La salida no contiene JavaScript.
+
+- **Parámetros:** `<!-- @include ruta nombre=valor otro=valor -->`. En el archivo incluido, cada `@{nombre}` se sustituye por el
+  valor (error si falta). No hay herencia: cada inclusión recibe solo los parámetros que se le pasan.
+- **Inclusiones anidadas** (máximo 4 niveles). La ruta del archivo anidado puede usar `@{nombre}`; así una plantilla elige,
+  por ejemplo, la geometría de un dibujo.
+- **Ids únicos:** al final se comprueba que no haya atributos `id` duplicados en el HTML compuesto (fuera de comentarios). Un
+  documento con dos dibujos debe darles ids distintos mediante los parámetros.
+- Falla si falta un archivo, si no termina en salto de línea, si usa CRLF o si sale de `templates/`.
 
 El HTML compuesto de COEX es **byte a byte idéntico** a la plantilla validada (huella en
 `test/manufacturing-sheets/regression/coex-confpmg04/fuente/SHA256SUMS.txt`).
@@ -57,6 +69,25 @@ El HTML compuesto de COEX es **byte a byte idéntico** a la plantilla validada (
 - **Dependencias que el componente no define:** `--ancho-hoja` y `--fs-base` (`:root`). Su origen vertical (y = 642.8 pt)
   es el final del dibujo técnico: la zona mide 84.4 pt y debe ir inmediatamente después de él. Los desplazamientos
   (`left`/`top`) son relativos a esa zona y a la columna izquierda de la hoja (x = 18.5 pt).
+
+## Componente `gusset-bag-drawing`
+
+Dibujo técnico de bolsa con fuelles (debajo de Etiqueta).
+
+```
+<!-- @include components/gusset-bag-drawing/gusset-bag-drawing.html id=flecha-bolsa seccion=seccion-dibujo-bolsa geometria=coex -->
+/* @include components/gusset-bag-drawing/gusset-bag-drawing.css geometria=coex */
+```
+
+- **Parámetros:** `geometria` (archivo en `geometry/`), `id` (prefijo de los marcadores de flecha: `@{id}` y `@{id}-interna`) y
+  `seccion` (id del contenedor). Con `id=flecha-bolsa` y `seccion=seccion-dibujo-bolsa` el HTML compuesto es idéntico al validado.
+- **Datos:** `{{ancho}}`, `{{largo}}`, `{{fuelle_izquierdo}}`, `{{fuelle_derecho}}`, `{{color_bolsa_hex}}` (relleno de la bolsa) y
+  `{{color_cotas_internas_hex}}` (flechas interiores de los fuelles). `{{color}}` es solo el nombre del color.
+- **Geometría `coex` (verificada con el PDF original):** `viewBox="0 0 400.4 189.8"`, contenedor de 400.4 × 189.8 pt
+  (y 453.0 a 642.8 pt). Otra geometría (p. ej. Bolsa Fuelle) se agrega como `geometry/<nombre>.html` y `.css` sin tocar el
+  marco ni la geometría de COEX; no se impone ninguna medida de COEX a otros formatos.
+- **Dependencias que el componente no define:** `--fuente` (`:root`); debe ir inmediatamente después de la fila Etiqueta
+  (su borde inferior no suma altura) y antes de las firmas, cuyo origen vertical es su final.
 
 ## Scripts npm (workspace `@daubert/api`)
 
