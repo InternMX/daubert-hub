@@ -17,6 +17,8 @@
     "test:sheets-hoja-paq": "python test/manufacturing-sheets/hoja-paq/verificar_hoja_paq.py",
     "sheets:compose:rollo-continuo": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/rollo-continuo/rollo-continuo.template.html --out tmp/manufacturing-sheets/rollo-continuo.composed.html",
     "test:sheets-rollo-continuo": "python test/manufacturing-sheets/rollo-continuo/verificar_rollo_continuo.py",
+    "sheets:compose:bolsa-plana-1": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/bolsa-plana-1/bolsa-plana-1.template.html --out tmp/manufacturing-sheets/bolsa-plana-1.composed.html",
+    "test:sheets-bolsa-plana-1": "python test/manufacturing-sheets/bolsa-plana-1/verificar_bolsa_plana_1.py",
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "security:bootstrap-admin:prod": "ts-node --transpile-only scripts/bootstrap-admin-prod.ts",
     "security:reset-admin-password": "ts-node --transpile-only scripts/reset-admin-password.ts",

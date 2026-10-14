@@ -1,0 +1,34 @@
+{
+  "caso": "descripcion-extensa",
+  "formato": "BOLSA_PLANA_1",
+  "nota": "Textos muy largos: peor caso de altura.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Industrializadora de Empaques Plásticos y Servicios Integrales del Centro y Bajío de México S.A.P.I. de C.V.",
+    "fecha_": "13/10/2026",
+    "resina_vci": "PMG AL 3%",
+    "producto": "Bolsa plana con inhibidor de corrosión en fase vapor para protección de piezas metálicas de maquinaria pesada",
+    "color": "AZUL DAUBERT",
+    "codigo": "EJEMPLO-FICTICIO-001",
+    "descripcion": "BOLSA VCI PMG 50 x 50 cm Cal.300, suministrada en paquetes de 250 piezas con sello de fondo, para protección anticorrosiva de componentes maquinados de acero y hierro fundido durante almacenamiento y transporte marítimo de largo plazo, incluye instrucciones de empaque y desempaque",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "250",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "19.68\"",
+    "largo": "19.68\"",
+    "calibre": "300",
+    "peso_bolsa_lb": "0.077",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#538DD5"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

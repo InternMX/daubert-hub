@@ -1,0 +1,27 @@
+{
+  "formato": "BOLSA_PLANA_1",
+  "etapa": "BP-1",
+  "nota": "Familia independiente (pestaña «Bolsa Plana 1» del Excel). El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. No tiene Doblada/Extendida, fuelles, coextrusión ni dibujo de rollo. La plantilla no contiene lógica de negocio ni de autorización.",
+  "plantilla": "templates/bolsa-plana-1/bolsa-plana-1.template.html",
+  "titulo": { "base": "Hoja de Instrucción de Manufactura", "sufijo_titulo": "" },
+  "componentes": [
+    { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)", "compartido": true },
+    { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión", "compartido": true },
+    { "ruta": "components/base-sheet/base-sheet.centered.css", "uso": "centrado horizontal del bloque de 400.4 pt en la carta", "compartido": true },
+    { "ruta": "components/header/header.html", "uso": "encabezado compartido", "compartido": true },
+    { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad (cantidad_fila=con)", "compartido": true },
+    { "ruta": "components/measures-simple/measures-simple.html", "uso": "Medidas: Unidad, Ancho, Largo y Calibre", "compartido": true },
+    { "ruta": "components/weight-row/weight-row.html", "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)", "compartido": true }
+  ],
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo", "cliente", "fecha_", "resina_vci", "producto", "color", "codigo", "descripcion",
+      "comp_pmg", "comp_cp5000", "comp_natural", "pres_rollo", "pres_paquete", "cantidad",
+      "unidad_medidas", "ancho", "largo", "calibre", "peso_bolsa_lb"
+    ]
+  },
+  "pendiente": {
+    "medicion": ["dimensiones definitivas frente a un PDF exportado del Excel de Bolsa Plana 1"],
+    "datos": ["el Código DCMX real del ejemplo no es legible en la captura: las pruebas usan un identificador ficticio", "código de color de «AZUL DAUBERT»: las pruebas usan el azul confirmado #538DD5 de forma provisional"]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "caso": "etiqueta-extensa",
+  "formato": "BOLSA_PLANA_1",
+  "nota": "Etiqueta larga de producto industrial.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "DANA CV COMPONENTES",
+    "fecha_": "13/10/2026",
+    "resina_vci": "PMG AL 3%",
+    "producto": "Bolsa Plana",
+    "color": "AZUL DAUBERT",
+    "codigo": "EJEMPLO-FICTICIO-001",
+    "descripcion": "BOLSA VCI PMG 50 x 50 cm Cal.300",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "250",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "19.68\"",
+    "largo": "19.68\"",
+    "calibre": "300",
+    "peso_bolsa_lb": "0.077",
+    "etiqueta": "Etiqueta industrial con código de barras, número de lote, fecha de producción y leyenda de seguridad para transporte marítimo de componentes metálicos"
+  },
+  "visual": {
+    "color_bolsa_hex": "#538DD5"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}
