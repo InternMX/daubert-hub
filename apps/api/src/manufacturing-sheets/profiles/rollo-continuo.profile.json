@@ -1,0 +1,37 @@
+{
+  "formato": "ROLLO_CONTINUO",
+  "etapa": "RC-1",
+  "nota": "Familia independiente de HOJA_PAQ (pestaña «Rollo Continuo» del Excel). El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. La modalidad (DOBLADA | EXTENDIDA) es un dato explícito validado contra los indicadores X/NA (tools/validate-rollo-continuo-data.mjs). No tiene fila «Cantidad Por Rollo o Paquete». La plantilla no contiene lógica de negocio ni de autorización.",
+  "plantilla": "templates/rollo-continuo/rollo-continuo.template.html",
+  "titulo": { "base": "Hoja de Instrucción de Manufactura", "sufijo_titulo": "" },
+  "componentes": [
+    { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)", "compartido": true },
+    { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión", "compartido": true },
+    { "ruta": "components/base-sheet/base-sheet.centered.css", "uso": "centrado horizontal del bloque de 400.4 pt en la carta", "compartido": true },
+    { "ruta": "components/header/header.html", "uso": "encabezado compartido", "compartido": true },
+    { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición y Presentación; cantidad_fila=sin omite «Cantidad Por Rollo o Paquete»", "compartido": true },
+    { "ruta": "components/sheet-type-row/sheet-type-row.html", "uso": "Hoja: Doblada / Extendida", "compartido": true },
+    { "ruta": "components/measures-simple/measures-simple.html", "uso": "Medidas: Unidad, Ancho, Largo y Calibre", "compartido": true },
+    { "ruta": "components/weight-row/weight-row.html", "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)", "compartido": true }
+  ],
+  "modalidades": {
+    "DOBLADA": { "indicador_x": "hoja_doblada", "indicador_na": "hoja_extendida", "soportada": true },
+    "EXTENDIDA": {
+      "indicador_x": "hoja_extendida", "indicador_na": "hoja_doblada", "soportada": false,
+      "motivo": "el ejemplo validado solo muestra Doblada con «Dibujo de rollo doblado»; la representación de Extendida está pendiente de confirmación"
+    }
+  },
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo", "cliente", "fecha_", "resina_vci", "producto", "color", "codigo", "descripcion",
+      "comp_pmg", "comp_cp5000", "comp_natural", "pres_rollo", "pres_paquete",
+      "hoja_doblada", "hoja_extendida", "unidad_medidas", "ancho", "largo", "calibre", "peso_bolsa_lb"
+    ]
+  },
+  "campos_contrato_sin_placeholder": ["modalidad"],
+  "sin_cantidad": "ROLLO_CONTINUO no tiene la fila «Cantidad Por Rollo o Paquete»; el placeholder cantidad no existe en este perfil.",
+  "pendiente": {
+    "medicion": ["dimensiones definitivas frente a un PDF exportado del Excel de Rollo Continuo"],
+    "negocio": ["representación gráfica de la modalidad EXTENDIDA: el validador la rechaza hasta confirmarla", "regla de ancho_rollo respecto a ancho (no confirmada: es un dato independiente)"]
+  }
+}

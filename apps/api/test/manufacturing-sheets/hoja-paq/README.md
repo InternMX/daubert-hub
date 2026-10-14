@@ -26,7 +26,7 @@ dibujo y es independiente de la presentación (`pres_rollo`/`pres_paquete`).
 | `invalido-*` | invalido | Ambas NA, modalidad contradicha, modalidad desconocida: el validador los rechaza y no se imprime. |
 
 Los casos que pertenecen a ROLLO_CONTINUO (`doblada-2x230`, `invalido-sin-ancho-rollo`) se movieron a
-`../rollo-continuo/datos-pendientes/` sin borrarlos; no se ejecutan hasta que exista esa familia.
+`../rollo-continuo/datos/` (ya adaptados al contrato de esa familia).
 
 ## Qué verifica en cada caso impreso
 Composición y placeholders (plantilla = perfil = datos, sin fuelles, capas ni `ancho_rollo`), 1 página carta, etiquetas y valores impresos,

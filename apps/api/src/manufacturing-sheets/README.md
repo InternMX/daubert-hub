@@ -2,7 +2,7 @@
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
 Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-2** (hoja completa; sin línea base validada).
-**HOJA_PAQ etapa HP-C** (hoja completa con un solo dibujo; sin línea base validada). ROLLO_CONTINUO aún no existe.
+**HOJA_PAQ etapa HP-C** (hoja completa con un solo dibujo; sin línea base validada). **ROLLO_CONTINUO etapa RC-1** (hasta Peso; sin fila Cantidad).
 
 **Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
 generales, Medidas, pesos, etiqueta y firmas), conservando las características y la información técnica de cada formato. No se
@@ -12,11 +12,12 @@ reproduce el Excel celda por celda.
 
 ```
 profiles/                # identifican el formato de forma explícita (nunca por el color) y listan sus placeholders
-  coex.profile.json  bolsa-fuelle.profile.json  hoja-paq.profile.json
+  coex.profile.json  bolsa-fuelle.profile.json  hoja-paq.profile.json  rollo-continuo.profile.json
 templates/
   components/            # piezas reutilizables (HTML y CSS)
     base-sheet/              estilos base corporativos de las hojas nuevas (tokens, tablas, alturas) + reglas de impresión
-    general-info-vci/        datos generales con Resina VCI, Composición, Presentación y Cantidad
+    general-info-vci/        datos generales con Resina VCI, Composición, Presentación y Cantidad; el parámetro cantidad_fila=con|sin
+                             incluye u omite la fila Cantidad (cantidad-row.con/sin.html; ROLLO_CONTINUO usa sin)
     measures-gussets/        Medidas con ambos fuelles (Unidad, Ancho/Fuelle Derecho, Largo/Fuelle Izquierdo, Calibre)
     weight-row/              fila de peso en libras ({{peso_bolsa_lb}}); el rótulo llega por el parámetro rotulo
     sheet-type-row/          Hoja: Doblada / Extendida (HOJA_PAQ)
