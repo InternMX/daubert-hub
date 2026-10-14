@@ -12,6 +12,9 @@ templates/
       header.html            logotipo + título (placeholder {{sufijo_titulo}})
       header.css             estilos propios del encabezado
       header.mobile.css      reglas del encabezado para @media screen (≤ 816 px)
+    signatures/
+      signatures.html        zona de firmas: bloques de elaboración y aprobación
+      signatures.css         posiciones y tamaños de los bloques
   coex/
     coex.template.html   # plantilla fuente con marcadores @include
     images/              # DC_logo.jpg y COEX_Curvas_Trazado_Original.svg (fuente de las curvas)
@@ -43,6 +46,17 @@ El HTML compuesto de COEX es **byte a byte idéntico** a la plantilla validada (
   - `.hoja` (padding superior de 0.55 in): el encabezado mide 82.9 pt y deja la información general en y ≈ 122.5 pt.
   - El logotipo se carga como `.\images\DC_logo.jpg`, relativo al HTML.
 - Geometría validada: logotipo 183.82 × 42.57 pt (x 23.35, y 68.07); título en x 226–403 pt.
+
+## Componente `signatures`
+
+- **Datos:** `{{bloque_firma_elaboro}}` y `{{bloque_firma_aprobo}}`. El backend los sustituye por un `<img>` de una firma
+  autorizada o, en pruebas, por `<span class="sin-firma">SIN FIRMA</span>`. La plantilla no imprime nombre, función ni área:
+  esa información ya forma parte de la imagen. No decide quién puede aprobar ni valida la firma.
+- **Geometría validada (pt, desde el borde de la página):** elaboración x 76.3, y 655.7, 97.5 × 71.5; aprobación x 298.3,
+  y 655.6, 108.8 × 69.5. Las imágenes se ajustan con `object-fit: contain`, sin recortar ni deformar, y no aumentan la altura.
+- **Dependencias que el componente no define:** `--ancho-hoja` y `--fs-base` (`:root`). Su origen vertical (y = 642.8 pt)
+  es el final del dibujo técnico: la zona mide 84.4 pt y debe ir inmediatamente después de él. Los desplazamientos
+  (`left`/`top`) son relativos a esa zona y a la columna izquierda de la hoja (x = 18.5 pt).
 
 ## Scripts npm (workspace `@daubert/api`)
 
