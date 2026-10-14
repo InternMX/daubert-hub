@@ -76,7 +76,7 @@
     .t-general > tbody:nth-of-type(1) > tr:nth-child(7) { height: 13.6pt; }   /* Composición, Presentación */
     #seccion-medidas > tr:nth-child(1), #seccion-medidas > tr:nth-child(2), #seccion-medidas > tr:nth-child(4) { height: 13.6pt; }
     .t-capas thead tr { height: 13.6pt; }
-    #encabezado-dibujo-bolsa tr { height: 13.6pt; }
+    /* @include components/label-section/label-section.heights.css */
     .fecha-label { background: var(--azul); color: white; text-align: left; font-weight: 400; padding-left: 6px; border-top: 1px solid var(--borde); }
     .tipo { background: var(--azul-celda); color: #fff; }
     /* Marcas dinámicas (Composición / Presentación): el valor llega como "X" o "NA".
@@ -103,10 +103,7 @@
     .t-capas tbody tr:nth-child(2) { height: 19.6pt; }
     .t-capas tbody tr:nth-child(3) { height: 17.5pt; }
     .seccion-pegada { margin-top: -1px; }
-    /* Dibujo Bolsa (C:I) y Etiqueta (B:I): misma cuadrícula B:I de la tabla general. */
-    /* Franja azul claro de B a K en una sola celda (sin costuras); los paddings (ancho de B y de J:K) mantienen el texto centrado en C:I. */
-    .titulo-dibujo { font-weight: bold; padding-left: 15.350%; padding-right: 18.846%; }
-    .etiqueta-seccion { border: 0; background: var(--rosa); font-size: var(--fs-etiqueta); height: 27.3pt; padding: 1px 6px; }  /* medido en el PDF original */
+    /* @include components/label-section/label-section.css */
     .celda-dibujo { padding: 0; background: #fff; border-right: 0; }  /* con border-collapse, esta arista compartida con los valores de LB dibujaría una línea */
     .lb-valor { border: 0; }  /* los valores de LB van sobre fondo blanco, sin bordes */
     /* Esquema de capas: geometría exacta extraída del PDF original (images/COEX_Curvas_Trazado_Original.svg).
@@ -276,27 +273,7 @@
       </table>
     </div>
 
-    <!-- SECCIÓN DIBUJO BOLSA (encabezado: franja azul claro de B a K) + ETIQUETA (B:I) · cuadrícula B:K de la tabla general.
-         El dibujo técnico (SVG) se incorporará posteriormente. -->
-    <div class="tabla-contenedor seccion-pegada" id="seccion-etiqueta" data-seccion="dibujo-bolsa-etiqueta">
-      <table class="t-general" aria-label="Dibujo de la bolsa y etiqueta">
-        <colgroup>
-          <col class="k-b"><col class="k-c"><col class="k-d"><col class="k-e">
-          <col class="k-f"><col class="k-g"><col class="k-h"><col class="k-i">
-          <col class="k-j"><col class="k-k">
-        </colgroup>
-        <tbody id="encabezado-dibujo-bolsa">
-          <tr>
-            <th class="seccion-titulo titulo-claro titulo-dibujo" colspan="10" scope="col">Dibujo Bolsa</th>
-          </tr>
-        </tbody>
-        <tbody id="seccion-etiqueta-valor">
-          <tr>
-            <td class="etiqueta-seccion" colspan="8" id="etiqueta"><strong>Etiqueta:</strong> {{etiqueta}}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- @include components/label-section/label-section.html -->
 
     <!-- @include components/gusset-bag-drawing/gusset-bag-drawing.html id=flecha-bolsa seccion=seccion-dibujo-bolsa geometria=coex -->
 

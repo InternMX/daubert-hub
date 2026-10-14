@@ -15,6 +15,10 @@ templates/
     signatures/
       signatures.html        zona de firmas: bloques de elaboración y aprobación
       signatures.css         posiciones y tamaños de los bloques
+    label-section/
+      label-section.html         encabezado «Dibujo Bolsa» (franja azul claro B:K) + fila Etiqueta, en una sola tabla
+      label-section.css          estilos de la franja y de la fila Etiqueta
+      label-section.heights.css  altura de la fila del encabezado (va dentro del bloque de alturas de la plantilla)
     gusset-bag-drawing/
       gusset-bag-drawing.html  contenedor del dibujo técnico de bolsa con fuelles (incluye la geometría elegida)
       gusset-bag-drawing.css   estilos comunes del dibujo
@@ -69,6 +73,23 @@ El HTML compuesto de COEX es **byte a byte idéntico** a la plantilla validada (
 - **Dependencias que el componente no define:** `--ancho-hoja` y `--fs-base` (`:root`). Su origen vertical (y = 642.8 pt)
   es el final del dibujo técnico: la zona mide 84.4 pt y debe ir inmediatamente después de él. Los desplazamientos
   (`left`/`top`) son relativos a esa zona y a la columna izquierda de la hoja (x = 18.5 pt).
+
+## Componente `label-section`
+
+Encabezado «Dibujo Bolsa» y fila Etiqueta, **una sola tabla** (cuadrícula B:K compartida con la tabla general; no se separan
+porque comparten columnas y comportamiento de bordes).
+
+- **Datos:** `{{etiqueta}}`.
+- **Geometría validada:** franja azul claro `#366092` de B a K en una sola celda (13.6 pt de alto; paddings de 15.350 % y 18.846 %
+  mantienen «Dibujo Bolsa» centrado en C:I); fila Etiqueta B:I rosa `#DA9694`, 27.3 pt, sin borde.
+- **`label-section.heights.css`:** la regla de altura de la franja se mantiene en un archivo aparte porque debe quedar dentro del
+  bloque de alturas de la plantilla; así el HTML compuesto conserva el orden de la cascada (idéntico byte a byte).
+- **Dependencias que el componente no define:**
+  - `:root`: `--rosa` y `--fs-etiqueta`.
+  - Clases compartidas: `.seccion-titulo` y `.titulo-claro` (también usadas por Medidas y capas), `.t-general` y las columnas `k-*`
+    (cuadrícula B:K), y `.seccion-pegada` (margen de −1 px).
+  - La regla de impresión que fuerza colores (`print-color-adjust`) incluye `.etiqueta-seccion`.
+  - Los paddings de `.titulo-dibujo` copian los anchos de las columnas B y J:K: si cambia la cuadrícula hay que sincronizarlos.
 
 ## Componente `gusset-bag-drawing`
 
