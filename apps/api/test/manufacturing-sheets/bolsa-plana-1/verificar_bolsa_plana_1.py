@@ -176,6 +176,15 @@ def verificar(datos_ruta, perfil):
             if ' '.join(str(datos['datos'][k]).split()) not in th: fallos.append('el dibujo no muestra %s (%s)' % (k, datos['datos'][k]))
         color = hexrgb(datos['visual']['color_bolsa_hex'])
         if not cerca(px(dx0 + 200, dy0 + 55), color): fallos.append('relleno de la bolsa %s != %s' % (px(dx0 + 200, dy0 + 55), datos['visual']['color_bolsa_hex']))
+        # proporción: el cuerpo completo (bolsa + sello) es cuadrado (95 x 95 pt) y está centrado en el dibujo, sin importar las medidas del producto
+        mb = re.search(r'<rect class="bolsa-plana" x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="([\d.]+)"', sc)
+        ms = re.search(r'<rect class="sello-fondo" x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="([\d.]+)"', sc)
+        if not (mb and ms): fallos.append('no se encontró la geometría del cuerpo y del sello')
+        else:
+            bx, bw, bh = (float(v) for v in mb.groups()); sx0, sw, sh = (float(v) for v in ms.groups())
+            if abs(bx - sx0) > 0.01 or abs(bw - sw) > 0.01: fallos.append('el sello no tiene el ancho ni la posición del cuerpo')
+            if abs(bw / (bh + sh) - 1.0) > 0.02: fallos.append('el cuerpo de la bolsa no es cuadrado (%.1f x %.1f pt)' % (bw, bh + sh))
+            if abs((bx + bw / 2) - 200.2) > 0.5: fallos.append('el cuerpo no está centrado en el dibujo (centro en %.1f pt)' % (bx + bw / 2))
         # sello de fondo: rectángulo muy delgado pegado al borde inferior, mismo relleno, bordes negros marcados y sin efectos de volumen
         m_sello = re.search(r'<rect class="sello-fondo"([^>]*)/>', sc)
         if not m_sello: fallos.append('el sello de fondo debe ser un rectángulo delgado (rect.sello-fondo)')
