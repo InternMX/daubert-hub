@@ -1,0 +1,5 @@
+    /* Centrado horizontal de BOLSA_FUELLE. Todo el contenido (encabezado, tablas B:I, dibujo, nota y firmas) ocupa un bloque de
+       400.4 pt; el margen izquierdo se calcula para que ese bloque quede centrado en la carta (8.5 in) y la posición absoluta
+       de las firmas, que es relativa a .firmas-zona, se desplaza con él. Va después de base-sheet.print.css (mismo selector). */
+    :root { --ancho-bloque-bf: 400.4pt; }
+    .hoja { padding-left: calc((8.5in - var(--ancho-bloque-bf)) / 2); padding-right: 0; }

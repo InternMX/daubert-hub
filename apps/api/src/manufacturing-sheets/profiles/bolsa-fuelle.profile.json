@@ -7,6 +7,7 @@
   "componentes": [
     { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)" },
     { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión" },
+    { "ruta": "components/base-sheet/base-sheet.bolsa-fuelle.css", "uso": "centrado horizontal del bloque de 400.4 pt en la carta (solo BOLSA_FUELLE)" },
     { "ruta": "components/header/header.html", "uso": "encabezado compartido con COEX", "compartido": true },
     { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad" },
     { "ruta": "components/measures-gussets/measures-gussets.html", "uso": "Medidas con ambos fuelles" },
