@@ -5,7 +5,7 @@ Uso:  python verificar_bolsa_plana_1.py [--datos RUTA.json ...]     # por defect
 Requiere: Node, Google Chrome (headless), PyMuPDF y numpy (CHROME_PATH si Chrome no está en la ruta por defecto).
 Escribe en test-results/<caso>/ (ignorado por Git): HTML, PDF y PNG. Código de salida 0 = OK, 1 = falla.
 """
-import argparse, glob, html, json, os, re, shutil, subprocess, sys
+import argparse, glob, html, json, os, re, shutil, subprocess, sys, time
 import fitz
 import numpy as np
 
@@ -95,7 +95,9 @@ def verificar(datos_ruta, perfil):
         if 'class="rollo' in sc or 'curva' in sc or 'doblado' in sc: fallos.append('el dibujo contiene elementos de otros formatos')
     ruta_html = os.path.join(carpeta, 'bolsa-plana-1.html'); ruta_pdf = os.path.join(carpeta, 'bolsa-plana-1.pdf')
     open(ruta_html, 'w', encoding='utf-8-sig', newline='\n').write(h)
+    t0 = time.time() - 2
     subprocess.run([CHROME] + CHROME_FLAGS + ['--print-to-pdf=' + ruta_pdf, 'file:///' + ruta_html.replace('\\', '/')], capture_output=True, check=True)
+    if not os.path.exists(ruta_pdf) or os.path.getmtime(ruta_pdf) < t0: fallos.append('el PDF no se regeneró (¿está abierto en un visor? ciérrelo y repita la prueba)')
     # 2. página carta
     pdf = fitz.open(ruta_pdf); pg = pdf[0]
     if len(pdf) != 1: fallos.append('páginas: %d (se esperaba 1)' % len(pdf))
@@ -175,14 +177,24 @@ def verificar(datos_ruta, perfil):
         color = hexrgb(datos['visual']['color_bolsa_hex'])
         if not cerca(px(dx0 + 200, dy0 + 55), color): fallos.append('relleno de la bolsa %s != %s' % (px(dx0 + 200, dy0 + 55), datos['visual']['color_bolsa_hex']))
         # línea del sello: una fila oscura dentro de la bolsa, cerca del borde inferior, y relleno de color por debajo de ella
-        col = [px(dx0 + 200, dy0 + 23 + k * 0.5) for k in range(0, 2 * 95)]
-        oscuros = [k for k, c in enumerate(col) if max(c) < 90 and k > 10]        # k > 10 excluye el borde superior
+        col = [px(dx0 + 200, dy0 + 23 + k * 0.25) for k in range(0, 4 * 92)]      # de la parte alta de la bolsa hasta 3 pt sobre el borde inferior
+        oscuros = [k for k, c in enumerate(col) if k > 20 and sum(c) < sum(color) * 0.8]   # k > 20 excluye el borde superior
         if not oscuros: fallos.append('no se imprime la línea del sello de fondo')
         else:
-            sello = sum(oscuros) / len(oscuros) * 0.5                                 # pt bajo el borde superior de la bolsa
+            sello = sum(oscuros) / len(oscuros) * 0.25                                # pt bajo el borde superior de la bolsa
             if not (73 <= sello <= 91): fallos.append('la línea del sello no está cerca del borde inferior (a %.1f pt del borde superior; bolsa de 95 pt)' % sello)
+            if oscuros[-1] - oscuros[0] > 4 * 2: fallos.append('el sello debe ser una línea fina, no una franja (%.1f pt de grosor)' % ((oscuros[-1] - oscuros[0]) / 4))
+            for dy in (2.0, 4.0):                                                     # bajo la línea el relleno sigue siendo el de la bolsa: sin base ni segunda cara
+                c = px(dx0 + 200, dy0 + 23 + sello + dy)
+                if dy0 + 23 + sello + dy < dy0 + 116 and not cerca(c, color): fallos.append('bajo el sello el relleno difiere del color de la bolsa: %s' % (c,))
+        if 'class="sello-fondo"' in sc and not re.search(r'class="sello-fondo"[^>]*stroke-width="0\.[0-6]\d*"', sc): fallos.append('el sello debe tener un trazo fino (<= 0.6 pt)')
         nota = geo['seccion-nota']
         if not cerca(px(nota[0] + 5, (nota[1] + nota[3]) / 2), (255, 255, 0)): fallos.append('la nota no es amarilla')
+        region = img[int(nota[1] * escala):int(nota[3] * escala), int(nota[0] * escala):int(nota[2] * escala)]
+        rojos = int(((region[:, :, 0] > 200) & (region[:, :, 1] < 70) & (region[:, :, 2] < 70)).sum())
+        negros = int(((region.max(axis=2) < 60)).sum())
+        if rojos < 300: fallos.append('el texto de la nota no es rojo (%d px rojos)' % rojos)
+        if rojos < negros: fallos.append('el texto de la nota debe ser rojo y no negro (%d rojos, %d negros)' % (rojos, negros))
         f1, f2 = geo['firma_elaboro'], geo['firma_aprobo']
         for nombre, r in (('firma_elaboro', f1), ('firma_aprobo', f2)):
             if len(dentro([w for w in palabras if w[4] in ('SIN', 'FIRMA')], r)) != 2: fallos.append('el contenedor %s no contiene el marcador SIN FIRMA' % nombre)
@@ -201,8 +213,10 @@ def verificar(datos_ruta, perfil):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--datos', nargs='*')
+    ap.add_argument('--salida', help='carpeta de resultados alternativa (por defecto test-results)')
     a = ap.parse_args()
     perfil = json.load(open(PERFIL, encoding='utf-8'))
+    if a.salida: SALIDA = os.path.abspath(a.salida)
     shutil.rmtree(SALIDA, ignore_errors=True)
     archivos = a.datos or sorted(glob.glob(os.path.join(AQUI, 'datos', '*.datos.json')))
     print('Formato:', perfil['formato'], '| etapa', perfil['etapa'], '| casos:', len(archivos))
