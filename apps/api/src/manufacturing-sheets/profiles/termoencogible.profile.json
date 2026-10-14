@@ -1,37 +1,164 @@
 {
   "formato": "TERMOENCOGIBLE",
-  "etapa": "TE-1",
+  "etapa": "TE-2",
   "nota": "Familia independiente (pestaña de Termoencogible del Excel); no es Rollo Continuo y sus dibujos representan otros elementos. El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. La modalidad (DOBLADA | EXTENDIDA) es un dato explícito validado contra los indicadores X/NA (tools/validate-termoencogible-data.mjs). No tiene fila «Cantidad Por Rollo o Paquete», fuelles, capas ni nota amarilla de sello. La plantilla no contiene lógica de negocio ni de autorización.",
   "plantilla": "templates/termoencogible/termoencogible.template.html",
-  "titulo": { "base": "Hoja de Instrucción de Manufactura", "sufijo_titulo": "" },
+  "titulo": {
+    "base": "Hoja de Instrucción de Manufactura",
+    "sufijo_titulo": ""
+  },
   "componentes": [
-    { "ruta": "components/base-sheet/base-sheet.css", "uso": "estilos base corporativos (tokens, tablas, alturas)", "compartido": true },
-    { "ruta": "components/base-sheet/base-sheet.print.css", "uso": "@page y reglas de impresión", "compartido": true },
-    { "ruta": "components/base-sheet/base-sheet.centered.css", "uso": "centrado horizontal del bloque de 400.4 pt en la carta", "compartido": true },
-    { "ruta": "components/header/header.html", "uso": "encabezado compartido", "compartido": true },
-    { "ruta": "components/general-info-vci/general-info-vci.html", "uso": "datos generales con Resina VCI, Composición y Presentación; cantidad_fila=sin omite «Cantidad Por Rollo o Paquete»", "compartido": true },
-    { "ruta": "components/sheet-type-row/sheet-type-row.html", "uso": "Hoja: Doblada / Extendida", "compartido": true },
-    { "ruta": "components/measures-simple/measures-simple.html", "uso": "Medidas: Unidad, Ancho, Largo y Calibre", "compartido": true },
-    { "ruta": "components/weight-row/weight-row.html", "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)", "compartido": true }
+    {
+      "ruta": "components/base-sheet/base-sheet.css",
+      "uso": "estilos base corporativos (tokens, tablas, alturas)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.print.css",
+      "uso": "@page y reglas de impresión",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.centered.css",
+      "uso": "centrado horizontal del bloque de 400.4 pt en la carta",
+      "compartido": true
+    },
+    {
+      "ruta": "components/header/header.html",
+      "uso": "encabezado compartido",
+      "compartido": true
+    },
+    {
+      "ruta": "components/general-info-vci/general-info-vci.html",
+      "uso": "datos generales con Resina VCI, Composición y Presentación; cantidad_fila=sin omite «Cantidad Por Rollo o Paquete»",
+      "compartido": true
+    },
+    {
+      "ruta": "components/sheet-type-row/sheet-type-row.html",
+      "uso": "Hoja: Doblada / Extendida",
+      "compartido": true
+    },
+    {
+      "ruta": "components/measures-simple/measures-simple.html",
+      "uso": "Medidas: Unidad, Ancho, Largo y Calibre",
+      "compartido": true
+    },
+    {
+      "ruta": "components/weight-row/weight-row.html",
+      "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.solo.html",
+      "uso": "Etiqueta (fila rosa B:I)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.css",
+      "uso": "estilos de Etiqueta",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.bi.css",
+      "uso": "título de dibujo centrado y en negritas",
+      "compartido": true
+    },
+    {
+      "ruta": "components/drawing-title/drawing-title.html",
+      "uso": "franjas «Dibujo de rollo doblado» y «Dibujo de presentación final» (parámetros id y titulo)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/folded-roll-drawing/folded-roll-drawing.html",
+      "uso": "Dibujo de rollo doblado: figura original (imagen), «Apertura», «Inicio» y cotas {{ancho_doblado}} y {{medida_pliegue}}"
+    },
+    {
+      "ruta": "components/final-presentation-drawing/final-presentation-drawing.html",
+      "uso": "Presentación final: rectángulo blanco con contorno negro y cotas {{largo_presentacion_final}} y {{ancho_presentacion_final}}"
+    },
+    {
+      "ruta": "components/signatures/signatures.html",
+      "uso": "bloques de firma; variante signatures.hoja-paq.css (105 x 70 pt)",
+      "compartido": true
+    }
   ],
   "modalidades": {
-    "DOBLADA": { "indicador_x": "hoja_doblada", "indicador_na": "hoja_extendida", "soportada": true },
+    "DOBLADA": {
+      "indicador_x": "hoja_doblada",
+      "indicador_na": "hoja_extendida",
+      "soportada": true
+    },
     "EXTENDIDA": {
-      "indicador_x": "hoja_extendida", "indicador_na": "hoja_doblada", "soportada": false,
+      "indicador_x": "hoja_extendida",
+      "indicador_na": "hoja_doblada",
+      "soportada": false,
       "motivo": "solo se cuenta con la referencia gráfica de Doblada; la representación de Extendida está pendiente de confirmación"
     }
   },
   "placeholders": {
     "texto": [
-      "sufijo_titulo", "cliente", "fecha_", "resina_vci", "producto", "color", "codigo", "descripcion",
-      "comp_pmg", "comp_cp5000", "comp_natural", "pres_rollo", "pres_paquete",
-      "hoja_doblada", "hoja_extendida", "unidad_medidas", "ancho", "largo", "calibre", "peso_bolsa_lb"
+      "sufijo_titulo",
+      "cliente",
+      "fecha_",
+      "resina_vci",
+      "producto",
+      "color",
+      "codigo",
+      "descripcion",
+      "comp_pmg",
+      "comp_cp5000",
+      "comp_natural",
+      "pres_rollo",
+      "pres_paquete",
+      "hoja_doblada",
+      "hoja_extendida",
+      "unidad_medidas",
+      "ancho",
+      "largo",
+      "calibre",
+      "peso_bolsa_lb",
+      "etiqueta",
+      "ancho_doblado",
+      "medida_pliegue",
+      "largo_presentacion_final",
+      "ancho_presentacion_final"
+    ],
+    "bloques_html": [
+      "bloque_firma_elaboro",
+      "bloque_firma_aprobo"
     ]
   },
-  "campos_contrato_sin_placeholder": ["modalidad"],
-  "campos_opcionales": ["cliente", "fecha_", "color", "codigo", "descripcion", "peso_bolsa_lb", "etiqueta"],
+  "campos_contrato_sin_placeholder": [
+    "modalidad"
+  ],
+  "campos_opcionales": [
+    "cliente",
+    "fecha_",
+    "color",
+    "codigo",
+    "descripcion",
+    "peso_bolsa_lb",
+    "etiqueta"
+  ],
   "pendiente": {
-    "medicion": ["dimensiones definitivas frente a un PDF exportado del Excel de Termoencogible"],
-    "negocio": ["representación gráfica de la modalidad EXTENDIDA: el validador la rechaza hasta confirmarla"]
-  }
+    "medicion": [
+      "dimensiones definitivas frente a un PDF exportado del Excel de Termoencogible"
+    ],
+    "negocio": [
+      "representación gráfica de la modalidad EXTENDIDA: el validador la rechaza hasta confirmarla"
+    ],
+    "dibujo": [
+      "posición de «Apertura», «Inicio» y de las cotas 1.60 / 0.70 sobre la figura: provisional hasta contrastarla con la captura del Excel",
+      "regla de las cotas ancho_doblado y medida_pliegue: no hay regla confirmada; son datos independientes"
+    ]
+  },
+  "campos_nuevos": [
+    "ancho_doblado",
+    "medida_pliegue",
+    "largo_presentacion_final",
+    "ancho_presentacion_final"
+  ],
+  "recursos": [
+    "templates/termoencogible/images/rollo_doblado_original.png (figura original del Excel, 746 x 327 px)"
+  ]
 }
