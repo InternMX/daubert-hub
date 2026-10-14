@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de Instrucción de Manufactura{{sufijo_titulo}}</title>
+  <style>
+    :root {
+      --azul: #244062;        /* azul oscuro: rótulos, Fecha y encabezado LB POR CAPA */
+      --azul-claro: #366092;  /* azul claro: Medidas, PESO POR CAPA / COEXTRUSIÓN EN CAPAS y Dibujo Bolsa */
+      --azul-celda: #28517b;  /* etiquetas internas (PMG, Capa Interior, Fuelle...): pendiente de código oficial */
+      --rosa: #DA9694;
+      --amarillo: #ffff00;
+      --borde: #000;
+
+      /* Tipografía del Excel original (Calibri). */
+      --fuente: Calibri, Carlito, "Segoe UI", Arial, Helvetica, sans-serif;
+      --fs-titulo: 14.9pt;   /* medido en el PDF original */
+      --fs-base: 10.2pt;     /* etiquetas y valores (medido en el PDF original) */
+      --fs-encabezado: 9.3pt; /* encabezados de la tabla de capas (derivado: 10 pt x 0.927) */
+      --fs-capa: 8.4pt;      /* Capa Interior / Intermedia / Exterior (medido en el PDF original) */
+      --fs-etiqueta: 11.1pt; /* sección Etiqueta (derivado: 12 pt x 0.927) */
+
+      /* Altura de fila: 15 pt = 20 px (predeterminada de Excel). */
+      --alto-fila: 13.5pt;
+
+      /* Ancho de la zona B:K medido en el PDF original (493.4 pt). B:I mide 400.4 pt (81.15 %).
+         Todas las tablas se expresan como % de este ancho, conservando las proporciones del Excel. */
+      --ancho-hoja: 493.4pt;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f2f4f7; font-family: var(--fuente); color: #000; }
+    /* Documento impreso: carta vertical 8.5 x 11 in con los márgenes del Excel (0.55 in superior e inferior; las tablas comienzan en x = 18.5 pt, como en el PDF original). En pantalla la hoja se reduce al ancho disponible (max-width). */
+    .hoja { width: 8.5in; max-width: 100%; min-height: 11in; margin: 32px auto; padding: 0.55in 0.7in 0.55in 18.5pt; background: white; box-shadow: 0 2px 15px #00000012; }
+
+    .encabezado, .tabla-contenedor { width: 100%; max-width: var(--ancho-hoja); margin: 0; }
+    /* Encabezado según el PDF original (puntos desde el borde de la página; el padding superior de .hoja es 39.6 pt):
+       logotipo x 23.35-207.17, y 68.07-110.64 (183.82 x 42.57 pt); título x 226-403, y 73-107; tablas desde y = 122.5.
+       Columna del logotipo 207.5 pt (hasta x = 226) y columna del título 177 pt. */
+    .encabezado { display: grid; grid-template-columns: 207.5pt 177pt; align-items: center; padding: 28.47pt 0 11.86pt; }
+    .logo { display: block; width: 183.82pt; height: 42.57pt; margin-left: 4.85pt; }
+    .titulo { text-align: center; font-size: var(--fs-titulo); font-weight: 400; line-height: 1.14; }
+    .titulo span { display: block; white-space: nowrap; }
+
+    /* Layout fijo: ninguna tabla genera desplazamiento horizontal. */
+    table { border-collapse: collapse; table-layout: fixed; font-size: var(--fs-base); }
+
+    /* Anchos de referencia del Excel (8 px por unidad de ancho; F, G y H = ancho predeterminado 9.140625):
+       B 115.406 / C 109.688 / D 67.406 / E 62.844 / F, G, H 73.125 / I 35.406 / J 77.688 / K 64.
+       General + Medidas = B:I (610.125 px), capas = B:K (751.8125 px), Peso Bolsa = B:F (428.469 px). */
+    .t-general { width: 100%; }    /* 10 columnas B:K; las filas de B:I no tienen celdas en J:K excepto la de Calibre */
+    .t-bi { width: 81.154%; }      /* B:I: Dibujo Bolsa y Etiqueta */
+    .t-capas { width: 100%; }
+    .t-bolsa { width: 56.991%; }
+
+    /* Tabla general (B:K, porcentajes de 751.8125 px). */
+    col.k-b { width: 15.3504%; } col.k-c { width: 14.5897%; } col.k-d { width: 8.9658%; } col.k-e { width: 8.3590%; }
+    col.k-f { width: 9.7265%; } col.k-g { width: 9.7265%; } col.k-h { width: 9.7265%; } col.k-i { width: 4.7095%; }
+    col.k-j { width: 10.3334%; } col.k-k { width: 8.5128%; }
+    /* Columnas B:I (porcentaje de 610.125 px), para las tablas de ancho B:I. */
+    col.g-b { width: 18.915%; } col.g-c { width: 17.978%; } col.g-d { width: 11.048%; } col.g-e { width: 10.300%; }
+    col.g-f { width: 11.985%; } col.g-g { width: 11.985%; } col.g-h { width: 11.985%; } col.g-i { width: 5.803%; }
+    /* Capas, sobre B:K: B / C / D:F / G:I / J:K = 115.406 / 109.688 / 203.375 / 181.656 / 141.688 px. */
+    col.c-peso { width: 15.350%; } col.c-capa { width: 14.590%; } col.c-resina { width: 17.325%; }
+    col.c-dibujo { width: 33.889%; } col.c-lb { width: 18.846%; }
+    /* Peso Bolsa, sobre B:F: etiqueta B:D = 292.5 px, valor E:F = 135.969 px. */
+    col.c-bolsa-etiqueta { width: 68.266%; } col.c-bolsa-valor { width: 31.734%; }
+
+    /* Los textos largos (o placeholders sin sustituir) saltan de línea dentro de su celda en lugar de desbordarla. */
+    th, td { padding: 1px 4px; vertical-align: middle; min-width: 0; overflow-wrap: anywhere; line-height: 1.1; }
+    td { border: 1px solid var(--borde); text-align: center; }
+    .rotulo { border: 1px solid var(--azul); background: var(--azul); color: white; text-align: right; font-weight: 400; padding-right: 5px; }
+    tr { height: var(--alto-fila); }
+    /* Alturas efectivas medidas en el PDF original (pt). Las filas pueden crecer si el texto lo requiere. */
+    .alto-cliente { height: 27.2pt; }      /* Cliente y Fecha: dos filas combinadas */
+    .alto-descripcion { height: 25.8pt; }
+    .alto-bolsa { height: 17.5pt; }        /* Peso Bolsa */
+    .t-general > tbody:nth-of-type(1) > tr:nth-child(3) { height: 14.2pt; }   /* Color */
+    .t-general > tbody:nth-of-type(1) > tr:nth-child(4) { height: 13.4pt; }   /* Código DCMX */
+    .t-general > tbody:nth-of-type(1) > tr:nth-child(6),
+    .t-general > tbody:nth-of-type(1) > tr:nth-child(7) { height: 13.6pt; }   /* Composición, Presentación */
+    #seccion-medidas > tr:nth-child(1), #seccion-medidas > tr:nth-child(2), #seccion-medidas > tr:nth-child(4) { height: 13.6pt; }
+    .t-capas thead tr { height: 13.6pt; }
+    #encabezado-dibujo-bolsa tr { height: 13.6pt; }
+    .fecha-label { background: var(--azul); color: white; text-align: left; font-weight: 400; padding-left: 6px; border-top: 1px solid var(--borde); }
+    .tipo { background: var(--azul-celda); color: #fff; }
+    /* Marcas dinámicas (Composición / Presentación): el valor llega como "X" o "NA".
+       Solo "X" lleva fondo amarillo; cada marca es independiente (selección múltiple). */
+    .marca[data-valor="X" i] { background: var(--amarillo); font-weight: bold; }
+    .seccion-titulo { background: var(--azul); color: #fff; font-weight: 400; }
+    .titulo-claro { background: var(--azul-claro); }
+    /* Encabezado "% RESINA VCI EN LB / POR CAPA": una celda en la fila Calibre (J:K) y otra en la fila de encabezados de capas.
+       Comparten fondo y el borde común es del mismo color, de modo que se ve como un solo bloque de dos líneas. */
+    .lb-encabezado { font-size: var(--fs-encabezado); text-align: center; }
+    .lb-superior { vertical-align: bottom; border-bottom: 1px solid var(--azul-claro); }
+    .lb-inferior { vertical-align: top; border-top: 1px solid var(--azul-claro); }
+    /* Composición por capa: el resaltado amarillo se controla por celda con "SI" / "NO", sin depender del texto. */
+    .resina { font-weight: bold; }
+    .resina[data-resaltado="SI" i] { background: var(--amarillo); }
+    .destacado { background: var(--amarillo); font-weight: bold; }
+    .descripcion { line-height: 1.1; padding: 1px 5px; }
+
+    /* Encabezados de la tabla de capas (10 pt) y etiquetas de capa (9 pt). */
+    .t-capas thead th { font-size: var(--fs-encabezado); }
+    .t-capas td.tipo { font-size: var(--fs-capa); background: #fff; color: #000; }
+    /* Alturas de las filas de capas medidas en el PDF original. */
+    .t-capas tbody tr:nth-child(1) { height: 18.8pt; }
+    .t-capas tbody tr:nth-child(2) { height: 19.6pt; }
+    .t-capas tbody tr:nth-child(3) { height: 17.5pt; }
+    .seccion-pegada { margin-top: -1px; }
+    /* Dibujo Bolsa (C:I) y Etiqueta (B:I): misma cuadrícula B:I de la tabla general. */
+    /* Franja azul claro de B a K en una sola celda (sin costuras); los paddings (ancho de B y de J:K) mantienen el texto centrado en C:I. */
+    .titulo-dibujo { font-weight: bold; padding-left: 15.350%; padding-right: 18.846%; }
+    .etiqueta-seccion { border: 0; background: var(--rosa); font-size: var(--fs-etiqueta); height: 27.3pt; padding: 1px 6px; }  /* medido en el PDF original */
+    .celda-dibujo { padding: 0; background: #fff; border-right: 0; }  /* con border-collapse, esta arista compartida con los valores de LB dibujaría una línea */
+    .lb-valor { border: 0; }  /* los valores de LB van sobre fondo blanco, sin bordes */
+    /* Esquema de capas: geometría exacta extraída del PDF original (images/COEX_Curvas_Trazado_Original.svg).
+       Son figuras cerradas; el color lo entrega el backend en el atributo fill de cada <path> (sin valores por defecto).
+       El viewBox (167.30 x 56.05 pt) equivale a la celda F:I y a las tres filas de capas. */
+    .capas-svg { display: block; width: 100%; height: 55pt; }
+    /* Vista previa de la plantilla sin datos: si el fill todavía es un placeholder "{{...}}", se muestran grises
+       con la misma geometría. Con el color real enviado por el backend estas reglas no aplican. */
+    .capas-svg .curva[fill^="{"].curva-interior { fill: #555; }
+    .capas-svg .curva[fill^="{"].curva-intermedia { fill: #888; }
+    .capas-svg .curva[fill^="{"].curva-exterior { fill: #bbb; }
+
+    /* Dibujo técnico de bolsa con fuelles (debajo de Etiqueta): y 453.0 a 642.8 pt (189.8 pt), ancho B:I (400.4 pt).
+       Sin borde, padding ni margen: el contenedor mide exactamente lo mismo que el viewBox (400.4 x 189.8). */
+    .dibujo-caja { width: 400.4pt; max-width: 100%; height: 189.8pt; }  /* y 453.0 a 642.8; sin borde en la tabla de Etiqueta ya no hace falta compensarlo */
+    .dibujo-bolsa-svg { display: block; width: 100%; height: 189.8pt; }
+    .dibujo-bolsa-svg text { font-family: var(--fuente); }
+    /* Vista previa de la plantilla sin datos: si el fill sigue siendo el placeholder "{{color_bolsa_hex}}", se muestra gris claro. */
+    .dibujo-bolsa-svg .bolsa[fill^="{"] { fill: #ddd; }
+    .dibujo-bolsa-svg .cota-interna[stroke^="{"] { stroke: #888; }
+
+    /* Firmas: en el PDF original son imágenes completas (trazo, nombre, línea, cargo y área). */
+    .firmas-zona { position: relative; width: 100%; max-width: var(--ancho-hoja); height: 84.4pt; }  /* y 642.8 (fin del dibujo) a 727.2 */
+    /* El contenido de cada bloque lo entrega el backend: un <img> de la firma autorizada o, en pruebas, un texto "SIN FIRMA".
+       La imagen ya incluye trazo, nombre, línea, función y área: no se imprimen textos adicionales. */
+    .firma-bloque { position: absolute; display: flex; align-items: center; justify-content: center; text-align: center; font-size: var(--fs-base); line-height: 1.1; }
+    .firma-bloque img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
+    .firma-bloque .sin-firma { font-weight: bold; color: #7f7f7f; }
+    .firma-elaboro { left: 57.8pt; top: 12.9pt; width: 97.5pt; height: 71.5pt; }   /* original: x 76.3-173.8, y 655.7-727.2 */
+    .firma-aprobo { left: 279.8pt; top: 12.8pt; width: 108.8pt; height: 69.5pt; }  /* original: x 298.3-407.1, y 655.6-725.1 */
+
+    @page { size: letter portrait; margin: 0; }
+    @media print {
+      html, body { margin: 0; padding: 0; background: white; }
+      .hoja { width: 8.5in; min-height: 11in; margin: 0; padding: 0.55in 0.7in 0.55in 18.5pt; box-shadow: none; }
+      .rotulo, .fecha-label, .tipo, .marca, .seccion-titulo, .resina, .destacado, .etiqueta-seccion { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+    @media screen and (max-width: 816px) {
+      .hoja { width: 100%; margin: 0; padding: 14px; }
+      .encabezado { grid-template-columns: 32% 68%; padding: 0 0 16px; min-height: 80px; }
+      .titulo { font-size: 13pt; }
+      .logo { width: 100%; height: auto; margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="hoja">
+    <header class="encabezado">
+    <img class="logo" alt="Daubert México" src=".\images\DC_logo.jpg">
+      <div class="titulo">
+        <span>Hoja de Instrucción de</span>
+        <span>Manufactura{{sufijo_titulo}}</span>
+      </div>
+    </header>
+
+    <div class="tabla-contenedor">
+      <table class="t-general" aria-label="Hoja de Instrucción de Manufactura{{sufijo_titulo}}">
+        <colgroup>
+          <col class="k-b"><col class="k-c"><col class="k-d"><col class="k-e">
+          <col class="k-f"><col class="k-g"><col class="k-h"><col class="k-i">
+          <col class="k-j"><col class="k-k">
+        </colgroup>
+        <tbody>
+          <tr class="alto-cliente">
+            <th class="rotulo" colspan="2" scope="row">Cliente:</th>
+            <td class="cliente" colspan="3" id="cliente">{{cliente}}</td>
+            <th class="fecha-label" scope="col">Fecha:</th>
+            <td class="fecha-valor" colspan="2" id="fecha">{{fecha_}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Producto:</th>
+            <td colspan="6" id="producto">{{producto}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Color:</th>
+            <td class="destacado" colspan="6" id="color">{{color}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Código DCMX:</th>
+            <td colspan="6" id="codigo">{{codigo}}</td>
+          </tr>
+          <tr class="alto-descripcion">
+            <th class="rotulo" colspan="2" scope="row">Descripción:</th>
+            <td class="descripcion" colspan="6" id="descripcion">{{descripcion}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Composición:</th>
+            <td class="tipo">PMG</td><td class="marca" id="comp_pmg" data-valor="{{comp_pmg}}">{{comp_pmg}}</td>
+            <td class="tipo">CP5000</td><td class="marca" id="comp_cp5000" data-valor="{{comp_cp5000}}">{{comp_cp5000}}</td>
+            <td class="tipo">Natural</td><td class="marca" id="comp_natural" data-valor="{{comp_natural}}">{{comp_natural}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Presentación:</th>
+            <td class="tipo" colspan="2">Rollo</td><td class="marca" id="pres_rollo" data-valor="{{pres_rollo}}">{{pres_rollo}}</td>
+            <td class="tipo" colspan="2">Paquete</td><td class="marca" id="pres_paquete" data-valor="{{pres_paquete}}">{{pres_paquete}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Cantidad Por Rollo o Paquete:</th>
+            <td class="destacado" colspan="6" id="cantidad">{{cantidad}}</td>
+          </tr>
+        </tbody>
+
+        <!-- SECCIÓN MEDIDAS · machote COEXTRUSIÓN con fuelles.
+             Bloque independiente (tbody) para poder separarlo como parcial o sección específica de plantilla. -->
+        <tbody id="seccion-medidas" data-seccion="medidas" data-plantilla="coextrusion-fuelles">
+          <tr>
+            <td class="seccion-titulo titulo-claro" colspan="8">Medidas:</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="3" scope="row">Unidad de Medidas:</th>
+            <td colspan="5" id="unidad_medidas">{{unidad_medidas}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Ancho:</th>
+            <td colspan="2" id="ancho">{{ancho}}</td>
+            <td class="tipo" colspan="2">Fuelle Derecho</td>
+            <td colspan="2" id="fuelle_derecho">{{fuelle_derecho}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Largo:</th>
+            <td colspan="2" id="largo">{{largo}}</td>
+            <td class="tipo" colspan="2">Fuelle Izquierdo</td>
+            <td colspan="2" id="fuelle_izquierdo">{{fuelle_izquierdo}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Calibre:</th>
+            <td class="destacado" colspan="6" id="calibre">{{calibre}}</td>
+            <th class="seccion-titulo titulo-claro lb-encabezado lb-superior" colspan="2" scope="col">% RESINA VCI EN LB</th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SECCIÓN COEXTRUSIÓN EN CAPAS · machote COEXTRUSIÓN (COEX Verde / COEX Azul).
+         Tabla independiente; todos los valores (pesos, resinas, LB, colores de capas) los entrega el backend. -->
+    <div class="tabla-contenedor seccion-pegada" id="seccion-coex-capas" data-seccion="coextrusion-capas">
+      <table class="t-capas" aria-label="Coextrusión en capas: peso por capa, composición y libras por capa">
+        <colgroup>
+          <col class="c-peso"><col class="c-capa"><col class="c-resina"><col class="c-dibujo"><col class="c-lb">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="seccion-titulo titulo-claro" scope="col">PESO POR CAPA</th>
+            <th class="seccion-titulo titulo-claro" scope="col" colspan="3">COEXTRUSIÓN EN CAPAS - PORCENTAJES DE RESINA VCI</th>
+            <th class="seccion-titulo titulo-claro lb-encabezado lb-inferior" scope="col">POR CAPA</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td id="peso_capa_interior">{{peso_capa_interior}}</td>
+            <td class="tipo">Capa Interior</td>
+            <td class="resina" id="resina_capa_interior" data-resaltado="{{resaltar_resina_capa_interior}}">{{resina_capa_interior}}</td>
+            <td class="celda-dibujo" rowspan="3">
+              <svg class="capas-svg" viewBox="0 0 167.30 56.05" role="img" aria-label="Representación de las capas Interior, Intermedia y Exterior">
+                <path class="curva curva-interior" fill="{{color_capa_interior}}" d="M 101.80 1.31 C 103.85 5.46 84.72 19.05 59.09 31.66 C 33.46 44.28 11.03 51.14 8.99 46.99 L 12.75 45.14 C 13.77 47.21 33.69 39.50 57.24 27.91 C 80.80 16.31 99.07 5.23 98.05 3.16 L 101.80 1.31 Z"/>
+                <path class="curva curva-intermedia" fill="{{color_capa_intermedia}}" d="M 106.77 16.87 C 107.91 20.64 87.15 30.27 60.40 38.38 C 33.65 46.49 11.04 50.01 9.89 46.24 L 13.31 45.21 C 13.88 47.09 34.50 42.51 59.37 34.97 C 84.23 27.43 103.93 19.79 103.36 17.91 L 106.77 16.87 Z"/>
+                <path class="curva curva-exterior" fill="{{color_capa_exterior}}" d="M 109.89 33.35 C 110.53 38.09 88.35 45.01 60.34 48.80 C 32.34 52.59 9.11 51.81 8.47 47.07 L 12.77 46.49 C 13.09 48.86 34.13 47.97 59.76 44.51 C 85.40 41.04 105.91 36.30 105.59 33.93 L 109.89 33.35 Z"/>
+                <text x="114.96" y="9.17" font-family="Calibri, Carlito, Arial, sans-serif" font-size="10.27" fill="#000">Interior</text>
+                <text x="114.96" y="23.40" font-family="Calibri, Carlito, Arial, sans-serif" font-size="10.27" fill="#000">Intermedia</text>
+                <text x="114.96" y="36.79" font-family="Calibri, Carlito, Arial, sans-serif" font-size="10.27" fill="#000">Exterior</text>
+              </svg>
+            </td>
+            <td class="lb-valor" id="lb_vci_interior">{{lb_vci_interior}}</td>
+          </tr>
+          <tr>
+            <td id="peso_capa_intermedia">{{peso_capa_intermedia}}</td>
+            <td class="tipo">Capa Intermedia</td>
+            <td class="resina" id="resina_capa_intermedia" data-resaltado="{{resaltar_resina_capa_intermedia}}">{{resina_capa_intermedia}}</td>
+            <td class="lb-valor" id="lb_vci_intermedia">{{lb_vci_intermedia}}</td>
+          </tr>
+          <tr>
+            <td id="peso_capa_exterior">{{peso_capa_exterior}}</td>
+            <td class="tipo">Capa Exterior</td>
+            <td class="resina" id="resina_capa_exterior" data-resaltado="{{resaltar_resina_capa_exterior}}">{{resina_capa_exterior}}</td>
+            <td class="lb-valor" id="lb_vci_exterior">{{lb_vci_exterior}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabla-contenedor seccion-pegada" id="seccion-peso-bolsa" data-seccion="peso-bolsa">
+      <table class="t-bolsa" aria-label="Peso de la bolsa en libras">
+        <colgroup><col class="c-bolsa-etiqueta"><col class="c-bolsa-valor"></colgroup>
+        <tbody>
+          <tr class="alto-bolsa">
+            <th class="rotulo" scope="row">PESO BOLSA LB:</th>
+            <td class="destacado" id="peso_bolsa_lb">{{peso_bolsa_lb}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SECCIÓN DIBUJO BOLSA (encabezado: franja azul claro de B a K) + ETIQUETA (B:I) · cuadrícula B:K de la tabla general.
+         El dibujo técnico (SVG) se incorporará posteriormente. -->
+    <div class="tabla-contenedor seccion-pegada" id="seccion-etiqueta" data-seccion="dibujo-bolsa-etiqueta">
+      <table class="t-general" aria-label="Dibujo de la bolsa y etiqueta">
+        <colgroup>
+          <col class="k-b"><col class="k-c"><col class="k-d"><col class="k-e">
+          <col class="k-f"><col class="k-g"><col class="k-h"><col class="k-i">
+          <col class="k-j"><col class="k-k">
+        </colgroup>
+        <tbody id="encabezado-dibujo-bolsa">
+          <tr>
+            <th class="seccion-titulo titulo-claro titulo-dibujo" colspan="10" scope="col">Dibujo Bolsa</th>
+          </tr>
+        </tbody>
+        <tbody id="seccion-etiqueta-valor">
+          <tr>
+            <td class="etiqueta-seccion" colspan="8" id="etiqueta"><strong>Etiqueta:</strong> {{etiqueta}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SECCIÓN DIBUJO BOLSA · dibujo técnico de bolsa con fuelles laterales (COEXTRUSIÓN con fuelles).
+         Va debajo de Etiqueta. Sección independiente: se puede sustituir por otra geometría para otros tipos de bolsa.
+         El viewBox (400.4 x 189.8 pt) corresponde al área B:I entre y = 453.0 y 642.8 del PDF original; las coordenadas
+         son locales al SVG. Posiciones tomadas del PDF original CONFPMG04; solo se ajustaron las puntas de flecha.
+         El relleno de la bolsa lo entrega el backend en {{color_bolsa_hex}} (código CSS); {{color}} es solo el nombre.
+         La barra inferior es fija. -->
+    <div class="dibujo-caja" id="seccion-dibujo-bolsa" data-seccion="dibujo-bolsa" data-plantilla="bolsa-fuelles-laterales">
+      <svg class="dibujo-bolsa-svg" viewBox="0 0 400.4 189.8" role="img" aria-label="Dibujo de la bolsa con fuelles: ancho, largo y fuelles izquierdo y derecho">
+        <defs>
+          <marker id="flecha-bolsa" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 Z" fill="#4A7EBB"/>
+          </marker>
+          <!-- Cotas internas de los fuelles: color independiente ({{color_cotas_internas_hex}}) para conservar el contraste con el relleno de la bolsa. -->
+          <marker id="flecha-bolsa-interna" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 Z" fill="{{color_cotas_internas_hex}}"/>
+          </marker>
+        </defs>
+
+        <!-- Bolsa -->
+        <rect class="bolsa" x="147.72" y="26.95" width="229.49" height="149.31" fill="{{color_bolsa_hex}}" stroke="#000" stroke-width="0.84"/>
+        <!-- Límites de los fuelles -->
+        <line x1="233.13" y1="27" x2="233.13" y2="176" stroke="#000" stroke-width="0.84" stroke-dasharray="2.5 2"/>
+        <line x1="281.13" y1="27" x2="281.13" y2="176" stroke="#000" stroke-width="0.84" stroke-dasharray="2.5 2"/>
+
+        <!-- Cotas -->
+        <line x1="151.01" y1="20.7" x2="376.54" y2="20.7" stroke="#4A7EBB" stroke-width="0.9" marker-start="url(#flecha-bolsa)" marker-end="url(#flecha-bolsa)"/>
+        <line x1="132.5" y1="29.08" x2="132.5" y2="174.83" stroke="#4A7EBB" stroke-width="0.9" marker-start="url(#flecha-bolsa)" marker-end="url(#flecha-bolsa)"/>
+        <line class="cota-interna" x1="151.68" y1="43" x2="232.56" y2="43" stroke="{{color_cotas_internas_hex}}" stroke-width="0.9" marker-start="url(#flecha-bolsa-interna)" marker-end="url(#flecha-bolsa-interna)"/>
+        <line class="cota-interna" x1="285.0" y1="40.5" x2="371.95" y2="40.5" stroke="{{color_cotas_internas_hex}}" stroke-width="0.9" marker-start="url(#flecha-bolsa-interna)" marker-end="url(#flecha-bolsa-interna)"/>
+        <text x="260.9" y="7.5" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{ancho}}</text>
+        <text x="116.1" y="94.1" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{largo}}</text>
+        <text x="190.8" y="61.7" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{fuelle_izquierdo}}</text>
+        <text x="329.6" y="61.7" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{fuelle_derecho}}</text>
+
+        <!-- Barra inferior (fija) -->
+        <rect x="75.70" y="176.14" width="324.67" height="13.68" fill="#244062"/>
+      </svg>
+    </div>
+
+    <!-- SECCIÓN FIRMAS · elaboración y aprobación.
+         En el PDF original cada firma es una imagen completa (trazo, nombre, línea de firma, función y área).
+         Cada .firma-bloque tiene el tamaño y la posición de esa imagen (elaboración x 76.3, y 655.7, 97.5 x 71.5 pt;
+         aprobación x 298.3, y 655.6, 108.8 x 69.5 pt). El backend (Daubert Hub) sustituye cada placeholder por un
+         <img> de una firma autorizada o, en modo de prueba, por <span class="sin-firma">SIN FIRMA</span>.
+         La plantilla no decide quién puede aprobar ni valida la firma: la aprobación se registra en el backend. -->
+    <div class="firmas-zona" id="seccion-firmas" data-seccion="firmas">
+      <div class="firma-bloque firma-elaboro" id="firma_elaboro">{{bloque_firma_elaboro}}</div>
+      <div class="firma-bloque firma-aprobo" id="firma_aprobo">{{bloque_firma_aprobo}}</div>
+    </div>
+
+    <!-- Secciones técnicas inferiores (varían según el proceso de manufactura; pendientes de implementar):
+         Medidas, Pesos, Composición por capas, Etiquetas, Dibujos técnicos, Firmas de elaboración y aprobación. -->
+    <div id="secciones-tecnicas"></div>
+  </main>
+</body>
+</html>

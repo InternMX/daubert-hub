@@ -1,0 +1,5 @@
+# Plantillas de hojas de manufactura: los finales de línea quedan fijos (LF) en cualquier sistema,
+# para que las huellas SHA-256 y la regresión del PDF no dependan de core.autocrlf.
+* text eol=lf
+*.jpg binary
+*.png binary

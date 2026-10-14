@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 167.30 56.05" role="img" aria-label="Coextrusión: tres capas Interior, Intermedia y Exterior">
+<!-- Fuente: vectores del PDF original CONFPMG04.pdf, posiciones relativas a x=251.57 pt e y=338.69 pt. -->
+  <path class="curva curva-interior" fill="#00B050" d="M 101.80 1.31 C 103.85 5.46 84.72 19.05 59.09 31.66 C 33.46 44.28 11.03 51.14 8.99 46.99 L 12.75 45.14 C 13.77 47.21 33.69 39.50 57.24 27.91 C 80.80 16.31 99.07 5.23 98.05 3.16 L 101.80 1.31 Z"/>
+  <path class="curva curva-intermedia" fill="#92D050" d="M 106.77 16.87 C 107.91 20.64 87.15 30.27 60.40 38.38 C 33.65 46.49 11.04 50.01 9.89 46.24 L 13.31 45.21 C 13.88 47.09 34.50 42.51 59.37 34.97 C 84.23 27.43 103.93 19.79 103.36 17.91 L 106.77 16.87 Z"/>
+  <path class="curva curva-exterior" fill="#D7E4BD" d="M 109.89 33.35 C 110.53 38.09 88.35 45.01 60.34 48.80 C 32.34 52.59 9.11 51.81 8.47 47.07 L 12.77 46.49 C 13.09 48.86 34.13 47.97 59.76 44.51 C 85.40 41.04 105.91 36.30 105.59 33.93 L 109.89 33.35 Z"/>
+  <text x="114.96" y="9.17" font-family="Calibri, Carlito, Arial, sans-serif" font-size="10.27" fill="#000">Interior</text>
+  <text x="114.96" y="23.40" font-family="Calibri, Carlito, Arial, sans-serif" font-size="10.27" fill="#000">Intermedia</text>
+  <text x="114.96" y="36.79" font-family="Calibri, Carlito, Arial, sans-serif" font-size="10.27" fill="#000">Exterior</text>
+</svg>
