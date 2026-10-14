@@ -10,7 +10,6 @@
     /* @include components/label-section/label-section.css */
     /* @include components/label-section/label-section.bi.css */
     /* @include components/sheet-drawing/sheet-drawing.css */
-    /* @include components/roll-drawing/roll-drawing.css */
     /* @include components/signatures/signatures.css */
     /* @include components/signatures/signatures.hoja-paq.css */
 
@@ -23,10 +22,9 @@
   </style>
 </head>
 <body>
-  <!-- Formato HOJA_PAQ · HP-2. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad),
-       tipo de hoja, Medidas sin fuelles, peso, Etiqueta, Dibujo Hoja, dibujo de rollo (variante según la modalidad) y firmas.
-       Parámetros de composición (los entrega un perfil validado, ver tools/validate-hoja-paq-data.mjs): rollo = extendido | doblado y
-       titulo_rollo (con &#32; por espacio). La plantilla no decide la modalidad ni valida los datos. -->
+  <!-- Formato HOJA_PAQ · HP-C. Orden: encabezado, datos generales (con Resina VCI, Composición, Presentación y Cantidad),
+       tipo de hoja, Medidas sin fuelles, peso, Etiqueta, Dibujo Hoja y firmas. La pestaña Hoja Paq del Excel oculta «Dibujo de rollo»
+       (filas 41-47): no se imprime. Los componentes roll-drawing se conservan para ROLLO_CONTINUO. -->
   <main class="hoja">
     <!-- @include components/header/header.html -->
 
@@ -43,10 +41,6 @@
     <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-hoja titulo=Dibujo&#32;Hoja -->
 
     <!-- @include components/sheet-drawing/sheet-drawing.html id=flecha-hoja -->
-
-    <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-rollo titulo=@{titulo_rollo} -->
-
-    <!-- @include components/roll-drawing/roll-drawing.html id=flecha-rollo rollo=@{rollo} -->
 
     <!-- @include components/signatures/signatures.html -->
   </main>

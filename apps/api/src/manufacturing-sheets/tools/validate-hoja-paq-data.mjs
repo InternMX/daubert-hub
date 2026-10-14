@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Valida el contrato de datos de HOJA_PAQ antes de componer o imprimir. La plantilla HTML no contiene esta lógica: el backend (o la
-// prueba) llama a validarDatosHojaPaq y, solo si no hay errores, compone con los parámetros de la modalidad (parametrosComposicion).
+// prueba) llama a validarDatosHojaPaq y, solo si no hay errores, compone.
 //   node validate-hoja-paq-data.mjs <datos.json>     → código de salida 0 = válido, 1 = errores (se listan en stderr)
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -23,14 +23,7 @@ export function validarDatosHojaPaq(contrato, perfil = PERFIL) {
   if (config && (datos[config.indicador_x] !== 'X' || datos[config.indicador_na] !== 'NA')) {
     errores.push(`los indicadores X/NA contradicen la modalidad ${modalidad}`);
   }
-  if (typeof datos.ancho_rollo !== 'string' || !datos.ancho_rollo.trim()) errores.push('falta ancho_rollo (dato independiente de ancho, con su unidad)');
   return errores;
-}
-
-export function parametrosComposicion(modalidad, perfil = PERFIL) {
-  const c = perfil.modalidades[modalidad];
-  if (!c) throw new Error(`modalidad inválida: ${modalidad}`);
-  return { rollo: c.rollo, titulo_rollo: c.titulo_rollo.replaceAll(' ', '&#32;') };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -38,6 +31,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!ruta) { console.error('Uso: node validate-hoja-paq-data.mjs <datos.json>'); process.exit(2); }
   const errores = validarDatosHojaPaq(JSON.parse(readFileSync(ruta, 'utf8')));
   if (errores.length) { console.error(errores.map((e) => `- ${e}`).join('\n')); process.exit(1); }
-  const p = parametrosComposicion(JSON.parse(readFileSync(ruta, 'utf8')).modalidad);
-  console.log(`rollo=${p.rollo} titulo_rollo=${p.titulo_rollo}`);
+  console.log(`modalidad válida: ${JSON.parse(readFileSync(ruta, 'utf8')).modalidad}`);
 }

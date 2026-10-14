@@ -1,4 +1,4 @@
-"""Verificación de HOJA_PAQ (HP-2: hoja completa con Etiqueta, Dibujo Hoja, dibujo de rollo y firmas).
+"""Verificación de HOJA_PAQ (HP-C: hoja completa con Etiqueta, Dibujo Hoja y firmas; sin dibujo de rollo).
 No hay línea base validada: no se compara píxel a píxel.
 
 Uso:  python verificar_hoja_paq.py [--datos RUTA.json ...]     # por defecto, todos los datos/*.datos.json
@@ -37,10 +37,10 @@ ETIQUETAS = ['Cliente:', 'Fecha:', 'Resina VCI:', 'Producto:', 'Color:', 'Códig
              'Unidad de Medidas:', 'Ancho:', 'Largo:', 'Calibre:', 'PESO BOLSA LB:', 'Etiqueta:', 'Dibujo Hoja']
 PROHIBIDAS = ['Fuelle', 'Capa', 'Dibujo Bolsa']                                  # no pertenecen a HOJA_PAQ
 TABLAS = ['seccion-datos-generales', 'seccion-tipo-hoja', 'seccion-medidas', 'seccion-peso', 'seccion-etiqueta',
-          'encabezado-dibujo-hoja', 'encabezado-dibujo-rollo']
-DIBUJOS = ['seccion-dibujo-hoja', 'seccion-dibujo-rollo']
+          'encabezado-dibujo-hoja']
+DIBUJOS = ['seccion-dibujo-hoja']
 SECCIONES = ['encabezado', 'seccion-datos-generales', 'seccion-tipo-hoja', 'seccion-medidas', 'seccion-peso', 'seccion-etiqueta',
-             'encabezado-dibujo-hoja', 'seccion-dibujo-hoja', 'encabezado-dibujo-rollo', 'seccion-dibujo-rollo', 'seccion-firmas']
+             'encabezado-dibujo-hoja', 'seccion-dibujo-hoja', 'seccion-firmas']
 MARCAS = ['comp_pmg', 'comp_cp5000', 'comp_natural', 'pres_rollo', 'pres_paquete', 'hoja_doblada', 'hoja_extendida']
 OTROS = ['etiqueta', 'firma_elaboro', 'firma_aprobo']
 
@@ -83,9 +83,7 @@ def verificar(datos_ruta, perfil):
     carpeta = os.path.join(SALIDA, caso); os.makedirs(os.path.join(carpeta, 'images'))
     shutil.copy(os.path.join(MS, 'templates', 'hoja-paq', 'images', 'DC_logo.jpg'), os.path.join(carpeta, 'images', 'DC_logo.jpg'))
     compuesta = os.path.join(carpeta, 'hoja-paq.composed.html')
-    titulo_rollo = cfg['titulo_rollo']
-    subprocess.run(['node', COMPOSITOR, '--source', FUENTE, '--out', compuesta, '--param', 'rollo=' + cfg['rollo'],
-                    '--param', 'titulo_rollo=' + titulo_rollo.replace(' ', '&#32;')], capture_output=True, text=True, check=True)
+    subprocess.run(['node', COMPOSITOR, '--source', FUENTE, '--out', compuesta], capture_output=True, text=True, check=True)
     h = open(compuesta, encoding='utf-8').read()
     # 1. placeholders: plantilla = perfil = datos (la modalidad no es placeholder); sin fuelles ni capas; variante gráfica correcta
     plantilla_ph = set(re.findall(r'\{\{([^}]+)\}\}', sin_comentarios(h)))
@@ -96,13 +94,6 @@ def verificar(datos_ruta, perfil):
     if any('fuelle' in p or p.startswith('capa') for p in plantilla_ph): fallos.append('la plantilla contiene placeholders de fuelles o capas')
     if '@{' in h: fallos.append('parámetros de inclusión sin resolver')
     sc = sin_comentarios(h)
-    doblado = 'data-modalidad="doblado"' in sc
-    if doblado != (modalidad == 'DOBLADA') or ('data-modalidad="extendido"' in sc) != (modalidad == 'EXTENDIDA'): fallos.append('variante de rollo incorrecta para %s' % modalidad)
-    rollo_svg = sc[sc.index('data-modalidad='):sc.index('data-seccion="firmas"')] if 'data-seccion="firmas"' in sc else sc[sc.index('data-modalidad='):]
-    for prohibido in ('<circle', 'stroke-dasharray'):
-        if prohibido in rollo_svg: fallos.append('el dibujo de rollo contiene %s, que no existe en las referencias' % prohibido)
-    if doblado and ('class="rollo-cuerpo"' not in rollo_svg or 'fill="{{color_bolsa_hex}}"' not in rollo_svg): fallos.append('el rollo doblado debe rellenarse con {{color_bolsa_hex}}')
-    if not doblado and 'color_bolsa_hex' in rollo_svg: fallos.append('el rollo extendido no debe depender de color_bolsa_hex hasta contrastarlo con su referencia')
     for k, v in datos['datos'].items(): h = h.replace('{{%s}}' % k, html.escape(str(v), quote=True))
     for k, v in datos['visual'].items():
         if not RE_HEX.match(v): fallos.append('color inválido %s' % k)
@@ -129,9 +120,9 @@ def verificar(datos_ruta, perfil):
     os.remove(sonda)
     geo = json.loads(html.unescape(re.search(r'<pre id="out">(.*?)</pre>', dom, re.S).group(1)))
     # 4. etiquetas, valores, títulos de dibujo
-    for e in ETIQUETAS + [titulo_rollo]:
+    for e in ETIQUETAS:
         if e not in texto: fallos.append('falta la etiqueta %r' % e)
-    if modalidad == 'EXTENDIDA' and 'rollo doblado' in texto: fallos.append('el título del rollo doblado aparece en una hoja extendida')
+    if 'Dibujo de rollo' in texto or 'rollo doblado' in texto or 'seccion-dibujo-rollo' in h: fallos.append('HOJA_PAQ no imprime Dibujo de rollo (filas ocultas del Excel)')
     for p in PROHIBIDAS:
         if p in texto: fallos.append('texto que no pertenece a HOJA_PAQ: %r' % p)
     for k, v in datos['datos'].items():
@@ -165,7 +156,7 @@ def verificar(datos_ruta, perfil):
     escala = 2
     pix = pg.get_pixmap(dpi=72 * escala); pix.save(os.path.join(carpeta, 'hoja-paq.png'))
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3].astype(int)
-    y0, y1 = int(geo['seccion-datos-generales'][1] * escala), int(geo['seccion-dibujo-rollo'][3] * escala)
+    y0, y1 = int(geo['seccion-datos-generales'][1] * escala), int(geo['seccion-dibujo-hoja'][3] * escala)
     cols = np.where((img[y0:y1] < 245).any(axis=2).any(axis=0))[0]
     izq, der = cols.min() / escala, 612 - (cols.max() + 1) / escala
     if abs(izq - der) > 1.0: fallos.append('PDF descentrado: margen izquierdo %.1f / derecho %.1f pt' % (izq, der))
@@ -185,22 +176,8 @@ def verificar(datos_ruta, perfil):
     th_txt = ' '.join(w[4] for w in sorted(th, key=lambda w: (round(w[1]), w[0])))
     for k in ('ancho', 'largo'):
         if ' '.join(str(datos['datos'][k]).split()) not in th_txt: fallos.append('el dibujo de la hoja no muestra %s (%s)' % (k, datos['datos'][k]))
-    tr = dentro(palabras, geo['seccion-dibujo-rollo'])
-    tr_txt = ' '.join(w[4] for w in sorted(tr, key=lambda w: (round(w[1]), w[0])))
-    if ' '.join(str(datos['datos']['ancho_rollo']).split()) not in tr_txt: fallos.append('el dibujo del rollo no muestra ancho_rollo (%s)' % datos['datos']['ancho_rollo'])
     hx0, hy0, hx1, hy1 = geo['seccion-dibujo-hoja']
     if not cerca(px(hx0 + 200, hy0 + 55), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno de la hoja %s != %s' % (px(hx0 + 200, hy0 + 55), datos['visual']['color_bolsa_hex']))
-    rx0, ry0, rx1, ry1 = geo['seccion-dibujo-rollo']
-    if '#FFC000' in rollo_svg: fallos.append('el contorno dorado intenso #FFC000 ya no se usa')
-    if doblado and 'stroke="#C4BD97"' not in rollo_svg: fallos.append('el contorno del rollo doblado debe ser #C4BD97')
-    if not doblado:
-        if 'stroke="#4F81BD"' not in rollo_svg or '#000' in rollo_svg.replace('fill="#000"', ''): fallos.append('el rollo extendido debe tener contorno azul #4F81BD y no negro')
-        c = px(rx0 + 200, ry0 + 44)
-        if not cerca(c, (245, 243, 237)): fallos.append('relleno del rollo extendido %s != #F5F3ED' % (c,))
-    if doblado:
-        c = px(rx0 + 200, ry0 + 44)
-        if not cerca(c, hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno del rollo doblado %s != %s' % (c, datos['visual']['color_bolsa_hex']))
-        if not cerca(px(rx0 + 155, ry0 + 44), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('el rollo doblado no es un cuerpo liso del color del producto')
     # 9. firmas: dos zonas separadas, con su marcador, simétricas y dentro del bloque
     f1, f2 = geo['firma_elaboro'], geo['firma_aprobo']
     for nombre, r in (('firma_elaboro', f1), ('firma_aprobo', f2)):
@@ -214,8 +191,8 @@ def verificar(datos_ruta, perfil):
     if LIMITE_Y - fin < HOLGURA_MINIMA: fallos.append('holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, HOLGURA_MINIMA))
     if fin > LIMITE_Y: fallos.append('el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y))
     alto = lambda s: geo[s][3] - geo[s][1]
-    print('%-30s %s | págs %d | pend. %d | márgenes %.1f/%.1f | etiqueta y %.1f | hoja %.1f pt | rollo %.1f pt | firmas y %.1f-%.1f | libre %.1f pt | %s%s' % (
-        caso, modalidad[:4], len(pdf), pendientes, izq, der, geo['seccion-etiqueta'][1], alto('seccion-dibujo-hoja'), alto('seccion-dibujo-rollo'),
+    print('%-30s %s | págs %d | pend. %d | márgenes %.1f/%.1f | etiqueta y %.1f | hoja %.1f pt | firmas y %.1f-%.1f | libre %.1f pt | %s%s' % (
+        caso, modalidad[:4], len(pdf), pendientes, izq, der, geo['seccion-etiqueta'][1], alto('seccion-dibujo-hoja'),
         geo['seccion-firmas'][1], fin, LIMITE_Y - fin, 'OK' if not fallos else 'FALLA (%d)' % len(fallos),
         ' [técnico: el validador lo rechaza]' if esperado == 'tecnico' else ''))
     for f in fallos[:15]: print('   -', f)

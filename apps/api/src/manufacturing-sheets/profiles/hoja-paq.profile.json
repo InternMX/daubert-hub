@@ -1,7 +1,7 @@
 {
   "formato": "HOJA_PAQ",
-  "etapa": "HP-2",
-  "nota": "El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. La modalidad (DOBLADA | EXTENDIDA) es un dato explícito que se valida contra los indicadores X/NA (tools/validate-hoja-paq-data.mjs) y elige la variante del dibujo de rollo al componer. La plantilla no contiene lógica de negocio ni de autorización.",
+  "etapa": "HP-C",
+  "nota": "El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. La modalidad (DOBLADA | EXTENDIDA) es un dato explícito que se valida contra los indicadores X/NA (tools/validate-hoja-paq-data.mjs); no selecciona ningún dibujo. Presentación (Rollo/Paquete) y modalidad son datos independientes. La plantilla no contiene lógica de negocio ni de autorización.",
   "plantilla": "templates/hoja-paq/hoja-paq.template.html",
   "titulo": {
     "base": "Hoja de Instrucción de Manufactura",
@@ -65,11 +65,7 @@
     },
     {
       "ruta": "components/sheet-drawing/sheet-drawing.html",
-      "uso": "Dibujo Hoja: rectángulo con cotas {{ancho}} y {{largo}}; igual para ambas modalidades"
-    },
-    {
-      "ruta": "components/roll-drawing/roll-drawing.html",
-      "uso": "Dibujo de rollo; geometría geometry/extendido.html o geometry/doblado.html según la modalidad; cota {{ancho_rollo}}"
+      "uso": "Dibujo Hoja: rectángulo con cotas {{ancho}} y {{largo}}; único dibujo de HOJA_PAQ"
     },
     {
       "ruta": "components/signatures/signatures.html",
@@ -100,7 +96,6 @@
       "largo",
       "calibre",
       "peso_bolsa_lb",
-      "ancho_rollo",
       "etiqueta"
     ],
     "color": [
@@ -113,34 +108,29 @@
   },
   "campos_nuevos": [
     "hoja_doblada",
-    "hoja_extendida",
-    "ancho_rollo"
+    "hoja_extendida"
   ],
   "pendiente": {
     "medicion": [
       "dimensiones definitivas frente a un PDF exportado del Excel de Hoja Paq"
     ],
     "negocio": [
-      "regla de ancho_rollo respecto a ancho (no confirmada: es un dato independiente)",
-      "la exclusividad Doblada/Extendida se valida en el backend; aquí solo en tools/validate-hoja-paq-data.mjs"
+      "la exclusividad Doblada/Extendida se valida en el backend; aquí solo en tools/validate-hoja-paq-data.mjs",
+      "«Dibujo de rollo» (filas 41-47 del Excel) está oculto y sin regla de visibilidad confirmada: no se imprime; sin requisito explícito no se incorporará"
     ],
     "firmas": [
       "las imágenes autorizadas las entrega el backend (Daubert Hub); las pruebas usan marcadores SIN FIRMA"
     ],
     "dibujos": [
-      "geometrías de rollo esquemáticas según la descripción de las referencias; comparar con los originales"
+      "los componentes roll-drawing (extendido y doblado) se conservan sin usar para ROLLO_CONTINUO"
     ]
   },
   "modalidades": {
     "DOBLADA": {
-      "rollo": "doblado",
-      "titulo_rollo": "Dibujo de rollo doblado",
       "indicador_x": "hoja_doblada",
       "indicador_na": "hoja_extendida"
     },
     "EXTENDIDA": {
-      "rollo": "extendido",
-      "titulo_rollo": "Dibujo de rollo",
       "indicador_x": "hoja_extendida",
       "indicador_na": "hoja_doblada"
     }
