@@ -1,11 +1,11 @@
 """Prueba de regresion de COEX Verde (CONFPMG04).
 
 Uso (desde cualquier carpeta):
-  python comparar_regresion.py                        # compara la plantilla COEX actual contra la referencia
-  python comparar_regresion.py --plantilla RUTA.html  # compara otra version de la plantilla
+  python comparar_regresion.py                        # compone la plantilla COEX (node) y la compara contra la referencia
+  python comparar_regresion.py --plantilla RUTA.html  # compara un HTML ya compuesto (sin pasar por la composicion)
   python comparar_regresion.py --generar-linea-base   # SOLO con aprobacion: reemplaza la referencia
 
-Requiere: Google Chrome (headless), PyMuPDF (fitz) y numpy.
+Requiere: Node (compositor, sin dependencias), Google Chrome (headless), PyMuPDF (fitz) y numpy.
 No modifica la plantilla. Escribe en test-results/ (temporal, ignorado por Git) o, con --generar-linea-base, en referencia/.
 """
 import argparse, hashlib, html, json, os, platform, re, shutil, subprocess, sys
@@ -16,7 +16,8 @@ sys.stdout.reconfigure(encoding='utf-8')
 AQUI = os.path.dirname(os.path.abspath(__file__))
 API = os.path.abspath(os.path.join(AQUI, '..', '..', '..', '..'))     # apps/api
 PLANTILLAS = os.path.join(API, 'src', 'manufacturing-sheets', 'templates', 'coex')
-PLANTILLA_DEFECTO = os.path.join(PLANTILLAS, 'HM-Template.html')
+FUENTE_PLANTILLA = os.path.join(PLANTILLAS, 'coex.template.html')   # fuente con marcadores @include
+COMPOSITOR = os.path.join(API, 'src', 'manufacturing-sheets', 'tools', 'compose-template.mjs')
 SALIDA = os.path.join(AQUI, 'test-results')
 CHROME = os.environ.get('CHROME_PATH', r'C:\Program Files\Google\Chrome\Application\chrome.exe')
 CHROME_FLAGS = ['--headless', '--disable-gpu', '--no-pdf-header-footer']   # parametros de impresion usados en la validacion
@@ -56,6 +57,13 @@ def renderizar_html(plantilla, plano):
         h = h.replace('{{%s}}' % k, v)
     pendientes = len(re.findall(r'\{\{|\}\}', sin_comentarios(h)))
     return h, faltan, sobran, pendientes
+
+
+def componer(destino):
+    """Compone coex.template.html (+ componentes) en `destino` con el compositor de Node."""
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    subprocess.run(['node', COMPOSITOR, '--source', FUENTE_PLANTILLA, '--out', destino], capture_output=True, text=True, check=True)
+    return destino
 
 
 def version_chrome():
@@ -113,7 +121,7 @@ def pixmap_a_array(pix):
 
 def producir(plantilla, datos_ruta, carpeta):
     os.makedirs(os.path.join(carpeta, 'images'), exist_ok=True)
-    shutil.copy(os.path.join(os.path.dirname(plantilla), 'images', 'DC_logo.jpg'), os.path.join(carpeta, 'images', 'DC_logo.jpg'))
+    shutil.copy(os.path.join(PLANTILLAS, 'images', 'DC_logo.jpg'), os.path.join(carpeta, 'images', 'DC_logo.jpg'))
     j, plano = cargar_datos(datos_ruta)
     h, faltan, sobran, pendientes = renderizar_html(plantilla, plano)
     html_ruta = os.path.join(carpeta, 'confpmg04.html'); pdf_ruta = os.path.join(carpeta, 'confpmg04.pdf')
@@ -136,15 +144,17 @@ def sha(ruta):
     return hashlib.sha256(open(ruta, 'rb').read()).hexdigest()
 
 
-def escribir_sumas(plantilla):
-    base = os.path.dirname(plantilla)
+def escribir_sumas(plantilla_compuesta):
+    """HM-Template.html = plantilla compuesta; las imagenes salen de templates/coex/images."""
     with open(os.path.join(AQUI, 'fuente', 'SHA256SUMS.txt'), 'w', encoding='utf-8', newline='\n') as f:
-        for ruta in ('HM-Template.html', 'images/DC_logo.jpg', 'images/COEX_Curvas_Trazado_Original.svg'):
-            f.write('%s  %s\n' % (sha(os.path.join(base, ruta)), ruta))
+        f.write('%s  HM-Template.html\n' % sha(plantilla_compuesta))
+        for ruta in ('images/DC_logo.jpg', 'images/COEX_Curvas_Trazado_Original.svg'):
+            f.write('%s  %s\n' % (sha(os.path.join(PLANTILLAS, ruta)), ruta))
 
 
 def generar_linea_base(plantilla, datos_ruta):
     ref = os.path.join(AQUI, 'referencia')
+    plantilla = plantilla or componer(os.path.join(SALIDA, 'HM-Template.composed.html'))
     escribir_sumas(plantilla)
     r = producir(plantilla, datos_ruta, ref)
     assert not r['faltan'] and not r['sobran'] and r['pendientes'] == 0, (r['faltan'], r['sobran'], r['pendientes'])
@@ -158,6 +168,7 @@ def generar_linea_base(plantilla, datos_ruta):
 def comparar(plantilla, datos_ruta):
     ref = os.path.join(AQUI, 'referencia')
     shutil.rmtree(SALIDA, ignore_errors=True)
+    plantilla = plantilla or componer(os.path.join(SALIDA, 'HM-Template.composed.html'))
     r = producir(plantilla, datos_ruta, SALIDA)
     base = json.load(open(os.path.join(ref, 'coordenadas.json'), encoding='utf-8'))
     base_txt = json.load(open(os.path.join(ref, 'texto_posiciones.json'), encoding='utf-8'))
@@ -165,7 +176,8 @@ def comparar(plantilla, datos_ruta):
     fallos = []
     # 0. huella de la plantilla (informativa: la regresion real es la de coordenadas y pixeles)
     sumas = {l.split('  ')[1].strip(): l.split('  ')[0] for l in open(os.path.join(AQUI, 'fuente', 'SHA256SUMS.txt'), encoding='utf-8') if l.strip()}
-    huella = 'igual a SHA256SUMS' if sha(plantilla) == sumas.get('HM-Template.html') else 'DISTINTA de SHA256SUMS (la plantilla cambio)'
+    huella = ('igual a SHA256SUMS (la composicion reproduce byte a byte la plantilla validada)' if sha(plantilla) == sumas.get('HM-Template.html')
+              else 'DISTINTA de SHA256SUMS (el HTML compuesto cambio; la regresion de coordenadas y pixeles decide si hay efecto visual)')
     # 1. placeholders
     if r['faltan']: fallos.append('placeholders sin dato: %s' % r['faltan'])
     if r['sobran']: fallos.append('datos sin placeholder: %s' % r['sobran'])
@@ -203,7 +215,7 @@ def comparar(plantilla, datos_ruta):
             pixeles += ' (INFORMATIVO: el entorno difiere en %s; solo es concluyente si coincide)' % distintas
     if not entorno_igual:
         print('Entorno actual: Chrome %s | linea base: Chrome %s' % (env['version_chrome'], env_base['version_chrome']))
-    print('Plantilla:', plantilla)
+    print('Plantilla compuesta:' if plantilla.endswith('composed.html') else 'Plantilla:', plantilla)
     print('Huella de la plantilla:', huella)
     print('Entorno igual al de la linea base:', 'SI' if entorno_igual else 'NO')
     print('Placeholders: faltan %d, sobran %d, pendientes %d' % (len(r['faltan']), len(r['sobran']), r['pendientes']))
@@ -219,7 +231,7 @@ def comparar(plantilla, datos_ruta):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--generar-linea-base', action='store_true')
-    ap.add_argument('--plantilla', default=PLANTILLA_DEFECTO)
+    ap.add_argument('--plantilla', default=None)
     ap.add_argument('--datos', default=os.path.join(AQUI, 'entrada', 'confpmg04.datos.json'))
     a = ap.parse_args()
     if a.generar_linea_base:
