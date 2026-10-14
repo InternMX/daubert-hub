@@ -44,6 +44,22 @@ El HTML compuesto de COEX es **byte a byte idéntico** a la plantilla validada (
   - El logotipo se carga como `.\images\DC_logo.jpg`, relativo al HTML.
 - Geometría validada: logotipo 183.82 × 42.57 pt (x 23.35, y 68.07); título en x 226–403 pt.
 
+## Scripts npm (workspace `@daubert/api`)
+
+Se ejecutan desde `apps/api` (`npm run <script>`) o desde la raíz del monorepo (`npm run <script> -w @daubert/api`).
+
+| Script | Qué hace |
+|---|---|
+| `sheets:compose` | Compone `templates/coex/coex.template.html` en `tmp/manufacturing-sheets/coex.composed.html` (carpeta ignorada por Git). |
+| `test:sheets-regression` | Compone, renderiza CONFPMG04 y compara contra la línea base de COEX. Código de salida 0 = OK, 1 = falla. |
+
+Requisitos:
+- `sheets:compose`: Node (probado con v24). Sin dependencias.
+- `test:sheets-regression`: además `python` en el PATH (en Linux/macOS puede ser `python3`; en ese caso ejecutar el script directamente),
+  los paquetes `pymupdf` y `numpy`, y Google Chrome (variable `CHROME_PATH` si no está en
+  `C:\Program Files\Google\Chrome\Application\chrome.exe`). Entorno de referencia: Windows 11, Chrome 155 y Calibri.
+- No forman parte de `npm test`, `lint` ni `build`, que siguen sin cambios.
+
 ## Regresión
 
 Ver `test/manufacturing-sheets/regression/coex-confpmg04/README.md`.

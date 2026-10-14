@@ -9,6 +9,8 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
+    "sheets:compose": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/coex/coex.template.html --out tmp/manufacturing-sheets/coex.composed.html",
+    "test:sheets-regression": "python test/manufacturing-sheets/regression/coex-confpmg04/comparar_regresion.py",
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "security:bootstrap-admin:prod": "ts-node --transpile-only scripts/bootstrap-admin-prod.ts",
     "security:reset-admin-password": "ts-node --transpile-only scripts/reset-admin-password.ts",
