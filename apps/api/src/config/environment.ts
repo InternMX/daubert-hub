@@ -45,6 +45,14 @@ export interface EnvironmentConfig {
     url: string | null;
     token: string | null;
   };
+  // Fase 2 de manufactura: cliente de solo lectura de BIND ERP (https://api.bind.com.mx). Opcional como las demás integraciones: sin BIND_API_KEY la consulta de
+  // productos informa NOT_CONFIGURED en tiempo de llamada y nunca bloquea el arranque. Las claves viven solo en variables de entorno del backend: no se registran
+  // en logs, no se devuelven en ninguna respuesta y no van al frontend ni al repositorio. Solo HTTPS y solo hosts *.bind.com.mx.
+  bind: {
+    baseUrl: string;
+    apiKey: string | null;
+    subscriptionKey: string | null;
+  };
   // Hub -> n8n availability check (GET /api/system/status). Optional like the other n8n webhook
   // configs: missing values report NOT_CONFIGURED at call time, never a boot-time crash. Never
   // logged, never returned in any API response.
@@ -68,6 +76,23 @@ function port(value: string | undefined, name: string, fallback?: number): numbe
     throw new Error(`Environment variable ${name} must be an integer between 1 and 65535`);
   }
   return parsed;
+}
+
+const DEFAULT_BIND_API_BASE_URL = 'https://api.bind.com.mx';
+
+function bindBaseUrl(value: string | undefined): string {
+  const raw = value?.trim() || DEFAULT_BIND_API_BASE_URL;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('Environment variable BIND_API_BASE_URL must be a valid URL');
+  }
+  // Nunca HTTP sin TLS ni un host ajeno a BIND (el destino de las credenciales no puede cambiarse por configuración).
+  if (url.protocol !== 'https:' || !(url.hostname === 'bind.com.mx' || url.hostname.endsWith('.bind.com.mx')) || url.username || url.password || url.port) {
+    throw new Error('Environment variable BIND_API_BASE_URL must be an https://*.bind.com.mx URL without credentials or port');
+  }
+  return url.origin;
 }
 
 function booleanFlag(value: string | undefined, name: string, fallback: boolean): boolean {
@@ -113,6 +138,11 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
     caterpillarReprocessWebhook: {
       url: env.CATERPILLAR_REPROCESS_WEBHOOK_URL?.trim() || null,
       token: env.CATERPILLAR_REPROCESS_WEBHOOK_TOKEN?.trim() || null
+    },
+    bind: {
+      baseUrl: bindBaseUrl(env.BIND_API_BASE_URL),
+      apiKey: env.BIND_API_KEY?.trim() || null,
+      subscriptionKey: env.BIND_SUBSCRIPTION_KEY?.trim() || null
     },
     n8nHealthWebhook: {
       url: env.N8N_HEALTH_WEBHOOK_URL?.trim() || null,

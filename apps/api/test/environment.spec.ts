@@ -121,4 +121,26 @@ describe('validateEnvironment', () => {
       });
     });
   });
+
+  describe('bind (fase 2 de manufactura)', () => {
+    it('es opcional: sin claves queda en null y usa la URL base oficial por HTTPS', () => {
+      expect(validateEnvironment(valid)).toMatchObject({ bind: { baseUrl: 'https://api.bind.com.mx', apiKey: null, subscriptionKey: null } });
+    });
+
+    it('lee las claves solo de variables de entorno y trata el espacio en blanco como no configurado', () => {
+      expect(validateEnvironment({ ...valid, BIND_API_KEY: ' k ', BIND_SUBSCRIPTION_KEY: 's' })).toMatchObject({ bind: { apiKey: 'k', subscriptionKey: 's' } });
+      expect(validateEnvironment({ ...valid, BIND_API_KEY: '   ' })).toMatchObject({ bind: { apiKey: null } });
+    });
+
+    it.each(['http://api.bind.com.mx', 'https://evil.example.com', 'https://api.bind.com.mx.evil.example', 'https://user:pw@api.bind.com.mx', 'https://api.bind.com.mx:8443', 'no-es-url'])(
+      'rechaza BIND_API_BASE_URL %s (solo HTTPS y hosts de bind.com.mx, sin credenciales)',
+      (url) => {
+        expect(() => validateEnvironment({ ...valid, BIND_API_BASE_URL: url })).toThrow('BIND_API_BASE_URL');
+      }
+    );
+
+    it('acepta un subdominio de bind.com.mx', () => {
+      expect(validateEnvironment({ ...valid, BIND_API_BASE_URL: 'https://sandbox.bind.com.mx/' })).toMatchObject({ bind: { baseUrl: 'https://sandbox.bind.com.mx' } });
+    });
+  });
 });

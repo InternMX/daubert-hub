@@ -23,6 +23,7 @@ import { AliasesModule } from './aliases/aliases.module';
 import { PaymentNotificationSettingsModule } from './payment-notification-settings/payment-notification-settings.module';
 import { SecurityModule } from './security/security.module';
 import { SystemModule } from './system/system.module';
+import { ManufacturingSheetsModule } from './manufacturing-sheets/manufacturing-sheets.module';
 
 @Module({
   imports: [
@@ -42,7 +43,8 @@ import { SystemModule } from './system/system.module';
     PaymentNotificationSettingsModule,
     ClientsModule,
     SecurityModule,
-    SystemModule
+    SystemModule,
+    ManufacturingSheetsModule
   ],
   providers: [
     // Order matters: CsrfOriginGuard runs FIRST, before any session lookup,

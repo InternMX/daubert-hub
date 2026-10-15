@@ -25,6 +25,7 @@
     "test:sheets-coex-azul": "python test/manufacturing-sheets/regression/coex-azul/verificar_coex_azul.py",
     "test:sheets-bolsa-natural": "python test/manufacturing-sheets/bolsa-natural/verificar_bolsa_natural.py",
     "test:sheets-termoencogible": "python test/manufacturing-sheets/termoencogible/verificar_termoencogible.py",
+    "bind:smoke": "ts-node --transpile-only scripts/bind-product-smoke.ts",
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "security:bootstrap-admin:prod": "ts-node --transpile-only scripts/bootstrap-admin-prod.ts",
     "security:reset-admin-password": "ts-node --transpile-only scripts/reset-admin-password.ts",
