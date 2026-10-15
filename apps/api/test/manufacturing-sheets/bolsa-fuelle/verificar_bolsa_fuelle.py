@@ -137,7 +137,12 @@ def verificar(datos_ruta, perfil):
     if todo_en_primera_pagina:
         bolsa = px(dx0 + 247, dy0 + 120)                         # centro de la bolsa (coordenadas del SVG)
         if not cerca(bolsa, hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno de la bolsa %s != %s' % (bolsa, datos['visual']['color_bolsa_hex']))
-        if not cerca(px(dx0 + 237, dy0 + 183), (36, 64, 98)): fallos.append('la barra inferior no es azul oscuro: %s' % (px(dx0 + 237, dy0 + 183),))
+        # sello inferior integrado: franja más clara (relleno + blanco al 50 %) DENTRO del cuerpo, sin barra por debajo ni fuera del contorno
+        sello_esperado = tuple(round((c + 255) / 2) for c in hexrgb(datos['visual']['color_bolsa_hex']))
+        if not cerca(px(dx0 + 247, dy0 + 170), sello_esperado, 4): fallos.append('el sello inferior no es una franja más clara del relleno: %s != %s' % (px(dx0 + 247, dy0 + 170), sello_esperado))
+        if not cerca(px(dx0 + 150, dy0 + 150), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('el cuerpo sobre el sello perdió el relleno')
+        if not cerca(px(dx0 + 247, dy0 + 180), (255, 255, 255)) or not cerca(px(dx0 + 90, dy0 + 170), (255, 255, 255)): fallos.append('hay una barra o base por fuera del cuerpo de la bolsa')
+        if 'fill="#244062"' in sin_comentarios(open(compuesta, encoding='utf-8').read()): fallos.append('el dibujo conserva la barra azul inferior (efecto de base)')
         cotas = hexrgb(datos['visual']['color_cotas_internas_hex'])
         franja = img[int((dy0 + 49) * escala):int((dy0 + 55) * escala), int((dx0 + 112) * escala):int((dx0 + 216) * escala)]
         n_cotas = int((np.abs(franja - np.array(cotas)).max(axis=2) <= 3).sum())

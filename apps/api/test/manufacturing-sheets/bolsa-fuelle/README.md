@@ -31,7 +31,7 @@ Son datos de prueba, no pedidos reales. Los bloques de firma son marcadores `SIN
 5. Las secciones respetan el orden, no se solapan y no salen del área imprimible; ningún texto se superpone ni sale de la página.
 6. La etiqueta cabe completa en su celda.
 7. Las cotas (ancho, largo, fuelles) aparecen dentro del dibujo.
-8. Colores impresos: relleno de la bolsa = `color_bolsa_hex`, barra inferior azul oscuro, cotas internas con su color, nota amarilla
+8. Colores impresos: relleno de la bolsa = `color_bolsa_hex`, sello inferior más claro integrado dentro del contorno (sin barra ni base por fuera), cotas internas con su color, nota amarilla
    y Etiqueta rosa (tolerancia de 2 niveles por canal por el rasterizado).
 
 ## Pendiente de medición

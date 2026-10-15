@@ -1,4 +1,4 @@
-    /* Dibujo técnico de BOLSA_FUELLE (debajo de Etiqueta). Contenedor de 400.4 x 189.8 pt, igual al ancho B:I de la hoja;
+    /* Dibujo técnico de BOLSA_FUELLE (debajo de Etiqueta). Contenedor de 400.4 x 178 pt, igual al ancho B:I de la hoja;
        el viewBox coincide con el contenedor. Sin borde, padding ni margen. */
-    .dibujo-caja { width: 400.4pt; max-width: 100%; height: 189.8pt; }
-    .dibujo-bolsa-svg { display: block; width: 100%; height: 189.8pt; }
+    .dibujo-caja { width: 400.4pt; max-width: 100%; height: 178pt; }
+    .dibujo-bolsa-svg { display: block; width: 100%; height: 178pt; }
