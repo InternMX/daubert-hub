@@ -15,6 +15,8 @@ import fitz
 import numpy as np
 
 sys.stdout.reconfigure(encoding='utf-8')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'common'))
+import hoja_pruebas as hp
 AQUI = os.path.dirname(os.path.abspath(__file__))
 API = os.path.abspath(os.path.join(AQUI, '..', '..', '..'))
 MS = os.path.join(API, 'src', 'manufacturing-sheets')
@@ -80,7 +82,7 @@ def verificar(datos_ruta, perfil):
         return fallos
     if not (datos['formato'] == perfil['formato'] == 'HOJA_PAQ'): fallos.append('el formato no es HOJA_PAQ')
     cfg = perfil['modalidades'][modalidad]
-    carpeta = os.path.join(SALIDA, caso); os.makedirs(os.path.join(carpeta, 'images'))
+    carpeta = os.path.join(SALIDA, caso); hp.preparar_carpeta(carpeta)
     shutil.copy(os.path.join(MS, 'templates', 'hoja-paq', 'images', 'DC_logo.jpg'), os.path.join(carpeta, 'images', 'DC_logo.jpg'))
     compuesta = os.path.join(carpeta, 'hoja-paq.composed.html')
     subprocess.run(['node', COMPOSITOR, '--source', FUENTE, '--out', compuesta], capture_output=True, text=True, check=True)
@@ -105,7 +107,7 @@ def verificar(datos_ruta, perfil):
     if pendientes: fallos.append('placeholders pendientes: %d' % pendientes)
     ruta_html = os.path.join(carpeta, 'hoja-paq.html'); ruta_pdf = os.path.join(carpeta, 'hoja-paq.pdf')
     open(ruta_html, 'w', encoding='utf-8-sig', newline='\n').write(h)
-    subprocess.run([CHROME] + CHROME_FLAGS + ['--print-to-pdf=' + ruta_pdf, 'file:///' + ruta_html.replace('\\', '/')], capture_output=True, check=True)
+    hp.imprimir_pdf(CHROME, CHROME_FLAGS, ruta_html, ruta_pdf)          # PDF temporal nuevo y validado: nunca se analiza un PDF anterior
     # 2. página carta
     pdf = fitz.open(ruta_pdf); pg = pdf[0]
     if len(pdf) != 1: fallos.append('páginas: %d (se esperaba 1)' % len(pdf))
@@ -115,10 +117,8 @@ def verificar(datos_ruta, perfil):
     # 3. DOM
     sonda = ruta_html.replace('.html', '.sonda.html')
     open(sonda, 'w', encoding='utf-8-sig', newline='\n').write(open(ruta_html, encoding='utf-8-sig').read().replace('</body>', JS_SONDA))
-    dom = subprocess.run([CHROME, '--headless', '--disable-gpu', '--window-size=1000,2400', '--dump-dom', 'file:///' + sonda.replace('\\', '/')],
-                         capture_output=True, text=True, encoding='utf-8').stdout
-    os.remove(sonda)
-    geo = json.loads(html.unescape(re.search(r'<pre id="out">(.*?)</pre>', dom, re.S).group(1)))
+    try: geo = hp.medir_dom(CHROME, sonda)
+    finally: os.remove(sonda)
     # 4. etiquetas, valores, títulos de dibujo
     for e in ETIQUETAS:
         if e not in texto: fallos.append('falta la etiqueta %r' % e)
@@ -154,7 +154,7 @@ def verificar(datos_ruta, perfil):
         r = geo[s]
         if abs((r[2] - r[0]) - ANCHO_BLOQUE) > 0.2 or abs(r[0] - IZQ_BLOQUE) > 0.2: fallos.append('%s no coincide con el bloque centrado: %s' % (s, r))
     escala = 2
-    pix = pg.get_pixmap(dpi=72 * escala); pix.save(os.path.join(carpeta, 'hoja-paq.png'))
+    pix = pg.get_pixmap(dpi=72 * escala); hp.guardar_png(pix, os.path.join(carpeta, 'hoja-paq.png'))
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3].astype(int)
     y0, y1 = int(geo['seccion-datos-generales'][1] * escala), int(geo['seccion-dibujo-hoja'][3] * escala)
     cols = np.where((img[y0:y1] < 245).any(axis=2).any(axis=0))[0]
@@ -204,9 +204,8 @@ if __name__ == '__main__':
     ap.add_argument('--datos', nargs='*')
     a = ap.parse_args()
     perfil = json.load(open(PERFIL, encoding='utf-8'))
-    shutil.rmtree(SALIDA, ignore_errors=True)
     archivos = a.datos or sorted(glob.glob(os.path.join(AQUI, 'datos', '*.datos.json')))
     print('Formato:', perfil['formato'], '| etapa', perfil['etapa'], '| casos:', len(archivos))
-    total = sum(len(verificar(f, perfil)) for f in archivos)
+    total = hp.ejecutar_casos(verificar, archivos, perfil)
     print('\nRESULTADO:', 'OK' if not total else 'FALLA (%d)' % total)
     sys.exit(1 if total else 0)

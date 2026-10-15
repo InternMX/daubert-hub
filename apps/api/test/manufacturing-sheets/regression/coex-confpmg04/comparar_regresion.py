@@ -13,6 +13,8 @@ import fitz
 import numpy as np
 
 sys.stdout.reconfigure(encoding='utf-8')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'common'))
+import hoja_pruebas as hp
 AQUI = os.path.dirname(os.path.abspath(__file__))
 API = os.path.abspath(os.path.join(AQUI, '..', '..', '..', '..'))     # apps/api
 PLANTILLAS = os.path.join(API, 'src', 'manufacturing-sheets', 'templates', 'coex')
@@ -73,8 +75,8 @@ def version_chrome():
 
 
 def imprimir_pdf(html_ruta, pdf_ruta):
-    url = 'file:///' + html_ruta.replace('\\', '/')
-    subprocess.run([CHROME] + CHROME_FLAGS + ['--print-to-pdf=' + pdf_ruta, url], capture_output=True, check=True)
+    # PDF temporal nuevo y validado: nunca se analiza (ni se aprueba) un PDF anterior; si falla se informa la ruta y no se toca el existente
+    hp.imprimir_pdf(CHROME, CHROME_FLAGS, html_ruta, pdf_ruta)
 
 
 JS_SONDA = r'''<script>
@@ -99,11 +101,8 @@ def medir_dom(html_ruta):
     sonda = html_ruta.replace('.html', '.sonda.html')
     t = open(html_ruta, encoding='utf-8-sig').read().replace('</body>', JS_SONDA)
     open(sonda, 'w', encoding='utf-8-sig', newline='\n').write(t)
-    url = 'file:///' + sonda.replace('\\', '/')
-    out = subprocess.run([CHROME] + ['--headless', '--disable-gpu', '--window-size=1000,2400', '--dump-dom', url],
-                         capture_output=True, text=True, encoding='utf-8').stdout
-    os.remove(sonda)
-    return json.loads(html.unescape(re.search(r'<pre id="out">(.*?)</pre>', out, re.S).group(1)))
+    try: return hp.medir_dom(CHROME, sonda)
+    finally: os.remove(sonda)
 
 
 def medir_pdf(pdf_ruta):
@@ -128,7 +127,7 @@ def producir(plantilla, datos_ruta, carpeta):
     open(html_ruta, 'w', encoding='utf-8-sig', newline='\n').write(h)
     imprimir_pdf(html_ruta, pdf_ruta)
     pdf_info, palabras, pg = medir_pdf(pdf_ruta)
-    pix = pg.get_pixmap(dpi=DPI_RASTER); pix.save(os.path.join(carpeta, 'confpmg04.png'))
+    pix = pg.get_pixmap(dpi=DPI_RASTER); hp.guardar_png(pix, os.path.join(carpeta, 'confpmg04.png'))
     dom = medir_dom(html_ruta)
     return dict(faltan=faltan, sobran=sobran, pendientes=pendientes, pdf=pdf_info, palabras=palabras, dom=dom, png=pix)
 
@@ -167,7 +166,6 @@ def generar_linea_base(plantilla, datos_ruta):
 
 def comparar(plantilla, datos_ruta):
     ref = os.path.join(AQUI, 'referencia')
-    shutil.rmtree(SALIDA, ignore_errors=True)
     plantilla = plantilla or componer(os.path.join(SALIDA, 'HM-Template.composed.html'))
     r = producir(plantilla, datos_ruta, SALIDA)
     base = json.load(open(os.path.join(ref, 'coordenadas.json'), encoding='utf-8'))
@@ -234,7 +232,11 @@ if __name__ == '__main__':
     ap.add_argument('--plantilla', default=None)
     ap.add_argument('--datos', default=os.path.join(AQUI, 'entrada', 'confpmg04.datos.json'))
     a = ap.parse_args()
-    if a.generar_linea_base:
-        generar_linea_base(a.plantilla, a.datos)
-    else:
-        sys.exit(comparar(a.plantilla, a.datos))
+    try:
+        if a.generar_linea_base:
+            generar_linea_base(a.plantilla, a.datos)
+        else:
+            sys.exit(comparar(a.plantilla, a.datos))
+    except hp.ErrorRegeneracion as e:
+        print('\nRESULTADO: FALLA (1)\n - ERROR DE REGENERACIÓN (no se compara ningún PDF anterior): %s' % e)
+        sys.exit(1)

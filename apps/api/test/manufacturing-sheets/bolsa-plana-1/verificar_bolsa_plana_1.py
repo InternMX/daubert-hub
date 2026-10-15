@@ -10,6 +10,8 @@ import fitz
 import numpy as np
 
 sys.stdout.reconfigure(encoding='utf-8')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'common'))
+import hoja_pruebas as hp
 AQUI = os.path.dirname(os.path.abspath(__file__))
 API = os.path.abspath(os.path.join(AQUI, '..', '..', '..'))
 MS = os.path.join(API, 'src', 'manufacturing-sheets')
@@ -66,7 +68,7 @@ def verificar(datos_ruta, perfil):
     datos = json.load(open(datos_ruta, encoding='utf-8'))
     caso = datos['caso']
     if not (datos['formato'] == perfil['formato'] == 'BOLSA_PLANA_1'): fallos.append('el formato no es BOLSA_PLANA_1')
-    carpeta = os.path.join(SALIDA, caso); os.makedirs(os.path.join(carpeta, 'images'))
+    carpeta = os.path.join(SALIDA, caso); hp.preparar_carpeta(carpeta)
     shutil.copy(os.path.join(MS, 'templates', 'bolsa-plana-1', 'images', 'DC_logo.jpg'), os.path.join(carpeta, 'images', 'DC_logo.jpg'))
     compuesta = os.path.join(carpeta, 'bolsa-plana-1.composed.html')
     subprocess.run(['node', COMPOSITOR, '--source', FUENTE, '--out', compuesta], capture_output=True, text=True, check=True)
@@ -95,9 +97,7 @@ def verificar(datos_ruta, perfil):
         if 'class="rollo' in sc or 'curva' in sc or 'doblado' in sc: fallos.append('el dibujo contiene elementos de otros formatos')
     ruta_html = os.path.join(carpeta, 'bolsa-plana-1.html'); ruta_pdf = os.path.join(carpeta, 'bolsa-plana-1.pdf')
     open(ruta_html, 'w', encoding='utf-8-sig', newline='\n').write(h)
-    t0 = time.time() - 2
-    subprocess.run([CHROME] + CHROME_FLAGS + ['--print-to-pdf=' + ruta_pdf, 'file:///' + ruta_html.replace('\\', '/')], capture_output=True, check=True)
-    if not os.path.exists(ruta_pdf) or os.path.getmtime(ruta_pdf) < t0: fallos.append('el PDF no se regeneró (¿está abierto en un visor? ciérrelo y repita la prueba)')
+    hp.imprimir_pdf(CHROME, CHROME_FLAGS, ruta_html, ruta_pdf)          # PDF temporal nuevo y validado: nunca se analiza un PDF anterior
     # 2. página carta
     pdf = fitz.open(ruta_pdf); pg = pdf[0]
     if len(pdf) != 1: fallos.append('páginas: %d (se esperaba 1)' % len(pdf))
@@ -108,10 +108,8 @@ def verificar(datos_ruta, perfil):
     ids = [s for s in secciones if s != 'encabezado']
     sonda = ruta_html.replace('.html', '.sonda.html')
     open(sonda, 'w', encoding='utf-8-sig', newline='\n').write(open(ruta_html, encoding='utf-8-sig').read().replace('</body>', sonda_js(ids)))
-    dom = subprocess.run([CHROME, '--headless', '--disable-gpu', '--window-size=1000,2400', '--dump-dom', 'file:///' + sonda.replace('\\', '/')],
-                         capture_output=True, text=True, encoding='utf-8').stdout
-    os.remove(sonda)
-    geo = json.loads(html.unescape(re.search(r'<pre id="out">(.*?)</pre>', dom, re.S).group(1)))
+    try: geo = hp.medir_dom(CHROME, sonda)
+    finally: os.remove(sonda)
     # 4. etiquetas, valores y nota
     for e in ETIQUETAS_BP1 + (ETIQUETAS_BP2 if bp2 else []):
         if e not in texto: fallos.append('falta la etiqueta %r' % e)
@@ -149,7 +147,7 @@ def verificar(datos_ruta, perfil):
         r = geo['seccion-dibujo-bolsa']
         if abs((r[2] - r[0]) - ANCHO_BLOQUE) > 0.2 or abs(r[0] - IZQ_BLOQUE) > 0.2: fallos.append('el dibujo no coincide con el bloque centrado: %s' % (r,))
     escala = 2
-    pix = pg.get_pixmap(dpi=72 * escala); pix.save(os.path.join(carpeta, 'bolsa-plana-1.png'))
+    pix = pg.get_pixmap(dpi=72 * escala); hp.guardar_png(pix, os.path.join(carpeta, 'bolsa-plana-1.png'))
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3].astype(int)
     ultimo = 'seccion-firmas' if bp2 else 'seccion-peso'
     y0, y1 = int(geo['seccion-datos-generales'][1] * escala), int(geo['seccion-nota' if bp2 else 'seccion-peso'][3] * escala)
@@ -231,9 +229,8 @@ if __name__ == '__main__':
     a = ap.parse_args()
     perfil = json.load(open(PERFIL, encoding='utf-8'))
     if a.salida: SALIDA = os.path.abspath(a.salida)
-    shutil.rmtree(SALIDA, ignore_errors=True)
     archivos = a.datos or sorted(glob.glob(os.path.join(AQUI, 'datos', '*.datos.json')))
     print('Formato:', perfil['formato'], '| etapa', perfil['etapa'], '| casos:', len(archivos))
-    total = sum(len(verificar(f, perfil)) for f in archivos)
+    total = hp.ejecutar_casos(verificar, archivos, perfil)
     print('\nRESULTADO:', 'OK' if not total else 'FALLA (%d)' % total)
     sys.exit(1 if total else 0)
