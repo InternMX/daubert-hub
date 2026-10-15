@@ -202,6 +202,15 @@ def verificar(datos_ruta, perfil):
         reg1 = img[int(d1[1] * escala):int(d1[3] * escala), int(d1[0] * escala):int(d1[2] * escala)]
         azules = int(((reg1[:, :, 2] > 150) & (reg1[:, :, 0] < 120) & (reg1[:, :, 2] - reg1[:, :, 0] > 60)).sum())
         if azules < 200: fallos.append('no se imprimen los trazos azules de la figura original (%d px)' % azules)
+        # 9b. la figura queda dentro de su contenedor (con margen) y las franjas azules de los dos encabezados de dibujo se imprimen continuas
+        im = geo.get('imagen-rollo')
+        if not im or im[1] < d1[1] + 1 or im[3] > d1[3] - 1 or im[0] < d1[0] or im[2] > d1[2]: fallos.append('la imagen del rollo doblado no queda dentro de su contenedor con margen: %s / %s' % (im, d1))
+        for s_enc in ('encabezado-dibujo-rollo-doblado', 'encabezado-dibujo-presentacion-final'):
+            e = geo[s_enc + '-tabla']
+            for xa, xb in ((e[0] + 1, e[0] + 60), (e[2] - 60, e[2] - 1)):       # laterales sin texto: toda la franja debe ser azul #366092
+                reg = img[int((e[1] + 0.3) * escala):int((e[3] - 0.3) * escala), int(xa * escala):int(xb * escala)]
+                malos = int((reg.min(axis=2) > 200).sum())       # blanco (fondo de la figura); los bordes antialias con otras filas no cuentan
+                if malos: fallos.append('la franja %s tiene %d px que son blancos dentro de la franja #366092 (figura o fondo blanco invadiéndola)' % (s_enc, malos))
         # 10. presentación final: rectángulo blanco con contorno negro, sin color de producto; cotas dinámicas
         d2 = geo['seccion-dibujo-presentacion-final']
         t2 = ' '.join(w[4] for w in sorted(dentro(palabras, d2), key=lambda w: (round(w[1]), w[0])))
