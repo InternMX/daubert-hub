@@ -142,6 +142,13 @@ def verificar(datos_ruta, perfil):
         if not cerca(px(dx0 + 247, dy0 + 170), sello_esperado, 4): fallos.append('el sello inferior no es una franja más clara del relleno: %s != %s' % (px(dx0 + 247, dy0 + 170), sello_esperado))
         if not cerca(px(dx0 + 150, dy0 + 150), hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('el cuerpo sobre el sello perdió el relleno')
         if not cerca(px(dx0 + 247, dy0 + 180), (255, 255, 255)) or not cerca(px(dx0 + 90, dy0 + 170), (255, 255, 255)): fallos.append('hay una barra o base por fuera del cuerpo de la bolsa')
+        # bordes negros del sello (dentro de la caja de 270 x 12 pt): superior 1.2, inferior 1.8 y laterales 1.2 pt; el lado exterior queda en blanco
+        oscuro = lambda c: c is not None and max(c) < 110
+        for nombre, x, y in (('superior', 247, 164.6), ('inferior', 247, 175.1), ('izquierdo', 112.6, 170), ('derecho', 381.4, 170)):
+            if not oscuro(px(dx0 + x, dy0 + y)): fallos.append('el borde %s del sello no es negro: %s' % (nombre, px(dx0 + x, dy0 + y)))
+        if not oscuro(px(dx0 + 160, dy0 + 175.1)) or not oscuro(px(dx0 + 330, dy0 + 164.6)): fallos.append('los bordes superior e inferior del sello no son continuos')
+        if oscuro(px(dx0 + 247, dy0 + 169.6)): fallos.append('el interior del sello tiene líneas oscuras')
+        if oscuro(px(dx0 + 109.5, dy0 + 170)) or oscuro(px(dx0 + 384.5, dy0 + 170)): fallos.append('el sello sobresale del ancho del cuerpo')
         if 'fill="#244062"' in sin_comentarios(open(compuesta, encoding='utf-8').read()): fallos.append('el dibujo conserva la barra azul inferior (efecto de base)')
         cotas = hexrgb(datos['visual']['color_cotas_internas_hex'])
         franja = img[int((dy0 + 49) * escala):int((dy0 + 55) * escala), int((dx0 + 112) * escala):int((dx0 + 216) * escala)]

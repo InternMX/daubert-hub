@@ -11,10 +11,14 @@
 
         <!-- Bolsa (esquemática, sin escala): cuerpo con fuelle izquierdo y derecho simétricos y franja central. Relleno: {{color_bolsa_hex}}. -->
         <rect class="bolsa" x="112" y="34" width="270" height="142" fill="{{color_bolsa_hex}}" stroke="#000" stroke-width="0.84"/>
-        <!-- Sello inferior integrado en la bolsa: franja de 12 pt DENTRO del contorno del cuerpo (mismo ancho, sin sobresalir ni apoyarse en una base),
-             en un tono más claro del mismo relleno (blanco al 50 %) y separada del cuerpo por una línea fina. Sustituye a la barra azul que sobresalía por debajo. -->
+        <!-- Sello inferior integrado en la bolsa: franja de 12 pt DENTRO del contorno del cuerpo (x 112-382, y 164-176; mismo ancho, sin sobresalir ni apoyarse
+             en una base), con el relleno en un tono más claro (blanco al 50 %). Sus bordes negros son rectángulos rellenos dentro de esa caja (no trazos centrados,
+             que sobresaldrían): superior 1.2 pt, inferior 1.8 pt y laterales 1.2 pt. Sin sombras, perspectiva ni segunda cara. -->
         <rect class="sello-inferior" x="112" y="164" width="270" height="12" fill="#fff" fill-opacity="0.5"/>
-        <line x1="112" y1="164" x2="382" y2="164" stroke="#000" stroke-width="0.84"/>
+        <rect class="sello-borde" x="112" y="164" width="270" height="1.2" fill="#000"/>
+        <rect class="sello-borde" x="112" y="174.2" width="270" height="1.8" fill="#000"/>
+        <rect class="sello-borde" x="112" y="164" width="1.2" height="12" fill="#000"/>
+        <rect class="sello-borde" x="380.8" y="164" width="1.2" height="12" fill="#000"/>
         <!-- Límites de los fuelles -->
         <line x1="216" y1="34" x2="216" y2="176" stroke="#000" stroke-width="0.84" stroke-dasharray="2.5 2"/>
         <line x1="278" y1="34" x2="278" y2="176" stroke="#000" stroke-width="0.84" stroke-dasharray="2.5 2"/>
