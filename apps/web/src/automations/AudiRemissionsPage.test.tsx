@@ -114,7 +114,7 @@ describe('AudiRemissionsPage', () => {
       await user.click(within(row).getByText('Completado'));
       const dialog = await screen.findByRole('dialog', { name: 'Detalle de ejecución Audi' });
       expect(await within(dialog).findByText('entrada.xlsx')).toBeInTheDocument();
-      expect(within(dialog).getByRole('table', { name: 'Remisiones de la ejecución Audi' })).toBeInTheDocument();
+      expect(within(dialog).getByRole('article', { name: 'Remisión Audi 9000 — REMISION_AUDI' })).toBeInTheDocument();
       expect(within(dialog).queryByRole('button', { name: /Reprocesar|Ajustar|Editar/ })).not.toBeInTheDocument();
       expect(getAudiExecution).toHaveBeenCalledWith('8');
       await user.click(within(dialog).getByRole('button', { name: 'Cerrar' }));

@@ -22,12 +22,37 @@ describe('AudiExecutionDetailDialog', () => {
     expect(screen.getByText(detail.executionId)).toBeInTheDocument();
     expect(screen.getByText('Completado')).toBeInTheDocument();
     expect(screen.getByText('27 ago 2026 · 16:39')).toBeInTheDocument();
-    const table = screen.getByRole('table', { name: 'Remisiones de la ejecución Audi' });
-    expect(within(table).getByText('9007199254740994')).toBeInTheDocument();
-    expect(within(table).getByText('27 ago 2026')).toBeInTheDocument();
-    expect(within(table).getByText('Generada')).toBeInTheDocument();
+    const card = screen.getByRole('article', { name: 'Remisión Audi 9007199254740994 — REMISION_AUDI' });
+    expect(within(card).getByText('Folio 9007199254740994 — REMISION_AUDI')).toBeInTheDocument();
+    expect(within(card).getByText('27 ago 2026')).toBeInTheDocument();
+    expect(within(card).getByText('Generada')).toBeInTheDocument();
+    expect(within(card).getByText('11')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.queryByText('Diagnóstico registrado')).not.toBeInTheDocument();
     expect(getMock).toHaveBeenCalledTimes(1);
+  });
+  it('renders five persisted remissions as individually labelled cards in the scrolling dialog', async () => {
+    const remittances = Array.from({ length: 5 }, (_, index) => ({
+      ...detail.remittances[0]!, remissionId: String(11 + index), folio: String(9007199254740994n + BigInt(index))
+    }));
+    getMock.mockResolvedValue({ ...detail, executionId: '8', generatedCount: 5, remittances });
+    render(<AudiExecutionDetailDialog executionId="8" onClose={vi.fn()} />);
+    expect(await screen.findByText('entrada.xlsx')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Detalle de ejecución Audi' });
+    expect(within(dialog).getAllByRole('article')).toHaveLength(5);
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['General', 'Documento origen', 'Remisiones generadas']);
+    for (const remission of remittances) {
+      const card = within(dialog).getByRole('article', { name: `Remisión Audi ${remission.folio} — REMISION_AUDI` });
+      expect(within(card).getByText(`Folio ${remission.folio} — REMISION_AUDI`)).toBeInTheDocument();
+      expect(within(card).getByText(remission.remissionId)).toBeInTheDocument();
+      expect(within(card).getByText('27 ago 2026')).toBeInTheDocument();
+      expect(within(card).getByText('Generada')).toBeInTheDocument();
+    }
+    expect(dialog).toHaveClass('MuiDialog-paperWidthMd', 'MuiDialog-paperFullWidth', 'MuiDialog-paperScrollPaper');
+    expect(within(dialog).getByText('Los folios mostrados corresponden a remisiones registradas; no reconstruyen reservas históricas.')).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('button')).toHaveLength(1);
+    expect(within(dialog).getByRole('button', { name: 'Cerrar' })).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith('8');
   });
   it('renders zero remissions and missing metadata as an ordinary empty state', async () => {
     getMock.mockResolvedValue({ ...detail, generatedCount: 0, remittances: [], sourceDocument: null, finishedAt: null });
@@ -36,6 +61,7 @@ describe('AudiExecutionDetailDialog', () => {
     expect(screen.getAllByText('No disponible')).toHaveLength(2);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
   });
   it('shows a recorded error on a failed execution even without remissions', async () => {
     getMock.mockResolvedValue({ ...detail, outcome: 'FAILED', generatedCount: 0, remittances: [], latestErrorMessage: 'No fue posible generar el documento.' });

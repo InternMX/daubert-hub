@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Snackbar, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/authContext.core';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
@@ -33,21 +33,13 @@ import {
 } from './caterpillarPresentation';
 import { lifecycleStatusLabel } from './automationOverviewPresentation';
 import { executionOpenButtonSx, executionRowSx } from './executionPresentation';
+import { DetailSectionHeading, ExecutionMetaRow as MetaRow } from './ExecutionDetailPresentation';
 
 const automationCode = 'REMISIONES_CATERPILLAR';
 const EXECUTIONS_PAGE_SIZE = 25;
 
 function SectionSpinner({ label }: { label: string }) {
   return <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress aria-label={label} size={28} /></Box>;
-}
-
-function MetaRow({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 40%) 1fr', columnGap: 1.5, py: 0.5, alignItems: 'center' }}>
-      <Typography color="text.secondary" variant="body2">{label}</Typography>
-      <Box sx={{ overflowWrap: 'anywhere' }}>{value}</Box>
-    </Box>
-  );
 }
 
 function CaterpillarStatusChip({ status }: { status: 'ACTIVE' | 'INACTIVE' }) {
@@ -335,10 +327,6 @@ function ExecutionsSection({ page, onPageChange, onSelect, refreshKey }: Executi
       </Stack>
     </Paper>
   );
-}
-
-function DetailSectionHeading({ children }: { children: ReactNode }) {
-  return <Typography variant="h3" sx={{ fontSize: '0.9375rem', fontWeight: 700, mt: 3, mb: 1 }}>{children}</Typography>;
 }
 
 // Phase 12C §D: ADMIN-only, and only presented when the displayed outcome is FAILED (ERROR) or
