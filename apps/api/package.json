@@ -22,6 +22,7 @@
     "sheets:compose:termoencogible": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/termoencogible/termoencogible.template.html --out tmp/manufacturing-sheets/termoencogible.composed.html",
     "test:sheets-common": "python test/manufacturing-sheets/common/test_hoja_pruebas.py",
     "test:sheets-coex-estres": "python test/manufacturing-sheets/regression/coex-confpmg04/comparar_estres.py",
+    "test:sheets-coex-azul": "python test/manufacturing-sheets/regression/coex-azul/verificar_coex_azul.py",
     "test:sheets-bolsa-natural": "python test/manufacturing-sheets/bolsa-natural/verificar_bolsa_natural.py",
     "test:sheets-termoencogible": "python test/manufacturing-sheets/termoencogible/verificar_termoencogible.py",
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
