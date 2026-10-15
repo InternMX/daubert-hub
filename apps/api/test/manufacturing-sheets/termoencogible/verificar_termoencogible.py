@@ -33,8 +33,8 @@ IZQ_BLOQUE = (612 - ANCHO_BLOQUE) / 2
 HOLGURA_MINIMA = 20.0                         # espacio libre mínimo al final de la página, también con textos extensos (TE-2)
 ETIQUETAS_TE1 = ['Cliente:', 'Fecha:', 'Resina VCI:', 'Producto:', 'Color:', 'Código DCMX:', 'Descripción:', 'Composición:', 'PMG', 'CP5000', 'Natural',
                  'Presentación:', 'Rollo', 'Paquete', 'Hoja:', 'Doblada', 'Extendida', 'Medidas:', 'Unidad de Medidas:', 'Ancho:', 'Largo:', 'Calibre:', 'Peso lb:']
-ETIQUETAS_TE2 = ['Etiqueta:', 'Dibujo de rollo doblado', 'Dibujo de presentación final', 'Apertura', 'Inicio']
-PROHIBIDAS = ['Cantidad', 'Fuelle', 'Capa', 'Dibujo Bolsa', 'Dibujo Hoja', 'Dibujo de hoja', 'PESO', 'Notas:']   # no pertenecen a TERMOENCOGIBLE
+ETIQUETAS_TE2 = ['Etiqueta:', 'Dibujo de rollo doblado', 'Dibujo de presentación final', 'Inicio']
+PROHIBIDAS = ['Apertura', 'Cantidad', 'Fuelle', 'Capa', 'Dibujo Bolsa', 'Dibujo Hoja', 'Dibujo de hoja', 'PESO', 'Notas:']   # no pertenecen a TERMOENCOGIBLE
 SEC_TE1 = ['encabezado', 'seccion-datos-generales', 'seccion-tipo-hoja', 'seccion-medidas', 'seccion-peso']
 SEC_TE2 = ['seccion-etiqueta', 'encabezado-dibujo-rollo-doblado', 'seccion-dibujo-rollo-doblado', 'encabezado-dibujo-presentacion-final',
            'seccion-dibujo-presentacion-final', 'seccion-firmas']
@@ -151,9 +151,11 @@ def verificar(datos_ruta, perfil):
         if previo and r[1] < previo[1][3] - 1.5: fallos.append('la sección %s se solapa con %s (%.1f < %.1f)' % (s, previo[0], r[1], previo[1][3]))
         if r[0] < 0 or r[2] > 612 or r[3] > LIMITE_Y + 0.5: fallos.append('la sección %s sale del área imprimible: %s' % (s, r))
         previo = (s, r)
+    cota_pliegue = set(str(datos['datos'].get('medida_pliegue', '')).split())
     for i, a in enumerate(palabras):
         for b in palabras[i + 1:]:
             ix, iy = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+            if te2 and a[4] in cota_pliegue and b[4] in cota_pliegue: continue      # texto rotado de medida_pliegue: sus cajas se solapan sin que el texto lo haga
             if ix > 0.8 and iy > 2: fallos.append('superposición de texto: %r y %r' % (a[4], b[4]))
         if a[0] < IZQ_BLOQUE - 1 or a[2] > IZQ_BLOQUE + ANCHO_BLOQUE + 1 or a[1] < 39 or a[3] > LIMITE_Y: fallos.append('texto fuera del bloque o del área imprimible: %r' % a[4])
     # 6. centrado
@@ -195,7 +197,7 @@ def verificar(datos_ruta, perfil):
         t1 = ' '.join(w[4] for w in sorted(dentro(palabras, d1), key=lambda w: (round(w[1]), w[0])))
         for k in ('ancho_doblado', 'medida_pliegue'):
             if ' '.join(str(datos['datos'][k]).split()) not in t1: fallos.append('el dibujo del rollo doblado no muestra %s (%s)' % (k, datos['datos'][k]))
-        for rotulo in ('Apertura', 'Inicio'):
+        for rotulo in ('Inicio',):
             if rotulo not in t1: fallos.append('el dibujo del rollo doblado no muestra «%s»' % rotulo)
         reg1 = img[int(d1[1] * escala):int(d1[3] * escala), int(d1[0] * escala):int(d1[2] * escala)]
         azules = int(((reg1[:, :, 2] > 150) & (reg1[:, :, 0] < 120) & (reg1[:, :, 2] - reg1[:, :, 0] > 60)).sum())

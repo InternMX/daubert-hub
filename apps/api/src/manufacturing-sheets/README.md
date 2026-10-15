@@ -25,7 +25,7 @@ templates/
     drawing-title/           franja azul claro de dibujo (parámetros id y titulo)
     sheet-drawing/           Dibujo Hoja: rectángulo con cotas ancho y largo (HOJA_PAQ)
     flat-bag-drawing/        bolsa plana con línea de sello de fondo (BOLSA_PLANA_1)
-    folded-roll-drawing/     dibujo de rollo doblado de TERMOENCOGIBLE: figura original (imagen) con Apertura, Inicio y cotas
+    folded-roll-drawing/     dibujo de rollo doblado de TERMOENCOGIBLE: figura original (imagen, sin «Apertura») con Inicio y cotas
     final-presentation-drawing/  presentación final de TERMOENCOGIBLE: rectángulo blanco con contorno negro y cotas
     roll-drawing/            Dibujo de rollo; geometry/extendido.html y geometry/doblado.html, cota ancho_rollo (sin uso por ahora; para ROLLO_CONTINUO)
     header/

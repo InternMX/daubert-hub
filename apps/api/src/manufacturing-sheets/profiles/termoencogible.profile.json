@@ -70,7 +70,7 @@
     },
     {
       "ruta": "components/folded-roll-drawing/folded-roll-drawing.html",
-      "uso": "Dibujo de rollo doblado: figura original (imagen), «Apertura», «Inicio» y cotas {{ancho_doblado}} y {{medida_pliegue}}"
+      "uso": "Dibujo de rollo doblado: figura original (imagen, sin «Apertura»), «Inicio» y cotas {{ancho_doblado}} y {{medida_pliegue}}"
     },
     {
       "ruta": "components/final-presentation-drawing/final-presentation-drawing.html",
@@ -148,7 +148,7 @@
       "representación gráfica de la modalidad EXTENDIDA: el validador la rechaza hasta confirmarla"
     ],
     "dibujo": [
-      "posición de «Apertura», «Inicio» y de las cotas 1.60 / 0.70 sobre la figura: provisional hasta contrastarla con la captura del Excel",
+      "«Apertura» se eliminó a propósito del machote y no debe volver a incluirse; posición de «Inicio» y de las cotas 1.60 / 0.70 ajustada a la captura definitiva",
       "regla de las cotas ancho_doblado y medida_pliegue: no hay regla confirmada; son datos independientes"
     ]
   },
