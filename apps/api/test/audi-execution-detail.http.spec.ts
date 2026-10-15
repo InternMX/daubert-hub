@@ -7,6 +7,7 @@ import { AudiExecutionsController } from '../src/automations/remisiones-audi/aud
 import { AudiExecutionsService } from '../src/automations/remisiones-audi/audi-executions.service';
 import { SafeExceptionFilter } from '../src/common/http-exception.filter';
 import { RolesGuard } from '../src/security/roles.guard';
+import { untrustedAudiDiagnostics } from './support/audi-diagnostic-fixtures';
 
 // Session stand-in only; real role authorization, controller and service, no database writes.
 class FakeAuthGuard implements CanActivate {
@@ -58,13 +59,14 @@ describe('Audi detail HTTP (mock repository, no PostgreSQL)', () => {
     expect(body.data).toMatchObject({ executionId: execution.ejecucion_id, outcome: 'COMPLETED', generatedCount: 1,
       sourceDocument: { documentId: '103', filename: 'entrada.xlsx' }, remittances: [{ folio: remission.folio, remissionId: '12', documentDate: '2026-08-27' }] });
     expect(repository.findById).toHaveBeenCalledWith(execution.ejecucion_id);
+    expect(body.data.latestErrorMessage).toBeNull();
     expect(JSON.stringify(body)).not.toMatch(/pdf_path|ruta_archivo|reservations|n8n|run_name/);
   });
   it('returns 200 with empty remittances, even without source metadata or final timestamp', async () => {
     repository.findById.mockResolvedValue({ ...execution, documento_id: null, source_filename: null, finished_at: null });
     repository.findRemissionsByExecutionId.mockResolvedValue([]);
     const { body } = await request(app.getHttpServer()).get(path + execution.ejecucion_id).set('x-test-role', 'GENERAL').expect(200);
-    expect(body.data).toMatchObject({ generatedCount: 0, remittances: [], sourceDocument: null, finishedAt: null });
+    expect(body.data).toMatchObject({ generatedCount: 0, remittances: [], sourceDocument: null, finishedAt: null, latestErrorMessage: null });
   });
   it.each(['0', '-1', 'abc', '1.5', '01', '9223372036854775808', '1%27%20OR%201=1'])('rejects invalid id %s before querying', async (id) => {
     await request(app.getHttpServer()).get(path + id).set('x-test-role', 'GENERAL').expect(400);
@@ -74,17 +76,31 @@ describe('Audi detail HTTP (mock repository, no PostgreSQL)', () => {
     await request(app.getHttpServer()).get(path + id).set('x-test-role', 'GENERAL').expect(404);
     expect(repository.findRemissionsByExecutionId).not.toHaveBeenCalled();
   });
-  it('shows the recorded error even when there are no remissions', async () => {
+  it('reports that an error was recorded without publishing it, even with no remissions', async () => {
     repository.findById.mockResolvedValue({ ...execution, execution_state: 'ERROR', error_message: 'No fue posible generar el documento.' });
     repository.findRemissionsByExecutionId.mockResolvedValue([]);
     const { body } = await request(app.getHttpServer()).get(path + execution.ejecucion_id).set('x-test-role', 'GENERAL').expect(200);
-    expect(body.data).toMatchObject({ outcome: 'FAILED', latestErrorMessage: 'No fue posible generar el documento.', generatedCount: 0 });
+    expect(body.data).toMatchObject({ outcome: 'FAILED', latestErrorMessage: 'La ejecución registró un error. Consulta los registros autorizados para más información.', generatedCount: 0, remittances: [] });
+    expect(JSON.stringify(body)).not.toContain('No fue posible generar el documento');
+  });
+  it.each(untrustedAudiDiagnostics)('GENERAL receives no original diagnostic fragments for $label', async ({ message, fragments }) => {
+    repository.findById.mockResolvedValue({ ...execution, execution_state: 'ERROR', error_message: message });
+    const { body } = await request(app.getHttpServer()).get(path + execution.ejecucion_id).set('x-test-role', 'GENERAL').expect(200);
+    expect(body).toEqual({ data: {
+      executionId: execution.ejecucion_id, outcome: 'FAILED', startedAt: execution.started_at, finishedAt: execution.finished_at,
+      generatedCount: 1, sourceDocument: { documentId: '103', filename: 'entrada.xlsx' },
+      latestErrorMessage: 'La ejecución registró un error. Consulta los registros autorizados para más información.',
+      remittances: [{ remissionId: '12', seriesCode: 'REMISION_AUDI', folio: remission.folio, documentDate: '2026-08-27', status: 'GENERADA' }]
+    } });
+    const serialized = JSON.stringify(body);
+    for (const fragment of fragments) expect(serialized).not.toContain(fragment);
+    expect(serialized).not.toContain(message);
   });
   it.each(['C:\\private\\input.xlsx', 'password: secret', '{"payload":"secret"}', 'https://internal/?token=secret', 'Error\nstack trace'])('withholds unsafe diagnostic %s and source paths', async (message) => {
     repository.findById.mockResolvedValue({ ...execution, error_message: message, source_filename: 'C:\\private\\entrada.xlsx' });
     const { body } = await request(app.getHttpServer()).get(path + execution.ejecucion_id).set('x-test-role', 'GENERAL').expect(200);
     expect(body.data.sourceDocument.filename).toBe('entrada.xlsx');
-    expect(body.data.latestErrorMessage).toBe('Existe un diagnóstico registrado cuyo contenido técnico no se muestra.');
+    expect(body.data.latestErrorMessage).toBe('La ejecución registró un error. Consulta los registros autorizados para más información.');
     expect(JSON.stringify(body)).not.toMatch(/private|secret|internal|stack trace/);
   });
 });
