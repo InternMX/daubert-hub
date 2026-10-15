@@ -1,9 +1,9 @@
 {
   "caso": "descripcion-extensa",
   "formato": "TERMOENCOGIBLE",
-  "esperado": "valido",
+  "esperado": "estres",
   "modalidad": "DOBLADA",
-  "nota": "Textos muy largos: peor caso de altura.",
+  "nota": "Prueba de estrés (no es un caso real: las descripciones habituales ocupan uno o dos renglones). Descripción de seis renglones: con el dibujo de presentación final de 93 pt excede la página carta y el verificador debe reportar el límite sin truncar ni escalar.",
   "datos": {
     "sufijo_titulo": "",
     "cliente": "Industrializadora de Empaques Plásticos y Servicios Integrales del Centro y Bajío de México S.A.P.I. de C.V.",

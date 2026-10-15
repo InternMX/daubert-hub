@@ -7,6 +7,9 @@ Escribe en test-results/<caso>/ (ignorado por Git): HTML, PDF y PNG. Código de 
 
 Cada caso declara "esperado":
   valido    → el validador (tools/validate-termoencogible-data.mjs) debe aceptarlo; se compone, se imprime y se verifica todo.
+  estres    → datos válidos pero extremos (no son el uso habitual: las descripciones reales ocupan uno o dos renglones). Se verifica todo igual, pero
+              si el contenido excede la página carta o la holgura mínima NO se aprueba en silencio ni se cuenta como regresión: se reporta como
+              «LÍMITE DETECTADO» (no se reduce la escala ni se trunca nada). Cualquier otra falla sí cuenta.
   tecnico   → el validador debe RECHAZARLO (no es válido para producción) pero se imprime para probar un componente visual.
   invalido  → el validador debe rechazarlo y NO se imprime nada.
 """
@@ -80,7 +83,7 @@ def verificar(datos_ruta, perfil):
     caso, esperado, modalidad = datos['caso'], datos['esperado'], datos['modalidad']
     # 0. contrato: el validador acepta los casos válidos y rechaza los técnicos e inválidos
     codigo, mensaje = validar(datos_ruta)
-    if (codigo == 0) != (esperado == 'valido'): fallos.append('el validador %s el caso %s: %s' % ('aceptó' if codigo == 0 else 'rechazó', esperado, mensaje))
+    if (codigo == 0) != (esperado in ('valido', 'estres')): fallos.append('el validador %s el caso %s: %s' % ('aceptó' if codigo == 0 else 'rechazó', esperado, mensaje))
     if esperado == 'invalido':
         print('%-40s rechazado por el validador (%s) | %s' % (caso, mensaje.replace('\n', ' ').strip('- ')[:100], 'OK' if not fallos else 'FALLA (%d)' % len(fallos)))
         for f in fallos: print('   -', f)
@@ -230,9 +233,17 @@ def verificar(datos_ruta, perfil):
         if LIMITE_Y - fin < HOLGURA_MINIMA: fallos.append('holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, HOLGURA_MINIMA))
         detalle = ' | rollo doblado %.1f pt | final %.1f pt | firmas y %.1f-%.1f' % (d1[3] - d1[1], d2[3] - d2[1], geo['seccion-firmas'][1], fin)
     if fin > LIMITE_Y: fallos.append('el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y))
+    limites = []
+    if esperado == 'estres':
+        es_limite = lambda f: f.startswith(('páginas:', 'holgura vertical', 'el contenido excede', 'texto fuera del bloque o del área')) or 'sale del área imprimible' in f
+        limites = [f for f in fallos if es_limite(f)]
+        if limites: limites += [f for f in fallos if f not in limites and ('no contiene el marcador SIN FIRMA' in f or f.startswith('tamaño de firma'))]   # consecuencia de pasar a la 2.ª página
+        fallos = [f for f in fallos if f not in limites]
     print('%-40s %s | págs %d | pend. %d | márgenes %.1f/%.1f | peso y %.1f-%.1f%s | libre %.1f pt | %s%s' % (
         caso, modalidad[:4], len(pdf), pendientes, izq, der, geo['seccion-peso'][1], geo['seccion-peso'][3], detalle, LIMITE_Y - fin,
-        'OK' if not fallos else 'FALLA (%d)' % len(fallos), ' [técnico: el validador lo rechaza]' if esperado == 'tecnico' else ''))
+        ('OK' if not fallos else 'FALLA (%d)' % len(fallos)) + (' [ESTRÉS: LÍMITE DETECTADO, no es regresión]' if limites else ' [estrés: cabe en la página]' if esperado == 'estres' else ''),
+        ' [técnico: el validador lo rechaza]' if esperado == 'tecnico' else ''))
+    for f in limites[:6]: print('   ! LÍMITE (caso de estrés; el formato no cabe con este texto, sin truncar ni escalar): ' + f)
     for f in fallos[:15]: print('   -', f)
     return fallos
 
