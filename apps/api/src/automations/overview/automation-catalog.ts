@@ -18,7 +18,7 @@ export const AUTOMATION_CATALOG: readonly AutomationCatalogEntry[] = [
     description: 'Generación y control de remisiones.',
     pollingIntervalMinutes: 10,
     integrationStatus: 'INTEGRATED',
-    capabilities: { hasDashboard: true, hasHistory: true, hasDetail: false }
+    capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true }
   },
   {
     code: 'PAYMENT_NOTIFICATIONS',

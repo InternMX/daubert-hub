@@ -2,6 +2,35 @@ import { describe, expect, it, vi } from 'vitest';
 import { AudiExecutionsRepository } from '../src/automations/remisiones-audi/audi-executions.repository';
 
 describe('AudiExecutionsRepository', () => {
+  it('finds a single Audi execution by bound bigint id without requiring child records', async () => {
+    const query = vi.fn().mockResolvedValue([{ ejecucion_id: '9007199254740993' }]);
+    const repository = new AudiExecutionsRepository({ query } as never);
+    await expect(repository.findById('9007199254740993')).resolves.toEqual({ ejecucion_id: '9007199254740993' });
+    const [sql, params] = query.mock.calls[0]!;
+    expect(params).toEqual(['9007199254740993']);
+    expect(sql).toContain("automation.codigo = 'REMISIONES_AUDI'");
+    expect(sql).toContain('LEFT JOIN core.documentos');
+    expect(sql).toContain('WHERE execution.ejecucion_id = $1::bigint');
+    expect(sql).not.toMatch(/JOIN operacion\.|ruta_archivo|pdf_path|run_name|payload/);
+  });
+
+  it('returns null for a missing or out-of-scope execution', async () => {
+    const repository = new AudiExecutionsRepository({ query: vi.fn().mockResolvedValue([]) } as never);
+    await expect(repository.findById('12')).resolves.toBeNull();
+  });
+
+  it('reads historical remissions and exact folios without reservations, articles or counters', async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    await new AudiExecutionsRepository({ query } as never).findRemissionsByExecutionId('8');
+    const [sql, params] = query.mock.calls[0]!;
+    expect(params).toEqual(['8']);
+    expect(sql).toContain("automation.codigo = 'REMISIONES_AUDI'");
+    expect(sql).toContain("series.codigo = 'REMISION_AUDI'");
+    expect(sql).toContain('WHERE remission.ejecucion_id = $1::bigint');
+    expect(sql).toContain('remission.folio::text');
+    expect(sql).not.toMatch(/remision_detalle|reservas_folios|siguiente_folio|pdf_path/);
+  });
+
   it('scopes both the count and the list query to REMISIONES_AUDI, ordered newest-first and paginated', async () => {
     const query = vi.fn()
       .mockResolvedValueOnce([{ total: 3 }])

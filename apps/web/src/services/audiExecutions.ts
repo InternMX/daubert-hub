@@ -7,6 +7,7 @@ export type AudiProcessingOutcome = 'COMPLETED' | 'FAILED' | 'PROCESSING' | 'CAN
 export type AudiExecutionReviewStatus = 'REQUIRED' | 'REVIEWED' | null;
 
 export interface AudiProcessingSummary {
+  executionId: string;
   occurredAt: string;
   outcome: AudiProcessingOutcome;
   generatedCount: number;
@@ -24,6 +25,17 @@ export class AudiExecutionsApiError extends Error {
   constructor(public readonly status: number) {
     super('Audi executions API request failed');
   }
+}
+
+export interface AudiExecutionDetail {
+  executionId: string;
+  outcome: AudiProcessingOutcome;
+  startedAt: string;
+  finishedAt: string | null;
+  generatedCount: number;
+  sourceDocument: { documentId: string; filename: string | null } | null;
+  latestErrorMessage: string | null;
+  remittances: { remissionId: string; seriesCode: string; folio: string; documentDate: string; status: string }[];
 }
 
 const outcomes = new Set<AudiProcessingOutcome>(['COMPLETED', 'FAILED', 'PROCESSING', 'CANCELLED']);
@@ -51,7 +63,7 @@ function isReviewStatus(value: unknown): value is AudiExecutionReviewStatus {
 function isSummary(value: unknown): value is AudiProcessingSummary {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
-  return isIsoDateString(item.occurredAt)
+  return isBigintId(item.executionId) && isIsoDateString(item.occurredAt)
     && typeof item.outcome === 'string' && outcomes.has(item.outcome as AudiProcessingOutcome)
     && isNonNegativeFiniteInteger(item.generatedCount)
     && isNullableFolio(item.firstFolio)
@@ -82,4 +94,39 @@ export async function listAudiExecutions(page: number, pageSize: number): Promis
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok || !isListResponse(body)) throw new AudiExecutionsApiError(response.status);
   return body;
+}
+
+function isBigintId(value: unknown): value is string {
+  return typeof value === 'string' && /^[1-9]\d*$/.test(value) && value.length <= 19 && BigInt(value) <= 9223372036854775807n;
+}
+
+function isDetail(value: unknown): value is AudiExecutionDetail {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  const source = item.sourceDocument as Record<string, unknown> | null;
+  return isBigintId(item.executionId)
+    && typeof item.outcome === 'string' && outcomes.has(item.outcome as AudiProcessingOutcome)
+    && isIsoDateString(item.startedAt) && (item.finishedAt === null || isIsoDateString(item.finishedAt))
+    && isNonNegativeFiniteInteger(item.generatedCount)
+    && (item.latestErrorMessage === null || typeof item.latestErrorMessage === 'string')
+    && (source === null || (typeof source === 'object' && source !== null && isBigintId(source.documentId) && (source.filename === null || typeof source.filename === 'string')))
+    && Array.isArray(item.remittances) && item.remittances.every((value: unknown) => {
+      if (typeof value !== 'object' || value === null) return false;
+      const remission = value as Record<string, unknown>;
+      return isBigintId(remission.remissionId) && isBigintId(remission.folio)
+        && typeof remission.seriesCode === 'string' && typeof remission.status === 'string'
+        && typeof remission.documentDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(remission.documentDate)
+        && isIsoDateString(remission.documentDate);
+    });
+}
+
+export async function getAudiExecution(executionId: string): Promise<AudiExecutionDetail> {
+  let response: Response;
+  try { response = await fetch(`${baseUrl}/automations/remissions/audi/executions/${encodeURIComponent(executionId)}`); }
+  catch { throw new AudiExecutionsApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok || typeof body !== 'object' || body === null || !('data' in body) || !isDetail(body.data)) {
+    throw new AudiExecutionsApiError(response.status);
+  }
+  return body.data;
 }

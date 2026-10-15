@@ -1,13 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { mapAudiExecutionState, type AudiProcessingOutcome } from '../audi-processing-status';
 import { ReviewAcknowledgementsRepository } from '../review/review-acknowledgements.repository';
 import { AUDI_EXECUTION_SOURCE_TYPE } from '../review/review-source-types';
 import type { ListAudiExecutionsDto } from './dto/list-audi-executions.dto';
 import { AudiExecutionsRepository, type AudiExecutionRow } from './audi-executions.repository';
+import { audiDiagnostic, audiSourceFilename } from './audi-detail-presentation';
 
 export type AudiExecutionReviewStatus = 'REQUIRED' | 'REVIEWED' | null;
 
 export interface AudiProcessingSummary {
+  executionId: string;
   occurredAt: string;
   outcome: AudiProcessingOutcome;
   generatedCount: number;
@@ -27,12 +29,44 @@ export interface ListAudiExecutionsResponse {
   meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
+export interface AudiExecutionDetail {
+  executionId: string;
+  outcome: AudiProcessingOutcome;
+  startedAt: string;
+  finishedAt: string | null;
+  generatedCount: number;
+  sourceDocument: { documentId: string; filename: string | null } | null;
+  latestErrorMessage: string | null;
+  remittances: { remissionId: string; seriesCode: string; folio: string; documentDate: string; status: string }[];
+}
+
+export interface AudiExecutionDetailResponse { data: AudiExecutionDetail }
+
 @Injectable()
 export class AudiExecutionsService {
   constructor(
     private readonly repository: AudiExecutionsRepository,
     private readonly reviewAcknowledgements: ReviewAcknowledgementsRepository
   ) {}
+
+  async getDetail(executionId: string): Promise<AudiExecutionDetailResponse> {
+    const execution = await this.repository.findById(executionId);
+    if (!execution) throw new NotFoundException('Ejecución de Audi no encontrada.');
+    const remissions = await this.repository.findRemissionsByExecutionId(executionId);
+    return { data: {
+      executionId: execution.ejecucion_id,
+      outcome: mapAudiExecutionState(execution.execution_state)!,
+      startedAt: new Date(execution.started_at).toISOString(),
+      finishedAt: execution.finished_at ? new Date(execution.finished_at).toISOString() : null,
+      generatedCount: remissions.filter((remission) => remission.estatus === 'GENERADA').length,
+      sourceDocument: execution.documento_id ? { documentId: execution.documento_id, filename: audiSourceFilename(execution.source_filename) } : null,
+      latestErrorMessage: audiDiagnostic(execution.error_message),
+      remittances: remissions.map((remission) => ({
+        remissionId: remission.remision_id, seriesCode: remission.serie_codigo,
+        folio: remission.folio, documentDate: remission.document_date, status: remission.estatus
+      }))
+    } };
+  }
 
   async list(input: ListAudiExecutionsDto): Promise<ListAudiExecutionsResponse> {
     const [{ total, executions }, currentProblem] = await Promise.all([
@@ -53,6 +87,7 @@ export class AudiExecutionsService {
 
   private mapSummary(execution: AudiExecutionRow, currentProblemEjecucionId: string | undefined, currentProblemStatus: AudiExecutionReviewStatus): AudiProcessingSummary {
     return {
+      executionId: execution.ejecucion_id,
       occurredAt: new Date(execution.occurred_at).toISOString(),
       // ejecuciones_automatizacion.estado is DB-CHECK-constrained to the four known values, so a
       // null here would mean the constraint itself changed — fail loudly rather than silently
