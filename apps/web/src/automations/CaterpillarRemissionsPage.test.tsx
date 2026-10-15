@@ -498,6 +498,21 @@ describe('CaterpillarRemissionsPage', () => {
       detailMock.mockResolvedValue(executionDetail());
     });
 
+    it.each(['{Enter}', ' '])('opens the existing detail through the tab-reachable date button using %s', async (key) => {
+      const user = userEvent.setup(); renderPage();
+      const open = await screen.findByRole('button', { name: 'Ver detalle de ejecución Caterpillar 9007199254740993' });
+      for (let index = 0; index < 24 && document.activeElement !== open; index += 1) await user.tab();
+      expect(open).toHaveFocus();
+      await user.keyboard(key);
+      const dialog = await screen.findByRole('dialog');
+      expect(await within(dialog).findByText('9007199254740993')).toBeInTheDocument();
+      expect(detailMock).toHaveBeenCalledTimes(1);
+      expect(detailMock).toHaveBeenCalledWith('9007199254740993');
+      await user.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(open).toHaveFocus();
+    });
+
     it('opens the detail dialog when a row is clicked, requesting the exact executionId', async () => {
       const user = userEvent.setup();
       renderPage();

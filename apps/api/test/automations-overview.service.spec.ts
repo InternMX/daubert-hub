@@ -105,7 +105,7 @@ describe('AutomationsOverviewService', () => {
     it('reports integration status and capabilities from the static catalog', async () => {
       const { service } = setup();
       const { data } = await service.getOverview();
-      expect(data[0]).toMatchObject({ integrationStatus: 'INTEGRATED', capabilities: { hasDashboard: true, hasHistory: true, hasDetail: false } });
+      expect(data[0]).toMatchObject({ integrationStatus: 'INTEGRATED', capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true } });
     });
   });
 

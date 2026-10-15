@@ -32,6 +32,7 @@ import {
   wideOnlyProcessColumnSx
 } from './caterpillarPresentation';
 import { lifecycleStatusLabel } from './automationOverviewPresentation';
+import { executionOpenButtonSx, executionRowSx } from './executionPresentation';
 
 const automationCode = 'REMISIONES_CATERPILLAR';
 const EXECUTIONS_PAGE_SIZE = 25;
@@ -310,10 +311,10 @@ function ExecutionsSection({ page, onPageChange, onSelect, refreshKey }: Executi
                 key={execution.executionId}
                 hover
                 onClick={() => onSelect(execution.executionId)}
-                sx={{ cursor: 'pointer' }}
+                sx={executionRowSx}
               >
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatCaterpillarTimestamp(execution.startedAt)}</TableCell>
-                <TableCell sx={{ overflowWrap: 'anywhere' }}>{execution.sourceFilename}</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}><Button color="inherit" sx={executionOpenButtonSx} aria-label={`Ver detalle de ejecución Caterpillar ${execution.executionId}`} onClick={(event) => { event.stopPropagation(); onSelect(execution.executionId); }}>{formatCaterpillarTimestamp(execution.startedAt)}</Button></TableCell>
+                <TableCell sx={{ minWidth: 240, overflowWrap: 'anywhere' }}>{execution.sourceFilename}</TableCell>
                 <TableCell>{caterpillarProcessLabelOrUndetermined(execution.processLabel)}</TableCell>
                 <TableCell><OutcomeChip outcome={execution.outcome} /></TableCell>
                 <TableCell align="right">{execution.failedAttempts}/{execution.maxAttempts}</TableCell>

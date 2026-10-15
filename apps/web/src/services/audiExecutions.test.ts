@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AudiExecutionsApiError, listAudiExecutions } from './audiExecutions';
+import { AudiExecutionsApiError, getAudiExecution, listAudiExecutions, type AudiExecutionDetail } from './audiExecutions';
 
 afterEach(() => vi.unstubAllGlobals());
 
 const summary = {
+  executionId: '9007199254740993',
   occurredAt: '2026-08-27T22:40:01.933Z',
   outcome: 'COMPLETED',
   generatedCount: 5,
@@ -51,5 +52,48 @@ describe('listAudiExecutions', () => {
   it('surfaces status 0 for a network failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
     await expect(listAudiExecutions(1, 25)).rejects.toMatchObject({ status: 0 });
+  });
+});
+
+const detail: AudiExecutionDetail = {
+  executionId: '9007199254740993', outcome: 'COMPLETED', startedAt: summary.occurredAt, finishedAt: null,
+  generatedCount: 1, sourceDocument: { documentId: '103', filename: 'entrada.xlsx' }, latestErrorMessage: null,
+  remittances: [{ remissionId: '11', seriesCode: 'REMISION_AUDI', folio: '9007199254740994', documentDate: '2026-08-27', status: 'GENERADA' }]
+};
+
+describe('getAudiExecution', () => {
+  it('requests and preserves exact bigint ids and folios', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: detail }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(getAudiExecution(detail.executionId)).resolves.toEqual(detail);
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/remissions/audi/executions/9007199254740993');
+  });
+  it('accepts empty remittances and missing source metadata', async () => {
+    const empty = { ...detail, sourceDocument: null, generatedCount: 0, remittances: [] };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: empty })));
+    await expect(getAudiExecution('8')).resolves.toEqual(empty);
+  });
+  it.each([
+    { data: { ...detail, executionId: 9007199254740992 } },
+    { data: { ...detail, executionId: '9223372036854775808' } },
+    { data: { ...detail, remittances: null } },
+    { data: { ...detail, sourceDocument: {} } },
+    { data: { ...detail, sourceDocument: undefined } },
+    { data: { ...detail, outcome: 'UNKNOWN' } },
+    { data: { ...detail, remittances: [{ ...detail.remittances[0], folio: 100 }] } },
+    { data: { ...detail, startedAt: 'not-a-date' } },
+    { nope: detail }
+  ])('rejects an invalid detail contract', async (body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)));
+    await expect(getAudiExecution('8')).rejects.toBeInstanceOf(AudiExecutionsApiError);
+  });
+  it.each([400, 404, 500])('preserves HTTP %s without exposing the error body', async (status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ message: 'internal secret' }, status)));
+    await expect(getAudiExecution('8')).rejects.toMatchObject({ status, message: 'Audi executions API request failed' });
+  });
+  it('handles malformed JSON and network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('invalid')).mockRejectedValueOnce(new Error('network')));
+    await expect(getAudiExecution('8')).rejects.toMatchObject({ status: 200 });
+    await expect(getAudiExecution('8')).rejects.toMatchObject({ status: 0 });
   });
 });

@@ -77,27 +77,7 @@ export function caterpillarProcessLabelOrUndetermined(processLabel: string | nul
   return processLabel ?? PROCESS_UNDETERMINED_LABEL;
 }
 
-const timeZone = 'America/Mexico_City';
-
-// documentDate/fecha_documento is a DATE-only value (no time-of-day) — formatted in UTC so the
-// calendar day the database stored is never shifted by the viewer's local offset.
-export function formatCaterpillarDate(value: string | null): string {
-  if (!value) return 'No disponible';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return 'No disponible';
-  return new Intl.DateTimeFormat('es-MX', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }).format(date).replace('.', '');
-}
-
-// startedAt/finishedAt are full timestamps (unlike documentDate) — local Mexico City time, with
-// year, distinct from the compact card format used on /automations.
-export function formatCaterpillarTimestamp(value: string | null): string {
-  if (!value) return 'No disponible';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return 'No disponible';
-  const datePart = new Intl.DateTimeFormat('es-MX', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(date).replace('.', '');
-  const timePart = new Intl.DateTimeFormat('es-MX', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
-  return `${datePart} · ${timePart}`;
-}
+export { formatDocumentDate as formatCaterpillarDate, formatExecutionTimestamp as formatCaterpillarTimestamp } from './executionPresentation';
 
 export function caterpillarFolioRangeLabel(minimumFolio: string | null, maximumFolio: string | null): string {
   if (!minimumFolio || !maximumFolio) return '—';

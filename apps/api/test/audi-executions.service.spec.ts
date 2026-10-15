@@ -66,10 +66,11 @@ describe('AudiExecutionsService', () => {
     expect(result.data[0]?.occurredAt).toBe('2026-08-27T22:40:01.933Z');
   });
 
-  it('never exposes technical/internal identifiers or diagnostics, including ejecucion_id itself', async () => {
-    const { service } = setup(1, [row()]);
+  it('exposes only the bigint-safe execution identity and existing summary fields', async () => {
+    const { service } = setup(1, [row({ ejecucion_id: '9007199254740993' })]);
     const result = await service.list({ page: 1, pageSize: 25 });
-    expect(Object.keys(result.data[0]!).sort()).toEqual(['firstFolio', 'generatedCount', 'lastFolio', 'occurredAt', 'outcome', 'reviewStatus']);
+    expect(result.data[0]?.executionId).toBe('9007199254740993');
+    expect(Object.keys(result.data[0]!).sort()).toEqual(['executionId', 'firstFolio', 'generatedCount', 'lastFolio', 'occurredAt', 'outcome', 'reviewStatus']);
     expect(JSON.stringify(result)).not.toMatch(/n8n_execution_id|run_name|error_nodo|error_mensaje|ejecucion_id|automatizacion_id|documento_origen_id|reproceso_de_id|acknowledgement_id/i);
   });
 
