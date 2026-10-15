@@ -112,6 +112,11 @@ def medir_dom(chrome, sonda_ruta, ventana='1000,2400', timeout=TIMEOUT_CHROME):
         raise ErrorRegeneracion('las medidas del DOM de %s no son JSON válido: %s' % (sonda_ruta, e))
 
 
+def texto_de_todas_las_paginas(pdf):
+    """Texto de TODAS las páginas del PDF (palabras en orden): la integridad del texto se verifica aunque el contenido desborde a otra página."""
+    return ' '.join(' '.join(w[4] for w in p.get_text('words')) for p in pdf)
+
+
 def preparar_carpeta(carpeta, origen_imagenes=None):
     """Crea la carpeta de un caso SIN borrar nada (los resultados de otros casos y ejecuciones se conservan)."""
     os.makedirs(os.path.join(carpeta, 'images'), exist_ok=True)

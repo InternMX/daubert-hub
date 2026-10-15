@@ -184,5 +184,41 @@ class TodosLosVerificadoresUsanLaUtilidad(unittest.TestCase):
                     self.assertFalse(prohibido in t, 'no debe usarse ' + prohibido + ' (Chrome directo o borrado masivo de resultados)')
 
 
+CHROME = os.environ.get('CHROME_PATH', r'C:\Program Files\Google\Chrome\Application\chrome.exe')
+
+
+@unittest.skipUnless(os.path.exists(CHROME), 'requiere Google Chrome (CHROME_PATH)')
+class DesbordamientoBolsaFuelle(unittest.TestCase):
+    """Reproduce el IndexError de Bolsa Fuelle (lectura de píxeles fuera de la imagen cuando el contenido pasa a la 2.ª página)."""
+    AQUI = os.path.dirname(os.path.abspath(__file__))
+    VERIFICADOR = os.path.join(AQUI, '..', 'bolsa-fuelle', 'verificar_bolsa_fuelle.py')
+    DATOS = os.path.join(AQUI, '..', 'bolsa-fuelle', 'datos', 'descripcion-desborde.datos.json')
+
+    def ejecutar(self, datos):
+        import subprocess
+        with tempfile.TemporaryDirectory() as salida:
+            r = subprocess.run([sys.executable, self.VERIFICADOR, '--datos', datos, '--salida', salida], capture_output=True, text=True, encoding='utf-8')
+            marca = os.path.exists(os.path.join(salida, 'descripcion-desborde', hp.MARCA_NO_APTO))
+        return r, marca
+
+    def test_estres_con_desborde_reporta_el_limite_sin_excepcion(self):
+        r, marca = self.ejecutar(self.DATOS)
+        self.assertNotIn('Traceback', r.stderr); self.assertNotIn('IndexError', r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('LÍMITE DETECTADO', r.stdout); self.assertIn('páginas generadas: 2', r.stdout); self.assertIn('excedente', r.stdout)
+        self.assertTrue(marca, 'el documento de estrés debe quedar marcado como no apto para emisión')
+
+    def test_el_mismo_desborde_como_caso_de_produccion_se_rechaza(self):
+        import json
+        d = json.load(open(self.DATOS, encoding='utf-8')); d['esperado'] = 'valido'
+        with tempfile.TemporaryDirectory() as t:
+            ruta = os.path.join(t, 'desborde-produccion.datos.json')
+            with open(ruta, 'w', encoding='utf-8') as f: json.dump(d, f, ensure_ascii=False)
+            r, _ = self.ejecutar(ruta)
+        self.assertNotIn('Traceback', r.stderr)
+        self.assertEqual(r.returncode, 1, 'un documento de producción que desborda no puede aprobarse')
+        self.assertIn('páginas: 2', r.stdout); self.assertNotIn('LÍMITE DETECTADO', r.stdout)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -1,7 +1,8 @@
 {
   "caso": "descripcion-extensa",
   "formato": "BOLSA_FUELLE",
-  "nota": "Descripción y cliente extensos (las filas crecen sin superponerse). Datos de prueba, no corresponden a un pedido real; los bloques de firma son marcadores SIN FIRMA.",
+  "esperado": "estres",
+  "nota": "Prueba de estrés (no es un caso real: las descripciones habituales ocupan uno o dos renglones). Descripción y cliente extensos: con 18.2 pt libres queda por debajo del mínimo de 20 pt y el verificador lo reporta como LÍMITE DETECTADO (no apto para emisión). Datos de prueba; los bloques de firma son marcadores SIN FIRMA.",
   "datos": {
     "sufijo_titulo": "",
     "cliente": "Industrias Metalmecánicas y Empaques Especializados del Centro de México S.A. de C.V.",

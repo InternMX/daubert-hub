@@ -1,6 +1,6 @@
 """Verificación de BOLSA_FUELLE (BF-2: hoja completa). No es una regresión píxel a píxel: aún no hay línea base validada.
 
-Uso:  python verificar_bolsa_fuelle.py [--datos RUTA.json ...]     # por defecto, todos los datos/*.datos.json
+Uso:  python verificar_bolsa_fuelle.py [--datos RUTA.json ...] [--salida CARPETA]     # por defecto, todos los datos/*.datos.json
 Requiere: Node, Google Chrome (headless), PyMuPDF y numpy (CHROME_PATH si Chrome no está en la ruta por defecto).
 Escribe en test-results/<caso>/ (ignorado por Git): HTML, PDF y PNG. Código de salida 0 = OK, 1 = falla.
 """
@@ -50,6 +50,7 @@ def verificar(datos_ruta, perfil):
     fallos = []
     datos = json.load(open(datos_ruta, encoding='utf-8'))
     caso = datos['caso']
+    esperado = datos.get('esperado', 'valido')                 # valido (producción) | estres (texto extremo: si no cabe se reporta el límite)
     if not (datos['formato'] == perfil['formato'] == 'BOLSA_FUELLE'): fallos.append('el formato no es BOLSA_FUELLE')
     carpeta = os.path.join(SALIDA, caso); hp.preparar_carpeta(carpeta)
     shutil.copy(os.path.join(MS, 'templates', 'bolsa-fuelle', 'images', 'DC_logo.jpg'), os.path.join(carpeta, 'images', 'DC_logo.jpg'))
@@ -80,7 +81,7 @@ def verificar(datos_ruta, perfil):
     if len(pdf) != 1: fallos.append('páginas: %d (se esperaba 1)' % len(pdf))
     if (pg.rect.width, pg.rect.height) != (612.0, 792.0): fallos.append('tamaño de página %s' % pg.rect)
     palabras = pg.get_text('words')
-    texto = ' '.join(' '.join(w[4] for w in palabras).split())
+    texto = ' '.join(hp.texto_de_todas_las_paginas(pdf).split())      # integridad del texto en todas las páginas (si desborda, nada se pierde)
     # 4. DOM de las secciones
     sonda = ruta_html.replace('.html', '.sonda.html')
     open(sonda, 'w', encoding='utf-8-sig', newline='\n').write(open(ruta_html, encoding='utf-8-sig').read().replace('</body>', JS_SONDA))
@@ -126,21 +127,29 @@ def verificar(datos_ruta, perfil):
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3].astype(int)
     hexrgb = lambda c: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
     cerca = lambda a, b, t=2: all(abs(x - y) <= t for x, y in zip(a, b))      # el rasterizado puede variar 1-2 niveles por canal
-    px = lambda x, y: tuple(int(v) for v in img[int(y * escala), int(x * escala)])
-    bolsa = px(dx0 + 247, dy0 + 120)                         # centro de la bolsa (coordenadas del SVG)
-    if not cerca(bolsa, hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno de la bolsa %s != %s' % (bolsa, datos['visual']['color_bolsa_hex']))
-    if not cerca(px(dx0 + 237, dy0 + 183), (36, 64, 98)): fallos.append('la barra inferior no es azul oscuro: %s' % (px(dx0 + 237, dy0 + 183),))
-    cotas = hexrgb(datos['visual']['color_cotas_internas_hex'])
-    franja = img[int((dy0 + 49) * escala):int((dy0 + 55) * escala), int((dx0 + 112) * escala):int((dx0 + 216) * escala)]
-    n_cotas = int((np.abs(franja - np.array(cotas)).max(axis=2) <= 3).sum())
-    if n_cotas < 80: fallos.append('las cotas internas casi no se imprimen (%d px de %s)' % (n_cotas, datos['visual']['color_cotas_internas_hex']))
-    nota_y = centro(geo['seccion-nota'])[1]
-    if not cerca(px(geo['seccion-nota'][0] + 5, nota_y), (255, 255, 0)): fallos.append('la nota no es amarilla: %s' % (px(geo['seccion-nota'][0] + 5, nota_y),))
-    if not cerca(px(ex0 + 5, (ey0 + ey1) / 2), (218, 150, 148)): fallos.append('Etiqueta no es rosa #DA9694: %s' % (px(ex0 + 5, (ey0 + ey1) / 2),))
+    px = lambda x, y: hp.pixel(img, escala, x, y)             # fuera de la imagen lanza FueraDePagina (nunca un IndexError)
+    # Los colores del dibujo, la nota y la etiqueta solo se leen si esas secciones están completas en la 1.ª página; si el contenido desborda
+    # (más de una página) no se leen píxeles fuera de la imagen: se informa el desbordamiento y la falla queda como consecuencia del límite.
+    todo_en_primera_pagina = all(geo[s][3] <= hp.ALTO_PAGINA for s in ('seccion-etiqueta', 'seccion-dibujo-bolsa', 'seccion-nota'))
+    if todo_en_primera_pagina:
+        bolsa = px(dx0 + 247, dy0 + 120)                         # centro de la bolsa (coordenadas del SVG)
+        if not cerca(bolsa, hexrgb(datos['visual']['color_bolsa_hex'])): fallos.append('relleno de la bolsa %s != %s' % (bolsa, datos['visual']['color_bolsa_hex']))
+        if not cerca(px(dx0 + 237, dy0 + 183), (36, 64, 98)): fallos.append('la barra inferior no es azul oscuro: %s' % (px(dx0 + 237, dy0 + 183),))
+        cotas = hexrgb(datos['visual']['color_cotas_internas_hex'])
+        franja = img[int((dy0 + 49) * escala):int((dy0 + 55) * escala), int((dx0 + 112) * escala):int((dx0 + 216) * escala)]
+        n_cotas = int((np.abs(franja - np.array(cotas)).max(axis=2) <= 3).sum())
+        if n_cotas < 80: fallos.append('las cotas internas casi no se imprimen (%d px de %s)' % (n_cotas, datos['visual']['color_cotas_internas_hex']))
+        nota_y = centro(geo['seccion-nota'])[1]
+        if not cerca(px(geo['seccion-nota'][0] + 5, nota_y), (255, 255, 0)): fallos.append('la nota no es amarilla: %s' % (px(geo['seccion-nota'][0] + 5, nota_y),))
+        if not cerca(px(ex0 + 5, (ey0 + ey1) / 2), (218, 150, 148)): fallos.append('Etiqueta no es rosa #DA9694: %s' % (px(ex0 + 5, (ey0 + ey1) / 2),))
+    else:
+        fallos.append('no se verificaron los colores del dibujo, la nota y la etiqueta: quedan fuera de la primera página (%d páginas generadas)' % len(pdf))
     fin_firmas = geo['seccion-firmas'][3]
+    fallos += hp.fallos_de_limite(fin_firmas)                 # holgura mínima de 20 pt y área imprimible (criterio común)
+    fallos, limites = hp.clasificar_limites(esperado, fallos)
     print('%-26s págs %d | pend. %d | etiqueta %.1f pt | dibujo y %.1f-%.1f | nota y %.1f-%.1f | firmas hasta %.1f pt | libre %.1f pt | %s' % (
         caso, len(pdf), pendientes, geo['seccion-etiqueta'][3] - geo['seccion-etiqueta'][1], dy0, dy1, geo['seccion-nota'][1], geo['seccion-nota'][3],
-        fin_firmas, LIMITE_Y - fin_firmas, 'OK' if not fallos else 'FALLA (%d)' % len(fallos)))
+        fin_firmas, LIMITE_Y - fin_firmas, ('OK' if not fallos else 'FALLA (%d)' % len(fallos)) + hp.informar_limites(carpeta, esperado, limites, len(pdf), fin_firmas)))
     for f in fallos[:15]: print('   -', f)
     return fallos
 
@@ -148,8 +157,10 @@ def verificar(datos_ruta, perfil):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--datos', nargs='*')
+    ap.add_argument('--salida', help='carpeta de resultados alternativa (por defecto test-results)')
     a = ap.parse_args()
     perfil = json.load(open(PERFIL, encoding='utf-8'))
+    if a.salida: SALIDA = os.path.abspath(a.salida)
     archivos = a.datos or sorted(glob.glob(os.path.join(AQUI, 'datos', '*.datos.json')))
     print('Formato:', perfil['formato'], '| etapa', perfil['etapa'], '| casos:', len(archivos))
     total = hp.ejecutar_casos(verificar, archivos, perfil)
