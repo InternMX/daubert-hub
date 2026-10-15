@@ -64,8 +64,8 @@
       "uso": "franja azul claro «Dibujo Hoja» / «Dibujo de rollo [doblado]» (parámetros id y titulo)"
     },
     {
-      "ruta": "components/sheet-drawing/sheet-drawing.html",
-      "uso": "Dibujo Hoja: rectángulo con cotas {{ancho}} y {{largo}}; único dibujo de HOJA_PAQ"
+      "ruta": "components/sheet-drawing/sheet-drawing.hoja-paq.html",
+      "uso": "Dibujo Hoja: rectángulo de 220 x 160 pt (proporción cercana a 1.4:1, como el Excel) con cotas {{ancho}} y {{largo}}; único dibujo de HOJA_PAQ; ROLLO_CONTINUO conserva sheet-drawing.html"
     },
     {
       "ruta": "components/signatures/signatures.html",
