@@ -23,7 +23,8 @@ SALIDA = os.path.join(AQUI, 'test-results')
 DATOS = os.path.join(AQUI, 'entrada', 'coex-azul.datos.json')
 HISTORICOS = [os.path.join(HIST, 'entrada', 'confpmg04.datos.json')] + sorted(glob.glob(os.path.join(HIST, 'referencia', '*')))
 COLORES_APROBADOS = {'color_bolsa_hex': '#558ED5', 'color_capa_interior': '#376092', 'color_capa_intermedia': '#95B3D7', 'color_capa_exterior': '#C6D9F1',
-                     'color_cotas_internas_hex': '#4A7EBB'}      # aprobados para la prueba (procedencia en entrada/coex-azul.datos.json y README); el dato no puede desviarse
+                     'color_cotas_internas_hex': '#FFFFFF'}      # aprobados para la prueba (procedencia en entrada/coex-azul.datos.json y README); el dato no puede desviarse. Las flechas internas son BLANCAS por legibilidad (decisión autorizada, no es el color del Excel: #4A7EBB)
+EXTERNAS = '#4A7EBB'                       # flechas externas de ancho y largo: color original del Excel
 BARRA = (0x24, 0x40, 0x62)               # #244062: barra inferior fija de COEX, sobresale por ambos lados del cuerpo
 ESCALA = 150 / 72                        # el PNG de producir() es de 150 ppp
 hexrgb = lambda c: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
@@ -114,13 +115,25 @@ def verificar(plantilla):
     n1 = contar(img[int((dy0 + 41) * ESCALA):int((dy0 + 46) * ESCALA), int((dx0 + 152) * ESCALA):int((dx0 + 232) * ESCALA)], cotas, 4)
     n2 = contar(img[int((dy0 + 38.5) * ESCALA):int((dy0 + 43.5) * ESCALA), int((dx0 + 286) * ESCALA):int((dx0 + 372) * ESCALA)], cotas, 4)
     if n1 < 60 or n2 < 60: fallos.append('las cotas internas casi no se imprimen con %s (%d y %d px)' % (v['color_cotas_internas_hex'], n1, n2))
+    # flechas externas (ancho arriba y largo a la izquierda) en #4A7EBB; valores de los fuelles en negro y legibles
+    ext = hexrgb(EXTERNAS)
+    ne1 = contar(img[int((dy0 + 19.5) * ESCALA):int((dy0 + 22) * ESCALA), int((dx0 + 152) * ESCALA):int((dx0 + 376) * ESCALA)], ext, 4)
+    ne2 = contar(img[int((dy0 + 30) * ESCALA):int((dy0 + 174) * ESCALA), int((dx0 + 131.5) * ESCALA):int((dx0 + 133.5) * ESCALA)], ext, 4)
+    if ne1 < 200 or ne2 < 200: fallos.append('las flechas externas de ancho y largo deben imprimirse en %s (%d y %d px)' % (EXTERNAS, ne1, ne2))
+    for fuelle in (d['fuelle_izquierdo'], d['fuelle_derecho']):
+        w = [p for p in palabras if p[0] == fuelle and dx0 + 140 <= p[1] <= dx0 + 380 and dy0 + 40 <= p[2] <= dy0 + 80]
+        if not w: fallos.append('no se encuentra el valor de fuelle %s dentro del cuerpo' % fuelle); continue
+        reg = img[int(w[0][2] * ESCALA):int(w[0][4] * ESCALA), int(w[0][1] * ESCALA):int(w[0][3] * ESCALA)]
+        negros = int((reg.max(axis=2) < 70).sum()) if reg.size else 0
+        if negros < 25: fallos.append('el valor de fuelle %s no se imprime en negro legible (%d px negros)' % (fuelle, negros))
+        if contraste((0, 0, 0), cuerpo) < 4.5: fallos.append('el negro sobre el cuerpo no es suficientemente legible')
     if not cerca(px(dx0 + 110, dy0 + 183), BARRA) or not cerca(px(dx0 + 365 + 25, dy0 + 183), BARRA): fallos.append('falta la barra inferior #244062 que sobresale por ambos lados')
     if not cerca(px(dx0 + 110, dy0 + 100), (255, 255, 255)): fallos.append('la barra inferior no debe prolongarse sobre el costado del cuerpo')
     # 5. legibilidad de las cotas internas sobre el relleno (se documenta; el color original no se cambia)
     c_cota = contraste(cotas, cuerpo)
-    if c_cota < 3.0:
+    if c_cota < 3.0:                                                    # blanco (3.4:1) cumple; el aviso solo aparecería con un color de menor contraste
         avisos.append('LEGIBILIDAD: las cotas internas %s sobre el cuerpo %s tienen contraste %.2f:1 (< 3:1); es el color original del Excel y no se modificó. '
-                      'Alternativas a confirmar con Manufactura: #FFFFFF (%.1f:1), #1F497D (%.1f:1) o contorno blanco.' % (
+                      'Alternativas: #FFFFFF (%.1f:1) o #1F497D (%.1f:1).' % (
                           v['color_cotas_internas_hex'], v['color_bolsa_hex'], c_cota, contraste((255, 255, 255), cuerpo), contraste((0x1F, 0x49, 0x7D), cuerpo)))
     print('%-26s págs %d | pend. %d | firmas hasta %.1f pt | libre %.1f pt | %s' % (j['caso'], paginas, r['pendientes'], fin, hp.LIMITE_Y - fin, 'OK' if not fallos else 'FALLA (%d)' % len(fallos)))
     print('   contraste cotas internas / cuerpo: %.2f:1 | cuerpo %s | capas %s / %s / %s' % (c_cota, v['color_bolsa_hex'], v['color_capa_interior'], v['color_capa_intermedia'], v['color_capa_exterior']))

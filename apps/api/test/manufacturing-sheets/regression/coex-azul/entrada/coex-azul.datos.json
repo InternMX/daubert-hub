@@ -43,7 +43,7 @@
     "color_capa_intermedia": "#95B3D7",
     "color_capa_exterior": "#C6D9F1",
     "color_bolsa_hex": "#558ED5",
-    "color_cotas_internas_hex": "#4A7EBB"
+    "color_cotas_internas_hex": "#FFFFFF"
   },
   "firmas": {
     "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
@@ -54,13 +54,14 @@
     "capa interior #376092": "forma «Arco de bloque 8»: accent1 (#4F81BD) lumMod 75 %",
     "capa intermedia #95B3D7": "forma «Arco de bloque 9»: accent1 lumMod 60 % + lumOff 40 %",
     "capa exterior #C6D9F1": "forma «Arco de bloque 10»: tx2/dk2 lumMod 20 % + lumOff 80 %",
-    "cotas internas #4A7EBB": "conectores 4 y 5: estilo lnRef accent1 por defecto (el mismo de COEX Verde)",
     "barra inferior #244062": "celdas combinadas C41:I41: accent1 más oscuro 50 % (barra fija de la geometría COEX; sobresale por ambos lados del cuerpo)",
     "criterio de conversión": "HLS en coma flotante (colorsys): lumMod/lumOff → L'=L·mod+off; tint>0 → L'=L·(1-tint)+tint. Reproduce el exterior de COEX Verde (#D7E4BD). Puede diferir ±1-2 niveles RGB de la paleta de Office (#538DD5, #366092, #C5D9F1), que se conservan como referencia visual.",
     "referencias visuales (no usadas)": {
       "cuerpo": "#538DD5",
       "capa interior": "#366092",
       "capa exterior": "#C5D9F1"
-    }
+    },
+    "cotas internas #FFFFFF": "DECISIÓN DE LEGIBILIDAD autorizada para la versión digital (no es el color del Excel): las flechas horizontales dentro del cuerpo pasan a blanco sobre #558ED5. El Excel original usa #4A7EBB (estilo de conector accent1 por defecto, el mismo de COEX Verde). No afecta valores numéricos ni especificaciones de manufactura; las flechas externas de ancho y largo siguen en #4A7EBB.",
+    "cotas internas (color original del Excel) #4A7EBB": "conectores 4 y 5: estilo lnRef accent1 por defecto; se conserva solo como referencia del original"
   }
 }

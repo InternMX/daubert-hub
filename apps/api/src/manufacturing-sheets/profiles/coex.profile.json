@@ -72,15 +72,17 @@
         "color_capa_interior": "#376092",
         "color_capa_intermedia": "#95B3D7",
         "color_capa_exterior": "#C6D9F1",
-        "color_cotas_internas_hex": "#4A7EBB",
-        "barra_inferior_fija": "#244062"
+        "color_cotas_internas_hex": "#FFFFFF",
+        "barra_inferior_fija": "#244062",
+        "cotas_externas_ancho_y_largo": "#4A7EBB"
       },
-      "procedencia": "pestaña «COEX Azul» del Excel original: cuerpo = tema dk2 (#1F497D) con tint +0.4; capas = formas con accent1 al 75 %, accent1 60 % + 40 % y tx2 20 % + 80 %; cotas internas = estilo de conector accent1; barra = accent1 al 50 % oscuro. Conversión HLS en coma flotante (±1-2 niveles respecto a la paleta de Office: #538DD5, #366092, #C5D9F1, que se conservan como referencia visual).",
+      "procedencia": "pestaña «COEX Azul» del Excel original: cuerpo = tema dk2 (#1F497D) con tint +0.4; capas = formas con accent1 al 75 %, accent1 60 % + 40 % y tx2 20 % + 80 %; cotas externas = estilo de conector accent1 (#4A7EBB, también el de las internas en el Excel); barra = accent1 al 50 % oscuro. Conversión HLS en coma flotante (±1-2 niveles respecto a la paleta de Office: #538DD5, #366092, #C5D9F1, que se conservan como referencia visual).",
       "diferencias_aceptadas_provisionalmente": [
         "el cuerpo del Excel Azul ocupa una fila más (≈ 13.6 pt en el PDF); se conserva la geometría de COEX Verde para mantener la holgura y el diseño uniforme",
         "el rótulo «Etiqueta:» se imprime sin valor (la franja rosa del Excel Azul está vacía)",
-        "las cotas internas #4A7EBB sobre #558ED5 tienen contraste 1.24:1 (color original del Excel; alternativas por confirmar con Manufactura)"
-      ]
+        "flechas internas en #FFFFFF (legibilidad; el Excel usa #4A7EBB, contraste 1.24:1 sobre #558ED5)"
+      ],
+      "cotas_internas": "El Excel original usa #4A7EBB; la versión digital usa #FFFFFF para las flechas internas de los fuelles por legibilidad sobre el cuerpo azul (cambio autorizado, solo mediante el dato color_cotas_internas_hex de esta variante). No es el color original del Excel y no afecta valores numéricos ni especificaciones de manufactura."
     }
   }
 }

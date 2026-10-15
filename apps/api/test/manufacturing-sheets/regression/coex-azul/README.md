@@ -14,7 +14,7 @@ estructural, de contenido y visual. Al terminar se comprueba por huella que `../
 ## Qué verifica
 Una página carta y al menos 20 pt libres; sin placeholders pendientes; todos los valores y rótulos impresos (incluida «Etiqueta:» sin valor); X/NA de
 Composición y Presentación; sin textos recortados ni superpuestos; firmas `SIN FIRMA` en sus contenedores; colores impresos del cuerpo, de las tres capas y
-de las cotas internas; barra inferior `#244062` que sobresale por ambos lados del cuerpo; y que los colores del dato no se desvíen de los aprobados.
+de las flechas internas (blancas), las externas (azules) y los valores de fuelle (negros); barra inferior `#244062` que sobresale por ambos lados del cuerpo; y que los colores del dato no se desvíen de los aprobados.
 El PDF se genera de forma segura con `../../common/hoja_pruebas.py` (temporal nuevo y validado; nunca se analiza un PDF antiguo).
 
 ## Colores aprobados y procedencia (Excel original)
@@ -24,7 +24,8 @@ El PDF se genera de forma segura con `../../common/hoja_pruebas.py` (temporal nu
 | Capa interior | `#376092` | forma con `accent1` al 75 % |
 | Capa intermedia | `#95B3D7` | `accent1` al 60 % + 40 % |
 | Capa exterior | `#C6D9F1` | `tx2` al 20 % + 80 % |
-| Cotas internas | `#4A7EBB` | estilo de conector `accent1` por defecto (el mismo de COEX Verde) |
+| Cotas externas (ancho y largo) | `#4A7EBB` | estilo de conector `accent1` por defecto (el mismo de COEX Verde) |
+| Flechas internas de los fuelles | `#FFFFFF` | **Decisión de legibilidad de la versión digital, autorizada; NO es el color del Excel** (el original usa `#4A7EBB`, igual que las externas) |
 | Barra inferior | `#244062` | `accent1` al 50 % más oscuro; parte de la geometría COEX |
 
 Criterio de conversión: HLS en coma flotante (`lumMod/lumOff`: L' = L·mod + off; tint > 0: L' = L·(1 − tint) + tint); reproduce el exterior de COEX Verde
@@ -33,5 +34,6 @@ Criterio de conversión: HLS en coma flotante (`lumMod/lumOff`: L' = L·mod + of
 ## Diferencias aceptadas provisionalmente respecto al Excel
 - El cuerpo del Excel Azul ocupa una fila más (≈ 13.6 pt en el PDF): se conserva la geometría de COEX Verde (holgura y diseño uniforme).
 - «Etiqueta:» se imprime sin valor (la franja rosa del Excel está vacía).
-- **Legibilidad:** las cotas internas `#4A7EBB` sobre `#558ED5` tienen contraste 1.24:1; es el color original y no se cambió. Alternativas por confirmar
-  con Manufactura: blanco (3.4:1), `#1F497D` (2.7:1) o contorno blanco.
+- **Flechas internas de los fuelles:** el Excel original las dibuja en `#4A7EBB`; la versión digital usa `#FFFFFF` (contraste 3.4:1 sobre `#558ED5`, frente a 1.24:1 del color
+  original) por legibilidad sobre el cuerpo azul. Cambio autorizado; se aplica solo con el dato `color_cotas_internas_hex` de COEX Azul (la plantilla compartida y COEX Verde
+  no cambian) y no afecta valores numéricos ni especificaciones de manufactura. Los valores de los fuelles siguen en negro y las flechas externas de ancho y largo en `#4A7EBB`.
