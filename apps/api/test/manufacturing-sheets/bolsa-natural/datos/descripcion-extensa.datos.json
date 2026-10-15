@@ -1,0 +1,38 @@
+{
+  "caso": "descripcion-extensa",
+  "formato": "BOLSA_NATURAL",
+  "esperado": "estres",
+  "nota": "Prueba de estrés (no es un caso real: las descripciones habituales ocupan uno o dos renglones). Descripción y cliente extensos: se verifica igual y, si no cabe, se reporta LÍMITE DETECTADO. La composición de BOLSA_NATURAL es una restricción del formato: PMG = NA, ESD = NA y Natural = X.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Industrializadora de Empaques Plásticos y Servicios Integrales del Centro y Bajío de México S.A.P.I. de C.V.",
+    "fecha_": "15/10/2026",
+    "resina_vci": "",
+    "producto": "Bolsa Con Fuelle",
+    "color": "",
+    "codigo": "EJEMPLO-FICTICIO-BN-003",
+    "descripcion": "Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo",
+    "comp_pmg": "NA",
+    "comp_esd": "NA",
+    "comp_natural": "X",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "16\"",
+    "largo": "18\"",
+    "fuelle_derecho": "6.25\"",
+    "fuelle_izquierdo": "6.25\"",
+    "calibre": "3.3 mil",
+    "peso_bolsa_lb": "0.1129",
+    "etiqueta": ""
+  },
+  "visual": {
+    "color_bolsa_hex": "#FFF2CC",
+    "color_cotas_internas_hex": "#000000"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

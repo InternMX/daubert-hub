@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de Instrucción de Manufactura{{sufijo_titulo}}</title>
+  <style>
+    /* @include components/base-sheet/base-sheet.css */
+    /* @include components/header/header.css */
+
+    /* @include components/base-sheet/base-sheet.print.css */
+    /* @include components/base-sheet/base-sheet.centered.css */
+    @media screen and (max-width: 816px) {
+      .hoja { width: 100%; margin: 0; padding: 14px; }
+      /* @include components/header/header.mobile.css */
+    }
+  </style>
+</head>
+<body>
+  <!-- Formato BOLSA_NATURAL · BN-1. Orden: encabezado, datos generales (con Resina VCI, Composición PMG / ESD / Natural, Presentación y Cantidad),
+       Medidas con fuelles y Peso lb. La Composición de este formato es una restricción fija (PMG = NA, ESD = NA, Natural = X) que valida
+       tools/validate-bolsa-natural-data.mjs; no incluye CP5000, coextrusión de tres capas ni Doblada/Extendida. -->
+  <main class="hoja">
+    <!-- @include components/header/header.html -->
+
+    <!-- @include components/general-info-vci/general-info-vci.html cantidad_fila=con composicion_fila=pmg-esd-natural -->
+
+    <!-- @include components/measures-gussets/measures-gussets.html -->
+
+    <!-- @include components/weight-row/weight-row.html rotulo=Peso&#32;lb: -->
+  </main>
+</body>
+</html>

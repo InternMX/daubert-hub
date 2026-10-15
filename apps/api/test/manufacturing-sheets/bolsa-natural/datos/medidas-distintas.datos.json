@@ -1,0 +1,38 @@
+{
+  "caso": "medidas-distintas",
+  "formato": "BOLSA_NATURAL",
+  "esperado": "valido",
+  "nota": "Otras medidas (12\" x 24\", fuelles distintos de 4.5\" y 4\"), presentación en Rollo con cantidad y otro peso. La composición de BOLSA_NATURAL es una restricción del formato: PMG = NA, ESD = NA y Natural = X. El relleno #FFF2CC es solo de prueba: no se asocia «Natural» con ningún color sin confirmación de Manufactura.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "",
+    "fecha_": "",
+    "resina_vci": "",
+    "producto": "Bolsa Con Fuelle",
+    "color": "",
+    "codigo": "",
+    "descripcion": "",
+    "comp_pmg": "NA",
+    "comp_esd": "NA",
+    "comp_natural": "X",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "250 Bolsas",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "12\"",
+    "largo": "24\"",
+    "fuelle_derecho": "4\"",
+    "fuelle_izquierdo": "4.5\"",
+    "calibre": "2 mil",
+    "peso_bolsa_lb": "0.0870",
+    "etiqueta": ""
+  },
+  "visual": {
+    "color_bolsa_hex": "#FFF2CC",
+    "color_cotas_internas_hex": "#000000"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

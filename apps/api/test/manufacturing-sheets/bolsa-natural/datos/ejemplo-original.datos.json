@@ -1,0 +1,38 @@
+{
+  "caso": "ejemplo-original",
+  "formato": "BOLSA_NATURAL",
+  "esperado": "valido",
+  "nota": "Valores visibles en el Excel: Bolsa Con Fuelle, PMG/ESD = NA, Natural = X, Rollo = NA, Paquete = X, Pulgadas, 16\" x 18\", fuelles de 6.25\", 3.3 mil, 0.1129 lb. Cliente, fecha, Resina VCI, color, código, descripción, cantidad y etiqueta quedan vacíos (campos opcionales vacíos). El relleno #FFF2CC es solo de prueba: no se asocia «Natural» con ningún color sin confirmación de Manufactura.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "",
+    "fecha_": "",
+    "resina_vci": "",
+    "producto": "Bolsa Con Fuelle",
+    "color": "",
+    "codigo": "",
+    "descripcion": "",
+    "comp_pmg": "NA",
+    "comp_esd": "NA",
+    "comp_natural": "X",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "16\"",
+    "largo": "18\"",
+    "fuelle_derecho": "6.25\"",
+    "fuelle_izquierdo": "6.25\"",
+    "calibre": "3.3 mil",
+    "peso_bolsa_lb": "0.1129",
+    "etiqueta": ""
+  },
+  "visual": {
+    "color_bolsa_hex": "#FFF2CC",
+    "color_cotas_internas_hex": "#000000"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

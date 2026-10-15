@@ -33,12 +33,7 @@
             <th class="rotulo" colspan="2" scope="row">Descripción:</th>
             <td class="descripcion" colspan="6" id="descripcion">{{descripcion}}</td>
           </tr>
-          <tr class="alto-136">
-            <th class="rotulo" colspan="2" scope="row">Composición:</th>
-            <td class="tipo">PMG</td><td class="marca" id="comp_pmg" data-valor="{{comp_pmg}}">{{comp_pmg}}</td>
-            <td class="tipo">CP5000</td><td class="marca" id="comp_cp5000" data-valor="{{comp_cp5000}}">{{comp_cp5000}}</td>
-            <td class="tipo">Natural</td><td class="marca" id="comp_natural" data-valor="{{comp_natural}}">{{comp_natural}}</td>
-          </tr>
+          <!-- @include components/general-info-vci/composicion-row.@{composicion_fila}.html -->
           <tr class="alto-136">
             <th class="rotulo" colspan="2" scope="row">Presentación:</th>
             <td class="tipo" colspan="2">Rollo</td><td class="marca" id="pres_rollo" data-valor="{{pres_rollo}}">{{pres_rollo}}</td>
