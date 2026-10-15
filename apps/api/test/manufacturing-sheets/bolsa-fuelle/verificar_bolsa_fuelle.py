@@ -157,6 +157,10 @@ def verificar(datos_ruta, perfil):
         nota_y = centro(geo['seccion-nota'])[1]
         if not cerca(px(geo['seccion-nota'][0] + 5, nota_y), (255, 255, 0)): fallos.append('la nota no es amarilla: %s' % (px(geo['seccion-nota'][0] + 5, nota_y),))
         if not cerca(px(ex0 + 5, (ey0 + ey1) / 2), (218, 150, 148)): fallos.append('Etiqueta no es rosa #DA9694: %s' % (px(ex0 + 5, (ey0 + ey1) / 2),))
+        n0, n1, n2, n3 = geo['seccion-nota']                      # el texto de la nota es rojo #FF0000 sobre fondo amarillo (Excel original)
+        reg_nota = img[int(n1 * escala):int(n3 * escala), int(n0 * escala):int(n2 * escala)]
+        rojos = int(((reg_nota[:, :, 0] > 200) & (reg_nota[:, :, 1] < 60) & (reg_nota[:, :, 2] < 60)).sum()) if reg_nota.size else 0
+        if rojos < 100: fallos.append('el texto de la nota no es rojo (%d px rojos)' % rojos)
     else:
         fallos.append('no se verificaron los colores del dibujo, la nota y la etiqueta: quedan fuera de la primera página (%d páginas generadas)' % len(pdf))
     fin_firmas = geo['seccion-firmas'][3]
