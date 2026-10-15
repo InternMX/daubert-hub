@@ -55,3 +55,9 @@ que generar otra línea base con aprobación.
 - Las coordenadas del HTML se miden con el diseño de pantalla (no con `@media print`); el PDF y la imagen son la medida definitiva.
 - La prueba valida COEX Verde. No cubre COEX Azul (cambia solo datos y paleta), Bolsa Fuelle ni Hoja Paq.
 - El proyecto original en Dropbox no se modifica ni se elimina.
+
+## Pruebas de descripción (independientes de la regresión)
+`comparar_estres.py` (`npm run test:sheets-coex-estres`) usa datos propios de `estres/` (descripción de 1 y 2 renglones, y extrema) y el motor de
+composición/impresión de `comparar_regresion.py`, **sin** tocar `entrada/`, `referencia/` ni la línea base (al terminar comprueba por huella
+que siguen iguales). Los casos de producción exigen una página carta con al menos 20 pt libres; el caso extremo debe desbordar y se
+reporta como `LÍMITE DETECTADO` (no apto para emisión productiva). El PDF se genera de forma segura (ver `../../common/hoja_pruebas.py`).
