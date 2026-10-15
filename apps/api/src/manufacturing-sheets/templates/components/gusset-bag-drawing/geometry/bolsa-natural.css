@@ -1,0 +1,5 @@
+    /* Dibujo técnico de BOLSA_NATURAL (debajo de Etiqueta). Contenedor de 400.4 x 184 pt, igual al ancho B:I de la hoja;
+       el viewBox coincide con el contenedor. Sin borde, padding ni margen. */
+    .dibujo-caja { width: 400.4pt; max-width: 100%; height: 184pt; }
+    .dibujo-bolsa-svg { display: block; width: 100%; height: 184pt; }
+    .dibujo-bolsa-svg .sello-fondo[fill^="{"] { fill: #ddd; }

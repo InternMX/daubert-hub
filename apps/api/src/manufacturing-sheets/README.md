@@ -2,7 +2,7 @@
 
 Plantillas HTML de las Hojas de Instrucción de Manufactura de Daubert México (HTML → PDF).
 Estado: **COEX** (validado contra CONFPMG04) y **BOLSA_FUELLE etapa BF-2** (hoja completa; sin línea base validada).
-**HOJA_PAQ etapa HP-C** (hoja completa con un solo dibujo; sin línea base validada). **ROLLO_CONTINUO etapa RC-2** (hoja completa; solo modalidad DOBLADA con variante gráfica; sin fila Cantidad) y **TERMOENCOGIBLE etapa TE-2** (hoja completa: dibujo de rollo doblado con figura original y presentación final; solo DOBLADA), **BOLSA_PLANA_1 etapa BP-2** (hoja completa: Dibujo Hoja, Etiqueta, bolsa plana con sello, nota y firmas).
+**HOJA_PAQ etapa HP-C** (hoja completa con un solo dibujo; sin línea base validada). **ROLLO_CONTINUO etapa RC-2** (hoja completa; solo modalidad DOBLADA con variante gráfica; sin fila Cantidad) y **TERMOENCOGIBLE etapa TE-2** (hoja completa: dibujo de rollo doblado con figura original y presentación final; solo DOBLADA), **BOLSA_PLANA_1 etapa BP-2** (hoja completa: Dibujo Hoja, Etiqueta, bolsa plana con sello, nota y firmas). **BOLSA_NATURAL etapa BN-2** (hoja completa; composición fija PMG = NA, ESD = NA, Natural = X validada por tools/validate-bolsa-natural-data.mjs; sin línea base validada).
 
 **Criterio:** el objetivo es estandarizar visualmente todas las hojas (mismo encabezado, tipografía, colores corporativos, datos
 generales, Medidas, pesos, etiqueta y firmas), conservando las características y la información técnica de cada formato. No se
@@ -27,6 +27,9 @@ templates/
     flat-bag-drawing/        bolsa plana con línea de sello de fondo (BOLSA_PLANA_1)
     folded-roll-drawing/     dibujo de rollo doblado de TERMOENCOGIBLE: figura original (imagen, sin «Apertura») con Inicio y cotas
     final-presentation-drawing/  presentación final de TERMOENCOGIBLE: rectángulo blanco con contorno negro y cotas
+    general-info-vci/        datos generales con Resina VCI; parámetros cantidad_fila (con|sin) y composicion_fila (pmg-cp5000-natural | pmg-esd-natural de BOLSA_NATURAL)
+    gusset-bag-drawing/geometry/bolsa-natural  dibujo con fuelles de BOLSA_NATURAL: sello de fondo plano y frontal (rectángulo delgado, mismo relleno, bordes negros)
+    note-seal-height/        nota de manufactura; variante bolsa-natural (amarilla con texto rojo)
     roll-drawing/            Dibujo de rollo; geometry/extendido.html y geometry/doblado.html, cota ancho_rollo (sin uso por ahora; para ROLLO_CONTINUO)
     header/
       header.html            logotipo + título (placeholder {{sufijo_titulo}})
