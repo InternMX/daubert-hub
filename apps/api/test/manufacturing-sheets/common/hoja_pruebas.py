@@ -117,6 +117,16 @@ def texto_de_todas_las_paginas(pdf):
     return ' '.join(' '.join(w[4] for w in p.get_text('words')) for p in pdf)
 
 
+def contar_renglones_descripcion(palabras):
+    """Cuenta los renglones de texto de la fila Descripción (entre la etiqueta «Descripción:» y la fila «Composición:») en las palabras de la página 1."""
+    et = [w for w in palabras if w[4].startswith('Descripci')]
+    if not et: raise ErrorRegeneracion('no se encontró la etiqueta «Descripción:» en el PDF')
+    e = et[0]
+    sig = [w for w in palabras if w[4].startswith('Composici') and w[1] > e[1]]
+    y1 = sig[0][1] if sig else e[1] + 120
+    return len({round(w[1]) for w in palabras if w[0] > e[2] + 8 and e[1] - 12 <= w[1] < y1 - 4})
+
+
 def preparar_carpeta(carpeta, origen_imagenes=None):
     """Crea la carpeta de un caso SIN borrar nada (los resultados de otros casos y ejecuciones se conservan)."""
     os.makedirs(os.path.join(carpeta, 'images'), exist_ok=True)
@@ -130,6 +140,17 @@ def pixel(img, escala, x, y):
     i, j = int(y * escala), int(x * escala)
     if not (0 <= i < img.shape[0] and 0 <= j < img.shape[1]):
         raise FueraDePagina('el punto (%.1f, %.1f) pt está fuera de la página (%d x %d px)' % (x, y, img.shape[1], img.shape[0]))
+    return tuple(int(v) for v in img[i, j])
+
+
+FUERA = (-9999, -9999, -9999)       # «color» de un punto que cayó fuera de la página: no coincide con ningún color esperado ni es oscuro/claro
+
+
+def pixel_o_none(img, escala, x, y):
+    """Como `pixel`, pero un punto fuera de la imagen (contenido que pasó a otra página) devuelve FUERA en lugar de lanzar IndexError: las comprobaciones
+    de color lo toman como no verificable (fallan) y, solo en un caso de estrés con límite detectado, esa falla se informa como consecuencia del límite."""
+    i, j = int(y * escala), int(x * escala)
+    if not (0 <= i < img.shape[0] and 0 <= j < img.shape[1]): return FUERA
     return tuple(int(v) for v in img[i, j])
 
 
@@ -167,7 +188,10 @@ def es_falla_de_limite(f):
 
 def es_consecuencia_de_limite(f):
     """Efectos secundarios de que parte de la hoja pase a otra página (las firmas dejan de estar en la primera, no se pueden leer sus píxeles...)."""
-    return ('no contiene el marcador SIN FIRMA' in f or f.startswith(('tamaño de firma', 'las zonas de firma')) or 'fuera de la primera página' in f)
+    return ('no contiene el marcador SIN FIRMA' in f or f.startswith(('tamaño de firma', 'las zonas de firma')) or 'fuera de la primera página' in f
+            or 'no muestra' in f or f.startswith(('relleno de', 'la nota no es', 'Etiqueta no es', 'la barra inferior', 'no se imprimen', 'las cotas', 'el rectángulo de la presentación',
+                                                  'la figura', 'la imagen del rollo', 'la franja', 'el cuerpo del rollo', 'no se distingue', 'el interior del sello', 'el texto de la nota', 'la línea del sello'))
+            or 'no aparece dentro del dibujo' in f)
 
 
 def clasificar_limites(esperado, fallos):

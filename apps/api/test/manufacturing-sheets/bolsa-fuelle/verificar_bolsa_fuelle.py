@@ -82,6 +82,9 @@ def verificar(datos_ruta, perfil):
     if (pg.rect.width, pg.rect.height) != (612.0, 792.0): fallos.append('tamaño de página %s' % pg.rect)
     palabras = pg.get_text('words')
     texto = ' '.join(hp.texto_de_todas_las_paginas(pdf).split())      # integridad del texto en todas las páginas (si desborda, nada se pierde)
+    if datos.get('renglones_descripcion') is not None:           # casos de 1 y 2 renglones: el fixture debe ocupar exactamente esos renglones
+        n_reng = hp.contar_renglones_descripcion(palabras)
+        if n_reng != datos['renglones_descripcion']: fallos.append('la descripción ocupa %d renglones (se esperaban %d)' % (n_reng, datos['renglones_descripcion']))
     # 4. DOM de las secciones
     sonda = ruta_html.replace('.html', '.sonda.html')
     open(sonda, 'w', encoding='utf-8-sig', newline='\n').write(open(ruta_html, encoding='utf-8-sig').read().replace('</body>', JS_SONDA))

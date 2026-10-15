@@ -3,6 +3,7 @@
   "formato": "TERMOENCOGIBLE",
   "esperado": "valido",
   "modalidad": "DOBLADA",
+  "renglones_descripcion": 2,
   "nota": "Descripción de dos renglones (escenario de producción, como en el Excel).",
   "datos": {
     "sufijo_titulo": "",

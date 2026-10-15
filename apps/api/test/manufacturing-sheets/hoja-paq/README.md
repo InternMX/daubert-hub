@@ -33,3 +33,11 @@ Composición y placeholders (plantilla = perfil = datos, sin fuelles, capas ni `
 ausencia de «Dibujo de rollo», orden vertical, sin solapes ni salidas del bloque, tablas y dibujo de 400.4 pt centrados (DOM y píxeles),
 `X`/`NA` dinámicos, Etiqueta rosa y completa, cotas `ancho`/`largo` dentro del Dibujo Hoja, relleno con `color_bolsa_hex`, dos zonas de firma
 de 105 x 70 pt con `SIN FIRMA`, y holgura vertical mínima de 20 pt.
+
+## Casos de descripción y límites de impresión (VT-1 a VT-4)
+Casos: descripcion-1-renglon-* y descripcion-2-renglones-* (doblada y extendida, producción) y descripcion-extensa-* / descripcion-desborde (estrés). Las descripciones reales ocupan uno o dos renglones: los casos de producción exigen una página carta, al menos 20 pt libres,
+sin placeholders pendientes y con el texto íntegro (`renglones_descripcion` verifica cuántos renglones ocupa la descripción). Los casos
+`estres` se ejecutan igual, pero si exceden la página o la holgura se informan como `LÍMITE DETECTADO` (páginas generadas y excedente), sin
+truncar ni reducir la escala, y el caso queda marcado con `NO_APTO_PARA_EMISION.txt` en su carpeta de resultados. El PDF se imprime en un
+archivo temporal nuevo y validado (`../common/hoja_pruebas.py`): si Chrome falla, no genera el archivo o el PDF está bloqueado, la prueba
+falla indicando la ruta y nunca analiza un PDF anterior. Uso: `python verificar_hoja_paq.py [--datos ...] [--salida CARPETA]`.

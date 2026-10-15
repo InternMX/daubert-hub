@@ -105,6 +105,9 @@ def verificar(datos_ruta, perfil):
     if (pg.rect.width, pg.rect.height) != (612.0, 792.0): fallos.append('tamaño de página %s' % pg.rect)
     palabras = pg.get_text('words')
     texto = ' '.join(hp.texto_de_todas_las_paginas(pdf).split())      # integridad del texto en todas las páginas (si desborda, nada se pierde)
+    if datos.get('renglones_descripcion') is not None:           # casos de 1 y 2 renglones: el fixture debe ocupar exactamente esos renglones
+        n_reng = hp.contar_renglones_descripcion(palabras)
+        if n_reng != datos['renglones_descripcion']: fallos.append('la descripción ocupa %d renglones (se esperaban %d)' % (n_reng, datos['renglones_descripcion']))
     # 3. DOM
     ids = [s for s in secciones if s != 'encabezado']
     sonda = ruta_html.replace('.html', '.sonda.html')
@@ -155,7 +158,7 @@ def verificar(datos_ruta, perfil):
     cols = np.where((img[y0:y1] < 245).any(axis=2).any(axis=0))[0]
     izq, der = cols.min() / escala, 612 - (cols.max() + 1) / escala
     if abs(izq - der) > 1.0: fallos.append('PDF descentrado: margen izquierdo %.1f / derecho %.1f pt' % (izq, der))
-    px = lambda x, y: hp.pixel(img, escala, x, y)             # fuera de la imagen lanza FueraDePagina (nunca un IndexError)
+    px = lambda x, y: hp.pixel_o_none(img, escala, x, y)             # fuera de la imagen devuelve hp.FUERA (no verificable; nunca un IndexError)
     cerca = lambda a, b, t=2: all(abs(x - y) <= t for x, y in zip(a, b))
     hexrgb = lambda c: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
     # 7. X y NA dinámicos

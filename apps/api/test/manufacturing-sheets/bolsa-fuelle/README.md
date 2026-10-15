@@ -37,3 +37,11 @@ Son datos de prueba, no pedidos reales. Los bloques de firma son marcadores `SIN
 ## Pendiente de medición
 
 Dimensiones definitivas frente a un PDF exportado del Excel original (área de impresión A1:J43, márgenes de 0.25 in).
+
+## Casos de descripción y límites de impresión (VT-1 a VT-4)
+Casos: descripcion-1-renglon, descripcion-2-renglones (producción) y descripcion-extensa / descripcion-desborde (estrés). Las descripciones reales ocupan uno o dos renglones: los casos de producción exigen una página carta, al menos 20 pt libres,
+sin placeholders pendientes y con el texto íntegro (`renglones_descripcion` verifica cuántos renglones ocupa la descripción). Los casos
+`estres` se ejecutan igual, pero si exceden la página o la holgura se informan como `LÍMITE DETECTADO` (páginas generadas y excedente), sin
+truncar ni reducir la escala, y el caso queda marcado con `NO_APTO_PARA_EMISION.txt` en su carpeta de resultados. El PDF se imprime en un
+archivo temporal nuevo y validado (`../common/hoja_pruebas.py`): si Chrome falla, no genera el archivo o el PDF está bloqueado, la prueba
+falla indicando la ruta y nunca analiza un PDF anterior. Uso: `python verificar_bolsa_fuelle.py [--datos ...] [--salida CARPETA]`.

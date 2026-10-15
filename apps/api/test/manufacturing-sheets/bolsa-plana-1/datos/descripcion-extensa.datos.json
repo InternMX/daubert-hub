@@ -1,7 +1,8 @@
 {
   "caso": "descripcion-extensa",
   "formato": "BOLSA_PLANA_1",
-  "nota": "Textos muy largos: peor caso de altura.",
+  "esperado": "estres",
+  "nota": "Prueba de estrés (no es un caso real: las descripciones habituales ocupan uno o dos renglones). Descripción larga: se verifica igual que los demás casos y, si no cabe en la página carta, el verificador lo reporta como LÍMITE DETECTADO.",
   "datos": {
     "sufijo_titulo": "",
     "cliente": "Industrializadora de Empaques Plásticos y Servicios Integrales del Centro y Bajío de México S.A.P.I. de C.V.",

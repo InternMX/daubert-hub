@@ -3,6 +3,7 @@
   "formato": "TERMOENCOGIBLE",
   "esperado": "valido",
   "modalidad": "DOBLADA",
+  "renglones_descripcion": 1,
   "nota": "Descripción habitual de un solo renglón (escenario de producción).",
   "datos": {
     "sufijo_titulo": "",
@@ -12,7 +13,7 @@
     "producto": "ROLLO VCI + UV TERMOENCOGIBLE",
     "color": "NATURAL",
     "codigo": "EJEMPLO-FICTICIO-TE-001",
-    "descripcion": "Rollo VCI + UV termoencogible doblado 6 x 30 metros Cal. 8 mil",
+    "descripcion": "Rollo VCI UV termoencogible 6 x 30 m",
     "comp_pmg": "X",
     "comp_cp5000": "NA",
     "comp_natural": "NA",

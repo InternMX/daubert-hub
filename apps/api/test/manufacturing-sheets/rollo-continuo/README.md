@@ -22,3 +22,11 @@ Requiere Node, Google Chrome (`CHROME_PATH`), PyMuPDF y numpy. Salida en `test-r
 | `descripcion-extensa` | valido | Textos muy largos. |
 | `seleccion-extendida-tecnico` | tecnico | Extendida = X: se imprime para probar la fila de selección, pero el validador lo rechaza. |
 | `invalido-*` | invalido | Indicadores inconsistentes, ambas X, EXTENDIDA no soportada, modalidad desconocida, sin `ancho_rollo`. |
+
+## Casos de descripción y límites de impresión (VT-1 a VT-4)
+Casos: descripcion-1-renglon, descripcion-2-renglones (producción) y descripcion-extensa / descripcion-desborde (estrés). Las descripciones reales ocupan uno o dos renglones: los casos de producción exigen una página carta, al menos 20 pt libres,
+sin placeholders pendientes y con el texto íntegro (`renglones_descripcion` verifica cuántos renglones ocupa la descripción). Los casos
+`estres` se ejecutan igual, pero si exceden la página o la holgura se informan como `LÍMITE DETECTADO` (páginas generadas y excedente), sin
+truncar ni reducir la escala, y el caso queda marcado con `NO_APTO_PARA_EMISION.txt` en su carpeta de resultados. El PDF se imprime en un
+archivo temporal nuevo y validado (`../common/hoja_pruebas.py`): si Chrome falla, no genera el archivo o el PDF está bloqueado, la prueba
+falla indicando la ruta y nunca analiza un PDF anterior. Uso: `python verificar_rollo_continuo.py [--datos ...] [--salida CARPETA]`.
