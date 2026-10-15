@@ -32,10 +32,10 @@ CHROME = os.environ.get('CHROME_PATH', r'C:\Program Files\Google\Chrome\Applicat
 CHROME_FLAGS = ['--headless', '--disable-gpu', '--no-pdf-header-footer']
 sin_comentarios = lambda t: re.sub(r'/\*.*?\*/|<!--.*?-->', '', t, flags=re.S)
 BLOQUES_PERMITIDOS = {'<span class="sin-firma">SIN FIRMA</span>'}               # pruebas: solo marcadores, nunca firmas reales
-LIMITE_Y = 792 - 0.55 * 72                    # margen inferior de 0.55 in
+LIMITE_Y = hp.LIMITE_Y                        # margen inferior de 0.55 in (criterio común)
 ANCHO_BLOQUE = 400.4
 IZQ_BLOQUE = (612 - ANCHO_BLOQUE) / 2
-HOLGURA_MINIMA = 20.0                         # espacio libre mínimo al final de la página, también con textos extensos (TE-2)
+HOLGURA_MINIMA = hp.HOLGURA_MINIMA              # espacio libre mínimo al final de la página en documentos de producción (criterio común)
 ETIQUETAS_TE1 = ['Cliente:', 'Fecha:', 'Resina VCI:', 'Producto:', 'Color:', 'Código DCMX:', 'Descripción:', 'Composición:', 'PMG', 'CP5000', 'Natural',
                  'Presentación:', 'Rollo', 'Paquete', 'Hoja:', 'Doblada', 'Extendida', 'Medidas:', 'Unidad de Medidas:', 'Ancho:', 'Largo:', 'Calibre:', 'Peso lb:']
 ETIQUETAS_TE2 = ['Etiqueta:', 'Dibujo de rollo doblado', 'Dibujo de presentación final', 'Inicio']
@@ -127,7 +127,7 @@ def verificar(datos_ruta, perfil):
     if len(pdf) != 1: fallos.append('páginas: %d (se esperaba 1)' % len(pdf))
     if (pg.rect.width, pg.rect.height) != (612.0, 792.0): fallos.append('tamaño de página %s' % pg.rect)
     palabras = pg.get_text('words')
-    texto = ' '.join(' '.join(w[4] for w in palabras).split())
+    texto = ' '.join(hp.texto_de_todas_las_paginas(pdf).split())      # integridad del texto en todas las páginas (si desborda, nada se pierde)
     # 3. DOM
     ids = [s for s in secciones if s != 'encabezado']
     sonda = ruta_html.replace('.html', '.sonda.html')
@@ -180,7 +180,7 @@ def verificar(datos_ruta, perfil):
     cols = np.where((img[y0:y1] < 245).any(axis=2).any(axis=0))[0]
     izq, der = cols.min() / escala, 612 - (cols.max() + 1) / escala
     if abs(izq - der) > 1.0: fallos.append('PDF descentrado: margen izquierdo %.1f / derecho %.1f pt' % (izq, der))
-    px = lambda x, y: tuple(int(v) for v in img[int(y * escala), int(x * escala)])
+    px = lambda x, y: hp.pixel(img, escala, x, y)             # fuera de la imagen lanza FueraDePagina (nunca un IndexError)
     cerca = lambda a, b, t=2: all(abs(x - y) <= t for x, y in zip(a, b))
     # 7. X y NA dinámicos
     for m in MARCAS:
@@ -228,20 +228,14 @@ def verificar(datos_ruta, perfil):
         if f1[2] >= f2[0]: fallos.append('las zonas de firma se tocan o se superponen')
         if abs((f1[0] + f1[2]) / 2 + (f2[0] + f2[2]) / 2 - 2 * (IZQ_BLOQUE + ANCHO_BLOQUE / 2)) > 0.5: fallos.append('las firmas no son simétricas respecto al bloque')
         fin = geo['seccion-firmas'][3]
-        if LIMITE_Y - fin < HOLGURA_MINIMA: fallos.append('holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, HOLGURA_MINIMA))
+        fallos += hp.fallo_holgura(fin, HOLGURA_MINIMA)
         detalle = ' | rollo doblado %.1f pt | final %.1f pt | firmas y %.1f-%.1f' % (d1[3] - d1[1], d2[3] - d2[1], geo['seccion-firmas'][1], fin)
-    if fin > LIMITE_Y: fallos.append('el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y))
-    limites = []
-    if esperado == 'estres':
-        es_limite = lambda f: f.startswith(('páginas:', 'holgura vertical', 'el contenido excede', 'texto fuera del bloque o del área')) or 'sale del área imprimible' in f
-        limites = [f for f in fallos if es_limite(f)]
-        if limites: limites += [f for f in fallos if f not in limites and ('no contiene el marcador SIN FIRMA' in f or f.startswith('tamaño de firma'))]   # consecuencia de pasar a la 2.ª página
-        fallos = [f for f in fallos if f not in limites]
+    fallos += hp.fallo_exceso(fin)
+    fallos, limites = hp.clasificar_limites(esperado, fallos)
     print('%-40s %s | págs %d | pend. %d | márgenes %.1f/%.1f | peso y %.1f-%.1f%s | libre %.1f pt | %s%s' % (
         caso, modalidad[:4], len(pdf), pendientes, izq, der, geo['seccion-peso'][1], geo['seccion-peso'][3], detalle, LIMITE_Y - fin,
-        ('OK' if not fallos else 'FALLA (%d)' % len(fallos)) + (' [ESTRÉS: LÍMITE DETECTADO, no es regresión]' if limites else ' [estrés: cabe en la página]' if esperado == 'estres' else ''),
+        ('OK' if not fallos else 'FALLA (%d)' % len(fallos)) + hp.informar_limites(carpeta, esperado, limites, len(pdf), fin),
         ' [técnico: el validador lo rechaza]' if esperado == 'tecnico' else ''))
-    for f in limites[:6]: print('   ! LÍMITE (caso de estrés; el formato no cabe con este texto, sin truncar ni escalar): ' + f)
     for f in fallos[:15]: print('   -', f)
     return fallos
 

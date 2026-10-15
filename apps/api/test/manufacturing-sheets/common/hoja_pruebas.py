@@ -148,12 +148,17 @@ def ejecutar_casos(verificar, archivos, perfil):
 
 
 # ---------------------------------------------------------------- criterios de impresión
+def fallo_holgura(fin, holgura_minima=HOLGURA_MINIMA):
+    return ['holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, holgura_minima)] if LIMITE_Y - fin < holgura_minima else []
+
+
+def fallo_exceso(fin):
+    return ['el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y)] if fin > LIMITE_Y else []
+
+
 def fallos_de_limite(fin, holgura_minima=HOLGURA_MINIMA):
     """Fallas de límite vertical de una hoja de producción cuyo contenido termina en `fin` pt: holgura mínima y exceso del área imprimible."""
-    f = []
-    if LIMITE_Y - fin < holgura_minima: f.append('holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, holgura_minima))
-    if fin > LIMITE_Y: f.append('el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y))
-    return f
+    return fallo_holgura(fin, holgura_minima) + fallo_exceso(fin)
 
 
 def es_falla_de_limite(f):

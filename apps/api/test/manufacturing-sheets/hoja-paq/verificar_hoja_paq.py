@@ -30,9 +30,9 @@ CHROME_FLAGS = ['--headless', '--disable-gpu', '--no-pdf-header-footer']
 sin_comentarios = lambda t: re.sub(r'/\*.*?\*/|<!--.*?-->', '', t, flags=re.S)
 RE_HEX = re.compile(r'^#[0-9A-Fa-f]{6}$')
 BLOQUES_PERMITIDOS = {'<span class="sin-firma">SIN FIRMA</span>'}               # pruebas: solo marcadores, nunca firmas reales
-LIMITE_Y = 792 - 0.55 * 72                    # margen inferior de 0.55 in
+LIMITE_Y = hp.LIMITE_Y                        # margen inferior de 0.55 in (criterio común)
 ANCHO_BLOQUE = 400.4
-HOLGURA_MINIMA = 20.0                         # espacio libre mínimo al final de la página, también en el caso de textos extensos
+HOLGURA_MINIMA = hp.HOLGURA_MINIMA              # espacio libre mínimo al final de la página en documentos de producción (criterio común)
 IZQ_BLOQUE = (612 - ANCHO_BLOQUE) / 2
 ETIQUETAS = ['Cliente:', 'Fecha:', 'Resina VCI:', 'Producto:', 'Color:', 'Código DCMX:', 'Descripción:', 'Composición:', 'PMG', 'CP5000', 'Natural',
              'Presentación:', 'Rollo', 'Paquete', 'Cantidad Por Rollo o Paquete:', 'Hoja:', 'Doblada', 'Extendida', 'Medidas:',
@@ -75,7 +75,7 @@ def verificar(datos_ruta, perfil):
     caso, esperado, modalidad = datos['caso'], datos['esperado'], datos['modalidad']
     # 0. contrato: el validador acepta los casos válidos y rechaza los técnicos e inválidos
     codigo, mensaje = validar(datos_ruta)
-    if (codigo == 0) != (esperado == 'valido'): fallos.append('el validador %s el caso %s: %s' % ('aceptó' if codigo == 0 else 'rechazó', esperado, mensaje))
+    if (codigo == 0) != (esperado in ('valido', 'estres')): fallos.append('el validador %s el caso %s: %s' % ('aceptó' if codigo == 0 else 'rechazó', esperado, mensaje))
     if esperado == 'invalido':
         print('%-30s rechazado por el validador (%s) | %s' % (caso, mensaje.replace('\n', ' ').strip('- '), 'OK' if not fallos else 'FALLA (%d)' % len(fallos)))
         for f in fallos: print('   -', f)
@@ -113,7 +113,7 @@ def verificar(datos_ruta, perfil):
     if len(pdf) != 1: fallos.append('páginas: %d (se esperaba 1)' % len(pdf))
     if (pg.rect.width, pg.rect.height) != (612.0, 792.0): fallos.append('tamaño de página %s' % pg.rect)
     palabras = pg.get_text('words')
-    texto = ' '.join(' '.join(w[4] for w in palabras).split())
+    texto = ' '.join(hp.texto_de_todas_las_paginas(pdf).split())      # integridad del texto en todas las páginas (si desborda, nada se pierde)
     # 3. DOM
     sonda = ruta_html.replace('.html', '.sonda.html')
     open(sonda, 'w', encoding='utf-8-sig', newline='\n').write(open(ruta_html, encoding='utf-8-sig').read().replace('</body>', JS_SONDA))
@@ -160,7 +160,7 @@ def verificar(datos_ruta, perfil):
     cols = np.where((img[y0:y1] < 245).any(axis=2).any(axis=0))[0]
     izq, der = cols.min() / escala, 612 - (cols.max() + 1) / escala
     if abs(izq - der) > 1.0: fallos.append('PDF descentrado: margen izquierdo %.1f / derecho %.1f pt' % (izq, der))
-    px = lambda x, y: tuple(int(v) for v in img[int(y * escala), int(x * escala)])
+    px = lambda x, y: hp.pixel(img, escala, x, y)             # fuera de la imagen lanza FueraDePagina (nunca un IndexError)
     cerca = lambda a, b, t=2: all(abs(x - y) <= t for x, y in zip(a, b))
     hexrgb = lambda c: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
     # 7. X y NA dinámicos
@@ -188,12 +188,13 @@ def verificar(datos_ruta, perfil):
         fallos.append('las firmas no son simétricas respecto al bloque')
     # 10. altura ocupada
     fin = geo['seccion-firmas'][3]
-    if LIMITE_Y - fin < HOLGURA_MINIMA: fallos.append('holgura vertical de %.1f pt (mínimo %.0f pt)' % (LIMITE_Y - fin, HOLGURA_MINIMA))
-    if fin > LIMITE_Y: fallos.append('el contenido excede el área imprimible (%.1f > %.1f)' % (fin, LIMITE_Y))
+    fallos += hp.fallo_holgura(fin, HOLGURA_MINIMA)
+    fallos += hp.fallo_exceso(fin)
     alto = lambda s: geo[s][3] - geo[s][1]
+    fallos, limites = hp.clasificar_limites(esperado, fallos)
     print('%-30s %s | págs %d | pend. %d | márgenes %.1f/%.1f | etiqueta y %.1f | hoja %.1f pt | firmas y %.1f-%.1f | libre %.1f pt | %s%s' % (
         caso, modalidad[:4], len(pdf), pendientes, izq, der, geo['seccion-etiqueta'][1], alto('seccion-dibujo-hoja'),
-        geo['seccion-firmas'][1], fin, LIMITE_Y - fin, 'OK' if not fallos else 'FALLA (%d)' % len(fallos),
+        geo['seccion-firmas'][1], fin, LIMITE_Y - fin, ('OK' if not fallos else 'FALLA (%d)' % len(fallos)) + hp.informar_limites(carpeta, esperado, limites, len(pdf), fin),
         ' [técnico: el validador lo rechaza]' if esperado == 'tecnico' else ''))
     for f in fallos[:15]: print('   -', f)
     return fallos
