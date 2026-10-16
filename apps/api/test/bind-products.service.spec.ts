@@ -52,6 +52,20 @@ describe('BindProductsService', () => {
     expect(data.advertencias.map((a) => a.codigo)).toContain('FAMILIA_NO_CONFIRMADA');
     expect(data.datosSugeridosPlantilla).toMatchObject({ codigo: 'SCHFPMG001', peso_bolsa_lb: '0.0428', cantidad: '200 Bolsas' });
     expect(data.especificacionConfirmada).toBe(false);
+    // Fase 3.1: sugerencias provisionales con su regla de origen; la familia sigue sin confirmarse.
+    expect(data.sugerencias.familia).toMatchObject({ valor: 'BOLSA_PLANA_1' });
+    expect(data.sugerencias.resinaVci).toMatchObject({ valor: 'PMG AL 3%', regla: 'RESINA_VCI_PMG_3PCT' });
+    expect(data.sugerencias.color).toMatchObject({ preset: 'DAUBERT_AZUL', concentracionPct: '2' });
+    expect(data.sugerencias.etiqueta.valor).toBe(SCHF.Title);
+    expect(data.interpretacion.campos.calibre.valor).toMatchObject({ valorOriginal: '3', unidadOriginal: 'MIL', textoLiteral: '3 MIL' });
+  });
+
+  it('un producto con fuelle no recibe familia sugerida (familiaSugerida vacía) y lo explica', async () => {
+    const { service } = servicio(resultados({ ...SCHF, Title: 'BOLSA VCI PMG 51 X 46 X 80" CAL. 200 ROLLO C/50 BOLSAS' }));
+    const { data } = await service.lookupByCode('SCHFPMG001');
+    expect(data.familiaSugerida).toEqual([]);
+    expect(data.sugerencias.familia.valor).toBeNull();
+    expect(data.sugerencias.familia.motivo).toMatch(/fuelle/i);
   });
 
   it('producto encontrado por ID', async () => {

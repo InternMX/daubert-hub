@@ -57,7 +57,7 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
   const posibles: FamiliaPosible[] = titulo.tipo.valor === 'BOLSA' ? ['BOLSA_PLANA_1'] : titulo.tipo.valor === 'HOJA' ? ['HOJA_PAQ'] : [];
   advertencias.push({
     codigo: 'FAMILIA_NO_CONFIRMADA',
-    mensaje: 'La familia de manufactura no se determina automáticamente: la selecciona el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).',
+    mensaje: 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).',
     campos: ['familia']
   });
 

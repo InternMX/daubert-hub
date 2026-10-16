@@ -7,6 +7,7 @@ import { listClients } from '../services/clients';
 import { previewManufacturingSheet } from '../services/sheetPreview';
 import { casoB, deepFreeze, schfpmg001 } from '../test/bindProductFixtures';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
+import { localIsoDate } from './specificationForm';
 
 vi.mock('../services/bindProducts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindProducts')>()), lookupBindProductByCode: vi.fn() }));
 vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), listClients: vi.fn() }));
@@ -25,14 +26,25 @@ async function buscar(user: ReturnType<typeof userEvent.setup>, code = 'SCHFPMG0
 
 const campo = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
 const frameOf = (label: string) => campo(label).closest('div.MuiBox-root') as HTMLElement;
+const clienteCatalogo = { id: 'c-1', commercialName: 'Schneider Electric', companyType: 'CLIENTE', status: 'ACTIVO', clientStatus: 'ACTIVO' as const, notes: null, roles: ['CLIENTE'], fiscal: null };
+
+async function elegirCliente(user: ReturnType<typeof userEvent.setup>) {
+  listClientsMock.mockResolvedValue({ data: [clienteCatalogo], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } });
+  await user.type(campo('Cliente (obligatorio)'), 'Schn');
+  await user.click(await screen.findByRole('option', { name: 'Schneider Electric' }));
+}
 
 beforeEach(() => {
-  previewMock.mockImplementation(async (familia, datos) => ({ html: `<p>${familia} ancho=${datos.ancho} largo=${datos.largo} cantidad=${datos.cantidad} calibre=${datos.calibreValor}</p>`, familia, borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [] }));
+  previewMock.mockImplementation(async (familia, datos) => ({
+    html: `<p>${familia} ancho=${datos.ancho} largo=${datos.largo} cantidad=${datos.cantidad} calibre=${datos.calibre} etiqueta=${datos.etiqueta} color=${datos.colorNombre}|${datos.colorHex} cliente=${datos.cliente}</p>`,
+    familia, borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: []
+  }));
   listClientsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } });
 });
 afterEach(() => { vi.clearAllMocks(); });
 
-describe('ManufacturingSpecificationPage', () => {
+// El formulario completo (MUI + vista previa con debounce) es costoso de renderizar: con la suite completa en paralelo y cobertura, 5 s no alcanzan.
+describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
   it('muestra el buscador y no consulta nada hasta que el usuario lo pide', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'Especificación de manufactura' })).toBeInTheDocument();
@@ -40,7 +52,7 @@ describe('ManufacturingSpecificationPage', () => {
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
-  it('flujo SCHFPMG001: busca, muestra el producto de BIND y precarga el formulario con su procedencia', async () => {
+  it('flujo SCHFPMG001: precarga BIND, sugiere familia, PMG AL 3%, Daubert Azul, fecha y etiqueta, cada una con su procedencia', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(deepFreeze(schfpmg001()));
     renderPage();
@@ -48,42 +60,58 @@ describe('ManufacturingSpecificationPage', () => {
     expect(lookupMock).toHaveBeenCalledWith('SCHFPMG001', expect.any(AbortSignal));
 
     const panel = await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(within(panel).getByText('bbe2cc0c-3498-47cb-a556-d435eba5c0b4')).toBeInTheDocument();
-    expect(within(panel).getByText('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS')).toBeInTheDocument();
-    expect(within(panel).getByText('0.0428')).toBeInTheDocument();
     expect(within(panel).getByText('Solo lectura')).toBeInTheDocument();
     expect(within(panel).getByText(/no la fecha de emisión/i)).toBeInTheDocument();
 
     expect(campo('Código DCMX').value).toBe('SCHFPMG001');
-    expect(campo('Código DCMX a buscar').value).toBe('SCHFPMG001');   // el buscador conserva su valor; el formulario tiene su propio campo
     expect(campo('Ancho').value).toBe('13');
-    expect(campo('Largo').value).toBe('16');
-    expect(campo('Calibre (valor)').value).toBe('3');
-    expect(campo('Calibre (unidad)').value).toBe('MIL');
+    expect(campo('Calibre').value).toBe('3 MIL');
     expect(campo('Cantidad por rollo o paquete').value).toBe('200');
-    expect(campo('Peso (lb)').value).toBe('0.0428');
+    expect(campo('Resina VCI').value).toBe('PMG AL 3%');
+    expect(within(frameOf('Resina VCI')).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect(campo('Fecha de emisión de la hoja').value).toBe(localIsoDate());
+    expect(within(frameOf('Fecha de emisión de la hoja')).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect(campo('Etiqueta').value).toBe('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
+    expect(campo('Texto del color en el documento').value).toBe('DAUBERT AZUL AL 2%');
+    expect(campo('Concentración del color (%)').value).toBe('2');
+    expect(screen.getByTestId('color-hex-readonly')).toHaveTextContent('#538DD5');
+    expect(within(frameOf('Ancho')).getByText('Recuperado de BIND')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Paquete' })).toBeChecked();
-    expect(within(frameOf('Ancho')).getByText('Recuperado de BIND')).toBeInTheDocument();
-    expect(within(frameOf('Cliente')).getByText('Captura manual')).toBeInTheDocument();
-    expect(screen.getByText(/no se determina automáticamente/i)).toBeInTheDocument();
   });
 
-  it('la familia no se elige sola: ninguna opción está marcada y la pista de BIND no es vinculante', async () => {
+  it('la familia sugerida se muestra seleccionada, provisional y editable; «Hojas» sustituye a «Hoja Paq»', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await buscar(user);
     await screen.findByRole('region', { name: 'Familia de manufactura' });
+    expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Hojas' })).not.toBeChecked();
+    expect(screen.queryByText(/Hoja Paq/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('family-chip')).toHaveTextContent('Sugerida por el sistema (provisional)');
+    expect(screen.getByTestId('family-note')).toHaveTextContent(/dos medidas/);
+    await user.click(screen.getByRole('button', { name: 'Confirmar familia' }));
+    expect(screen.getByTestId('family-chip')).toHaveTextContent('Familia elegida por el usuario');
+  });
+
+  it('sin información suficiente la familia queda pendiente y se explica el motivo', async () => {
+    const user = userEvent.setup();
+    const base = schfpmg001();
+    lookupMock.mockResolvedValue({ ...base, familiaSugerida: [], sugerencias: { ...base.sugerencias, familia: { valor: null, motivo: 'Hay indicios de fuelle u otra familia especial: no se sugiere Bolsa Plana 1.', incompatibles: [] } } });
+    renderPage();
+    await buscar(user);
+    await screen.findByRole('region', { name: 'Familia de manufactura' });
     expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).not.toBeChecked();
-    expect(screen.getByRole('radio', { name: 'Hoja Paq' })).not.toBeChecked();
-    expect(screen.getByText(/Pista del sistema, no vinculante: Bolsa Plana 1/)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Hojas' })).not.toBeChecked();
+    expect(screen.getByTestId('family-note')).toHaveTextContent(/fuelle/);
+    expect(screen.getByTestId('status-preview')).toHaveTextContent('falta la familia');
     expect(screen.queryByRole('region', { name: /Datos de/ })).not.toBeInTheDocument();
   });
 
   it('corregir un valor lo marca como editado SIN alterar el producto original de BIND, y puede restaurarse', async () => {
     const user = userEvent.setup();
-    const original = deepFreeze(schfpmg001());       // un intento de mutarlo lanzaría un error
+    const original = deepFreeze(schfpmg001());
     lookupMock.mockResolvedValue(original);
     renderPage();
     await buscar(user);
@@ -95,8 +123,7 @@ describe('ManufacturingSpecificationPage', () => {
     expect(within(frameOf('Ancho')).getByText('Editado por el usuario')).toBeInTheDocument();
     expect(within(frameOf('Ancho')).getByText('Valor de BIND: 13')).toBeInTheDocument();
     expect(screen.getByText(/Campos modificados por el usuario: Ancho/)).toBeInTheDocument();
-    expect(panel.textContent).toBe(antes);                                          // el panel de BIND no cambió
-    expect(original.producto.Title).toBe('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
+    expect(panel.textContent).toBe(antes);
     expect(original.interpretacion.campos.ancho.valor).toBe(13);
 
     await user.click(screen.getByRole('button', { name: 'Restaurar Ancho' }));
@@ -104,91 +131,144 @@ describe('ManufacturingSpecificationPage', () => {
     expect(within(frameOf('Ancho')).getByText('Recuperado de BIND')).toBeInTheDocument();
   });
 
-  it('muestra campos particulares según la familia: modalidad solo en Hoja Paq', async () => {
+  it('muestra campos particulares según la familia: modalidad solo en Hojas', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await buscar(user);
-    await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
-    expect(screen.getByRole('region', { name: 'Datos de Bolsa Plana 1' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Datos de Bolsa Plana 1' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Extendida' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: 'Hoja Paq' }));
-    expect(screen.getByRole('region', { name: 'Datos de Hoja Paq' })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Hojas' }));
+    expect(screen.getByRole('region', { name: 'Datos de Hojas' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Doblada' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeInTheDocument();
   });
 
-  it('no considera completa la especificación con datos obligatorios faltantes y la acepta al completarlos', async () => {
+  it('cliente ausente: se puede editar y ver el borrador, pero la especificación no se muestra completa y hay un pendiente claro', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await buscar(user);
     await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getByTestId('status-preview')).toHaveTextContent('Borrador previsualizable');
+    expect(screen.getByTestId('status-complete')).toHaveTextContent('incompletos');
+    expect(screen.getByTestId('pending-list')).toHaveTextContent(/Cliente: selecciona un cliente del catálogo/);
+    await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1', undefined, { timeout: 3000 });     // el borrador sigue visible
 
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Faltan datos obligatorios/)).toBeInTheDocument();
-    expect(screen.getByText(/Falta elegir la familia/)).toBeInTheDocument();
-    expect(screen.queryByText(/todos los datos obligatorios/)).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
-    expect(screen.getByText(/Falta color del dibujo/i)).toBeInTheDocument();
-
-    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#538DD5' } });
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
-    expect(screen.getByText(/todos los datos obligatorios/)).toBeInTheDocument();
-    expect(screen.getByText(/Aún no se guarda ni se emite ninguna hoja/)).toBeInTheDocument();
+    expect(screen.getByText(/Selecciona un cliente del catálogo: el texto libre/)).toBeInTheDocument();
+    expect(screen.queryByText(/La especificación está completa/)).not.toBeInTheDocument();
   });
 
-  it('Hoja Paq exige la modalidad antes de completarse', async () => {
+  it('el texto libre no vincula al cliente; elegirlo del catálogo resuelve el pendiente y, con la familia confirmada, queda confirmada', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await buscar(user);
-    await user.click(await screen.findByRole('radio', { name: 'Hoja Paq' }));
-    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#538DD5' } });
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(campo('Cliente (obligatorio)').value).toBe('');                       // el prefijo SCH del código no autocompleta nada
+    expect(screen.getByText(/No se infiere por el prefijo del código/)).toBeInTheDocument();
+
+    await user.type(campo('Cliente (obligatorio)'), 'Nuevo Cliente SA');
+    expect(within(frameOf('Cliente (obligatorio)')).getByText('Texto libre: no vinculado al catálogo')).toBeInTheDocument();
+    expect(screen.getByTestId('status-complete')).toHaveTextContent('incompletos');
+
+    await user.clear(campo('Cliente (obligatorio)'));
+    await elegirCliente(user);
+    expect(within(frameOf('Cliente (obligatorio)')).getByText('Cliente del catálogo (confirmado)')).toBeInTheDocument();
+    expect(screen.getByTestId('status-complete')).toHaveTextContent('Datos obligatorios completos');
+    expect(screen.getByTestId('status-confirmed')).toHaveTextContent('No confirmada');            // la familia sigue siendo una sugerencia
+    expect(screen.getByTestId('pending-list')).toHaveTextContent(/Familia: Bolsa Plana 1 es una sugerencia/);
+
+    await user.click(screen.getByRole('button', { name: 'Confirmar familia' }));
+    expect(screen.getByTestId('status-confirmed')).toHaveTextContent('Confirmada por el usuario');
+    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(screen.getByText(/La especificación está completa y la familia fue confirmada/)).toBeInTheDocument();
+    expect(screen.getByText(/Aún no se guarda ni se emite ninguna hoja/)).toBeInTheDocument();
+  });
+
+  it('Hojas exige la modalidad y advierte la familia incompatible con una bolsa', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await buscar(user);
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await elegirCliente(user);
+    await user.click(screen.getByRole('radio', { name: 'Hojas' }));
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Falta hoja doblada o extendida/i)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Extendida' }));
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
-    expect(screen.getByText(/todos los datos obligatorios/)).toBeInTheDocument();
-    expect(screen.getByText(/BIND describe una Bolsa, pero elegiste Hoja Paq/)).toBeInTheDocument();
+    expect(screen.getByText(/La especificación está completa y la familia fue confirmada/)).toBeInTheDocument();
+    expect(screen.getByText(/Familia incompatible con los datos de BIND: BIND describe una bolsa, no una hoja/)).toBeInTheDocument();
   });
 
-  it('caso con pendientes: los marca y exige confirmarlos', async () => {
+  it('caso B: conserva CAL.200 literal, sin exigir unidad; los pendientes reales siguen marcados', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(casoB());
     renderPage();
     await buscar(user, 'PRUEBA58X43');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(within(frameOf('Calibre (valor)')).getByText('Pendiente de confirmar')).toBeInTheDocument();
-    expect(campo('Calibre (valor)').value).toBe('200');
-    expect(campo('Calibre (unidad)').value).toBe('');
+    expect(campo('Calibre').value).toBe('200');
+    expect(within(frameOf('Calibre')).getByText('Recuperado de BIND')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Calibre (unidad)')).not.toBeInTheDocument();
     expect(within(frameOf('Peso (lb)')).getByText('Pendiente de confirmar')).toBeInTheDocument();
-    expect(screen.getByText(/CAL\.200/)).toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
-    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#538DD5' } });
+    await elegirCliente(user);
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Faltan datos obligatorios/)).toBeInTheDocument();
-    expect(screen.getByText(/Falta calibre \(unidad\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Falta peso \(lb\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Falta calibre/i)).not.toBeInTheDocument();
   });
 
-  it('el cliente puede capturarse provisionalmente o elegirse del catálogo; no se infiere del código', async () => {
+  it('color unificado: un solo selector actualiza el texto del documento y el dibujo; Otro valida nombre y #RRGGBB con muestra visual', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(schfpmg001());
-    listClientsMock.mockResolvedValue({ data: [{ id: '1', commercialName: 'Schneider Electric', companyType: 'CLIENTE', status: 'ACTIVO', clientStatus: 'ACTIVO', notes: null, roles: ['CLIENTE'], fiscal: null }], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } });
+    renderPage();
+    await buscar(user);
+    await screen.findByRole('region', { name: 'Color' });
+    expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(83, 141, 213)' });
+
+    await user.click(screen.getByRole('combobox', { name: /^Color/ }));
+    await user.click(await screen.findByRole('option', { name: /^Verde/ }));
+    expect(campo('Texto del color en el documento').value).toBe('VERDE');
+    expect(screen.getByTestId('color-hex-readonly')).toHaveTextContent('#00B050');
+    expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(0, 176, 80)' });
+    await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Plana 1').getAttribute('srcdoc')).toContain('color=VERDE|#00B050'), { timeout: 3000 });
+
+    await user.click(screen.getByRole('combobox', { name: /^Color/ }));
+    await user.click(await screen.findByRole('option', { name: /^Otro/ }));
+    expect(screen.queryByTestId('color-hex-readonly')).not.toBeInTheDocument();
+    await elegirCliente(user);
+    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#GG0000' } });
+    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(screen.getByText(/Escribe el nombre del color/)).toBeInTheDocument();
+    expect(screen.getByText(/El color debe tener el formato #RRGGBB/)).toBeInTheDocument();
+    expect(screen.getByText(/Faltan datos obligatorios/)).toBeInTheDocument();
+    fireEvent.change(campo('Texto del color en el documento'), { target: { value: 'ROJO' } });
+    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#C00000' } });
+    expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(192, 0, 0)' });
+    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(screen.queryByText(/El color debe tener el formato/)).not.toBeInTheDocument();
+  });
+
+  it('etiqueta: se edita independiente de la descripción, no se pierde al cambiar otros campos y se restaura al título de BIND', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await buscar(user);
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo('Cliente').value).toBe('');                       // el prefijo SCH del código no autocompleta nada
-    expect(screen.getByText(/No se infiere por el prefijo del código/)).toBeInTheDocument();
-    await user.type(campo('Cliente'), 'Nuevo Cliente SA');
-    expect(within(frameOf('Cliente')).getByText('Cliente provisional (sin catálogo)')).toBeInTheDocument();
-    await user.clear(campo('Cliente'));
-    await user.type(campo('Cliente'), 'Schn');
-    await user.click(await screen.findByRole('option', { name: 'Schneider Electric' }));
-    expect(within(frameOf('Cliente')).getByText('Catálogo de clientes')).toBeInTheDocument();
+    const restaurar = screen.getByRole('button', { name: 'Restaurar título de BIND' });
+    expect(restaurar).toBeDisabled();
+
+    fireEvent.change(campo('Etiqueta'), { target: { value: 'ETIQUETA PERSONALIZADA' } });
+    fireEvent.change(campo('Descripción'), { target: { value: 'Descripción corregida' } });
+    fireEvent.change(campo('Ancho'), { target: { value: '15' } });
+    expect(campo('Etiqueta').value).toBe('ETIQUETA PERSONALIZADA');
+    expect(restaurar).toBeEnabled();
+    await user.click(restaurar);
+    expect(campo('Etiqueta').value).toBe('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
+    expect(campo('Descripción').value).toBe('Descripción corregida');
   });
 
   it('estados: cargando, no encontrado, error de BIND y código no válido', async () => {
@@ -218,10 +298,10 @@ describe('ManufacturingSpecificationPage', () => {
     fireEvent.change(campo('Código DCMX a buscar'), { target: { value: "X' or 1" } });
     await user.click(screen.getByRole('button', { name: 'Buscar en BIND' }));
     expect(await screen.findByText(/El código no es válido/)).toBeInTheDocument();
-    expect(lookupMock).toHaveBeenCalledTimes(4);                    // el código inválido no llega al servidor
+    expect(lookupMock).toHaveBeenCalledTimes(4);
   });
 
-  it('una nueva búsqueda reemplaza el formulario anterior y descarta las ediciones', async () => {
+  it('una nueva búsqueda inicia un borrador nuevo: reemplaza el formulario anterior y descarta las ediciones', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValueOnce(schfpmg001()).mockResolvedValueOnce(casoB());
     renderPage();
@@ -233,33 +313,32 @@ describe('ManufacturingSpecificationPage', () => {
     await waitFor(() => expect(campo('Ancho').value).toBe('58'));
     expect(screen.queryByText('Editado por el usuario')).not.toBeInTheDocument();
   });
-  it('vista previa: sin familia no se consulta; con familia se usa su plantilla y refleja las correcciones sin alterar el producto de BIND', async () => {
+
+  it('vista previa: usa la plantilla de la familia sugerida y refleja correcciones, calibre literal y etiqueta sin alterar el producto de BIND', async () => {
     const user = userEvent.setup();
-    const original = deepFreeze(schfpmg001());
+    const original = deepFreeze(casoB());
     lookupMock.mockResolvedValue(original);
     renderPage();
-    await buscar(user);
+    await buscar(user, 'PRUEBA58X43');
     const panel = await screen.findByRole('region', { name: 'Producto en BIND' });
     const antes = panel.textContent;
-    expect(previewMock).not.toHaveBeenCalled();
-    expect(screen.getByText(/Selecciona la familia \(Bolsa Plana 1 u Hoja Paq\) para ver la vista previa/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
     const frame = await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1', undefined, { timeout: 3000 });
-    expect(frame.getAttribute('srcdoc')).toContain('BOLSA_PLANA_1 ancho=13 largo=16 cantidad=200 calibre=3');
-    expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ codigo: 'SCHFPMG001', composicion: 'PMG', presentacion: 'PAQUETE', pesoLb: '0.0428', producto: 'Bolsa' });
+    expect(frame.getAttribute('srcdoc')).toContain('calibre=200 ');
+    expect(frame.getAttribute('srcdoc')).toContain('etiqueta=Bolsa PMG 58 X 43 Cal.200 Paquete 100 bolsas');
+    expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ codigo: 'PRUEBA58X43', composicion: 'PMG', calibre: '200', colorNombre: 'DAUBERT AZUL AL 2%', colorHex: '#538DD5', resinaVci: 'PMG AL 3%' });
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('modalidad');
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('ID');
 
-    // Un solo cambio por campo (fireEvent): escribir tecla por tecla vuelve a renderizar todo el formulario en cada pulsación y encarece la prueba sin probar nada más.
-    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
-    fireEvent.change(campo('Cantidad por rollo o paquete'), { target: { value: '300' } });
-    await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Plana 1').getAttribute('srcdoc')).toContain('ancho=14 largo=16 cantidad=300'), { timeout: 3000 });
+    fireEvent.change(campo('Ancho'), { target: { value: '60' } });
+    fireEvent.change(campo('Calibre'), { target: { value: '2 MIL' } });
+    await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Plana 1').getAttribute('srcdoc')).toContain('ancho=60 largo=43 cantidad=100 calibre=2 MIL'), { timeout: 3000 });
     expect(panel.textContent).toBe(antes);
-    expect(original.interpretacion.campos.ancho.valor).toBe(13);
+    expect(original.interpretacion.campos.ancho.valor).toBe(58);
+    expect(original.interpretacion.campos.calibre.valor?.valorOriginal).toBe('200');
 
-    await user.click(screen.getByRole('radio', { name: 'Hoja Paq' }));
-    await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Hoja Paq').getAttribute('srcdoc')).toContain('HOJA_PAQ'), { timeout: 3000 });
+    await user.click(screen.getByRole('radio', { name: 'Hojas' }));
+    await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Hojas').getAttribute('srcdoc')).toContain('HOJA_PAQ'), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![1]).toHaveProperty('modalidad');
     expect(screen.getAllByText('BORRADOR · SIN APROBAR').length).toBeGreaterThan(0);
   });

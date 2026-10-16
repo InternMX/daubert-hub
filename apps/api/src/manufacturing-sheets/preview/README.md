@@ -8,7 +8,7 @@ no admite firmas reales y no emite ninguna hoja.
 
 ```json
 { "familia": "BOLSA_PLANA_1", "datos": { "codigo": "SCHFPMG001", "descripcion": "…", "composicion": "PMG", "presentacion": "PAQUETE", "cantidad": "200", "cantidadUnidad": "BOLSAS",
-  "ancho": "13", "largo": "16", "unidadDimensiones": "IN", "calibreValor": "3", "calibreUnidad": "MIL", "pesoLb": "0.0428", "colorHex": "#538DD5" } }
+  "ancho": "13", "largo": "16", "unidadDimensiones": "IN", "pesoLb": "0.0428", "colorHex": "#538DD5" } }
 ```
 Respuesta: `{ data: { html, familia, borrador: true, firmas: "SIN_FIRMA", completo, faltantes[], advertencias[] } }`.
 
@@ -42,3 +42,10 @@ Persistir especificaciones o PostgreSQL, firmar o aprobar, emitir hojas definiti
 - **Validaciones duplicadas parcialmente:** el formulario (`specificationForm.ts`) valida obligatorios para guiar al usuario y el backend (`sheet-data.mapper.ts`) vuelve a calcular `faltantes` para la vista previa. Las listas de campos obligatorios por familia deberían
   vivir en un solo contrato (p. ej. en el perfil de cada familia) que el frontend reciba del backend.
 - El filtro global de excepciones oculta el detalle de los errores 5xx: el panel solo distingue «no disponible» y «datos no válidos».
+
+## Fase 3.1 (contrato y sugerencias)
+- **Calibre literal:** el contrato recibe un único `calibre` (texto, máx. 40) en lugar de `calibreValor`/`calibreUnidad`. Se imprime **exactamente** como lo confirmó el usuario (`200`, `250`, `300`, `2 MIL`, `2.7`, `3 MIL`): sin convertir, sin dividir ni multiplicar por 100 y sin agregar unidades. La plantilla imprime `{{calibre}}` sin sufijos; no fue necesario modificar ninguna plantilla.
+- **Obligatorios en el borrador:** además de los existentes, `cliente` y `colorNombre` (`faltantes`). Que el cliente esté vinculado al catálogo lo valida el formulario (el backend de la vista previa no consulta PostgreSQL).
+- **Color unificado:** el formulario mantiene un único estado de color que alimenta `colorNombre` (texto del documento) y `colorHex` (dibujo); la concentración del color es independiente de la Resina VCI.
+- **Etiqueta:** hasta 500 caracteres (antes 200) para no truncar el `Title` completo de BIND; se imprime completo y la fila de la plantilla crece (no se recorta).
+- «Hoja Paq» se muestra como **Hojas** en la interfaz; el identificador `HOJA_PAQ` no cambia.

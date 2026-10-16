@@ -8,8 +8,9 @@ import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type B
 import { listClients } from '../services/clients';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
-  buildInitialForm, changedFields, displayOrigin, FAMILY_LABELS, FIELD_LABELS, isEdited, restoreField, selectFamily, setFieldValue, toPreviewData, validateSpecification,
-  type DisplayOrigin, type FamilyCode, type FieldKey, type SpecificationForm, type SpecificationValidation
+  buildInitialForm, changedFields, COLOR_PRESET_LABELS, COLOR_PRESETS, confirmFamily, displayOrigin, FAMILY_LABELS, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset,
+  setComposition, setFieldValue, toPreviewData, validateSpecification,
+  type ColorPreset, type DisplayOrigin, type FamilyCode, type FieldKey, type SpecificationForm, type SpecificationValidation
 } from './specificationForm';
 
 const originPresentation: Record<DisplayOrigin, { label: string; color: 'default' | 'success' | 'info' | 'warning' | 'secondary'; variant: 'filled' | 'outlined' }> = {
@@ -18,8 +19,8 @@ const originPresentation: Record<DisplayOrigin, { label: string; color: 'default
   PENDIENTE: { label: 'Pendiente de confirmar', color: 'warning', variant: 'filled' },
   SIN_DATO: { label: 'Captura manual', color: 'default', variant: 'outlined' },
   USUARIO: { label: 'Editado por el usuario', color: 'secondary', variant: 'filled' },
-  CATALOGO: { label: 'Catálogo de clientes', color: 'success', variant: 'outlined' },
-  PROVISIONAL: { label: 'Cliente provisional (sin catálogo)', color: 'warning', variant: 'outlined' }
+  CATALOGO: { label: 'Cliente del catálogo (confirmado)', color: 'success', variant: 'outlined' },
+  PROVISIONAL: { label: 'Texto libre: no vinculado al catálogo', color: 'warning', variant: 'filled' }
 };
 
 const errorMessages: Record<BindProductErrorKind, string> = {
@@ -36,7 +37,7 @@ const errorMessages: Record<BindProductErrorKind, string> = {
   NETWORK: 'No se pudo comunicar con el servidor de Daubert Hub.'
 };
 
-interface TextExtra { type?: string; placeholder?: string; helperText?: string; multiline?: boolean; minRows?: number; inputMode?: 'numeric' | 'decimal' }
+interface TextExtra { onValue?: (value: string) => void; type?: string; placeholder?: string; helperText?: string; multiline?: boolean; minRows?: number; inputMode?: 'numeric' | 'decimal' }
 
 function OriginChip({ origin }: { origin: DisplayOrigin }) {
   const p = originPresentation[origin];
@@ -76,33 +77,40 @@ function FieldFrame({ form, fieldKey, error, onRestore, children }: FieldFramePr
   );
 }
 
-function ClientField({ form, onChange, onRestore }: { form: SpecificationForm; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined) => void; onRestore: (key: FieldKey) => void }) {
-  const [options, setOptions] = useState<string[]>([]);
+interface ClientOption { id: string; name: string }
+
+function ClientField({ form, error, onChange, onRestore }: { form: SpecificationForm; error?: string; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
+  const [options, setOptions] = useState<ClientOption[]>([]);
   const [input, setInput] = useState(form.fields.cliente.value);
   useEffect(() => {
     const term = input.trim();
     if (term.length < 2) { setOptions([]); return undefined; }
     let active = true;
     const timer = setTimeout(() => {
-      listClients({ search: term, sortOrder: 'asc', page: 1, pageSize: 10 }).then((result) => { if (active) setOptions(result.data.map((client) => client.commercialName)); }).catch(() => { if (active) setOptions([]); });
+      listClients({ search: term, sortOrder: 'asc', page: 1, pageSize: 10 })
+        .then((result) => { if (active) setOptions(result.data.filter((client) => client.clientStatus === 'ACTIVO').map((client) => ({ id: client.id, name: client.commercialName }))); })
+        .catch(() => { if (active) setOptions([]); });
     }, 300);
     return () => { active = false; clearTimeout(timer); };
   }, [input]);
+  const current = form.fields.cliente;
   return (
-    <FieldFrame form={form} fieldKey="cliente" onRestore={onRestore}>
+    <FieldFrame form={form} fieldKey="cliente" error={error} onRestore={onRestore}>
       <Autocomplete
         freeSolo
         options={options}
+        getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
+        isOptionEqualToValue={(option, value) => option.id === value.id}
         filterOptions={(all) => all}
         inputValue={input}
-        value={form.fields.cliente.value || null}
+        value={current.source === 'CATALOGO' && current.ref ? { id: current.ref, name: current.value } : current.value || null}
         onInputChange={(_event, value, reason) => {
           setInput(value);
           if (reason === 'input') onChange(value, value.trim() === '' ? undefined : 'PROVISIONAL');
           if (reason === 'clear') onChange('', undefined);
         }}
-        onChange={(_event, value) => { if (typeof value === 'string' && options.includes(value)) onChange(value, 'CATALOGO'); }}
-        renderInput={(params) => <TextField {...params} label="Cliente" helperText="Elige un cliente del catálogo o captura uno provisionalmente. No se infiere por el prefijo del código." />}
+        onChange={(_event, value) => { if (value !== null && typeof value !== 'string') onChange(value.name, 'CATALOGO', value.id); }}
+        renderInput={(params) => <TextField {...params} label="Cliente (obligatorio)" error={Boolean(error)} helperText="Elige un cliente del catálogo. El texto libre no cuenta como cliente vinculado. No se infiere por el prefijo del código." />}
       />
     </FieldFrame>
   );
@@ -194,7 +202,7 @@ export function ManufacturingSpecificationPage() {
     form && (
       <FieldFrame form={form} fieldKey={key} error={errors[key]} onRestore={restore}>
         <TextField
-          fullWidth label={FIELD_LABELS[key]} value={form.fields[key].value} error={Boolean(errors[key])} onChange={(e) => setValue(key, e.target.value)}
+          fullWidth label={FIELD_LABELS[key]} value={form.fields[key].value} error={Boolean(errors[key])} onChange={(e) => (extra.onValue ? extra.onValue(e.target.value) : setValue(key, e.target.value))}
           type={extra.type} placeholder={extra.placeholder} helperText={extra.helperText} multiline={extra.multiline} minRows={extra.minRows}
           slotProps={{ htmlInput: extra.inputMode ? { inputMode: extra.inputMode } : {}, inputLabel: extra.type === 'date' ? { shrink: true } : {} }}
         />
@@ -211,12 +219,12 @@ export function ManufacturingSpecificationPage() {
       </FieldFrame>
     )
   );
-  const radios = (key: FieldKey, options: Array<[string, string]>) => (
+  const radios = (key: FieldKey, options: Array<[string, string]>, onPick?: (value: string) => void) => (
     form && (
       <FieldFrame form={form} fieldKey={key} error={errors[key]} onRestore={restore}>
         <FormControl error={Boolean(errors[key])}>
           <FormLabel id={`${key}-label`}>{FIELD_LABELS[key]}</FormLabel>
-          <RadioGroup row aria-labelledby={`${key}-label`} value={form.fields[key].value} onChange={(e) => setValue(key, e.target.value)}>
+          <RadioGroup row aria-labelledby={`${key}-label`} value={form.fields[key].value} onChange={(e) => (onPick ? onPick(e.target.value) : setValue(key, e.target.value))}>
             {options.map(([value, label]) => <FormControlLabel key={value} value={value} control={<Radio />} label={label} />)}
           </RadioGroup>
         </FormControl>
@@ -224,7 +232,9 @@ export function ManufacturingSpecificationPage() {
     )
   );
 
-  const hintFamily = lookup?.familiaSugerida[0] as FamilyCode | undefined;
+  const live = form ? validateSpecification(form, lookup ?? undefined) : null;
+  const colorPreset = form?.fields.colorPreset.value ?? '';
+  const colorSwatch = (hex: string) => <Box aria-label="Muestra del color" role="img" data-testid="color-swatch" sx={{ width: 32, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : 'transparent', flexShrink: 0 }} />;
 
   return (
     <Box sx={{ maxWidth: 1500, minWidth: 0 }}>
@@ -258,27 +268,55 @@ export function ManufacturingSpecificationPage() {
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Familia de manufactura">
             <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 1 }}>Familia de manufactura</Typography>
             <FormControl error={Boolean(errors.familia)}>
-              <FormLabel id="family-label">Selecciona la familia (no se elige automáticamente)</FormLabel>
+              <FormLabel id="family-label">{form.familyOrigin === 'SUGERIDA' ? 'Familia sugerida (provisional): confírmala o cámbiala' : 'Selecciona la familia'}</FormLabel>
               <RadioGroup row aria-labelledby="family-label" value={form.family ?? ''} onChange={(e) => update((f) => selectFamily(f, e.target.value as FamilyCode))}>
                 {(Object.keys(FAMILY_LABELS) as FamilyCode[]).map((family) => <FormControlLabel key={family} value={family} control={<Radio />} label={FAMILY_LABELS[family]} />)}
               </RadioGroup>
               {errors.familia && <FormHelperText role="alert">{errors.familia}</FormHelperText>}
             </FormControl>
-            {hintFamily && <Typography variant="body2" color="text.secondary">Pista del sistema, no vinculante: {FAMILY_LABELS[hintFamily]}. Confírmala tú; una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1.</Typography>}
+            {form.familyOrigin === 'SUGERIDA' && (
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                <Chip size="small" color="info" variant="outlined" label="Sugerida por el sistema (provisional)" data-testid="family-chip" />
+                <Button size="small" onClick={() => update((f) => confirmFamily(f))}>Confirmar familia</Button>
+              </Stack>
+            )}
+            {form.familyOrigin === 'USUARIO' && <Chip size="small" color="secondary" label="Familia elegida por el usuario" sx={{ mt: 0.5 }} data-testid="family-chip" />}
+            {form.familyNote && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }} data-testid="family-note">{form.family ? `Motivo: ${form.familyNote}` : `Sin familia sugerida. ${form.familyNote}`}</Typography>}
           </Paper>
 
           <SectionCard title="Datos generales">
             {text('codigo')}
             {text('descripcion', { multiline: true, minRows: 2 })}
             {text('producto')}
-            <ClientField form={form} onRestore={restore} onChange={(value, source) => update((f) => setFieldValue(f, 'cliente', value, source))} />
-            {text('fechaEmision', { type: 'date', helperText: 'Opcional. No es la fecha de alta en BIND.' })}
-            {text('resinaVci')}
-            {text('colorNombre')}
+            <ClientField form={form} error={errors.cliente} onRestore={restore} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
+            {text('fechaEmision', { type: 'date', helperText: 'Fecha local sugerida; editable. No es la fecha de alta en BIND ni la emisión definitiva.' })}
+            {text('resinaVci', { helperText: 'Editable. Sugerencia según la composición; el porcentaje no es una obligación.' })}
           </SectionCard>
 
+          <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Color">
+            <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 2 }}>Color</Typography>
+            <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
+              <FieldFrame form={form} fieldKey="colorPreset" error={errors.colorPreset} onRestore={restore}>
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  {colorSwatch(form.fields.colorHex.value)}
+                  <TextField select fullWidth label="Color" value={colorPreset} error={Boolean(errors.colorPreset)} onChange={(e) => update((f) => setColorPreset(f, e.target.value as ColorPreset | ''))}>
+                    <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
+                    {(Object.keys(COLOR_PRESET_LABELS) as ColorPreset[]).map((preset) => (
+                      <MenuItem key={preset} value={preset}>{COLOR_PRESET_LABELS[preset]}{preset !== 'OTRO' ? ` (${COLOR_PRESETS[preset].hex})` : ''}</MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+              </FieldFrame>
+              {text('colorConcentracion', { onValue: (value) => update((f) => setColorConcentracion(f, value)), inputMode: 'decimal', helperText: 'Concentración del color. Es independiente del porcentaje de la resina VCI.' })}
+              {text('colorNombre', { helperText: 'Texto impreso en el campo Color del documento (editable).' })}
+              {colorPreset === 'OTRO'
+                ? text('colorHex', { placeholder: '#RRGGBB', helperText: 'Color del dibujo para «Otro».' })
+                : <Typography variant="body2" color="text.secondary" data-testid="color-hex-readonly">{colorPreset ? `Color del dibujo: ${form.fields.colorHex.value}` : 'Elige un color para el dibujo.'}</Typography>}
+            </Box>
+          </Paper>
+
           <SectionCard title="Composición y presentación">
-            {radios('composicion', [['PMG', 'PMG'], ['CP5000', 'CP5000'], ['NAT', 'Natural']])}
+            {radios('composicion', [['PMG', 'PMG'], ['CP5000', 'CP5000'], ['NAT', 'Natural']], (value) => update((f) => setComposition(f, value)))}
             {radios('presentacion', [['ROLLO', 'Rollo'], ['PAQUETE', 'Paquete']])}
             {text('cantidad', { inputMode: 'numeric' })}
             {select('cantidadUnidad', [['BOLSAS', 'Bolsas'], ['HOJAS', 'Hojas']])}
@@ -289,19 +327,33 @@ export function ManufacturingSpecificationPage() {
             {text('largo', { inputMode: 'decimal' })}
             {select('unidadDimensiones', [['IN', 'Pulgadas (IN)'], ['MM', 'Milímetros (MM)']])}
             {text('pesoLb', { inputMode: 'decimal' })}
-            {text('calibreValor', { helperText: 'Se conserva el valor original de BIND; no se convierte.' })}
-            {text('calibreUnidad', { helperText: 'Ej. MIL. Si BIND no la indica, confírmala.' })}
+            {text('calibre', { helperText: 'Valor literal de BIND (p. ej. 200, 2 MIL, 2.7). No se convierte ni se agrega unidad; corrígelo solo si es necesario.' })}
           </SectionCard>
 
           {form.family && (
             <SectionCard title={`Datos de ${FAMILY_LABELS[form.family]}`}>
               {form.family === 'HOJA_PAQ' && radios('modalidad', [['DOBLADA', 'Doblada'], ['EXTENDIDA', 'Extendida']])}
-              {text('colorHex', { placeholder: '#538DD5', helperText: 'Color del dibujo. No se asocia automáticamente con el nombre del color.' })}
-              {text('etiqueta', { helperText: 'Opcional.' })}
+              <Box>
+                {text('etiqueta', { multiline: true, minRows: 2, helperText: 'Precargada con el título completo de BIND; se edita de forma independiente a la descripción.' })}
+                <Button size="small" startIcon={<RestoreRoundedIcon />} sx={{ mt: 0.5 }} onClick={() => restore('etiqueta')} disabled={form.fields.etiqueta.value === form.fields.etiqueta.base.value || form.fields.etiqueta.base.value === ''}>Restaurar título de BIND</Button>
+              </Box>
             </SectionCard>
           )}
 
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Validación">
+            {live && (
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }} aria-label="Estado de la especificación">
+                <Chip size="small" color={live.previewable ? 'info' : 'default'} label={live.previewable ? 'Borrador previsualizable' : 'Borrador: falta la familia'} data-testid="status-preview" />
+                <Chip size="small" color={live.complete ? 'success' : 'warning'} label={live.complete ? 'Datos obligatorios completos' : `Datos obligatorios incompletos (${Object.keys(live.errors).length})`} data-testid="status-complete" />
+                <Chip size="small" color={live.confirmed ? 'success' : 'default'} variant={live.confirmed ? 'filled' : 'outlined'} label={live.confirmed ? 'Confirmada por el usuario (sin guardar)' : 'No confirmada'} data-testid="status-confirmed" />
+              </Stack>
+            )}
+            {live && live.pending.length > 0 && (
+              <Alert severity="warning" sx={{ mb: 1.5 }} data-testid="pending-list">
+                <strong>Pendientes:</strong>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{live.pending.map((p) => <li key={p}>{p}</li>)}</ul>
+              </Alert>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <Button variant="contained" onClick={() => setValidation(validateSpecification(form, lookup))}>Validar especificación</Button>
               <Typography variant="body2" color="text.secondary">
@@ -310,9 +362,11 @@ export function ManufacturingSpecificationPage() {
             </Stack>
             {validation && (
               <Stack spacing={1} sx={{ mt: 2 }}>
-                {validation.complete
-                  ? <Alert severity="success">La especificación tiene todos los datos obligatorios. Aún no se guarda ni se emite ninguna hoja.</Alert>
-                  : <Alert severity="error">Faltan datos obligatorios o hay valores no válidos ({Object.keys(validation.errors).length}). Revisa los campos marcados.</Alert>}
+                {validation.confirmed
+                  ? <Alert severity="success">La especificación está completa y la familia fue confirmada. Aún no se guarda ni se emite ninguna hoja.</Alert>
+                  : validation.complete
+                    ? <Alert severity="info">Los datos obligatorios están completos, pero la familia sigue siendo una sugerencia: confírmala para considerar la especificación confirmada.</Alert>
+                    : <Alert severity="error">Faltan datos obligatorios o hay valores no válidos ({Object.keys(validation.errors).length}). Revisa los campos marcados. El borrador sigue visible, pero la especificación no está completa.</Alert>}
                 {validation.warnings.map((w) => <Alert key={w} severity="warning">{w}</Alert>)}
               </Stack>
             )}

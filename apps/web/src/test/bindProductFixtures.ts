@@ -4,7 +4,15 @@ import type { BindProductLookup, CampoInterpretado } from '../services/bindProdu
 const ext = <T,>(valor: T, fuente: string): CampoInterpretado<T> => ({ valor, origen: 'EXTRAIDO', fuente });
 const pend = <T,>(nota: string, valor: T | null = null): CampoInterpretado<T> => ({ valor, origen: 'PENDIENTE', fuente: null, nota });
 
-const FAMILIA_NO_CONFIRMADA = { codigo: 'FAMILIA_NO_CONFIRMADA', mensaje: 'La familia de manufactura no se determina automáticamente: la selecciona el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).', campos: ['familia'] };
+const sugerenciasBase = (titulo: string, resina: string | null, familia: 'BOLSA_PLANA_1' | 'HOJA_PAQ' | null, motivo: string): BindProductLookup['sugerencias'] => ({
+  familia: { valor: familia, motivo, incompatibles: familia === 'BOLSA_PLANA_1' ? [{ familia: 'HOJA_PAQ', motivo: 'BIND describe una bolsa, no una hoja.' }] : [] },
+  resinaVci: resina === 'PMG' ? { valor: 'PMG AL 3%', regla: 'RESINA_VCI_PMG_3PCT', nota: 'Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación.' } : { valor: null, regla: null, nota: 'Sin regla confirmada para esta composición.' },
+  resinaVciPorComposicion: { PMG: 'PMG AL 3%', CP5000: 'CP5000 AL 3%' },
+  color: { preset: 'DAUBERT_AZUL', concentracionPct: '2', detectado: null, regla: 'COLOR_POR_DEFECTO_VCI_AZUL_2', nota: 'BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color.' },
+  etiqueta: { valor: titulo, regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
+});
+
+const FAMILIA_NO_CONFIRMADA = { codigo: 'FAMILIA_NO_CONFIRMADA', mensaje: 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).', campos: ['familia'] };
 
 export function schfpmg001(): BindProductLookup {
   return {
@@ -18,7 +26,7 @@ export function schfpmg001(): BindProductLookup {
         ancho: ext(13, '13 x 16"'),
         largo: ext(16, '13 x 16"'),
         unidadDimensiones: ext('IN', '13 x 16"'),
-        calibre: ext({ valorOriginal: '3', unidadOriginal: 'MIL' }, 'CAL. 3 MIL'),
+        calibre: ext({ valorOriginal: '3', unidadOriginal: 'MIL', textoLiteral: '3 MIL' }, 'CAL. 3 MIL'),
         presentacion: ext('PAQUETE', 'PAQUETE'),
         cantidad: ext({ cantidad: 200, unidad: 'BOLSAS' as const }, 'C/200 BOLSAS'),
         pesoLb: ext(0.0428, '0.0428')
@@ -29,6 +37,7 @@ export function schfpmg001(): BindProductLookup {
     },
     datosSugeridosPlantilla: { codigo: 'SCHFPMG001', comp_pmg: 'X' },
     familiaSugerida: ['BOLSA_PLANA_1'],
+    sugerencias: sugerenciasBase('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', 'PMG', 'BOLSA_PLANA_1', 'Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.'),
     pendientes: [],
     advertencias: [FAMILIA_NO_CONFIRMADA],
     especificacionConfirmada: false
@@ -54,7 +63,7 @@ export function casoB(): BindProductLookup {
         ancho: ext(58, '58 X 43'),
         largo: ext(43, '58 X 43'),
         unidadDimensiones: pend('Sin unidad explícita en el título.'),
-        calibre: pend('Unidad o escala del calibre pendiente de confirmación; no se convierte.', { valorOriginal: '200', unidadOriginal: null }),
+        calibre: pend('Unidad o escala del calibre pendiente de confirmación; no se convierte.', { valorOriginal: '200', unidadOriginal: null, textoLiteral: '200' }),
         cantidad: ext({ cantidad: 100, unidad: 'BOLSAS' as const }, 'PAQUETE 100 BOLSAS'),
         pesoLb: pend('Sin peso en BIND.')
       },
@@ -62,6 +71,7 @@ export function casoB(): BindProductLookup {
       pendientes: ['unidadDimensiones', 'calibre', 'pesoLb'],
       advertencias
     },
+    sugerencias: sugerenciasBase('Bolsa PMG 58 X 43 Cal.200 Paquete 100 bolsas', 'PMG', 'BOLSA_PLANA_1', 'Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.'),
     pendientes: ['unidadDimensiones', 'calibre', 'pesoLb'],
     advertencias
   };

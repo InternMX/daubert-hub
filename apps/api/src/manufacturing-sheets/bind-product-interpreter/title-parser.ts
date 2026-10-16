@@ -131,7 +131,7 @@ function interpretarMedidas(t: string, adv: (c: CodigoAdvertencia, m: string, ca
 // ---------------------------------------------------------------- calibre
 const CALIBRE = new RegExp(`\\bCAL(?:IBRE)?\\.?\\s*(${NUM})\\s*(MILS?\\b|MIL\\b|MICRAS?\\b|MICRONES\\b)?`, 'g');
 
-function interpretarCalibre(t: string, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Campo<CalibreOriginal> {
+function interpretarCalibre(t: string, original: string, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Campo<CalibreOriginal> {
   const coincidencias = [...t.matchAll(CALIBRE)];
   if (coincidencias.length === 0) {
     adv('CALIBRE_AUSENTE', 'El título no indica el calibre (CAL.).', ['calibre']);
@@ -143,7 +143,10 @@ function interpretarCalibre(t: string, adv: (c: CodigoAdvertencia, m: string, ca
     return pendiente('Calibres contradictorios.');
   }
   const m = coincidencias[0] as RegExpMatchArray;
-  const calibre: CalibreOriginal = { valorOriginal: m[1] as string, unidadOriginal: m[2] ?? null };
+  // Texto literal: la misma expresión sobre el título SIN pasar a mayúsculas (se conserva «3 mil», «2.7», «200» tal como los escribió BIND; nunca se agrega ni se convierte la unidad).
+  const literal = [...original.replace(/\s+/g, ' ').matchAll(new RegExp(CALIBRE.source, 'gi'))][0];
+  const textoLiteral = (literal?.[0] ?? m[0]).replace(/^CAL(?:IBRE)?\.?\s*/i, '').trim();
+  const calibre: CalibreOriginal = { valorOriginal: m[1] as string, unidadOriginal: m[2] ?? null, textoLiteral };
   if (calibre.unidadOriginal === null) {
     // «CAL. 200» no se convierte en «2 MIL»: se conserva el valor original y la unidad/escala queda pendiente.
     adv('CALIBRE_SIN_UNIDAD', `Calibre «${m[0]}» sin unidad: se conserva el valor original y la unidad/escala queda pendiente (no se convierte).`, ['calibre']);
@@ -214,7 +217,7 @@ export function interpretarTitulo(titulo: string): TituloInterpretado {
   const tipo = interpretarTipo(t, adv);
   const resina = interpretarResina(t, adv);
   const medidas = interpretarMedidas(t, adv);
-  const calibre = interpretarCalibre(t, adv);
+  const calibre = interpretarCalibre(t, titulo ?? '', adv);
   const presentacion = interpretarPresentacion(t, adv);
   const cantidad = interpretarCantidad(t, tipo.valor, adv);
   const algo = [tipo, resina, medidas.ancho, calibre, presentacion, cantidad].some((c) => c.valor !== null);

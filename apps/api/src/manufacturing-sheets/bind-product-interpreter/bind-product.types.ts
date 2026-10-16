@@ -42,6 +42,8 @@ export type Presentacion = 'ROLLO' | 'PAQUETE';
 export interface CalibreOriginal {
   valorOriginal: string;
   unidadOriginal: string | null;
+  /** Texto del calibre exactamente como lo escribió BIND, sin el prefijo «CAL.» (p. ej. «200», «2 MIL», «2.7», «3 mil»). Es lo que se imprime en la hoja. */
+  textoLiteral: string;
 }
 
 export interface CantidadPiezas {

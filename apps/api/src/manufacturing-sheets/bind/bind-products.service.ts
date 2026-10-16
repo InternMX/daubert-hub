@@ -1,6 +1,6 @@
 import { BadGatewayException, BadRequestException, ConflictException, GatewayTimeoutException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { interpretarProductoBind, sugerirDatosPlantilla } from '../bind-product-interpreter';
-import type { Advertencia, FamiliaPosible, ResultadoInterpretacion } from '../bind-product-interpreter';
+import { interpretarProductoBind, sugerirDatosPlantilla, sugerirEspecificacion } from '../bind-product-interpreter';
+import type { Advertencia, FamiliaPosible, ResultadoInterpretacion, SugerenciasEspecificacion } from '../bind-product-interpreter';
 import { BindErpClient, isValidBindCode, isValidBindId } from './bind-erp.client';
 import type { BindLookupResult, BindProductRaw } from './bind-erp.client';
 
@@ -21,8 +21,10 @@ export interface BindProductLookupResponse {
     interpretacion: ResultadoInterpretacion;
     /** Sugerencias para la plantilla: solo lo extraído o sugerido; nunca lo pendiente. */
     datosSugeridosPlantilla: Record<string, string>;
-    /** Pista no vinculante: la familia la selecciona el usuario. */
+    /** Familia sugerida (0 o 1): provisional y editable; la confirma el usuario. */
     familiaSugerida: FamiliaPosible[];
+    /** Sugerencias de la fase 3.1 (familia con motivo, resina VCI, color y etiqueta), cada una con su regla de origen. */
+    sugerencias: SugerenciasEspecificacion;
     pendientes: string[];
     advertencias: Advertencia[];
     /** La especificación todavía NO está confirmada: nada se ha guardado ni aprobado. */
@@ -93,13 +95,15 @@ export class BindProductsService {
     const raw = products[0] as BindProductRaw;
     const producto: BindProductoOriginal = { ID: raw.ID, Code: raw.Code, Title: raw.Title, Description: raw.Description, Weight: raw.Weight, CreationDate: raw.CreationDate };
     const interpretacion = interpretarProductoBind(producto);
+    const sugerencias = sugerirEspecificacion(interpretacion);
     return {
       data: {
         origen: 'BIND',
         producto,
         interpretacion,
         datosSugeridosPlantilla: sugerirDatosPlantilla(interpretacion),
-        familiaSugerida: interpretacion.familia.posiblesEstaFase,
+        familiaSugerida: sugerencias.familia.valor === null ? [] : [sugerencias.familia.valor],
+        sugerencias,
         pendientes: interpretacion.pendientes,
         advertencias: interpretacion.advertencias,
         especificacionConfirmada: false

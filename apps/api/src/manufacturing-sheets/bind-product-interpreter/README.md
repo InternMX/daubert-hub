@@ -1,4 +1,4 @@
-# Interpretador de productos de BIND (fase 1: Bolsa Plana 1 y Hoja Paq)
+# Interpretador de productos de BIND (fase 1: Bolsa Plana 1 y Hojas (HOJA_PAQ))
 
 Función pura (sin red, sin base de datos, sin dependencias nuevas) que interpreta un producto de BIND ERP para **autocompletar los campos comunes** de las hojas de
 manufactura. No consulta la API de BIND, no genera documentos, no incluye firmas y no modifica las plantillas.
@@ -37,3 +37,6 @@ el título: si lo contradice (resina o material) solo agrega una advertencia.
 - Los títulos con varias resinas, tipos o medidas se dejan pendientes en lugar de resolverse por heurística.
 - La resina se mapea a la Composición solo para PMG / CP5000 / NAT (las casillas de estas familias).
 - El idioma y los patrones son los del catálogo actual (español, «C/», «CAL.»); se ampliarán con casos reales de BIND.
+
+## Fase 3.1
+`specification-suggestions.ts` (`sugerirEspecificacion`) calcula familia sugerida, resina VCI, color y etiqueta a partir del resultado del intérprete. La familia solo se sugiere con una bolsa de dos medidas sin indicios de fuelle/COEX/tubo/termoencogible (Bolsa Plana 1) o una hoja plástica explícita de dos medidas (Hojas). `CalibreOriginal.textoLiteral` guarda el calibre sin convertir.

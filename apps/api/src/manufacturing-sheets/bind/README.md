@@ -59,3 +59,6 @@ ni una respuesta inválida. `redirect: 'error'`. Los límites de BIND (150 solic
 - El filtro global de excepciones oculta el código de las respuestas 5xx; el frontend distingue 502/503/504 solo por estado.
 - Añadir las claves al despliegue (`compose.pilot.yaml` / archivos de entorno) y definir su rotación.
 - Sin búsqueda libre por descripción, paginación para UI ni sincronización; sin caché (cada consulta llama a BIND).
+
+## Fase 3.1: `sugerencias`
+La respuesta añade `sugerencias` (todas provisionales, editables y con regla de origen): `familia` (`valor` o `null`, `motivo` e `incompatibles`), `resinaVci` (`PMG AL 3%`, `CP5000 AL 3%`; Natural y otras no), `resinaVciPorComposicion`, `color` (Daubert Azul con 2 % de concentración de color salvo color explícito o contradictorio) y `etiqueta` (el `Title` completo). `familiaSugerida` contiene la familia de `sugerencias.familia.valor` (vacía si no hay). `interpretacion.campos.calibre.valor.textoLiteral` conserva el calibre tal como lo escribió BIND. Ninguna sugerencia confirma nada.

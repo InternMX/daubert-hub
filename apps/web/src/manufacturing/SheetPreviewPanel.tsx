@@ -99,7 +99,7 @@ export function SheetPreviewPanel({ family, data }: SheetPreviewPanelProps) {
       <Alert severity="warning" sx={{ mb: 1.5 }}>Borrador sin aprobar: no es una hoja emitida ni lleva firmas reales. Los datos solo existen en memoria.</Alert>
 
       <div ref={container}>
-        {!family && <Alert severity="info">Selecciona la familia (Bolsa Plana 1 u Hoja Paq) para ver la vista previa con su plantilla.</Alert>}
+        {!family && <Alert severity="info">Selecciona la familia (Bolsa Plana 1 u Hojas) para ver la vista previa con su plantilla.</Alert>}
         {family && status === 'error' && errorKind && <Alert severity="error" sx={{ mb: 1.5 }}>{errorTexts[errorKind]}</Alert>}
         {family && result && <SheetFrame html={result.html} scale={scale} title={`Vista previa de la hoja ${FAMILY_LABELS[family]}`} />}
         {family && !result && status === 'loading' && <Typography color="text.secondary">Generando vista previa…</Typography>}

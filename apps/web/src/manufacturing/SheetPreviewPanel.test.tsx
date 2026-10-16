@@ -71,7 +71,7 @@ describe('SheetPreviewPanel', () => {
     await wait();
     rerender(<SheetPreviewPanel family="HOJA_PAQ" data={DATA} />);
     await wait();
-    expect((await screen.findByTitle('Vista previa de la hoja Hoja Paq')).getAttribute('srcdoc')).toContain('PLANTILLA HOJA_PAQ');
+    expect((await screen.findByTitle('Vista previa de la hoja Hojas')).getAttribute('srcdoc')).toContain('PLANTILLA HOJA_PAQ');
   });
 
   it('muestra los datos faltantes y las advertencias del backend sin inventar nada', async () => {

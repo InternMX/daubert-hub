@@ -16,7 +16,7 @@ describe('interpretarProductoBind · Caso A (SCHFPMG001)', () => {
     expect(r.campos.ancho).toMatchObject({ valor: 13, origen: 'EXTRAIDO' });
     expect(r.campos.largo).toMatchObject({ valor: 16, origen: 'EXTRAIDO' });
     expect(r.campos.unidadDimensiones).toMatchObject({ valor: 'IN', origen: 'EXTRAIDO' });
-    expect(r.campos.calibre).toMatchObject({ valor: { valorOriginal: '3', unidadOriginal: 'MIL' }, origen: 'EXTRAIDO' });
+    expect(r.campos.calibre).toMatchObject({ valor: { valorOriginal: '3', unidadOriginal: 'MIL', textoLiteral: '3 MIL' }, origen: 'EXTRAIDO' });
     expect(r.campos.presentacion).toMatchObject({ valor: 'PAQUETE', origen: 'EXTRAIDO' });
     expect(r.campos.cantidad).toMatchObject({ valor: { cantidad: 200, unidad: 'BOLSAS' }, origen: 'EXTRAIDO' });
     expect(r.campos.pesoLb).toMatchObject({ valor: 0.0428, origen: 'EXTRAIDO' });
@@ -55,7 +55,7 @@ describe('interpretarProductoBind · Caso B (sin unidad ni escala de calibre)', 
   });
 
   it('conserva el calibre original 200 sin convertirlo y deja la unidad/escala pendiente', () => {
-    expect(r.campos.calibre).toMatchObject({ valor: { valorOriginal: '200', unidadOriginal: null }, origen: 'PENDIENTE' });
+    expect(r.campos.calibre).toMatchObject({ valor: { valorOriginal: '200', unidadOriginal: null, textoLiteral: '200' }, origen: 'PENDIENTE' });
     expect(JSON.stringify(r.campos.calibre)).not.toContain('MIL');
     expect(advertencias(r)).toContain('CALIBRE_SIN_UNIDAD');
   });
@@ -159,7 +159,7 @@ describe('interpretarProductoBind · reglas de título', () => {
     expect(r.campos.ancho.valor).toBe(1000);
     expect(r.campos.largo.valor).toBe(1500);
     expect(r.campos.unidadDimensiones.valor).toBe('MM');
-    expect(r.campos.calibre.valor).toEqual({ valorOriginal: '80', unidadOriginal: 'MICRAS' });
+    expect(r.campos.calibre.valor).toEqual(expect.objectContaining({ valorOriginal: '80', unidadOriginal: 'MICRAS' }));
     expect(r.campos.presentacion.valor).toBe('ROLLO');
     expect(r.campos.cantidad.valor).toEqual({ cantidad: 50, unidad: 'HOJAS' });
     expect(r.familia.posiblesEstaFase).toEqual(['HOJA_PAQ']);
@@ -169,7 +169,7 @@ describe('interpretarProductoBind · reglas de título', () => {
     const r = interpretarProductoBind(producto({ Title: 'BOLSA VCI PMG 50 x 50 cm CAL.300 PAQUETE C/250 BOLSAS' }));
     expect(r.campos.unidadDimensiones).toMatchObject({ valor: 'CM', origen: 'PENDIENTE' });
     expect(advertencias(r)).toContain('UNIDAD_NO_SOPORTADA');
-    expect(r.campos.calibre.valor).toEqual({ valorOriginal: '300', unidadOriginal: null });
+    expect(r.campos.calibre.valor).toEqual(expect.objectContaining({ valorOriginal: '300', unidadOriginal: null, textoLiteral: '300' }));
     expect(sugerirDatosPlantilla(r)).not.toHaveProperty('ancho');
   });
 
@@ -201,7 +201,7 @@ describe('interpretarProductoBind · reglas de título', () => {
     const r = interpretarProductoBind(producto({ Title: 'BOLSA PMG 12,5 x 18” CAL. 2,5 MIL' }));
     expect(r.campos.ancho.valor).toBe(12.5);
     expect(r.campos.unidadDimensiones.valor).toBe('IN');
-    expect(r.campos.calibre.valor).toEqual({ valorOriginal: '2,5', unidadOriginal: 'MIL' });
+    expect(r.campos.calibre.valor).toEqual(expect.objectContaining({ valorOriginal: '2,5', unidadOriginal: 'MIL' }));
   });
 });
 

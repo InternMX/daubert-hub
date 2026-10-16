@@ -7,7 +7,7 @@ export type PreviewFamily = 'BOLSA_PLANA_1' | 'HOJA_PAQ';
 export interface PreviewFormData {
   codigo?: string; descripcion?: string; producto?: string; cliente?: string; fechaEmision?: string; resinaVci?: string; colorNombre?: string; colorHex?: string;
   composicion?: string; presentacion?: string; cantidad?: string; cantidadUnidad?: string;
-  ancho?: string; largo?: string; unidadDimensiones?: string; calibreValor?: string; calibreUnidad?: string; pesoLb?: string;
+  ancho?: string; largo?: string; unidadDimensiones?: string; calibre?: string; pesoLb?: string;
   etiqueta?: string; modalidad?: string;
 }
 
@@ -21,11 +21,11 @@ export interface MappedSheetData {
 }
 
 const LABELS: Record<string, string> = {
-  codigo: 'Código DCMX', descripcion: 'Descripción', composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad', cantidadUnidad: 'Unidad de la cantidad',
-  ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibreValor: 'Calibre (valor)', calibreUnidad: 'Calibre (unidad)', pesoLb: 'Peso (lb)',
-  colorHex: 'Color del dibujo', modalidad: 'Hoja doblada o extendida'
+  codigo: 'Código DCMX', descripcion: 'Descripción', cliente: 'Cliente', composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad', cantidadUnidad: 'Unidad de la cantidad',
+  ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)',
+  colorNombre: 'Color', colorHex: 'Color del dibujo', modalidad: 'Hoja doblada o extendida'
 };
-const REQUIRED_COMMON = ['codigo', 'descripcion', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibreValor', 'calibreUnidad', 'pesoLb', 'colorHex'];
+const REQUIRED_COMMON = ['codigo', 'descripcion', 'cliente', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'colorNombre', 'colorHex'];
 
 const text = (value: string | undefined): string => (value ?? '').trim();
 const positive = (value: string): boolean => /^\d+([.,]\d+)?$/.test(value) && Number(value.replace(',', '.')) > 0;
@@ -65,9 +65,9 @@ export function mapSheetData(family: PreviewFamily, form: PreviewFormData): Mapp
     if (positive(v('pesoLb'))) peso = Number(v('pesoLb').replace(',', '.')).toFixed(4);
     else advertencias.push('El peso no es un número válido y no se muestra.');
   }
-  const calibreValor = v('calibreValor');
-  if (calibreValor !== '' && !positive(calibreValor)) advertencias.push('El calibre no es un número válido; se muestra tal como se capturó.');
-  const calibre = [calibreValor, v('calibreUnidad')].filter((x) => x !== '').join(' ');
+  // El calibre se imprime EXACTAMENTE como lo confirmó el usuario (p. ej. «200», «2 MIL», «2.7»): no se convierte, no se reformatea y no se agrega ninguna unidad.
+  const calibre = v('calibre');
+  if (calibre !== '' && !/\d/.test(calibre)) advertencias.push('El calibre no contiene ningún número; se muestra tal como se capturó.');
 
   const composicion = v('composicion');
   const presentacion = v('presentacion');

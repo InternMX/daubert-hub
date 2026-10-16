@@ -32,6 +32,8 @@ export interface AdvertenciaBind {
 export interface CalibreInterpretado {
   valorOriginal: string;
   unidadOriginal: string | null;
+  /** Calibre tal como lo escribió BIND (sin «CAL.»): es lo que se precarga y se imprime. Nunca se convierte. */
+  textoLiteral?: string;
 }
 
 export interface CantidadInterpretada {
@@ -57,12 +59,28 @@ export interface InterpretacionBind {
   advertencias: AdvertenciaBind[];
 }
 
+export interface SugerenciaFamiliaBind {
+  valor: 'BOLSA_PLANA_1' | 'HOJA_PAQ' | null;
+  motivo: string;
+  incompatibles: Array<{ familia: 'BOLSA_PLANA_1' | 'HOJA_PAQ'; motivo: string }>;
+}
+
+export interface SugerenciasBind {
+  familia: SugerenciaFamiliaBind;
+  resinaVci: { valor: string | null; regla: string | null; nota: string };
+  resinaVciPorComposicion: Record<string, string>;
+  color: { preset: 'DAUBERT_AZUL' | 'VERDE' | null; concentracionPct: string | null; detectado: string | null; regla: string | null; nota: string };
+  etiqueta: { valor: string | null; regla: string | null; nota: string };
+}
+
 export interface BindProductLookup {
   origen: 'BIND';
   producto: BindProductoOriginal;
   interpretacion: InterpretacionBind;
   datosSugeridosPlantilla: Record<string, string>;
   familiaSugerida: string[];
+  /** Sugerencias de la fase 3.1: provisionales y editables, cada una con su regla de origen. */
+  sugerencias: SugerenciasBind;
   pendientes: string[];
   advertencias: AdvertenciaBind[];
   /** La especificación todavía no está confirmada: nada se ha guardado ni aprobado. */

@@ -21,10 +21,9 @@ export class SheetPreviewDataDto {
   @IsOptional() @IsString() @MaxLength(16) ancho?: string;
   @IsOptional() @IsString() @MaxLength(16) largo?: string;
   @IsOptional() @IsIn(['', 'IN', 'MM']) unidadDimensiones?: string;
-  @IsOptional() @IsString() @MaxLength(16) calibreValor?: string;
-  @IsOptional() @IsString() @MaxLength(32) calibreUnidad?: string;
+  @IsOptional() @IsString() @MaxLength(40) calibre?: string;
   @IsOptional() @IsString() @MaxLength(16) pesoLb?: string;
-  @IsOptional() @IsString() @short etiqueta?: string;
+  @IsOptional() @IsString() @MaxLength(500) etiqueta?: string;
   @IsOptional() @IsIn(['', 'DOBLADA', 'EXTENDIDA']) modalidad?: string;
 }
 

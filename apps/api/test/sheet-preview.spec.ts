@@ -23,7 +23,7 @@ const ROOT = resolve(__dirname, '../src/manufacturing-sheets');
 // Datos del formulario con lo que el interpretador extrae de SCHFPMG001 (BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS, 0.0428 lb) + el color elegido por el usuario.
 const SCHF = {
   codigo: 'SCHFPMG001', descripcion: 'BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', producto: 'Bolsa', composicion: 'PMG', presentacion: 'PAQUETE', cantidad: '200', cantidadUnidad: 'BOLSAS',
-  ancho: '13', largo: '16', unidadDimensiones: 'IN', calibreValor: '3', calibreUnidad: 'MIL', pesoLb: '0.0428', colorHex: '#538DD5'
+  ancho: '13', largo: '16', unidadDimensiones: 'IN', calibre: '3 MIL', pesoLb: '0.0428', cliente: 'Schneider Electric', colorNombre: 'DAUBERT AZUL AL 2%', colorHex: '#538DD5'
 };
 
 describe('mapSheetData', () => {
@@ -31,7 +31,7 @@ describe('mapSheetData', () => {
     const m = mapSheetData('BOLSA_PLANA_1', SCHF);
     expect(m.datos).toMatchObject({
       codigo: 'SCHFPMG001', comp_pmg: 'X', comp_cp5000: 'NA', comp_natural: 'NA', pres_rollo: 'NA', pres_paquete: 'X', cantidad: '200 Bolsas', unidad_medidas: 'Pulgadas (IN)',
-      ancho: '13"', largo: '16"', calibre: '3 MIL', peso_bolsa_lb: '0.0428', cliente: '', fecha_: '', etiqueta: '', resina_vci: '', color: ''
+      ancho: '13"', largo: '16"', calibre: '3 MIL', peso_bolsa_lb: '0.0428', cliente: 'Schneider Electric', fecha_: '', etiqueta: '', resina_vci: '', color: 'DAUBERT AZUL AL 2%'
     });
     expect(m.colorBolsaHex).toBe('#538DD5');
     expect(m.faltantes).toEqual([]);
@@ -81,7 +81,7 @@ describe('SheetPreviewService (plantillas reales)', () => {
   it('modificar ancho, largo, calibre o cantidad cambia el HTML; los datos de entrada no se alteran', async () => {
     const original = Object.freeze({ ...SCHF });
     const base = await service.preview('BOLSA_PLANA_1', original);
-    const cambios: Array<[Partial<typeof SCHF>, string]> = [[{ ancho: '14.5' }, '14.5&quot;'], [{ largo: '20' }, '20&quot;'], [{ calibreValor: '4' }, '4 MIL'], [{ cantidad: '300' }, '300 Bolsas']];
+    const cambios: Array<[Partial<typeof SCHF>, string]> = [[{ ancho: '14.5' }, '14.5&quot;'], [{ largo: '20' }, '20&quot;'], [{ calibre: '4 MIL' }, '4 MIL'], [{ cantidad: '300' }, '300 Bolsas']];
     for (const [cambio, esperado] of cambios) {
       const r = await service.preview('BOLSA_PLANA_1', { ...original, ...cambio });
       expect(r.html).not.toBe(base.html);
@@ -199,5 +199,64 @@ describe('POST /api/manufacturing-sheets/previews', () => {
     expect(Reflect.getMetadata(PATH_METADATA, SheetPreviewController)).toBe('manufacturing-sheets/previews');
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, SheetPreviewController)).toBeUndefined();
     expect(Reflect.getMetadata(IS_PUBLIC_KEY, SheetPreviewController.prototype.create)).toBeUndefined();
+  });
+});
+
+describe('Fase 3.1 · contrato y borrador HTML', () => {
+  const service = new SheetPreviewService();
+  const celda = (html: string, id: string): string => new RegExp(`id="${id}"[^>]*>([^]*?)</td>`).exec(html)?.[1]?.trim() ?? '';
+
+  it.each([['200'], ['250'], ['300'], ['2 MIL'], ['2.7'], ['3 MIL']])('el calibre confirmado «%s» se imprime exactamente, sin sufijos ocultos', async (calibre) => {
+    const m = mapSheetData('BOLSA_PLANA_1', { ...SCHF, calibre });
+    expect(m.datos.calibre).toBe(calibre);
+    expect(m.advertencias).toEqual([]);
+    const r = await service.preview('BOLSA_PLANA_1', { ...SCHF, calibre });
+    expect(celda(r.html, 'calibre')).toBe(calibre);
+    expect(r.completo).toBe(true);
+  });
+
+  it('un calibre sin número se advierte pero se imprime tal como se capturó (no se corrige)', () => {
+    const m = mapSheetData('BOLSA_PLANA_1', { ...SCHF, calibre: 'MIL' });
+    expect(m.datos.calibre).toBe('MIL');
+    expect(m.advertencias.join(' ')).toMatch(/no contiene ningún número/);
+  });
+
+  it('el cliente y el texto del color son obligatorios en el borrador', () => {
+    const m = mapSheetData('BOLSA_PLANA_1', { ...SCHF, cliente: '', colorNombre: '' });
+    expect(m.faltantes).toEqual(expect.arrayContaining(['Cliente', 'Color']));
+  });
+
+  it('el texto del color y el dibujo vienen del mismo estado: cambiar el color cambia ambos en el HTML real', async () => {
+    const azul = await service.preview('BOLSA_PLANA_1', SCHF);
+    const verde = await service.preview('BOLSA_PLANA_1', { ...SCHF, colorNombre: 'VERDE', colorHex: '#00B050' });
+    expect(celda(azul.html, 'color')).toBe('DAUBERT AZUL AL 2%');
+    expect(celda(verde.html, 'color')).toBe('VERDE');
+    expect(azul.html).toContain('fill="#538DD5"');
+    expect(verde.html).toContain('fill="#00B050"');
+    expect(verde.html).not.toContain('fill="#538DD5"');
+  });
+
+  it('«Otro» con hexadecimal inválido: el dibujo queda sin color y se advierte; con uno válido se aplica', async () => {
+    const malo = await service.preview('BOLSA_PLANA_1', { ...SCHF, colorNombre: 'ROJO', colorHex: '#GG0000' });
+    expect(malo.advertencias.join(' ')).toMatch(/#RRGGBB/);
+    expect(malo.html).not.toContain('fill="#GG0000"');
+    const bueno = await service.preview('BOLSA_PLANA_1', { ...SCHF, colorNombre: 'ROJO', colorHex: '#C00000' });
+    expect(bueno.html).toContain('fill="#C00000"');
+    expect(celda(bueno.html, 'color')).toBe('ROJO');
+  });
+
+  it('la etiqueta con el Title completo (número de ítem incluido) se imprime sin truncar y es independiente de la descripción', async () => {
+    const titulo = `A 15M3M6 - ${'BOLSA VCI PMG '.repeat(12)}13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS`;
+    const r = await service.preview('BOLSA_PLANA_1', { ...SCHF, etiqueta: titulo, descripcion: 'Descripción corta' });
+    expect(celda(r.html, 'etiqueta')).toContain(titulo.replace(/"/g, '&quot;'));
+    expect(celda(r.html, 'descripcion')).toContain('Descripción corta');
+    expect(r.html).not.toContain('…');
+  });
+
+  it('resina VCI y fecha sugeridas se imprimen como se confirmaron; no se mezclan con el color', async () => {
+    const r = await service.preview('BOLSA_PLANA_1', { ...SCHF, resinaVci: 'PMG AL 3%', fechaEmision: '2026-10-16' });
+    expect(celda(r.html, 'resina_vci')).toBe('PMG AL 3%');
+    expect(celda(r.html, 'fecha')).toBe('16/10/2026');
+    expect(celda(r.html, 'color')).toBe('DAUBERT AZUL AL 2%');
   });
 });
