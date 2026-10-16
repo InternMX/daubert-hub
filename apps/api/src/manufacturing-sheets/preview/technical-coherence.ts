@@ -28,6 +28,10 @@ export function revisarCoherencia(family: FamilyCode, data: PreviewFormData, con
   const def = FAMILIAS[family];
   const avisos: TechnicalNotice[] = [];
   const add = (id: string, mensaje: string, nivel: TechnicalNotice['nivel'] = 'CONTRADICCION'): void => { avisos.push({ id, nivel, mensaje }); };
+  for (const campo of ['descripcion', 'etiqueta'] as const) {
+    const valor = data[campo] ?? '';
+    if (valor.length > 180 || /\S{60}/.test(valor)) add(`TEXTO_EXTENSO_${campo}`, `${campo === 'descripcion' ? 'La descripción' : 'La etiqueta'} contiene texto extenso: revisa la hoja ampliada y la paginación antes de la demostración. El texto se conserva íntegro; no se reducen los dibujos.`, 'PENDIENTE');
+  }
   const seleccionada = context?.composicionSeleccionada ?? data.composicion ?? '';
   if (seleccionada && !def.composiciones.includes(seleccionada as never)) add('COMPOSICION_FAMILIA', `La composición ${seleccionada} no es compatible con ${def.nombre}${def.composicionFija ? `: el formato imprime ${def.composicionFija}` : ''}.`);
   if (def.capas && data.lbVciExterior && Number(data.lbVciExterior.replace(',', '.')) !== 0) add('COEX_EXTERIOR', 'La capa exterior es SIN VCI, pero se capturaron libras de VCI distintas de cero.');

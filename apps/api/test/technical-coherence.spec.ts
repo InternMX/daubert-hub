@@ -35,6 +35,14 @@ describe('Coherencia del borrador (sin confirmar ni sobrescribir)', () => {
     expect(revisarCoherencia('BOLSA_FUELLE', { fuelleTotal: '10', fuelleDerecho: '4', fuelleIzquierdo: '4' }, { title: 'BOLSA PMG', code: '' }).map((a) => a.id)).toContain('FUELLE_TOTAL');
   });
 
+  it('texto extremo se detecta y conserva completo en el HTML; no reduce dibujos', async () => {
+    const texto = `INICIO ${'DATOS DE PRUEBA '.repeat(25)} FINAL`;
+    const r = await new SheetPreviewService().preview('BOLSA_PLANA_1', { descripcion: texto, etiqueta: texto });
+    expect(r.avisosTecnicos.filter((a) => a.id.startsWith('TEXTO_EXTENSO'))).toHaveLength(2);
+    expect(r.html.split(texto)).toHaveLength(3);
+    expect(r.avisosTecnicos.find((a) => a.id === 'TEXTO_EXTENSO_descripcion')?.nivel).toBe('PENDIENTE');
+  });
+
   it('el contexto nuevo rechaza propiedades extra y títulos excesivos sin habilitar HTML', async () => {
     const dto = plainToInstance(SheetPreviewRequestDto, { familia: 'COEX', datos: {}, contexto: { title: 'x'.repeat(501), code: 'A', html: '<script>x</script>' } });
     expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).not.toHaveLength(0);
