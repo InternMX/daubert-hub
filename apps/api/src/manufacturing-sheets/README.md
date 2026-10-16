@@ -219,3 +219,6 @@ Requisitos:
 ## Regresión
 
 Ver `test/manufacturing-sheets/regression/coex-confpmg04/README.md`.
+
+## Prototipo integral de las ocho hojas
+La vista previa cubre Bolsa Plana 1, Hojas (`HOJA_PAQ`), Bolsa Fuelle, Bolsa Natural, Rollo Continuo, Termoencogible y COEX (variantes Azul y Verde sobre la misma plantilla). La configuración de cada familia vive en `preview/family-registry.ts` y se expone en `GET /api/manufacturing-sheets/families`; las modalidades autorizadas salen de los perfiles (Extendida no está autorizada en Rollo Continuo ni en Termoencogible). Es un prototipo de demostración: **no persiste**, no firma, no aprueba y no emite; el cliente es requisito de una emisión futura pero no de la demostración. Verificación: `test/manufacturing-sheets/prototype/README.md`.

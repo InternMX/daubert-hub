@@ -1,0 +1,55 @@
+[
+  {
+    "id": "bolsa-plana-1", "familia": "BOLSA_PLANA_1", "tipo": "normal",
+    "datos": { "codigo": "SCHFPMG001", "descripcion": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS", "producto": "Bolsa", "fechaEmision": "2026-10-16", "resinaVci": "PMG AL 3%", "colorNombre": "DAUBERT AZUL AL 2%", "colorHex": "#538DD5",
+      "composicion": "PMG", "presentacion": "PAQUETE", "cantidad": "200", "cantidadUnidad": "BOLSAS", "ancho": "13", "largo": "16", "unidadDimensiones": "IN", "calibre": "3 MIL", "pesoLb": "0.0428", "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS" }
+  },
+  {
+    "id": "hojas-doblada", "familia": "HOJA_PAQ", "tipo": "normal",
+    "datos": { "codigo": "HOJA48", "descripcion": "HOJA VCI PMG 48 x 60\" CAL. 3 MIL ROLLO C/25 HOJAS", "producto": "Hoja", "fechaEmision": "2026-10-16", "resinaVci": "PMG AL 3%", "colorNombre": "DAUBERT AZUL AL 2%", "colorHex": "#538DD5",
+      "composicion": "PMG", "presentacion": "ROLLO", "cantidad": "25", "cantidadUnidad": "HOJAS", "modalidad": "DOBLADA", "ancho": "48", "largo": "60", "unidadDimensiones": "IN", "calibre": "3 MIL", "pesoLb": "0.9", "etiqueta": "HOJA VCI PMG 48 x 60\" CAL. 3 MIL ROLLO C/25 HOJAS" }
+  },
+  {
+    "id": "hojas-extendida", "familia": "HOJA_PAQ", "tipo": "normal",
+    "datos": { "codigo": "HOJA48", "descripcion": "HOJA VCI PMG 48 x 60\" CAL. 3 MIL ROLLO C/25 HOJAS", "producto": "Hoja", "fechaEmision": "2026-10-16", "resinaVci": "PMG AL 3%", "colorNombre": "VERDE", "colorHex": "#00B050",
+      "composicion": "PMG", "presentacion": "PAQUETE", "cantidad": "25", "cantidadUnidad": "HOJAS", "modalidad": "EXTENDIDA", "ancho": "48", "largo": "60", "unidadDimensiones": "IN", "calibre": "3 MIL", "pesoLb": "0.9", "etiqueta": "" }
+  },
+  {
+    "id": "bolsa-fuelle", "familia": "BOLSA_FUELLE", "tipo": "normal",
+    "datos": { "codigo": "FUELLE61", "descripcion": "BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7", "producto": "Bolsa", "fechaEmision": "2026-10-16", "resinaVci": "PMG AL 3%", "colorNombre": "DAUBERT AZUL AL 2%", "colorHex": "#538DD5",
+      "composicion": "PMG", "presentacion": "ROLLO", "cantidad": "100", "cantidadUnidad": "BOLSAS", "ancho": "61", "fuelleTotal": "48", "fuelleDerecho": "24", "fuelleIzquierdo": "24", "largo": "70.9", "unidadDimensiones": "IN", "calibre": "2.7", "pesoLb": "1.285", "etiqueta": "BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7" }
+  },
+  {
+    "id": "bolsa-natural", "familia": "BOLSA_NATURAL", "tipo": "normal",
+    "datos": { "codigo": "NAT61", "descripcion": "BOLSA LDPE NAT 61 X 48 X 70.9 CAL. 3 MIL", "producto": "Bolsa", "fechaEmision": "2026-10-16", "resinaVci": "", "colorNombre": "NATURAL", "colorHex": "#FFF2CC",
+      "composicion": "NAT", "presentacion": "ROLLO", "cantidad": "100", "cantidadUnidad": "BOLSAS", "ancho": "61", "fuelleTotal": "48", "fuelleDerecho": "24", "fuelleIzquierdo": "24", "largo": "70.9", "unidadDimensiones": "IN", "calibre": "3 MIL", "pesoLb": "0.9", "etiqueta": "BOLSA LDPE NAT 61 X 48 X 70.9 CAL. 3 MIL" }
+  },
+  {
+    "id": "rollo-continuo", "familia": "ROLLO_CONTINUO", "tipo": "normal",
+    "datos": { "codigo": "ROLLO58", "descripcion": "ROLLO CONTINUO VCI PMG 58 x 4500\" CAL. 3 MIL", "producto": "Rollo continuo", "fechaEmision": "2026-10-16", "resinaVci": "PMG AL 3%", "colorNombre": "DAUBERT AZUL AL 2%", "colorHex": "#538DD5",
+      "composicion": "PMG", "presentacion": "ROLLO", "modalidad": "DOBLADA", "ancho": "58", "largo": "4500", "unidadDimensiones": "IN", "anchoRollo": "30", "calibre": "3 MIL", "pesoLb": "8.25", "etiqueta": "ROLLO CONTINUO VCI PMG 58 x 4500\" CAL. 3 MIL" }
+  },
+  {
+    "id": "termoencogible", "familia": "TERMOENCOGIBLE", "tipo": "normal",
+    "datos": { "codigo": "TERMO6", "descripcion": "ROLLO VCI + UV TERMOENCOGIBLE 6 X 30 MTS CAL. 8 MIL", "producto": "ROLLO VCI + UV TERMOENCOGIBLE", "fechaEmision": "2026-10-16", "resinaVci": "", "colorNombre": "NATURAL",
+      "composicion": "PMG", "presentacion": "ROLLO", "modalidad": "DOBLADA", "ancho": "6", "largo": "30", "unidadDimensiones": "M", "anchoDoblado": "1.60", "medidaPliegue": "0.70", "largoPresentacionFinal": "30", "anchoPresentacionFinal": "1.60", "calibre": "8 MIL", "pesoLb": "45.2", "etiqueta": "ROLLO VCI + UV TERMOENCOGIBLE 6 X 30 MTS CAL. 8 MIL" }
+  },
+  {
+    "id": "coex-azul", "familia": "COEX", "tipo": "normal",
+    "datos": { "codigo": "COEXAZUL", "descripcion": "BOLSA COEX VCI PMG AZUL 51.2 X 23.6 X 31.5\" CAL. 2.5 MIL ROLLO C/150 BOLSAS", "producto": "Bolsa Con Fuelle - 20% de material reciclado", "fechaEmision": "2026-10-16", "colorNombre": "AZUL", "coexVariante": "AZUL",
+      "composicion": "PMG", "presentacion": "ROLLO", "cantidad": "150", "cantidadUnidad": "BOLSAS", "ancho": "51.2", "fuelleTotal": "23.6", "fuelleDerecho": "11.8", "fuelleIzquierdo": "11.8", "largo": "31.5", "unidadDimensiones": "IN", "calibre": "2.5 MIL", "pesoLb": "0.3929",
+      "pesoCapaInterior": "0.13097", "pesoCapaIntermedia": "0.13097", "pesoCapaExterior": "0.13097", "lbVciInterior": "0.005239", "lbVciIntermedia": "0.002619", "lbVciExterior": "0", "etiqueta": "" }
+  },
+  {
+    "id": "coex-verde", "familia": "COEX", "tipo": "normal",
+    "datos": { "codigo": "COEXVERDE", "descripcion": "BOLSA COEX VCI PMG VERDE 55 X 46 X 80\" CAL. 2.5 MIL ROLLO C/50 BOLSAS", "producto": "Bolsa Con Fuelle - 20% de material reciclado", "fechaEmision": "2026-10-16", "colorNombre": "VERDE", "coexVariante": "VERDE",
+      "composicion": "PMG", "presentacion": "ROLLO", "cantidad": "50", "cantidadUnidad": "BOLSAS", "ancho": "55", "fuelleTotal": "46", "fuelleDerecho": "23", "fuelleIzquierdo": "23", "largo": "80", "unidadDimensiones": "IN", "calibre": "2.5 MIL", "pesoLb": "0.754",
+      "pesoCapaInterior": "0.27367", "pesoCapaIntermedia": "0.27367", "pesoCapaExterior": "0.27367", "lbVciInterior": "0.010947", "lbVciIntermedia": "0.005473", "lbVciExterior": "0", "etiqueta": "" }
+  },
+  {
+    "id": "fuelle-etiqueta-descripcion-largas", "familia": "BOLSA_FUELLE", "tipo": "largo",
+    "datos": { "codigo": "FUELLELARGO", "descripcion": "XE-H01374 - BOLSA VCI PMG 51 X 46 X 80\" CAL. 6 MIL (20% RECICLADO) ROLLO C/300 BOLSAS PARA EMPAQUE DE COMPONENTES AUTOMOTRICES CATERPILLAR PLANTA MONTERREY - REVISION 3 - USO EXCLUSIVO DE EXPORTACION", "producto": "Bolsa", "fechaEmision": "2026-10-16", "resinaVci": "PMG AL 3%", "colorNombre": "DAUBERT AZUL AL 2%", "colorHex": "#538DD5",
+      "composicion": "PMG", "presentacion": "ROLLO", "cantidad": "300", "cantidadUnidad": "BOLSAS", "ancho": "51", "fuelleTotal": "46", "fuelleDerecho": "23", "fuelleIzquierdo": "23", "largo": "80", "unidadDimensiones": "IN", "calibre": "6 MIL", "pesoLb": "3.2",
+      "etiqueta": "XE-H01374 - BOLSA VCI PMG 51 X 46 X 80\" CAL. 6 MIL (20% RECICLADO) ROLLO C/300 BOLSAS PARA EMPAQUE DE COMPONENTES AUTOMOTRICES CATERPILLAR PLANTA MONTERREY - REVISION 3 - USO EXCLUSIVO DE EXPORTACION" }
+  }
+]
