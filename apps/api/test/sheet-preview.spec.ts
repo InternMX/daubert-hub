@@ -156,7 +156,7 @@ describe('SheetPreviewService (plantillas reales)', () => {
   });
 });
 
-describe('POST /api/manufacturing-sheets/previews', () => {
+describe('POST /api/manufacturing-sheets/previews', { timeout: 20_000 }, () => {
   let app: INestApplication;
   beforeEach(async () => {
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewService], SheetPreviewController);

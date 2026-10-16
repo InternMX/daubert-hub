@@ -6,7 +6,7 @@ import { BindProductApiError, lookupBindProductByCode } from '../services/bindPr
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { previewManufacturingSheet } from '../services/sheetPreview';
-import { bolsaFuelle, bolsaNatural, casoB, deepFreeze, familyConfigs, schfpmg001 } from '../test/bindProductFixtures';
+import { bolsaFuelle, bolsaNatural, casoB, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
 import { localIsoDate } from './specificationForm';
 
@@ -373,5 +373,46 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Hojas').getAttribute('srcdoc')).toContain('HOJA_PAQ'), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![1]).toHaveProperty('modalidad');
     expect(screen.getAllByText('BORRADOR · SIN APROBAR').length).toBeGreaterThan(0);
+  });
+});
+
+describe('ManufacturingSpecificationPage · Rollo Continuo y Termoencogible', { timeout: 30_000 }, () => {
+  it('Rollo Continuo: ancho del rollo independiente, sin cantidad y Extendida no autorizada (deshabilitada y explicada)', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(rolloContinuo());
+    renderPage();
+    await buscar(user, 'ROLLO58');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getByRole('radio', { name: 'Rollo Continuo' })).toBeChecked();
+    expect(campo('Ancho').value).toBe('58');
+    expect(campo('Ancho del rollo').value).toBe('');
+    expect(screen.queryByLabelText('Cantidad por rollo o paquete')).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Doblada' })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
+    expect(screen.getByTestId('modalidad-EXTENDIDA-blocked')).toHaveTextContent(/no autorizada/);
+    expect(screen.getByTestId('family-particularity')).toHaveTextContent(/Extendida no tiene variante gráfica confirmada/);
+    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(screen.getByText(/Falta ancho del rollo/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Doblada' }));
+    fireEvent.change(campo('Ancho del rollo'), { target: { value: '30' } });
+    await waitFor(() => expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ modalidad: 'DOBLADA', anchoRollo: '30' }), { timeout: 3000 });
+    expect(previewMock.mock.calls.at(-1)![0]).toBe('ROLLO_CONTINUO');
+    expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('cantidad');
+  });
+
+  it('Termoencogible: solo texto de color (sin selector de dibujo) y las cuatro cotas técnicas', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(termoencogible());
+    renderPage();
+    await buscar(user, 'TERMO6');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getByRole('radio', { name: 'Termoencogible' })).toBeChecked();
+    for (const label of ['Ancho doblado', 'Medida del pliegue', 'Largo de la presentación final', 'Ancho de la presentación final']) expect(campo(label).value).toBe('');
+    expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('color-swatch')).not.toBeInTheDocument();
+    expect(campo('Texto del color en el documento')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Fuelle derecho')).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
+    expect(screen.getByTestId('status-technical')).toHaveTextContent('incompletos');
   });
 });

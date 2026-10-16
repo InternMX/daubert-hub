@@ -31,7 +31,8 @@ export type FamilyOrigin = 'SUGERIDA' | 'USUARIO';
 
 export const ALL_FIELDS: FieldKey[] = [
   'codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'resinaVci', 'colorPreset', 'colorConcentracion', 'colorNombre', 'colorHex', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad',
-  'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'etiqueta', 'modalidad', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'
+  'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'etiqueta', 'modalidad', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo',
+  'anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'
 ];
 
 export interface SpecificationForm {
@@ -156,7 +157,9 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       pesoLb: fromCampo(campos.pesoLb, String),
       // Etiqueta: Title completo de BIND, editable de forma independiente a la descripción.
       etiqueta: sug?.etiqueta?.valor ? field(sug.etiqueta.valor, 'BIND', sug.etiqueta.nota) : field(),
-      modalidad: field('', 'PENDIENTE')
+      modalidad: field('', 'PENDIENTE'),
+      // Cotas técnicas independientes (Rollo Continuo y Termoencogible): BIND no las entrega y NO se calculan: las captura el usuario.
+      anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field()
     }
   };
   // Si BIND no declara color, la familia sugerida aporta su color por defecto (p. ej. el natural en Bolsa Natural); nunca se pisa un color sugerido desde el título.
@@ -281,7 +284,8 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   colorPreset: 'Color', colorConcentracion: 'Concentración del color (%)', colorNombre: 'Texto del color en el documento', colorHex: 'Color del dibujo (#RRGGBB)',
   composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad por rollo o paquete', cantidadUnidad: 'Unidad de la cantidad',
   ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)', etiqueta: 'Etiqueta', modalidad: 'Hoja doblada o extendida',
-  fuelleTotal: 'Fuelle total', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo'
+  fuelleTotal: 'Fuelle total', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo', anchoRollo: 'Ancho del rollo', anchoDoblado: 'Ancho doblado',
+  medidaPliegue: 'Medida del pliegue', largoPresentacionFinal: 'Largo de la presentación final', anchoPresentacionFinal: 'Ancho de la presentación final'
 };
 
 const positive = (value: string): boolean => /^\d+([.,]\d+)?$/.test(value.trim()) && Number(value.trim().replace(',', '.')) > 0;
@@ -349,6 +353,7 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
     checkNumber('fuelleDerecho', 'El fuelle derecho debe ser un número mayor que cero.');
     checkNumber('fuelleIzquierdo', 'El fuelle izquierdo debe ser un número mayor que cero.');
     checkNumber('fuelleTotal', 'El fuelle total debe ser un número mayor que cero.', true);
+    for (const key of ['anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'] as const) checkNumber(key, `${FIELD_LABELS[key]} debe ser un número mayor que cero.`);
 
     // Calibre: texto literal (p. ej. «200», «2 MIL», «2.7»). Solo se exige que contenga un número mayor que cero; no se convierte ni se completa con unidades.
     if (!errors.calibre) {

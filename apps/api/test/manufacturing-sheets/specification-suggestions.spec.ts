@@ -60,6 +60,18 @@ describe('sugerirEspecificacion · familia', () => {
     expect(f.incompatibles.map((i) => i.familia)).not.toContain(familiaEsperada);
   });
 
+  it('rollo continuo y termoencogible explícitos → su familia, con motivo; un «ROLLO» genérico no basta', () => {
+    const rollo = familia('ROLLO CONTINUO VCI PMG 58 x 4500" CAL. 3 MIL');
+    expect(rollo).toMatchObject({ valor: 'ROLLO_CONTINUO' });
+    expect(rollo.motivo).toMatch(/rollo continuo/i);
+    const termo = familia('ROLLO VCI + UV TERMOENCOGIBLE 6 X 30 MTS CAL. 8 MIL');
+    expect(termo).toMatchObject({ valor: 'TERMOENCOGIBLE' });
+    expect(termo.incompatibles.map((i) => i.familia)).not.toContain('TERMOENCOGIBLE');
+    const generico = familia('ROLLO VCI PMG 58 x 4500" CAL. 3 MIL');
+    expect(generico.valor).toBeNull();
+    expect(generico.motivo).toMatch(/bolsa o una hoja/i);
+  });
+
   it.each([
     ['resina ESD sin casilla', 'BOLSA ESD 9.45 X 10.2" CAL. 4 MIL', /ESD/],
     ['tipo ambiguo (bolsa y hoja)', 'BOLSA U HOJA PMG 13 x 16" CAL. 3', /varios tipos/i],

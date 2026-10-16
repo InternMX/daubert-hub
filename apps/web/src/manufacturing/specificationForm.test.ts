@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BindProductLookup } from '../services/bindProducts';
-import { bolsaFuelle, bolsaNatural, casoB, deepFreeze, familyConfigs, schfpmg001 } from '../test/bindProductFixtures';
+import { bolsaFuelle, bolsaNatural, casoB, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import {
   buildInitialForm, changedFields, colorText, configOf, confirmFamily, displayOrigin, incompatibleValues, isEdited, localIsoDate, restoreField, selectFamily, setColorConcentracion, setColorPreset,
   setComposition, setFieldValue, setFuelleTotal, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
@@ -381,5 +381,59 @@ describe('borrador: datos enviados a la vista previa', () => {
     expect(toPreviewData(f, cfg('BOLSA_PLANA_1'))).toMatchObject({ ancho: '14', calibre: '2 MIL', cliente: 'Schneider Electric', colorNombre: 'VERDE', colorHex: '#00B050', resinaVci: 'PMG AL 3%', fechaEmision: HOY, etiqueta: original.producto.Title });
     expect(original.interpretacion.campos.ancho.valor).toBe(13);
     expect(isEdited(f.fields.ancho)).toBe(true);
+  });
+});
+
+describe('Rollo Continuo y Termoencogible · modalidades y cotas técnicas', () => {
+  it('Rollo Continuo explícito: dos medidas, sin cantidad; el ancho del rollo es obligatorio, independiente y no se calcula', () => {
+    const f = build(rolloContinuo());
+    expect(f.family).toBe('ROLLO_CONTINUO');
+    expect(f.fields.ancho.value).toBe('58');
+    expect(f.fields.anchoRollo.value).toBe('');
+    expect(displayOrigin(f.fields.anchoRollo)).toBe('SIN_DATO');
+    const r = validar(f);
+    expect(r.errors.anchoRollo).toBeDefined();
+    expect(r.errors.cantidad).toBeUndefined();                      // el rollo continuo no tiene cantidad por rollo o paquete
+    expect(r.errors.cantidadUnidad).toBeUndefined();
+    expect(toPreviewData(setFieldValue(f, 'anchoRollo', '30'), cfg('ROLLO_CONTINUO'))).toMatchObject({ ancho: '58', anchoRollo: '30' });
+    expect(toPreviewData(f, cfg('ROLLO_CONTINUO'))).not.toHaveProperty('cantidad');
+  });
+
+  it('Extendida NO está autorizada en Rollo Continuo ni en Termoencogible: no es una opción válida; Doblada sí', () => {
+    for (const [lookup, code] of [[rolloContinuo(), 'ROLLO_CONTINUO'], [termoencogible(), 'TERMOENCOGIBLE']] as const) {
+      const f = build(lookup);
+      const config = cfg(code);
+      expect(config.modalidades.find((m) => m.valor === 'EXTENDIDA')).toMatchObject({ habilitada: false });
+      const extendida = setFieldValue(f, 'modalidad', 'EXTENDIDA');
+      expect(validar(extendida).errors.modalidad).toMatch(/Extendida no está autorizada/);
+      expect(validar(setFieldValue(f, 'modalidad', 'DOBLADA')).errors.modalidad).toBeUndefined();
+      expect(toPreviewData(extendida, config).modalidad).toBe('EXTENDIDA');       // se envía tal cual: el backend es quien bloquea el documento
+    }
+  });
+
+  it('Termoencogible: sin color de dibujo, color como texto y cuatro cotas técnicas obligatorias', () => {
+    const f = build(termoencogible());
+    expect(f.family).toBe('TERMOENCOGIBLE');
+    const config = cfg('TERMOENCOGIBLE');
+    expect(config.colorDibujo).toBe(false);
+    const faltan = validar(f).errors;
+    for (const k of ['anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal', 'modalidad'] as const) expect(faltan[k], k).toBeDefined();
+    expect(faltan.colorHex).toBeUndefined();
+    expect(faltan.colorPreset).toBeUndefined();
+    expect(toPreviewData(f, config)).not.toHaveProperty('colorHex');
+    let g = f;
+    for (const [k, v] of [['anchoDoblado', '1.60'], ['medidaPliegue', '0.70'], ['largoPresentacionFinal', '30'], ['anchoPresentacionFinal', '1.60'], ['modalidad', 'DOBLADA'], ['unidadDimensiones', 'M'], ['presentacion', 'ROLLO']] as const) g = setFieldValue(g, k, v);
+    expect(validar(g).technicalReady).toBe(true);
+    expect(validar(setFieldValue(g, 'medidaPliegue', '0')).errors.medidaPliegue).toBeDefined();
+  });
+
+  it('cambiar de Termoencogible a Rollo Continuo conserva las cotas capturadas pero no las envía', () => {
+    let f = build(termoencogible());
+    f = setFieldValue(setFieldValue(f, 'anchoDoblado', '1.60'), 'anchoRollo', '30');
+    const rollo = selectFamily(f, 'ROLLO_CONTINUO', familyConfigs);
+    expect(toPreviewData(rollo, cfg('ROLLO_CONTINUO'))).toMatchObject({ anchoRollo: '30' });
+    expect(toPreviewData(rollo, cfg('ROLLO_CONTINUO'))).not.toHaveProperty('anchoDoblado');
+    expect(rollo.fields.anchoDoblado.value).toBe('1.60');
+    expect(incompatibleValues(rollo, cfg('ROLLO_CONTINUO')).join(' ')).toMatch(/Ancho doblado \(1\.60\) no aplica a Rollo Continuo/);
   });
 });

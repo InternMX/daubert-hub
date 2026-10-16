@@ -360,9 +360,14 @@ export function ManufacturingSpecificationPage() {
           <SectionCard title="Medidas y peso">
             {text('ancho', { inputMode: 'decimal' })}
             {text('largo', { inputMode: 'decimal' })}
+            {text('anchoRollo', { inputMode: 'decimal', helperText: 'Dato independiente del ancho; se imprime con la unidad de las medidas.' })}
             {text('fuelleTotal', { onValue: (value) => update((f) => setFuelleTotal(f, value)), inputMode: 'decimal', helperText: 'Auxiliar: se reparte en dos mitades editables. No se imprime.' })}
             {text('fuelleDerecho', { inputMode: 'decimal' })}
             {text('fuelleIzquierdo', { inputMode: 'decimal' })}
+            {text('anchoDoblado', { inputMode: 'decimal', helperText: 'Cota técnica independiente; no se calcula.' })}
+            {text('medidaPliegue', { inputMode: 'decimal', helperText: 'Cota técnica independiente; no se calcula.' })}
+            {text('largoPresentacionFinal', { inputMode: 'decimal', helperText: 'Cota técnica independiente; no se calcula.' })}
+            {text('anchoPresentacionFinal', { inputMode: 'decimal', helperText: 'Cota técnica independiente; no se calcula.' })}
             {select('unidadDimensiones', unidades.map((u) => [u.valor, u.etiqueta]))}
             {text('pesoLb', { inputMode: 'decimal' })}
             {text('calibre', { helperText: 'Valor literal de BIND (p. ej. 200, 2 MIL, 2.7). No se convierte ni se agrega unidad; corrígelo solo si es necesario.' })}

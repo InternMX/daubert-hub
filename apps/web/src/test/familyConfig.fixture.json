@@ -288,6 +288,195 @@
     ]
   },
   {
+    "codigo": "ROLLO_CONTINUO",
+    "nombre": "Rollo Continuo",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "resinaVci",
+      "colorPreset",
+      "colorConcentracion",
+      "colorNombre",
+      "colorHex",
+      "composicion",
+      "presentacion",
+      "modalidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "anchoRollo",
+      "calibre",
+      "pesoLb",
+      "etiqueta"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "composicion",
+      "presentacion",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "colorPreset",
+      "colorNombre",
+      "colorHex",
+      "modalidad",
+      "anchoRollo"
+    ],
+    "composiciones": [
+      "PMG",
+      "CP5000",
+      "NAT"
+    ],
+    "composicionFija": null,
+    "cantidad": false,
+    "fuelles": false,
+    "colorDibujo": true,
+    "colores": [
+      {
+        "id": "DAUBERT_AZUL",
+        "etiqueta": "Daubert Azul",
+        "nombre": "DAUBERT AZUL",
+        "hex": "#538DD5",
+        "cotasInternasHex": "#FFFFFF"
+      },
+      {
+        "id": "VERDE",
+        "etiqueta": "Verde",
+        "nombre": "VERDE",
+        "hex": "#00B050",
+        "cotasInternasHex": "#4A7EBB"
+      }
+    ],
+    "colorSugerido": "DAUBERT_AZUL",
+    "modalidades": [
+      {
+        "valor": "DOBLADA",
+        "etiqueta": "Doblada",
+        "habilitada": true
+      },
+      {
+        "valor": "EXTENDIDA",
+        "etiqueta": "Extendida",
+        "habilitada": false,
+        "motivo": "el ejemplo validado solo muestra Doblada con «Dibujo de rollo doblado»; la representación de Extendida está pendiente de confirmación"
+      }
+    ],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "Dibujo de hoja y dibujo de rollo doblado; el ancho del rollo es un dato independiente del ancho. Solo la modalidad Doblada está autorizada: Extendida no tiene variante gráfica confirmada."
+    ]
+  },
+  {
+    "codigo": "TERMOENCOGIBLE",
+    "nombre": "Termoencogible",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "resinaVci",
+      "colorNombre",
+      "composicion",
+      "presentacion",
+      "modalidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "etiqueta",
+      "anchoDoblado",
+      "medidaPliegue",
+      "largoPresentacionFinal",
+      "anchoPresentacionFinal"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "composicion",
+      "presentacion",
+      "modalidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "anchoDoblado",
+      "medidaPliegue",
+      "largoPresentacionFinal",
+      "anchoPresentacionFinal"
+    ],
+    "composiciones": [
+      "PMG",
+      "CP5000",
+      "NAT"
+    ],
+    "composicionFija": null,
+    "cantidad": false,
+    "fuelles": false,
+    "colorDibujo": false,
+    "colores": [],
+    "colorSugerido": null,
+    "modalidades": [
+      {
+        "valor": "DOBLADA",
+        "etiqueta": "Doblada",
+        "habilitada": true
+      },
+      {
+        "valor": "EXTENDIDA",
+        "etiqueta": "Extendida",
+        "habilitada": false,
+        "motivo": "solo se cuenta con la referencia gráfica de Doblada; la representación de Extendida está pendiente de confirmación"
+      }
+    ],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "Dibujo del material y de la presentación final: las cuatro cotas técnicas (ancho doblado, pliegue, largo y ancho de la presentación final) son datos independientes y no se calculan. Solo la modalidad Doblada está autorizada."
+    ]
+  },
+  {
     "codigo": "BOLSA_NATURAL",
     "nombre": "Bolsa Natural",
     "campos": [

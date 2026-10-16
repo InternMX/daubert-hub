@@ -145,3 +145,40 @@ export function bolsaNatural(): BindProductLookup {
     familiaSugerida: ['BOLSA_NATURAL']
   };
 }
+
+/** Rollo continuo explícito de dos medidas (ancho × largo): sin unidad en el título; el ancho del rollo lo captura el usuario. */
+export function rolloContinuo(): BindProductLookup {
+  const base = schfpmg001();
+  const titulo = 'ROLLO CONTINUO VCI PMG 58 x 4500" CAL. 3 MIL';
+  return {
+    ...base,
+    producto: { ID: '33333333-4444-5555-6666-777777777777', Code: 'ROLLO58', Title: titulo, Description: null, Weight: 8.25, CreationDate: null },
+    interpretacion: {
+      ...base.interpretacion,
+      campos: { ...base.interpretacion.campos, codigoDcmx: ext('ROLLO58', 'Code'), tipo: pend('El título no indica si es Bolsa u Hoja.'), ancho: ext(58, '58 x 4500"'), largo: ext(4500, '58 x 4500"'), presentacion: pend('Sin presentación en el título.'), cantidad: pend('Sin cantidad en el título.'), pesoLb: ext(8.25, '8.25') }
+    },
+    sugerencias: {
+      ...base.sugerencias,
+      familia: { valor: 'ROLLO_CONTINUO', motivo: 'El título indica rollo continuo.', incompatibles: [{ familia: 'BOLSA_PLANA_1', motivo: 'El título indica rollo continuo.' }] },
+      etiqueta: { valor: titulo, regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
+    },
+    familiaSugerida: ['ROLLO_CONTINUO']
+  };
+}
+
+/** Termoencogible explícito: las cuatro cotas técnicas no vienen en el título. */
+export function termoencogible(): BindProductLookup {
+  const base = rolloContinuo();
+  const titulo = 'ROLLO VCI + UV TERMOENCOGIBLE 6 X 30 MTS CAL. 8 MIL';
+  return {
+    ...base,
+    producto: { ...base.producto, Code: 'TERMO6', Title: titulo, Weight: 45.2 },
+    interpretacion: { ...base.interpretacion, campos: { ...base.interpretacion.campos, codigoDcmx: ext('TERMO6', 'Code'), ancho: ext(6, '6 X 30'), largo: ext(30, '6 X 30'), pesoLb: ext(45.2, '45.2'), calibre: ext({ valorOriginal: '8', unidadOriginal: 'MIL', textoLiteral: '8 MIL' }, 'CAL. 8 MIL') } },
+    sugerencias: {
+      ...base.sugerencias,
+      familia: { valor: 'TERMOENCOGIBLE', motivo: 'El título indica material termoencogible.', incompatibles: [{ familia: 'BOLSA_PLANA_1', motivo: 'El título indica termoencogible.' }] },
+      etiqueta: { valor: titulo, regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
+    },
+    familiaSugerida: ['TERMOENCOGIBLE']
+  };
+}

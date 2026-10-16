@@ -10,7 +10,7 @@ export type UnitCode = 'IN' | 'MM' | 'CM' | 'M';
 export type FieldKey =
   | 'codigo' | 'descripcion' | 'producto' | 'cliente' | 'fechaEmision' | 'resinaVci' | 'colorPreset' | 'colorConcentracion' | 'colorNombre' | 'colorHex'
   | 'composicion' | 'presentacion' | 'cantidad' | 'cantidadUnidad' | 'ancho' | 'largo' | 'unidadDimensiones' | 'calibre' | 'pesoLb' | 'etiqueta' | 'modalidad'
-  | 'fuelleTotal' | 'fuelleDerecho' | 'fuelleIzquierdo';
+  | 'fuelleTotal' | 'fuelleDerecho' | 'fuelleIzquierdo' | 'anchoRollo' | 'anchoDoblado' | 'medidaPliegue' | 'largoPresentacionFinal' | 'anchoPresentacionFinal';
 
 export interface ColorPresetConfig { id: string; etiqueta: string; nombre: string; hex: string; cotasInternasHex: string }
 export interface ModalidadConfig { valor: string; etiqueta: string; habilitada: boolean; motivo?: string }

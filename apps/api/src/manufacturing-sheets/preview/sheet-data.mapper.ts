@@ -26,7 +26,8 @@ export interface MappedSheetData {
 const LABELS: Partial<Record<FieldKey, string>> = {
   codigo: 'Código DCMX', descripcion: 'Descripción', cliente: 'Cliente', composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad', cantidadUnidad: 'Unidad de la cantidad',
   ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)', colorNombre: 'Color', colorHex: 'Color del dibujo',
-  modalidad: 'Hoja doblada o extendida', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo'
+  modalidad: 'Hoja doblada o extendida', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo', anchoRollo: 'Ancho del rollo', anchoDoblado: 'Ancho doblado',
+  medidaPliegue: 'Medida del pliegue', largoPresentacionFinal: 'Largo de la presentación final', anchoPresentacionFinal: 'Ancho de la presentación final'
 };
 const FRONT_ONLY: FieldKey[] = ['colorPreset'];            // concepto de la interfaz: no tiene placeholder
 const HEX = /^#[0-9A-Fa-f]{6}$/;
@@ -113,6 +114,10 @@ export function mapSheetData(family: PreviewFamily, form: PreviewFormData): Mapp
     const preset = def.colores.find((c) => c.hex.toLowerCase() === hex.toLowerCase());
     visual.color_cotas_internas_hex = preset?.cotasInternasHex ?? def.cotasInternasPorDefecto;
   }
+  // Cotas técnicas independientes (Rollo Continuo y Termoencogible): se imprimen con su unidad y NUNCA se calculan a partir de otras medidas.
+  const cotas: Array<[FieldKey, string, string]> = [['anchoRollo', 'ancho_rollo', 'El ancho del rollo'], ['anchoDoblado', 'ancho_doblado', 'El ancho doblado'], ['medidaPliegue', 'medida_pliegue', 'La medida del pliegue'],
+    ['largoPresentacionFinal', 'largo_presentacion_final', 'El largo de la presentación final'], ['anchoPresentacionFinal', 'ancho_presentacion_final', 'El ancho de la presentación final']];
+  for (const [key, placeholder, nombre] of cotas) if (def.campos.includes(key)) datos[placeholder] = medida(v(key), nombre);
   if (!def.campos.includes('modalidad') && v('modalidad') !== '') advertencias.push('La modalidad no aplica a esta familia y se ignora.');
   if (!def.fuelles && (v('fuelleDerecho') !== '' || v('fuelleIzquierdo') !== '')) advertencias.push('Los fuelles no aplican a esta familia y se ignoran.');
   return { datos, visual, colorBolsaHex: visual.color_bolsa_hex ?? null, faltantes, advertencias, pendientesEmision };

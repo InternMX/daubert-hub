@@ -29,6 +29,11 @@ export class SheetPreviewDataDto {
   @IsOptional() @IsString() @MaxLength(16) fuelleTotal?: string;
   @IsOptional() @IsString() @MaxLength(16) fuelleDerecho?: string;
   @IsOptional() @IsString() @MaxLength(16) fuelleIzquierdo?: string;
+  @IsOptional() @IsString() @MaxLength(16) anchoRollo?: string;
+  @IsOptional() @IsString() @MaxLength(16) anchoDoblado?: string;
+  @IsOptional() @IsString() @MaxLength(16) medidaPliegue?: string;
+  @IsOptional() @IsString() @MaxLength(16) largoPresentacionFinal?: string;
+  @IsOptional() @IsString() @MaxLength(16) anchoPresentacionFinal?: string;
 }
 
 export class SheetPreviewRequestDto {

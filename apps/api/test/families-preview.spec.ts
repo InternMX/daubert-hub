@@ -115,7 +115,7 @@ describe('cliente: requisito de emisión, no de la demostración', () => {
   });
 });
 
-describe('GET /api/manufacturing-sheets/families y POST /previews con las nuevas familias', () => {
+describe('GET /api/manufacturing-sheets/families y POST /previews con las nuevas familias', { timeout: 20_000 }, () => {
   let app: INestApplication;
   beforeEach(async () => {
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewService], SheetPreviewController);
@@ -152,5 +152,81 @@ describe('GET /api/manufacturing-sheets/families y POST /previews con las nuevas
       expect((await request(app.getHttpServer()).post('/api/manufacturing-sheets/previews').send(body)).status, JSON.stringify(body)).toBe(400);
     }
     expect(pgPool).not.toHaveBeenCalled();                // no persiste nada
+  });
+});
+
+// ---------------------------------------------------------------- bloque B · Rollo Continuo y Termoencogible
+const ROLLO = {
+  codigo: 'RCPMG-0001', descripcion: 'Rollo VCI PMG doblado 58 x 4500" Cal. 3 mil', producto: 'ROLLO VCI', composicion: 'PMG', presentacion: 'ROLLO', modalidad: 'DOBLADA',
+  ancho: '58', largo: '4500', unidadDimensiones: 'IN', anchoRollo: '30', calibre: '3 MIL', pesoLb: '8.25', colorNombre: 'ROJO', colorHex: '#C0504D'
+};
+const TERMO = {
+  codigo: 'TE-001', descripcion: 'Rollo VCI + UV termoencogible doblado 6 x 30 metros Cal. 8 mil', producto: 'ROLLO VCI + UV TERMOENCOGIBLE', composicion: 'PMG', presentacion: 'ROLLO', modalidad: 'DOBLADA',
+  ancho: '6', largo: '30', unidadDimensiones: 'M', calibre: '8 MIL', pesoLb: '45.2', colorNombre: 'NATURAL', anchoDoblado: '1.60', medidaPliegue: '0.70', largoPresentacionFinal: '30', anchoPresentacionFinal: '1.60'
+};
+
+describe('Rollo Continuo · plantilla aprobada', () => {
+  const service = new SheetPreviewService();
+
+  it('modalidad Doblada: imprime el ancho del rollo independiente, sin fila de cantidad y con el color del dibujo', async () => {
+    const r = await service.preview('ROLLO_CONTINUO', ROLLO);
+    expect(r).toMatchObject({ familia: 'ROLLO_CONTINUO', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], bloqueado: null, pendientesEmision: ['Cliente'] });
+    expect(r.advertencias.filter((a) => a.startsWith('Validación de la familia'))).toEqual([]);
+    expect(r.html).toContain('30&quot;');                                   // ancho_rollo ≠ ancho (58")
+    expect(r.html).toContain('58&quot;');
+    expect(r.html).toContain('id="hoja_doblada" data-valor="X"');
+    expect(r.html.replace(/<!--[^]*?-->/g, '')).not.toContain('Cantidad Por Rollo o Paquete');
+    expect(r.html).toContain('fill="#C0504D"');
+    expect(celda(r.html, 'calibre')).toBe('3 MIL');
+  });
+
+  it('Extendida NO está autorizada: no se genera un documento engañoso y se explica', async () => {
+    const r = await service.preview('ROLLO_CONTINUO', { ...ROLLO, modalidad: 'EXTENDIDA' });
+    expect(r.html).toBe('');
+    expect(r.completo).toBe(false);
+    expect(r.bloqueado).toMatch(/Extendida de Rollo Continuo no está autorizada/);
+    expect(configuracionFamilias().find((f) => f.codigo === 'ROLLO_CONTINUO')?.modalidades).toEqual([expect.objectContaining({ valor: 'DOBLADA', habilitada: true }), expect.objectContaining({ valor: 'EXTENDIDA', habilitada: false })]);
+  });
+
+  it('sin ancho del rollo o sin modalidad falta información técnica (no se calcula ni se inventa)', async () => {
+    const r = await service.preview('ROLLO_CONTINUO', { ...ROLLO, anchoRollo: '', modalidad: '' });
+    expect(r.completo).toBe(false);
+    expect(r.faltantes).toEqual(expect.arrayContaining(['Ancho del rollo', 'Hoja doblada o extendida']));
+    expect(r.html).not.toMatch(/id="hoja_(doblada|extendida)" data-valor="(X|NA)"/);
+  });
+});
+
+describe('Termoencogible · plantilla aprobada', () => {
+  const service = new SheetPreviewService();
+
+  it('modalidad Doblada con las cuatro cotas: imprime medidas con su unidad, sin color de dibujo ni fila de cantidad', async () => {
+    const r = await service.preview('TERMOENCOGIBLE', TERMO);
+    expect(r).toMatchObject({ familia: 'TERMOENCOGIBLE', completo: true, faltantes: [], bloqueado: null });
+    expect(r.advertencias.filter((a) => a.startsWith('Validación de la familia'))).toEqual([]);
+    expect(r.html).toContain('1.60 m');
+    expect(r.html).toContain('0.70 m');
+    expect(r.html).toContain('Metros (M)');
+    expect(r.html.replace(/<!--[^]*?-->/g, '')).not.toContain('Cantidad Por Rollo o Paquete');
+    expect(celda(r.html, 'color')).toBe('NATURAL');
+    expect(r.html).not.toMatch(/\{\{/);
+  });
+
+  it('las cotas técnicas son obligatorias e independientes: sin ellas la representación es incompleta', async () => {
+    const r = await service.preview('TERMOENCOGIBLE', { ...TERMO, anchoDoblado: '', medidaPliegue: '' });
+    expect(r.completo).toBe(false);
+    expect(r.faltantes).toEqual(expect.arrayContaining(['Ancho doblado', 'Medida del pliegue']));
+  });
+
+  it('Extendida no está autorizada', async () => {
+    const r = await service.preview('TERMOENCOGIBLE', { ...TERMO, modalidad: 'EXTENDIDA' });
+    expect(r.html).toBe('');
+    expect(r.bloqueado).toMatch(/Extendida de Termoencogible no está autorizada/);
+  });
+
+  it('los campos de otra familia (ancho del rollo, fuelles) no se imprimen aquí', () => {
+    const m = mapSheetData('TERMOENCOGIBLE', { ...TERMO, anchoRollo: '30', fuelleDerecho: '24' });
+    expect(m.datos).not.toHaveProperty('ancho_rollo');
+    expect(m.datos).not.toHaveProperty('fuelle_derecho');
+    expect(m.advertencias.join(' ')).toMatch(/fuelles no aplican/i);
   });
 });

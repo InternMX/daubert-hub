@@ -6,14 +6,14 @@ import { resolve } from 'node:path';
 // mapeador de la vista previa lo usa para armar los datos de la plantilla y el servicio de vista previa para elegir la plantilla aprobada y su validador.
 // Las modalidades salen de los PERFILES existentes (profiles/*.profile.json): nada se habilita aquí que el perfil no autorice.
 
-export type FamilyCode = 'BOLSA_PLANA_1' | 'HOJA_PAQ' | 'BOLSA_FUELLE' | 'BOLSA_NATURAL';
+export type FamilyCode = 'BOLSA_PLANA_1' | 'HOJA_PAQ' | 'BOLSA_FUELLE' | 'BOLSA_NATURAL' | 'ROLLO_CONTINUO' | 'TERMOENCOGIBLE';
 export type Composition = 'PMG' | 'CP5000' | 'NAT';
 export type UnitCode = 'IN' | 'MM' | 'CM' | 'M';
 
 export const FIELD_KEYS = [
   'codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'resinaVci', 'colorPreset', 'colorConcentracion', 'colorNombre', 'colorHex',
   'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'etiqueta', 'modalidad',
-  'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'
+  'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'
 ] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
@@ -92,6 +92,23 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
     requeridos: [...OBLIGATORIOS_BASE, 'fuelleDerecho', 'fuelleIzquierdo'] as FieldKey[],
     composiciones: ['PMG', 'CP5000', 'NAT'], composicionFija: null, cantidad: true, fuelles: true, colorDibujo: true, colores: [AZUL, VERDE], colorSugerido: 'DAUBERT_AZUL', cotasInternasPorDefecto: '#FFFFFF', validador: null,
     notas: ['Ambos fuelles (derecho e izquierdo) y sello integrado. «Fuelle total» es auxiliar: se reparte en dos mitades editables.']
+  },
+  ROLLO_CONTINUO: {
+    codigo: 'ROLLO_CONTINUO', nombre: 'Rollo Continuo', plantilla: 'templates/rollo-continuo/rollo-continuo.template.html', imagenes: 'templates/rollo-continuo/images', perfil: 'rollo-continuo.profile.json',
+    campos: [...BASE_ANTES, 'modalidad', ...MEDIDAS, 'anchoRollo', ...BASE_DESPUES],
+    requeridos: [...OBLIGATORIOS_BASE.filter((k) => k !== 'cantidad' && k !== 'cantidadUnidad'), 'modalidad', 'anchoRollo'] as FieldKey[],
+    composiciones: ['PMG', 'CP5000', 'NAT'], composicionFija: null, cantidad: false, fuelles: false, colorDibujo: true, colores: [AZUL, VERDE], colorSugerido: 'DAUBERT_AZUL', cotasInternasPorDefecto: '#FFFFFF',
+    validador: { archivo: 'validate-rollo-continuo-data.mjs', funcion: 'validarDatosRolloContinuo' },
+    notas: ['Dibujo de hoja y dibujo de rollo doblado; el ancho del rollo es un dato independiente del ancho. Solo la modalidad Doblada está autorizada: Extendida no tiene variante gráfica confirmada.']
+  },
+  TERMOENCOGIBLE: {
+    codigo: 'TERMOENCOGIBLE', nombre: 'Termoencogible', plantilla: 'templates/termoencogible/termoencogible.template.html', imagenes: 'templates/termoencogible/images', perfil: 'termoencogible.profile.json',
+    campos: ['codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'resinaVci', 'colorNombre', 'composicion', 'presentacion', 'modalidad', ...MEDIDAS, 'calibre', 'pesoLb', 'etiqueta',
+      'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'],
+    requeridos: ['codigo', 'descripcion', 'composicion', 'presentacion', 'modalidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'],
+    composiciones: ['PMG', 'CP5000', 'NAT'], composicionFija: null, cantidad: false, fuelles: false, colorDibujo: false, colores: [], colorSugerido: null, cotasInternasPorDefecto: '#FFFFFF',
+    validador: { archivo: 'validate-termoencogible-data.mjs', funcion: 'validarDatosTermoencogible' },
+    notas: ['Dibujo del material y de la presentación final: las cuatro cotas técnicas (ancho doblado, pliegue, largo y ancho de la presentación final) son datos independientes y no se calculan. Solo la modalidad Doblada está autorizada.']
   },
   BOLSA_NATURAL: {
     codigo: 'BOLSA_NATURAL', nombre: 'Bolsa Natural', plantilla: 'templates/bolsa-natural/bolsa-natural.template.html', imagenes: 'templates/bolsa-natural/images', perfil: 'bolsa-natural.profile.json',
