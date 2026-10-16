@@ -137,18 +137,19 @@ async function main() {
   const lineas = ['# Ocho casos reproducibles', '', '**Todos son fixtures simulados reproducidos localmente; no se consultó BIND real.**', '', 'Los datos finales son valores de prueba capturados o confirmados por el demostrador. Cliente vacío en todos los casos. Ninguno es una especificación oficial.', ''];
   for (const c of documentados) {
     lineas.push(`## ${c.id} · ${c.familia}`, '', `- Código: \`${c.producto.Code}\``, `- Title: ${c.producto.Title}`, `- Familia esperada: ${c.familia}. Seleccionarla o confirmar la sugerencia.`, '', '### Datos obtenidos automáticamente del fixture', '');
-    for (const [key, campo] of Object.entries(c.automaticos)) if (campo.origen === 'EXTRAIDO' && campo.valor !== null) lineas.push(`- ${key}: ${JSON.stringify(campo.valor)} (${campo.procedencia ?? 'TITLE'}).`);
+    for (const [key, campo] of Object.entries(c.automaticos)) if (campo.origen === 'EXTRAIDO' && campo.valor !== null) lineas.push(`- ${key}: ${JSON.stringify(campo.valor)} (${campo.procedencia ?? (key === 'codigoDcmx' ? 'BIND.Code' : key === 'pesoLb' ? 'BIND.Weight' : 'TITLE')}).`);
     lineas.push('', '### Derivados / sugeridos (requieren revisión)', '', `- Familia: ${c.sugerencias.familia.valor ?? 'pendiente'}. ${c.sugerencias.familia.motivo}`, `- Color: ${c.sugerencias.color.nota}`, `- Resina VCI: ${c.sugerencias.resinaVci.nota}`);
     for (const [key, campo] of Object.entries(c.automaticos)) if (campo.origen === 'SUGERIDO') lineas.push(`- ${key}: ${JSON.stringify(campo.valor)}. ${campo.nota ?? ''}`);
     lineas.push('', '### Captura / confirmación manual', '', '- Confirmar familia y revisar todos los valores sugeridos. Fecha local editable; cliente opcional solo para demostración.');
     const equivalencias = { composicion: 'resina', cantidadUnidad: 'cantidad' };
     for (const [key, valor] of Object.entries(c.datos)) {
       const campo = c.automaticos[equivalencias[key] ?? key];
-      if ((!campo || campo.origen === 'PENDIENTE' || campo.valor === null) && !['codigo', 'descripcion', 'etiqueta', 'fechaEmision', 'colorHex', 'colorNombre', 'resinaVci'].includes(key)) lineas.push(`- ${labels[key] ?? key}: \`${valor}\`.`);
+      if ((!campo || campo.origen === 'PENDIENTE' || campo.valor === null) && !['codigo', 'descripcion', 'etiqueta', 'fechaEmision', 'colorHex', 'colorNombre', 'resinaVci'].includes(key) && !(key === 'producto' && ['BOLSA', 'HOJA'].includes(c.automaticos.tipo.valor))) lineas.push(`- ${labels[key] ?? key}: \`${valor}\`.`);
     }
     lineas.push('', '### Advertencias esperadas y vista previa', '', ...c.advertenciasOrigen.map((a) => `- Origen: ${a.mensaje}`), ...c.resultado.avisosTecnicos.map((a) => `- ${a.nivel}: ${a.mensaje}`), `- Resultado final: ${c.resultado.completo ? 'datos técnicos completos' : 'incompleto'}, ${c.resultado.bloqueado ?? 'HTML generado con su plantilla aprobada'}, firmas SIN FIRMA. Pendientes de emisión: ${c.resultado.pendientesEmision.join(', ') || 'ninguno'}.`, `- Capturas: \`${c.id}-formulario.png\` y \`${c.id}-hoja-ampliada.png\`.`, '', '### Valores finales del caso', '', '```json', JSON.stringify(c.datos, null, 2), '```', '');
   }
   fs.writeFileSync(path.join(salida, 'CASOS_DEMOSTRACION.md'), lineas.join('\n'));
+  if (process.argv.includes('--solo-casos')) return;
   server.listen(4199, '127.0.0.1', async () => {
     console.log('DEMO SIMULADA: http://127.0.0.1:4199/automations/manufacturing-sheets');
     if (process.argv.includes('--capturas')) { try { await capturas(4199); } catch (e) { console.error(e); process.exitCode = 1; } finally { server.closeAllConnections(); server.close(); } }

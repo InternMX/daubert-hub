@@ -35,3 +35,13 @@ Reconoce pulgadas, MM, CM/centímetros y M/MT/MTS/metros, sin conversión. Dos m
 - Ninguna integración PostgreSQL forma parte de esta etapa.
 
 Los entregables de revisión están en `C:\Users\06\Documents\Daubert\Entregables\Estabilizacion_Prototipo_Manufactura\`.
+
+## Cierre de verificación · 16 de octubre de 2026
+
+- API completa: **1921** pruebas; frontend completo: **1254** pruebas (cuatro workers, sin aumentar timeouts).
+- Lint, typecheck y build: OK. Vite mantiene el aviso de chunk mayor a 500 kB.
+- Ocho regresiones documentales, utilidades comunes e impresión integral: OK. Nueve documentos normales y texto largo en una página Carta; texto íntegro y SIN FIRMA.
+- Capturas reales de formulario y hoja ampliada: 16 PNG, ocho casos simulados. Extras reproducibles: TARPPW3301 (papel) y DEMOFPMG001 (COLOR AZUL explícito para cambiar a Verde).
+- Entradas nuevas: tests de contexto anidado estricto, longitudes/tipos, propiedades extra, escape de HTML e integración HTTP de coherencia. Se conserva la ruta autenticada.
+- Plantillas, perfiles y referencias históricas: sin cambios respecto a `a9ae9af`. Sin cambios en automatizaciones Audi/Caterpillar/Pagos ni base de datos.
+- Bloque D evaluado y diferido: ver `manufacturing-draft-pdf-proposal.md`. No hay descarga PDF ni emisión.
