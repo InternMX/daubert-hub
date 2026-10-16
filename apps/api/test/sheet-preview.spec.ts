@@ -1,0 +1,203 @@
+import 'reflect-metadata';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PATH_METADATA } from '@nestjs/common/constants';
+import { Test } from '@nestjs/testing';
+import { ValidationPipe, type INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { SafeExceptionFilter } from '../src/common/http-exception.filter';
+import { IS_PUBLIC_KEY } from '../src/security/route-access.decorators';
+
+const { pgPool } = vi.hoisted(() => ({ pgPool: vi.fn() }));
+vi.mock('pg', () => ({ Pool: pgPool, default: { Pool: pgPool } }));
+
+import { mapSheetData } from '../src/manufacturing-sheets/preview/sheet-data.mapper';
+import { SheetPreviewController } from '../src/manufacturing-sheets/preview/sheet-preview.controller';
+import { SheetPreviewRequestDto } from '../src/manufacturing-sheets/preview/sheet-preview.dto';
+import { escapeHtml, SheetPreviewService, SIN_FIRMA_MARKER } from '../src/manufacturing-sheets/preview/sheet-preview.service';
+
+const ROOT = resolve(__dirname, '../src/manufacturing-sheets');
+
+// Datos del formulario con lo que el interpretador extrae de SCHFPMG001 (BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS, 0.0428 lb) + el color elegido por el usuario.
+const SCHF = {
+  codigo: 'SCHFPMG001', descripcion: 'BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', producto: 'Bolsa', composicion: 'PMG', presentacion: 'PAQUETE', cantidad: '200', cantidadUnidad: 'BOLSAS',
+  ancho: '13', largo: '16', unidadDimensiones: 'IN', calibreValor: '3', calibreUnidad: 'MIL', pesoLb: '0.0428', colorHex: '#538DD5'
+};
+
+describe('mapSheetData', () => {
+  it('traduce SCHFPMG001 a los datos de la plantilla sin inventar nada', () => {
+    const m = mapSheetData('BOLSA_PLANA_1', SCHF);
+    expect(m.datos).toMatchObject({
+      codigo: 'SCHFPMG001', comp_pmg: 'X', comp_cp5000: 'NA', comp_natural: 'NA', pres_rollo: 'NA', pres_paquete: 'X', cantidad: '200 Bolsas', unidad_medidas: 'Pulgadas (IN)',
+      ancho: '13"', largo: '16"', calibre: '3 MIL', peso_bolsa_lb: '0.0428', cliente: '', fecha_: '', etiqueta: '', resina_vci: '', color: ''
+    });
+    expect(m.colorBolsaHex).toBe('#538DD5');
+    expect(m.faltantes).toEqual([]);
+    expect(m.datos).not.toHaveProperty('hoja_doblada');
+  });
+
+  it('sin selección no imprime NA ni X; el peso/medidas inválidos se omiten con advertencia', () => {
+    const m = mapSheetData('BOLSA_PLANA_1', { codigo: 'A', pesoLb: 'abc', ancho: '-3', unidadDimensiones: 'MM', cantidad: '1.5' });
+    expect(m.datos).toMatchObject({ comp_pmg: '', comp_cp5000: '', pres_rollo: '', peso_bolsa_lb: '', ancho: '', cantidad: '' });
+    expect(m.advertencias.length).toBeGreaterThanOrEqual(3);
+    expect(m.faltantes).toEqual(expect.arrayContaining(['Composición', 'Presentación', 'Color del dibujo']));
+  });
+
+  it('Hoja Paq agrega la modalidad (y la exige); Bolsa Plana 1 la ignora con advertencia', () => {
+    const hp = mapSheetData('HOJA_PAQ', { ...SCHF, modalidad: 'EXTENDIDA' });
+    expect(hp.datos).toMatchObject({ hoja_doblada: 'NA', hoja_extendida: 'X' });
+    expect(mapSheetData('HOJA_PAQ', SCHF).faltantes).toContain('Hoja doblada o extendida');
+    expect(mapSheetData('BOLSA_PLANA_1', { ...SCHF, modalidad: 'DOBLADA' }).advertencias.join(' ')).toMatch(/no aplica/);
+  });
+
+  it('formatea milímetros, fecha de emisión y color inválido', () => {
+    const m = mapSheetData('BOLSA_PLANA_1', { ...SCHF, unidadDimensiones: 'MM', fechaEmision: '2026-10-15', colorHex: 'azul' });
+    expect(m.datos).toMatchObject({ ancho: '13 mm', unidad_medidas: 'Milímetros (MM)', fecha_: '15/10/2026' });
+    expect(m.colorBolsaHex).toBeNull();
+    expect(m.advertencias.join(' ')).toMatch(/#RRGGBB/);
+  });
+});
+
+describe('SheetPreviewService (plantillas reales)', () => {
+  const service = new SheetPreviewService();
+  beforeEach(() => { pgPool.mockClear(); });
+
+  it('Bolsa Plana 1 con los datos de SCHFPMG001: HTML real de la plantilla aprobada, borrador y SIN FIRMA', async () => {
+    const r = await service.preview('BOLSA_PLANA_1', SCHF);
+    expect(r).toMatchObject({ familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [] });
+    for (const texto of ['SCHFPMG001', 'BOLSA VCI PMG 13 x 16&quot; CAL. 3 MIL PAQUETE C/200 BOLSAS', '200 Bolsas', '0.0428', '3 MIL', 'Pulgadas (IN)', 'Dibujo Hoja', 'Notas: En caso de que se fabrique con sello de fondo', 'fill="#538DD5"']) {
+      expect(r.html).toContain(texto);
+    }
+    expect(r.html).toContain('id="comp_pmg" data-valor="X"');
+    expect(r.html).toContain(`id="firma_elaboro">${SIN_FIRMA_MARKER}</div>`);   // ambas firmas son el marcador SIN FIRMA
+    expect(r.html).toContain(`id="firma_aprobo">${SIN_FIRMA_MARKER}</div>`);
+    expect(r.html).not.toMatch(/\{\{(?!color_bolsa_hex)/);           // ningún placeholder pendiente
+    expect(r.html).toContain('data:image/jpeg;base64,');
+    expect(r.html).not.toContain('.\\images\\');
+  });
+
+  it('modificar ancho, largo, calibre o cantidad cambia el HTML; los datos de entrada no se alteran', async () => {
+    const original = Object.freeze({ ...SCHF });
+    const base = await service.preview('BOLSA_PLANA_1', original);
+    const cambios: Array<[Partial<typeof SCHF>, string]> = [[{ ancho: '14.5' }, '14.5&quot;'], [{ largo: '20' }, '20&quot;'], [{ calibreValor: '4' }, '4 MIL'], [{ cantidad: '300' }, '300 Bolsas']];
+    for (const [cambio, esperado] of cambios) {
+      const r = await service.preview('BOLSA_PLANA_1', { ...original, ...cambio });
+      expect(r.html).not.toBe(base.html);
+      expect(r.html).toContain(esperado);
+    }
+    expect(original).toEqual(SCHF);
+  });
+
+  it('Hoja Paq utiliza su plantilla específica (Dibujo Hoja de 160 pt y modalidad)', async () => {
+    const hp = await service.preview('HOJA_PAQ', { ...SCHF, modalidad: 'DOBLADA' });
+    const bp = await service.preview('BOLSA_PLANA_1', SCHF);
+    expect(hp.html).toContain('viewBox="0 0 400.4 189"');            // sheet-drawing.hoja-paq
+    expect(hp.html).toContain('id="hoja_doblada" data-valor="X"');
+    expect(hp.html).toContain('Hoja:');
+    expect(hp.html).not.toContain('Notas: En caso de que se fabrique con sello de fondo');
+    expect(bp.html).not.toContain('viewBox="0 0 400.4 189"');
+    expect(hp.html).not.toBe(bp.html);
+    expect(hp.completo).toBe(true);
+  });
+
+  it('los campos faltantes generan advertencias y no se inventan valores ni dibujos', async () => {
+    const r = await service.preview('HOJA_PAQ', { codigo: 'SCHFPMG001' });
+    expect(r.completo).toBe(false);
+    expect(r.faltantes).toEqual(expect.arrayContaining(['Descripción', 'Composición', 'Presentación', 'Cantidad', 'Ancho', 'Largo', 'Peso (lb)', 'Color del dibujo', 'Hoja doblada o extendida']));
+    expect(r.html).toContain('{{color_bolsa_hex}}');                 // sin color: la plantilla lo muestra gris (no se inventa uno)
+    expect(r.html).not.toMatch(/id="(comp|pres|hoja)_[a-z0-9_]+" data-valor="(X|NA)"/);   // ninguna selección inventada
+    expect(r.html).toContain('SCHFPMG001');
+  });
+
+  it('las entradas maliciosas se escapan: sin scripts, sin atributos activos y sin re-interpretar placeholders', async () => {
+    const payloads = ['<script>alert(1)</script>', '"><img src=x onerror=alert(1)>', "'; DROP TABLE x; --", '{{color_bolsa_hex}}{{codigo}}', '</style><script>x</script>', 'javascript:alert(1)'];
+    for (const payload of payloads) {
+      const r = await service.preview('BOLSA_PLANA_1', { ...SCHF, descripcion: payload, cliente: payload, etiqueta: payload, producto: payload, colorNombre: payload, resinaVci: payload });
+      const sinMeta = r.html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '');
+      expect(sinMeta).not.toMatch(/<script/i);
+      expect(sinMeta).not.toMatch(/<img[^>]*onerror/i);
+      expect(sinMeta).not.toMatch(/<(img|svg|iframe|a)[ >][^>]*\son\w+\s*=/i);
+      expect(sinMeta).toContain(escapeHtml(payload));
+    }
+    const r = await service.preview('BOLSA_PLANA_1', { ...SCHF, descripcion: '{{codigo}}' });
+    expect(r.html).toContain('{{codigo}}');                           // texto literal, no sustituido
+    const colorMalo = await service.preview('BOLSA_PLANA_1', { ...SCHF, colorHex: '#538DD5" onload="alert(1)' });
+    expect(colorMalo.html).not.toContain('onload');
+    expect(colorMalo.advertencias.join(' ')).toMatch(/#RRGGBB/);
+  });
+
+  it('endurece el HTML para el iframe: CSP sin scripts ni red y sin contenido activo en la plantilla', async () => {
+    const r = await service.preview('BOLSA_PLANA_1', SCHF);
+    expect(r.html).toMatch(/Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:/);
+    expect(r.html).not.toMatch(/https?:\/\//);
+    expect(r.html).not.toMatch(/<(iframe|object|embed|link|form)\b/i);
+  });
+
+  it('reutiliza el compositor existente: la plantilla compuesta coincide con la salida de compose-template.mjs', async () => {
+    const cli = execFileSync('node', [resolve(ROOT, 'tools/compose-template.mjs'), '--source', resolve(ROOT, 'templates/hoja-paq/hoja-paq.template.html'), '--out', resolve(process.env.TEMP ?? '/tmp', 'hp-preview-check.html')], { encoding: 'utf8' });
+    expect(cli).toContain('Plantilla compuesta');
+    const composed = readFileSync(resolve(process.env.TEMP ?? '/tmp', 'hp-preview-check.html'), 'utf8');
+    const r = await service.preview('HOJA_PAQ', { ...SCHF, modalidad: 'DOBLADA' });
+    // Los fragmentos fijos de la plantilla compuesta (sin placeholders) aparecen idénticos en la vista previa.
+    for (const fragmento of ['<main class="hoja">', 'id="seccion-dibujo-hoja"', 'class="dibujo-hoja-caja"']) {
+      expect(composed).toContain(fragmento);
+      expect(r.html).toContain(fragmento);
+    }
+  });
+
+  it('no usa PostgreSQL', async () => {
+    await service.preview('BOLSA_PLANA_1', SCHF);
+    expect(pgPool).not.toHaveBeenCalled();
+    for (const archivo of ['preview/sheet-preview.service.ts', 'preview/sheet-preview.controller.ts', 'preview/sheet-data.mapper.ts']) {
+      expect(readFileSync(resolve(ROOT, archivo), 'utf8'), archivo).not.toMatch(/from 'pg'|DatabaseService|DatabaseModule|INSERT\s|UPDATE\s|DELETE\s|writeFile/);
+    }
+  });
+});
+
+describe('POST /api/manufacturing-sheets/previews', () => {
+  let app: INestApplication;
+  beforeEach(async () => {
+    Reflect.defineMetadata('design:paramtypes', [SheetPreviewService], SheetPreviewController);
+    Reflect.defineMetadata('design:paramtypes', [SheetPreviewRequestDto], SheetPreviewController.prototype, 'create');
+    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [SheetPreviewService] }).compile();
+    app = modulo.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    app.useGlobalFilters(new SafeExceptionFilter());
+    await app.init();
+  });
+
+  const post = (body: unknown) => request(app.getHttpServer()).post('/api/manufacturing-sheets/previews').send(body as object);
+
+  it('devuelve la vista previa con borrador y SIN FIRMA (200, sin crear nada)', async () => {
+    const res = await post({ familia: 'BOLSA_PLANA_1', datos: SCHF });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true });
+    expect(res.body.data.html).toContain('SCHFPMG001');
+    expect(pgPool).not.toHaveBeenCalled();
+  });
+
+  it('valida la entrada: familia desconocida, propiedades no permitidas (incluidas firmas), enums y longitudes', async () => {
+    for (const body of [
+      { familia: 'COEX', datos: {} },
+      { familia: 'HOJA_PAQ' },
+      { familia: 'HOJA_PAQ', datos: { firma: '<img src=x>' } },
+      { familia: 'HOJA_PAQ', datos: { bloque_firma_elaboro: '<img>' } },
+      { familia: 'HOJA_PAQ', datos: { composicion: 'ESD' } },
+      { familia: 'HOJA_PAQ', datos: { descripcion: 'x'.repeat(501) } },
+      { familia: 'HOJA_PAQ', datos: { cliente: 42 } },
+      { familia: 'HOJA_PAQ', datos: {}, extra: true }
+    ]) {
+      const res = await post(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+  });
+
+  it('la ruta es autenticada (no @Public) y sigue la convención /api/manufacturing-sheets/…', () => {
+    expect(Reflect.getMetadata(PATH_METADATA, SheetPreviewController)).toBe('manufacturing-sheets/previews');
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, SheetPreviewController)).toBeUndefined();
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, SheetPreviewController.prototype.create)).toBeUndefined();
+  });
+});

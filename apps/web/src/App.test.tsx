@@ -171,6 +171,19 @@ describe('authentication routing', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
   });
 
+  it('protects the manufacturing sheets route: unauthenticated visitors go to /login, ADMIN and GENERAL users can open it', async () => {
+    const unauthenticated = renderWithAuth('/automations/manufacturing-sheets', { user: null, isLoading: false });
+    expect(await screen.findByRole('heading', { name: 'Daubert Hub' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    unauthenticated.unmount();
+    for (const user of [testAdminUser, testGeneralUser]) {
+      const view = renderWithAuth('/automations/manufacturing-sheets', { isLoading: false, user });
+      expect(screen.getByRole('heading', { level: 1, name: 'Especificación de manufactura' })).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent('/automations/manufacturing-sheets');
+      view.unmount();
+    }
+  });
+
   it('sends an authenticated visitor away from /login into the application', () => {
     renderWithAuth('/login', { isLoading: false });
     expect(screen.getByRole('heading', { level: 1, name: 'Hola, Alejandro López' })).toBeInTheDocument();

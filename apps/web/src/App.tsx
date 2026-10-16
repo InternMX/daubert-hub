@@ -24,6 +24,8 @@ import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
 import { EditUserPage } from './users/EditUserPage';
+import { MANUFACTURING_SHEETS_ROUTE } from './automations/automationRoutes';
+import { ManufacturingSpecificationPage } from './manufacturing/ManufacturingSpecificationPage';
 import { roleLabels } from './services/userLabels';
 
 function HomePage() {
@@ -71,6 +73,7 @@ export function App() {
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
+        <Route path={MANUFACTURING_SHEETS_ROUTE} element={<ManufacturingSpecificationPage />} />
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
         <Route path="/automations/remissions/caterpillar" element={<CaterpillarRemissionsPage />} />
         <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />

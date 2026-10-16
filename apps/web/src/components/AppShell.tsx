@@ -16,7 +16,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
-import { AUTOMATION_ROUTE_BY_CODE } from '../automations/automationRoutes';
+import { AUTOMATION_ROUTE_BY_CODE, MANUFACTURING_SHEETS_ROUTE } from '../automations/automationRoutes';
 import { useAuth } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { getSystemStatus, type SystemStatus } from '../services/systemStatus';
@@ -53,7 +53,8 @@ const auditNavigation = { to: '/audit', label: 'Auditoría', end: false, icon: F
 const automationSubmenu = [
   { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_AUDI!, label: 'Remisiones Audi' },
   { to: AUTOMATION_ROUTE_BY_CODE.PAYMENT_NOTIFICATIONS!, label: 'Notificaciones de pago' },
-  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' }
+  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' },
+  { to: MANUFACTURING_SHEETS_ROUTE, label: 'Hojas de manufactura' }
 ];
 
 // Every automation matches its whole subtree (e.g. /automations/payment-notifications/:executionId

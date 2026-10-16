@@ -46,6 +46,7 @@ function renderShell(path = '/', authValue?: Partial<AuthContextValue>) {
     <Route path="/automations/payment-notifications" element={<div>Payment Notifications page</div>} />
     <Route path="/automations/payment-notifications/:executionId" element={<div>Payment Notifications detail page</div>} />
     <Route path="/automations/remissions/caterpillar" element={<div>Caterpillar page</div>} />
+    <Route path="/automations/manufacturing-sheets" element={<div>Manufacturing sheets page</div>} />
   </Routes></AppShell></TestAuthProvider></ColorModeProvider></MemoryRouter>);
 }
 
@@ -655,10 +656,10 @@ describe('AppShell Automatizaciones submenu', () => {
     const menu = await screen.findByRole('menu', { name: 'Submenú de Automatizaciones' });
 
     expect(within(menu).queryByText('Panel general')).not.toBeInTheDocument();
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(3);
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(4);
   });
 
-  it('clicking the arrow opens the submenu with exactly Remisiones Audi, Notificaciones de pago, and Remisiones Caterpillar, without navigating', async () => {
+  it('clicking the arrow opens the submenu with Remisiones Audi, Notificaciones de pago, Remisiones Caterpillar and Hojas de manufactura, without navigating', async () => {
     const user = userEvent.setup();
     mockWideViewport(true);
     renderShell();
@@ -669,6 +670,7 @@ describe('AppShell Automatizaciones submenu', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Remisiones Audi' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Notificaciones de pago' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Remisiones Caterpillar' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Hojas de manufactura' })).toBeInTheDocument();
     // The arrow click never navigated away from the current page.
     expect(screen.queryByText('Automations page')).not.toBeInTheDocument();
   });
@@ -764,6 +766,17 @@ describe('AppShell Automatizaciones submenu', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Remisiones Audi' }));
 
     expect(await screen.findByText('Audi page')).toBeInTheDocument();
+  });
+
+  it('navigates to Hojas de manufactura from the submenu (route /automations/manufacturing-sheets)', async () => {
+    const user = userEvent.setup();
+    mockWideViewport(true);
+    renderShell();
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar automatizaciones' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Hojas de manufactura' }));
+
+    expect(await screen.findByText('Manufacturing sheets page')).toBeInTheDocument();
   });
 
   it('navigates to Notificaciones de pago from the submenu', async () => {
@@ -955,7 +968,8 @@ describe('AppShell Automatizaciones submenu — current-route awareness', () => 
   it.each([
     ['/automations/remissions/audi', 'Remisiones Audi', 'Audi page'],
     ['/automations/payment-notifications', 'Notificaciones de pago', 'Payment Notifications page'],
-    ['/automations/remissions/caterpillar', 'Remisiones Caterpillar', 'Caterpillar page']
+    ['/automations/remissions/caterpillar', 'Remisiones Caterpillar', 'Caterpillar page'],
+    ['/automations/manufacturing-sheets', 'Hojas de manufactura', 'Manufacturing sheets page']
   ] as const)('marks %s as the current, non-navigable destination (%s)', async (path, label, pageText) => {
     const user = userEvent.setup();
     mockWideViewport(true);
@@ -982,7 +996,7 @@ describe('AppShell Automatizaciones submenu — current-route awareness', () => 
     renderShell('/automations');
 
     const menu = await openSubmenu(user);
-    for (const label of ['Remisiones Audi', 'Notificaciones de pago', 'Remisiones Caterpillar']) {
+    for (const label of ['Remisiones Audi', 'Notificaciones de pago', 'Remisiones Caterpillar', 'Hojas de manufactura']) {
       expect(within(menu).getByRole('menuitem', { name: label })).not.toHaveAttribute('aria-current');
     }
   });
