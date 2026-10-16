@@ -10,9 +10,22 @@ export type UnitCode = 'IN' | 'MM' | 'CM' | 'M';
 export type FieldKey =
   | 'codigo' | 'descripcion' | 'producto' | 'cliente' | 'fechaEmision' | 'resinaVci' | 'colorPreset' | 'colorConcentracion' | 'colorNombre' | 'colorHex'
   | 'composicion' | 'presentacion' | 'cantidad' | 'cantidadUnidad' | 'ancho' | 'largo' | 'unidadDimensiones' | 'calibre' | 'pesoLb' | 'etiqueta' | 'modalidad'
-  | 'fuelleTotal' | 'fuelleDerecho' | 'fuelleIzquierdo' | 'anchoRollo' | 'anchoDoblado' | 'medidaPliegue' | 'largoPresentacionFinal' | 'anchoPresentacionFinal';
+  | 'fuelleTotal' | 'fuelleDerecho' | 'fuelleIzquierdo' | 'anchoRollo' | 'anchoDoblado' | 'medidaPliegue' | 'largoPresentacionFinal' | 'anchoPresentacionFinal'
+  | 'coexVariante' | 'pesoCapaInterior' | 'pesoCapaIntermedia' | 'pesoCapaExterior' | 'lbVciInterior' | 'lbVciIntermedia' | 'lbVciExterior';
 
 export interface ColorPresetConfig { id: string; etiqueta: string; nombre: string; hex: string; cotasInternasHex: string }
+export interface VarianteConfig {
+  valor: string;
+  etiqueta: string;
+  colorTexto: string;
+  colorCuerpo: string;
+  colorCapaInterior: string;
+  colorCapaIntermedia: string;
+  colorCapaExterior: string;
+  cotasInternasHex: string;
+  presetEquivalente: string;
+}
+export interface CapaConfig { id: 'interior' | 'intermedia' | 'exterior'; etiqueta: string; resina: string; pesoKey: FieldKey; lbKey: FieldKey }
 export interface ModalidadConfig { valor: string; etiqueta: string; habilitada: boolean; motivo?: string }
 
 export interface FamilyConfig {
@@ -28,6 +41,8 @@ export interface FamilyConfig {
   colores: ColorPresetConfig[];
   colorSugerido: string | null;
   modalidades: ModalidadConfig[];
+  variantes: VarianteConfig[];
+  capas: CapaConfig[] | null;
   unidades: Array<{ valor: UnitCode; etiqueta: string }>;
   notas: string[];
 }

@@ -10,7 +10,7 @@ import { listManufacturingFamilies, type FamilyConfig } from '../services/manufa
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
-  setFieldValue, setFuelleTotal, toPreviewData, validateSpecification,
+  setCoexVariante, setFieldValue, setFuelleTotal, toPreviewData, validateSpecification,
   type DisplayOrigin, type FamilyCode, type FieldKey, type SpecificationForm, type SpecificationValidation
 } from './specificationForm';
 
@@ -341,10 +341,38 @@ export function ManufacturingSpecificationPage() {
                   </FieldFrame>
                 )}
                 {config.colorDibujo && text('colorConcentracion', { onValue: (value) => update((f) => setColorConcentracion(f, value, config)), inputMode: 'decimal', helperText: 'Concentración del color. Es independiente del porcentaje de la resina VCI.' })}
+                {config.variantes.length > 0 && (
+                  <FieldFrame form={form} fieldKey="coexVariante" error={errors.coexVariante} onRestore={restore}>
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      {colorSwatch(config.variantes.find((v) => v.valor === form.fields.coexVariante.value)?.colorCuerpo ?? '')}
+                      <TextField select fullWidth label="Variante COEX" value={form.fields.coexVariante.value} error={Boolean(errors.coexVariante)} onChange={(e) => update((f) => setCoexVariante(f, e.target.value, config))}>
+                        <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
+                        {config.variantes.map((v) => <MenuItem key={v.valor} value={v.valor}>{v.etiqueta} (cuerpo {v.colorCuerpo})</MenuItem>)}
+                      </TextField>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary" display="block">Solo existen las variantes aprobadas; un color personalizado no genera una tercera variante COEX.</Typography>
+                  </FieldFrame>
+                )}
                 {text('colorNombre', { helperText: 'Texto impreso en el campo Color del documento (editable).' })}
                 {config.colorDibujo && (colorPreset === COLOR_OTRO
                   ? text('colorHex', { placeholder: '#RRGGBB', helperText: 'Color del dibujo para «Otro».' })
                   : <Typography variant="body2" color="text.secondary" data-testid="color-hex-readonly">{colorPreset ? `Color del dibujo: ${form.fields.colorHex.value}` : 'Elige un color para el dibujo.'}</Typography>)}
+              </Box>
+            </Paper>
+          )}
+
+          {config?.capas && (
+            <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Capas COEX">
+              <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 0.5 }}>Capas COEX</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>La formulación de cada capa es fija. El peso por capa y las libras de VCI no se calculan: se capturan.</Typography>
+              <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
+                {config.capas.map((capa) => (
+                  <Box key={capa.id} sx={{ display: 'contents' }}>
+                    <Typography variant="body2" sx={{ gridColumn: '1 / -1', fontWeight: 600 }} data-testid={`capa-${capa.id}`}>{capa.etiqueta}: {capa.resina}</Typography>
+                    {text(capa.pesoKey, { inputMode: 'decimal' })}
+                    {text(capa.lbKey, { inputMode: 'decimal' })}
+                  </Box>
+                ))}
               </Box>
             </Paper>
           )}

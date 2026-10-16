@@ -6,14 +6,15 @@ import { resolve } from 'node:path';
 // mapeador de la vista previa lo usa para armar los datos de la plantilla y el servicio de vista previa para elegir la plantilla aprobada y su validador.
 // Las modalidades salen de los PERFILES existentes (profiles/*.profile.json): nada se habilita aquí que el perfil no autorice.
 
-export type FamilyCode = 'BOLSA_PLANA_1' | 'HOJA_PAQ' | 'BOLSA_FUELLE' | 'BOLSA_NATURAL' | 'ROLLO_CONTINUO' | 'TERMOENCOGIBLE';
+export type FamilyCode = 'BOLSA_PLANA_1' | 'HOJA_PAQ' | 'BOLSA_FUELLE' | 'BOLSA_NATURAL' | 'ROLLO_CONTINUO' | 'TERMOENCOGIBLE' | 'COEX';
 export type Composition = 'PMG' | 'CP5000' | 'NAT';
 export type UnitCode = 'IN' | 'MM' | 'CM' | 'M';
 
 export const FIELD_KEYS = [
   'codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'resinaVci', 'colorPreset', 'colorConcentracion', 'colorNombre', 'colorHex',
   'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'etiqueta', 'modalidad',
-  'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'
+  'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal',
+  'coexVariante', 'pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'
 ] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
@@ -26,6 +27,41 @@ export interface ColorPresetDef {
   /** Color de las flechas internas de los fuelles para este color (decisión de legibilidad de los datos aprobados). */
   cotasInternasHex: string;
 }
+
+/** Variante COEX aprobada: colores del cuerpo, de las tres capas y de las flechas internas (datos de las pruebas COEX Azul y COEX Verde). No hay una tercera variante sin aprobación específica. */
+export interface VarianteDef {
+  valor: string;
+  etiqueta: string;
+  /** Texto que se imprime por defecto en el campo Color. */
+  colorTexto: string;
+  colorCuerpo: string;
+  colorCapaInterior: string;
+  colorCapaIntermedia: string;
+  colorCapaExterior: string;
+  cotasInternasHex: string;
+  /** Color predefinido de las demás familias que equivale a esta variante (para sugerirla al cambiar de familia). */
+  presetEquivalente: string;
+}
+
+/** Capa de la coextrusión: la formulación VCI de cada capa es FIJA (no se calcula ni se edita); el peso por capa y las libras de VCI los captura el usuario. */
+export interface CapaDef {
+  id: 'interior' | 'intermedia' | 'exterior';
+  etiqueta: string;
+  resina: string;
+  pesoKey: FieldKey;
+  lbKey: FieldKey;
+}
+
+export const CAPAS_COEX: CapaDef[] = [
+  { id: 'interior', etiqueta: 'Capa interior', resina: 'VCI PMG al 4%', pesoKey: 'pesoCapaInterior', lbKey: 'lbVciInterior' },
+  { id: 'intermedia', etiqueta: 'Capa intermedia', resina: 'VCI PMG al 2%', pesoKey: 'pesoCapaIntermedia', lbKey: 'lbVciIntermedia' },
+  { id: 'exterior', etiqueta: 'Capa exterior', resina: 'SIN VCI', pesoKey: 'pesoCapaExterior', lbKey: 'lbVciExterior' }
+];
+
+export const VARIANTES_COEX: VarianteDef[] = [
+  { valor: 'AZUL', etiqueta: 'COEX Azul', colorTexto: 'AZUL', colorCuerpo: '#558ED5', colorCapaInterior: '#376092', colorCapaIntermedia: '#95B3D7', colorCapaExterior: '#C6D9F1', cotasInternasHex: '#FFFFFF', presetEquivalente: 'DAUBERT_AZUL' },
+  { valor: 'VERDE', etiqueta: 'COEX Verde', colorTexto: 'VERDE', colorCuerpo: '#00B050', colorCapaInterior: '#00B050', colorCapaIntermedia: '#92D050', colorCapaExterior: '#D7E4BD', cotasInternasHex: '#4A7EBB', presetEquivalente: 'VERDE' }
+];
 
 export interface ModalidadDef {
   valor: string;
@@ -57,6 +93,10 @@ export interface FamilyDef {
   colorSugerido: string | null;
   /** Color de las flechas internas cuando el color elegido no coincide con un preset. */
   cotasInternasPorDefecto: string;
+  /** Variantes aprobadas (solo COEX). */
+  variantes?: VarianteDef[];
+  /** Capas con formulación fija (solo COEX). */
+  capas?: CapaDef[];
   /** Validador autoritativo de tools/ (exportación) o null. */
   validador: { archivo: string; funcion: string } | null;
   notas: string[];
@@ -110,6 +150,16 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
     validador: { archivo: 'validate-termoencogible-data.mjs', funcion: 'validarDatosTermoencogible' },
     notas: ['Dibujo del material y de la presentación final: las cuatro cotas técnicas (ancho doblado, pliegue, largo y ancho de la presentación final) son datos independientes y no se calculan. Solo la modalidad Doblada está autorizada.']
   },
+  COEX: {
+    codigo: 'COEX', nombre: 'COEX', plantilla: 'templates/coex/coex.template.html', imagenes: 'templates/coex/images', perfil: 'coex.profile.json',
+    campos: ['codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'coexVariante', 'colorNombre', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo',
+      'unidadDimensiones', 'calibre', 'pesoLb', 'pesoCapaInterior', 'lbVciInterior', 'pesoCapaIntermedia', 'lbVciIntermedia', 'pesoCapaExterior', 'lbVciExterior', 'etiqueta'],
+    requeridos: ['codigo', 'descripcion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'coexVariante', 'colorNombre',
+      'pesoCapaInterior', 'lbVciInterior', 'pesoCapaIntermedia', 'lbVciIntermedia', 'pesoCapaExterior', 'lbVciExterior'],
+    composiciones: ['PMG'], composicionFija: 'PMG', cantidad: true, fuelles: true, colorDibujo: false, colores: [], colorSugerido: null, cotasInternasPorDefecto: '#FFFFFF', validador: null,
+    variantes: VARIANTES_COEX, capas: CAPAS_COEX,
+    notas: ['Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI); el peso por capa y las libras de VCI no se calculan: se capturan.']
+  },
   BOLSA_NATURAL: {
     codigo: 'BOLSA_NATURAL', nombre: 'Bolsa Natural', plantilla: 'templates/bolsa-natural/bolsa-natural.template.html', imagenes: 'templates/bolsa-natural/images', perfil: 'bolsa-natural.profile.json',
     campos: [...BASE_ANTES, 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones', ...BASE_DESPUES],
@@ -148,6 +198,8 @@ export interface FamilyConfigDto {
   colores: ColorPresetDef[];
   colorSugerido: string | null;
   modalidades: ModalidadDef[];
+  variantes: VarianteDef[];
+  capas: CapaDef[] | null;
   unidades: Array<{ valor: UnitCode; etiqueta: string }>;
   notas: string[];
 }
@@ -157,7 +209,7 @@ export function configuracionFamilias(): FamilyConfigDto[] {
     const d = FAMILIAS[codigo];
     return {
       codigo, nombre: d.nombre, campos: d.campos, requeridos: d.requeridos, composiciones: d.composiciones, composicionFija: d.composicionFija, cantidad: d.cantidad, fuelles: d.fuelles,
-      colorDibujo: d.colorDibujo, colores: d.colores, colorSugerido: d.colorSugerido, modalidades: modalidadesDe(d), unidades: (Object.keys(UNIT_LABELS) as UnitCode[]).map((valor) => ({ valor, etiqueta: UNIT_LABELS[valor] })), notas: d.notas
+      colorDibujo: d.colorDibujo, colores: d.colores, colorSugerido: d.colorSugerido, modalidades: modalidadesDe(d), variantes: d.variantes ?? [], capas: d.capas ?? null, unidades: (Object.keys(UNIT_LABELS) as UnitCode[]).map((valor) => ({ valor, etiqueta: UNIT_LABELS[valor] })), notas: d.notas
     };
   });
 }

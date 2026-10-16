@@ -26,7 +26,8 @@ export interface MappedSheetData {
 const LABELS: Partial<Record<FieldKey, string>> = {
   codigo: 'Código DCMX', descripcion: 'Descripción', cliente: 'Cliente', composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad', cantidadUnidad: 'Unidad de la cantidad',
   ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)', colorNombre: 'Color', colorHex: 'Color del dibujo',
-  modalidad: 'Hoja doblada o extendida', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo', anchoRollo: 'Ancho del rollo', anchoDoblado: 'Ancho doblado',
+  modalidad: 'Hoja doblada o extendida', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo', coexVariante: 'Variante COEX', pesoCapaInterior: 'Peso de la capa interior', lbVciInterior: 'Libras de VCI de la capa interior',
+  pesoCapaIntermedia: 'Peso de la capa intermedia', lbVciIntermedia: 'Libras de VCI de la capa intermedia', pesoCapaExterior: 'Peso de la capa exterior', lbVciExterior: 'Libras de VCI de la capa exterior', anchoRollo: 'Ancho del rollo', anchoDoblado: 'Ancho doblado',
   medidaPliegue: 'Medida del pliegue', largoPresentacionFinal: 'Largo de la presentación final', anchoPresentacionFinal: 'Ancho de la presentación final'
 };
 const FRONT_ONLY: FieldKey[] = ['colorPreset'];            // concepto de la interfaz: no tiene placeholder
@@ -104,13 +105,37 @@ export function mapSheetData(family: PreviewFamily, form: PreviewFormData): Mapp
     datos.fuelle_izquierdo = medida(v('fuelleIzquierdo'), 'El fuelle izquierdo');
   }
 
+  // COEX: tres capas con formulación fija; el peso por capa y las libras de VCI se imprimen tal como se capturaron (no se calculan ni se completan).
+  const variante = def.variantes?.find((x) => x.valor === v('coexVariante'));
+  if (def.capas) {
+    datos.sufijo_titulo = ' - COEXTRUSIÓN';
+    for (const capa of def.capas) {
+      const peso = v(capa.pesoKey);
+      const lb = v(capa.lbKey);
+      if (peso !== '' && !positive(peso)) advertencias.push(`${LABELS[capa.pesoKey]} no es un número válido y no se muestra.`);
+      if (lb !== '' && !/^\d+([.,]\d+)?$/.test(lb)) advertencias.push(`${LABELS[capa.lbKey]} no es un número válido y no se muestra.`);
+      datos[`peso_capa_${capa.id}`] = positive(peso) ? peso : '';
+      datos[`lb_vci_${capa.id}`] = /^\d+([.,]\d+)?$/.test(lb) ? lb : '';
+      datos[`resina_capa_${capa.id}`] = capa.resina;
+      datos[`resaltar_resina_capa_${capa.id}`] = 'SI';
+    }
+    if (variante && v('colorNombre') !== '' && !v('colorNombre').toUpperCase().includes(variante.colorTexto)) advertencias.push(`El texto del color no menciona ${variante.colorTexto}: la geometría usa los colores aprobados de ${variante.etiqueta}.`);
+  }
+
   const visual: Record<string, string | null> = {};
   const hex = v('colorHex');
   if (def.colorDibujo) {
     visual.color_bolsa_hex = HEX.test(hex) ? hex : null;
     if (hex !== '' && !HEX.test(hex)) advertencias.push('El color del dibujo debe tener el formato #RRGGBB; el dibujo se muestra sin color.');
   }
-  if (def.fuelles) {
+  if (def.variantes?.length) {
+    // Solo las variantes aprobadas: un color personalizado no genera una tercera variante.
+    visual.color_bolsa_hex = variante?.colorCuerpo ?? null;
+    visual.color_capa_interior = variante?.colorCapaInterior ?? null;
+    visual.color_capa_intermedia = variante?.colorCapaIntermedia ?? null;
+    visual.color_capa_exterior = variante?.colorCapaExterior ?? null;
+    visual.color_cotas_internas_hex = variante?.cotasInternasHex ?? null;
+  } else if (def.fuelles) {
     const preset = def.colores.find((c) => c.hex.toLowerCase() === hex.toLowerCase());
     visual.color_cotas_internas_hex = preset?.cotasInternasHex ?? def.cotasInternasPorDefecto;
   }

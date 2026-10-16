@@ -39,7 +39,14 @@ export interface SugerenciaColor {
   nota: string;
 }
 
+export interface SugerenciaVariante {
+  /** Variante COEX declarada por el título (AZUL o VERDE) o null: nunca se asume una por defecto. */
+  valor: 'AZUL' | 'VERDE' | null;
+  nota: string;
+}
+
 export interface SugerenciasEspecificacion {
+  coexVariante: SugerenciaVariante;
   familia: SugerenciaFamilia;
   /** Resina VCI sugerida para la composición interpretada (monocapa). */
   resinaVci: SugerenciaTexto;
@@ -102,6 +109,14 @@ function sugerirFamilia(r: ResultadoInterpretacion, t: string): SugerenciaFamili
   return sugerida('BOLSA_PLANA_1', natural ? 'Bolsa natural de dos medidas, sin indicios de fuelle (la composición Natural existe en Bolsa Plana 1). Si es una bolsa natural con fuelles, cambia la familia.' : 'Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.', incompat);
 }
 
+function sugerirVariante(t: string): SugerenciaVariante {
+  const azul = COLOR_AZUL.test(t);
+  const verde = COLOR_VERDE.test(t);
+  if (azul && !verde) return { valor: 'AZUL', nota: 'El título indica color azul: se sugiere COEX Azul. Confírmalo.' };
+  if (verde && !azul) return { valor: 'VERDE', nota: 'El título indica color verde: se sugiere COEX Verde. Confírmalo.' };
+  return { valor: null, nota: azul && verde ? 'El título menciona azul y verde: elige la variante COEX.' : 'BIND no declara el color: elige la variante COEX (Azul o Verde).' };
+}
+
 function sugerirColor(r: ResultadoInterpretacion, t: string): SugerenciaColor {
   const sinSugerencia = (nota: string, detectado: string | null = null): SugerenciaColor => ({ preset: null, concentracionPct: null, detectado, regla: null, nota });
   const resina = r.campos.resina.origen === 'PENDIENTE' ? null : r.campos.resina.valor;
@@ -130,6 +145,7 @@ export function sugerirEspecificacion(r: ResultadoInterpretacion): SugerenciasEs
   const titulo = r.producto.title.trim();
   return {
     familia: sugerirFamilia(r, t),
+    coexVariante: sugerirVariante(t),
     resinaVci,
     resinaVciPorComposicion: { ...RESINA_VCI_POR_COMPOSICION },
     color: sugerirColor(r, t),

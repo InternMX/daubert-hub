@@ -29,6 +29,13 @@ export class SheetPreviewDataDto {
   @IsOptional() @IsString() @MaxLength(16) fuelleTotal?: string;
   @IsOptional() @IsString() @MaxLength(16) fuelleDerecho?: string;
   @IsOptional() @IsString() @MaxLength(16) fuelleIzquierdo?: string;
+  @IsOptional() @IsIn(['', 'AZUL', 'VERDE']) coexVariante?: string;
+  @IsOptional() @IsString() @MaxLength(16) pesoCapaInterior?: string;
+  @IsOptional() @IsString() @MaxLength(16) pesoCapaIntermedia?: string;
+  @IsOptional() @IsString() @MaxLength(16) pesoCapaExterior?: string;
+  @IsOptional() @IsString() @MaxLength(16) lbVciInterior?: string;
+  @IsOptional() @IsString() @MaxLength(16) lbVciIntermedia?: string;
+  @IsOptional() @IsString() @MaxLength(16) lbVciExterior?: string;
   @IsOptional() @IsString() @MaxLength(16) anchoRollo?: string;
   @IsOptional() @IsString() @MaxLength(16) anchoDoblado?: string;
   @IsOptional() @IsString() @MaxLength(16) medidaPliegue?: string;

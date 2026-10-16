@@ -6,7 +6,7 @@ import { BindProductApiError, lookupBindProductByCode } from '../services/bindPr
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { previewManufacturingSheet } from '../services/sheetPreview';
-import { bolsaFuelle, bolsaNatural, casoB, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
+import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
 import { localIsoDate } from './specificationForm';
 
@@ -413,6 +413,63 @@ describe('ManufacturingSpecificationPage · Rollo Continuo y Termoencogible', { 
     expect(campo('Texto del color en el documento')).toBeInTheDocument();
     expect(screen.queryByLabelText('Fuelle derecho')).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
+    expect(screen.getByTestId('status-technical')).toHaveTextContent('incompletos');
+  });
+});
+
+describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
+  it('COEX es UNA familia con selector de variante (Azul/Verde) y tres capas con formulación fija', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(coexAzul());
+    renderPage();
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getAllByRole('radio', { name: /COEX/ })).toHaveLength(1);              // una sola opción de familia: COEX
+    expect(screen.getByRole('radio', { name: 'COEX' })).toBeChecked();
+    expect(campo('Variante COEX')).toBeInTheDocument();
+    expect(within(frameOf('Variante COEX')).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect(campo('Texto del color en el documento').value).toBe('AZUL');
+    expect(screen.queryByLabelText('Resina VCI')).not.toBeInTheDocument();                // sin concentración general de 3 %
+    expect(screen.getByTestId('capa-interior')).toHaveTextContent('VCI PMG al 4%');
+    expect(screen.getByTestId('capa-intermedia')).toHaveTextContent('VCI PMG al 2%');
+    expect(screen.getByTestId('capa-exterior')).toHaveTextContent('SIN VCI');
+    expect(campo('Libras de VCI de la capa exterior').value).toBe('0');
+    expect(campo('Peso de la capa interior (lb)').value).toBe('');                       // no se calcula
+    expect(campo('Fuelle derecho').value).toBe('11.8');
+    expect(screen.getByRole('radio', { name: 'PMG' })).toBeDisabled();
+    expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();  // sin selector de color libre: solo la variante
+    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(screen.getByText(/Faltan datos técnicos/)).toBeInTheDocument();
+    expect(screen.getByText(/Falta peso de la capa interior/i)).toBeInTheDocument();
+  });
+
+  it('con pesos por capa y variante la vista previa recibe la variante y los datos capturados; cambiar a Verde actualiza el texto del color', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(coexAzul());
+    renderPage();
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    for (const [label, valor] of [['Peso de la capa interior (lb)', '0.13097'], ['Peso de la capa intermedia (lb)', '0.13097'], ['Peso de la capa exterior (lb)', '0.13097'], ['Libras de VCI de la capa interior', '0.005239'], ['Libras de VCI de la capa intermedia', '0.002619']] as const) {
+      fireEvent.change(campo(label), { target: { value: valor } });
+    }
+    expect(screen.getByTestId('status-technical')).toHaveTextContent('Datos técnicos suficientes');
+    await waitFor(() => expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ coexVariante: 'AZUL', pesoCapaInterior: '0.13097', lbVciIntermedia: '0.002619', composicion: 'PMG' }), { timeout: 3000 });
+    expect(previewMock.mock.calls.at(-1)![0]).toBe('COEX');
+    expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('colorHex');
+    await user.click(screen.getByRole('combobox', { name: /^Variante COEX/ }));
+    await user.click(await screen.findByRole('option', { name: /COEX Verde/ }));
+    expect(campo('Texto del color en el documento').value).toBe('VERDE');
+    await waitFor(() => expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ coexVariante: 'VERDE', colorNombre: 'VERDE' }), { timeout: 3000 });
+  });
+
+  it('sin color declarado en BIND la variante queda pendiente y la especificación técnica incompleta', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(coexSinColor());
+    renderPage();
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect((campo('Variante COEX')).textContent ?? '').not.toMatch(/COEX (Azul|Verde)/);
+    expect(within(frameOf('Variante COEX')).getByText('Pendiente de confirmar')).toBeInTheDocument();
     expect(screen.getByTestId('status-technical')).toHaveTextContent('incompletos');
   });
 });

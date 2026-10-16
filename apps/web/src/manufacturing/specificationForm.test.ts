@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BindProductLookup } from '../services/bindProducts';
-import { bolsaFuelle, bolsaNatural, casoB, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
+import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import {
-  buildInitialForm, changedFields, colorText, configOf, confirmFamily, displayOrigin, incompatibleValues, isEdited, localIsoDate, restoreField, selectFamily, setColorConcentracion, setColorPreset,
+  buildInitialForm, changedFields, colorText, configOf, confirmFamily, setCoexVariante, displayOrigin, incompatibleValues, isEdited, localIsoDate, restoreField, selectFamily, setColorConcentracion, setColorPreset,
   setComposition, setFieldValue, setFuelleTotal, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
 } from './specificationForm';
 
@@ -435,5 +435,62 @@ describe('Rollo Continuo y Termoencogible · modalidades y cotas técnicas', () 
     expect(toPreviewData(rollo, cfg('ROLLO_CONTINUO'))).not.toHaveProperty('anchoDoblado');
     expect(rollo.fields.anchoDoblado.value).toBe('1.60');
     expect(incompatibleValues(rollo, cfg('ROLLO_CONTINUO')).join(' ')).toMatch(/Ancho doblado \(1\.60\) no aplica a Rollo Continuo/);
+  });
+});
+
+describe('COEX · una familia con variante Azul/Verde y tres capas', () => {
+  const config = cfg('COEX');
+
+  it('COEX explícito: una sola familia, variante sugerida solo si el título declara el color, composición fija PMG y sin Resina VCI general', () => {
+    const f = build(coexAzul());
+    expect(f.family).toBe('COEX');
+    expect(config.variantes.map((v) => v.valor)).toEqual(['AZUL', 'VERDE']);
+    expect(familyConfigs.filter((c) => c.codigo.startsWith('COEX'))).toHaveLength(1);
+    expect(f.fields.coexVariante).toMatchObject({ value: 'AZUL' });
+    expect(displayOrigin(f.fields.coexVariante)).toBe('SUGERIDO');
+    expect(config.campos).not.toContain('resinaVci');
+    expect(config.composicionFija).toBe('PMG');
+    expect(toPreviewData(f, config)).not.toHaveProperty('resinaVci');
+    const sin = build(coexSinColor());
+    expect(sin.fields.coexVariante.value).toBe('');
+    expect(displayOrigin(sin.fields.coexVariante)).toBe('PENDIENTE');
+    expect(validar(sin).errors.coexVariante).toBeDefined();
+  });
+
+  it('las capas tienen formulación fija; el peso por capa y las libras de VCI se capturan (no se calculan); la exterior sugiere 0 lb', () => {
+    const f = build(coexAzul());
+    expect(config.capas?.map((c) => [c.id, c.resina])).toEqual([['interior', 'VCI PMG al 4%'], ['intermedia', 'VCI PMG al 2%'], ['exterior', 'SIN VCI']]);
+    for (const k of ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia'] as const) {
+      expect(f.fields[k].value, k).toBe('');
+      expect(validar(f).errors[k], k).toBeDefined();
+    }
+    expect(f.fields.lbVciExterior).toMatchObject({ value: '0' });
+    expect(displayOrigin(f.fields.lbVciExterior)).toBe('SUGERIDO');
+    let g = f;
+    for (const [k, v] of [['pesoCapaInterior', '0.13097'], ['pesoCapaIntermedia', '0.13097'], ['pesoCapaExterior', '0.13097'], ['lbVciInterior', '0.005239'], ['lbVciIntermedia', '0.002619']] as const) g = setFieldValue(g, k, v);
+    expect(validar(g).technicalReady).toBe(true);
+    expect(validar(setFieldValue(g, 'pesoCapaInterior', '0')).errors.pesoCapaInterior).toBeDefined();
+    expect(validar(setFieldValue(g, 'lbVciIntermedia', 'x')).errors.lbVciIntermedia).toBeDefined();
+    expect(toPreviewData(g, config)).toMatchObject({ coexVariante: 'AZUL', pesoCapaInterior: '0.13097', lbVciExterior: '0', fuelleDerecho: '11.8', composicion: 'PMG' });
+  });
+
+  it('cambiar la variante actualiza el texto del color si no se editó a mano; solo existen las variantes aprobadas', () => {
+    const f = build(coexAzul());
+    const verde = setCoexVariante(f, 'VERDE', config);
+    expect(verde.fields.coexVariante.value).toBe('VERDE');
+    expect(verde.fields.colorNombre.value).toBe('VERDE');
+    const manual = setFieldValue(f, 'colorNombre', 'AZUL ESPECIAL');
+    expect(setCoexVariante(manual, 'VERDE', config).fields.colorNombre.value).toBe('AZUL ESPECIAL');
+    expect(validar(setFieldValue(f, 'coexVariante', 'ROJO')).errors.coexVariante).toMatch(/no existen otras variantes aprobadas/);
+  });
+
+  it('al pasar de una familia con color Daubert Azul o Verde a COEX se sugiere la variante equivalente; un color personalizado no crea una tercera', () => {
+    const azul = selectFamily(build(bolsaFuelle()), 'COEX', familyConfigs);
+    expect(azul.fields.coexVariante).toMatchObject({ value: 'AZUL' });
+    const verde = selectFamily(setColorPreset(build(bolsaFuelle()), 'VERDE', cfg('BOLSA_FUELLE')), 'COEX', familyConfigs);
+    expect(verde.fields.coexVariante.value).toBe('VERDE');
+    const otro = selectFamily(setFieldValue(setColorPreset(build(bolsaFuelle()), 'OTRO', cfg('BOLSA_FUELLE')), 'colorHex', '#C00000'), 'COEX', familyConfigs);
+    expect(otro.fields.coexVariante.value).toBe('');
+    expect(validar(otro).errors.coexVariante).toBeDefined();
   });
 });

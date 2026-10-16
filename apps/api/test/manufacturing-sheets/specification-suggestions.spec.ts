@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { interpretarProductoBind, sugerirEspecificacion } from '../../src/manufacturing-sheets/bind-product-interpreter';
-import { FAMILY_CODES } from '../../src/manufacturing-sheets/preview/family-registry';
+import { FAMILIAS, FAMILY_CODES } from '../../src/manufacturing-sheets/preview/family-registry';
 
 const sugerir = (Title: string, Code = 'ABCFPMG001') => sugerirEspecificacion(interpretarProductoBind({ ID: 'x', Code, Title, Weight: 0.05 }));
 
@@ -173,5 +173,26 @@ describe('calibre: texto literal de BIND', () => {
     const c = calibre('BOLSA PMG 13 x 16" CAL. 200');
     expect(c.valor).toEqual({ valorOriginal: '200', unidadOriginal: null, textoLiteral: '200' });
     expect(JSON.stringify(c)).not.toMatch(/MIL|"2"|"20000"/);
+  });
+});
+
+describe('sugerirEspecificacion · COEX', () => {
+  it('coextrusión explícita → COEX (una sola familia); la variante solo se sugiere si el título declara el color', () => {
+    const azul = sugerir('BOLSA COEX VCI PMG AZUL 51.2 X 23.6 X 31.5" CAL. 2.5 MIL');
+    expect(azul.familia).toMatchObject({ valor: 'COEX' });
+    expect(azul.coexVariante).toMatchObject({ valor: 'AZUL' });
+    expect(sugerir('BOLSA COEX VCI PMG VERDE 55 X 46 X 80" CAL. 2.5').coexVariante.valor).toBe('VERDE');
+    const sinColor = sugerir('BOLSA COEX VCI PMG 55 X 46 X 80" CAL. 2.5');
+    expect(sinColor.coexVariante.valor).toBeNull();
+    expect(sinColor.coexVariante.nota).toMatch(/elige la variante COEX/);
+    expect(sugerir('BOLSA COEX AZUL VERDE 55 X 46 X 80"').coexVariante.valor).toBeNull();      // contradictorio: no se elige
+  });
+
+  it('no aplica una concentración general de 3 % a COEX: la resina por capa es fija y no pasa por la regla monocapa', () => {
+    const s = sugerir('BOLSA COEX VCI PMG AZUL 51.2 X 23.6 X 31.5" CAL. 2.5 MIL');
+    expect(s.familia.valor).toBe('COEX');
+    // la tabla monocapa sigue existiendo para las demás familias, pero COEX no tiene campo de Resina VCI (ver el registro)
+    expect(FAMILIAS.COEX.campos).not.toContain('resinaVci');
+    expect(FAMILIAS.COEX.capas?.map((c) => c.resina)).toEqual(['VCI PMG al 4%', 'VCI PMG al 2%', 'SIN VCI']);
   });
 });

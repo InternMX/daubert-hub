@@ -230,3 +230,63 @@ describe('Termoencogible · plantilla aprobada', () => {
     expect(m.advertencias.join(' ')).toMatch(/fuelles no aplican/i);
   });
 });
+
+// ---------------------------------------------------------------- bloque C · COEX (Azul y Verde)
+const COEX = {
+  codigo: 'COEX-001', descripcion: 'Bolsa COEX VCI PMG 51.2 x 23.6 x 31.5" Cal. 2.5 mil', producto: 'Bolsa Con Fuelle - 20% de material reciclado', composicion: 'PMG', presentacion: 'ROLLO', cantidad: '150', cantidadUnidad: 'BOLSAS',
+  ancho: '51.2', fuelleTotal: '23.6', fuelleDerecho: '11.8', fuelleIzquierdo: '11.8', largo: '31.5', unidadDimensiones: 'IN', calibre: '2.5 MIL', pesoLb: '0.3929', colorNombre: 'AZUL', coexVariante: 'AZUL',
+  pesoCapaInterior: '0.13097', pesoCapaIntermedia: '0.13097', pesoCapaExterior: '0.13097', lbVciInterior: '0.005239', lbVciIntermedia: '0.002619', lbVciExterior: '0'
+};
+
+describe('COEX · una familia, dos variantes aprobadas, una sola plantilla', () => {
+  const service = new SheetPreviewService();
+
+  it('el registro tiene UNA familia COEX con las variantes Azul (#558ED5) y Verde (#00B050) y tres capas de formulación fija', () => {
+    const coex = configuracionFamilias().find((f) => f.codigo === 'COEX');
+    expect(coex?.variantes.map((v) => [v.valor, v.colorCuerpo])).toEqual([['AZUL', '#558ED5'], ['VERDE', '#00B050']]);
+    expect(coex?.capas?.map((c) => [c.id, c.resina])).toEqual([['interior', 'VCI PMG al 4%'], ['intermedia', 'VCI PMG al 2%'], ['exterior', 'SIN VCI']]);
+    expect(FAMILIAS.COEX.plantilla).toBe('templates/coex/coex.template.html');                  // la plantilla compartida existente: sin HTML duplicado
+    expect(FAMILIAS.COEX.composicionFija).toBe('PMG');
+    expect(FAMILIAS.COEX.campos).not.toContain('resinaVci');                                    // no hay una concentración general de 3 %
+    expect(FAMILY_CODES.filter((c) => c.startsWith('COEX'))).toEqual(['COEX']);                 // Azul y Verde NO son dos familias
+  });
+
+  it('COEX Azul: colores del cuerpo, de las tres capas y de las flechas internas aprobados; tabla de tres capas con sus pesos', async () => {
+    const r = await service.preview('COEX', COEX);
+    expect(r).toMatchObject({ familia: 'COEX', completo: true, faltantes: [], bloqueado: null, borrador: true, firmas: 'SIN_FIRMA', pendientesEmision: ['Cliente'] });
+    for (const hex of ['#558ED5', '#376092', '#95B3D7', '#C6D9F1']) expect(r.html, hex).toContain(hex);
+    expect(r.html).toMatch(/class="cota-interna"[^>]*stroke="#FFFFFF"/);
+    for (const texto of ['VCI PMG al 4%', 'VCI PMG al 2%', 'SIN VCI', '0.13097', '0.005239', '0.002619', '0.3929', 'COEXTRUSIÓN']) expect(r.html, texto).toContain(texto);
+    expect(r.html).toContain('id="comp_pmg" data-valor="X"');
+    expect(r.html.replace(/<!--[^]*?-->/g, '')).not.toMatch(/\{\{[A-Za-z0-9_]+\}\}/);        // ningún placeholder pendiente (el texto fijo de un comentario CSS no cuenta)
+  });
+
+  it('COEX Verde: misma plantilla, otros colores aprobados', async () => {
+    const r = await service.preview('COEX', { ...COEX, coexVariante: 'VERDE', colorNombre: 'VERDE' });
+    for (const hex of ['#00B050', '#92D050', '#D7E4BD']) expect(r.html, hex).toContain(hex);
+    expect(r.html).toMatch(/class="cota-interna"[^>]*stroke="#4A7EBB"/);
+    expect(r.html).not.toContain('#558ED5');
+    const azul = await service.preview('COEX', COEX);
+    expect(r.html.replace(/#[0-9A-Fa-f]{6}/g, '#')).toBe(azul.html.replace(/#[0-9A-Fa-f]{6}/g, '#').replace(/AZUL/g, 'VERDE'));   // igual salvo colores y el texto del color
+  });
+
+  it('no inventa pesos por capa ni la variante: sin ellos la representación es incompleta y se advierte', async () => {
+    const r = await service.preview('COEX', { ...COEX, coexVariante: '', pesoCapaInterior: '', lbVciIntermedia: '' });
+    expect(r.completo).toBe(false);
+    expect(r.faltantes).toEqual(expect.arrayContaining(['Variante COEX', 'Peso de la capa interior', 'Libras de VCI de la capa intermedia']));
+    expect(r.html).toContain('{{color_bolsa_hex}}');                  // sin variante: el dibujo no recibe un color inventado
+  });
+
+  it('una variante personalizada no existe: el DTO la rechaza y el texto de color distinto solo genera una advertencia', async () => {
+    expect(mapSheetData('COEX', { ...COEX, colorNombre: 'ROJO' }).advertencias.join(' ')).toMatch(/la geometría usa los colores aprobados de COEX Azul/);
+    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [SheetPreviewService] }).compile();
+    Reflect.defineMetadata('design:paramtypes', [SheetPreviewRequestDto], SheetPreviewController.prototype, 'create');
+    const app = modulo.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    await app.init();
+    expect((await request(app.getHttpServer()).post('/api/manufacturing-sheets/previews').send({ familia: 'COEX', datos: { coexVariante: 'ROJO' } })).status).toBe(400);
+    expect((await request(app.getHttpServer()).post('/api/manufacturing-sheets/previews').send({ familia: 'COEX', datos: COEX })).status).toBe(200);
+    await app.close();
+  });
+});

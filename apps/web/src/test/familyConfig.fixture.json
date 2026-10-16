@@ -67,6 +67,8 @@
     ],
     "colorSugerido": "DAUBERT_AZUL",
     "modalidades": [],
+    "variantes": [],
+    "capas": null,
     "unidades": [
       {
         "valor": "IN",
@@ -170,6 +172,8 @@
         "habilitada": true
       }
     ],
+    "variantes": [],
+    "capas": null,
     "unidades": [
       {
         "valor": "IN",
@@ -265,6 +269,8 @@
     ],
     "colorSugerido": "DAUBERT_AZUL",
     "modalidades": [],
+    "variantes": [],
+    "capas": null,
     "unidades": [
       {
         "valor": "IN",
@@ -367,6 +373,8 @@
         "motivo": "el ejemplo validado solo muestra Doblada con «Dibujo de rollo doblado»; la representación de Extendida está pendiente de confirmación"
       }
     ],
+    "variantes": [],
+    "capas": null,
     "unidades": [
       {
         "valor": "IN",
@@ -454,6 +462,8 @@
         "motivo": "solo se cuenta con la referencia gráfica de Doblada; la representación de Extendida está pendiente de confirmación"
       }
     ],
+    "variantes": [],
+    "capas": null,
     "unidades": [
       {
         "valor": "IN",
@@ -474,6 +484,138 @@
     ],
     "notas": [
       "Dibujo del material y de la presentación final: las cuatro cotas técnicas (ancho doblado, pliegue, largo y ancho de la presentación final) son datos independientes y no se calculan. Solo la modalidad Doblada está autorizada."
+    ]
+  },
+  {
+    "codigo": "COEX",
+    "nombre": "COEX",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "coexVariante",
+      "colorNombre",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "fuelleTotal",
+      "fuelleDerecho",
+      "fuelleIzquierdo",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "pesoCapaInterior",
+      "lbVciInterior",
+      "pesoCapaIntermedia",
+      "lbVciIntermedia",
+      "pesoCapaExterior",
+      "lbVciExterior",
+      "etiqueta"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "fuelleDerecho",
+      "fuelleIzquierdo",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "coexVariante",
+      "colorNombre",
+      "pesoCapaInterior",
+      "lbVciInterior",
+      "pesoCapaIntermedia",
+      "lbVciIntermedia",
+      "pesoCapaExterior",
+      "lbVciExterior"
+    ],
+    "composiciones": [
+      "PMG"
+    ],
+    "composicionFija": "PMG",
+    "cantidad": true,
+    "fuelles": true,
+    "colorDibujo": false,
+    "colores": [],
+    "colorSugerido": null,
+    "modalidades": [],
+    "variantes": [
+      {
+        "valor": "AZUL",
+        "etiqueta": "COEX Azul",
+        "colorTexto": "AZUL",
+        "colorCuerpo": "#558ED5",
+        "colorCapaInterior": "#376092",
+        "colorCapaIntermedia": "#95B3D7",
+        "colorCapaExterior": "#C6D9F1",
+        "cotasInternasHex": "#FFFFFF",
+        "presetEquivalente": "DAUBERT_AZUL"
+      },
+      {
+        "valor": "VERDE",
+        "etiqueta": "COEX Verde",
+        "colorTexto": "VERDE",
+        "colorCuerpo": "#00B050",
+        "colorCapaInterior": "#00B050",
+        "colorCapaIntermedia": "#92D050",
+        "colorCapaExterior": "#D7E4BD",
+        "cotasInternasHex": "#4A7EBB",
+        "presetEquivalente": "VERDE"
+      }
+    ],
+    "capas": [
+      {
+        "id": "interior",
+        "etiqueta": "Capa interior",
+        "resina": "VCI PMG al 4%",
+        "pesoKey": "pesoCapaInterior",
+        "lbKey": "lbVciInterior"
+      },
+      {
+        "id": "intermedia",
+        "etiqueta": "Capa intermedia",
+        "resina": "VCI PMG al 2%",
+        "pesoKey": "pesoCapaIntermedia",
+        "lbKey": "lbVciIntermedia"
+      },
+      {
+        "id": "exterior",
+        "etiqueta": "Capa exterior",
+        "resina": "SIN VCI",
+        "pesoKey": "pesoCapaExterior",
+        "lbKey": "lbVciExterior"
+      }
+    ],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI); el peso por capa y las libras de VCI no se calculan: se capturan."
     ]
   },
   {
@@ -553,6 +695,8 @@
     ],
     "colorSugerido": "NATURAL",
     "modalidades": [],
+    "variantes": [],
+    "capas": null,
     "unidades": [
       {
         "valor": "IN",

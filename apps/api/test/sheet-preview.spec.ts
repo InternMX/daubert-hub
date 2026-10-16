@@ -181,7 +181,7 @@ describe('POST /api/manufacturing-sheets/previews', { timeout: 20_000 }, () => {
 
   it('valida la entrada: familia desconocida, propiedades no permitidas (incluidas firmas), enums y longitudes', async () => {
     for (const body of [
-      { familia: 'COEX', datos: {} },
+      { familia: 'COEX_AZUL', datos: {} },     // Azul y Verde son variantes de la familia COEX, no familias
       { familia: 'HOJA_PAQ' },
       { familia: 'HOJA_PAQ', datos: { firma: '<img src=x>' } },
       { familia: 'HOJA_PAQ', datos: { bloque_firma_elaboro: '<img>' } },

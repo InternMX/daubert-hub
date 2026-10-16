@@ -32,7 +32,8 @@ export type FamilyOrigin = 'SUGERIDA' | 'USUARIO';
 export const ALL_FIELDS: FieldKey[] = [
   'codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'resinaVci', 'colorPreset', 'colorConcentracion', 'colorNombre', 'colorHex', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad',
   'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'etiqueta', 'modalidad', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo',
-  'anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'
+  'anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal',
+  'coexVariante', 'pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'
 ];
 
 export interface SpecificationForm {
@@ -159,11 +160,20 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       etiqueta: sug?.etiqueta?.valor ? field(sug.etiqueta.valor, 'BIND', sug.etiqueta.nota) : field(),
       modalidad: field('', 'PENDIENTE'),
       // Cotas técnicas independientes (Rollo Continuo y Termoencogible): BIND no las entrega y NO se calculan: las captura el usuario.
-      anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field()
+      anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field(),
+      // COEX: la variante solo se sugiere si el título declara el color; los pesos por capa NO se calculan (los captura el usuario). La capa exterior es SIN VCI: 0 lb de VCI (editable).
+      coexVariante: sug?.coexVariante?.valor ? field(sug.coexVariante.valor, 'SUGERIDO', sug.coexVariante.nota) : field('', 'PENDIENTE', sug?.coexVariante?.nota),
+      pesoCapaInterior: field(), pesoCapaIntermedia: field(), pesoCapaExterior: field(), lbVciInterior: field(), lbVciIntermedia: field(),
+      lbVciExterior: field('0', 'SUGERIDO', 'La capa exterior es SIN VCI: 0 lb de VCI (editable).')
     }
   };
   // Si BIND no declara color, la familia sugerida aporta su color por defecto (p. ej. el natural en Bolsa Natural); nunca se pisa un color sugerido desde el título.
   const familyConfig = configOf(configs, family);
+  // COEX: el color impreso sale de la variante aprobada (no del color predefinido de otras familias).
+  if (familyConfig && familyConfig.variantes.length > 0) {
+    const variante = familyConfig.variantes.find((v) => v.valor === form.fields.coexVariante.value);
+    form.fields.colorNombre = variante ? field(variante.colorTexto, 'SUGERIDO', 'Texto del color según la variante COEX.') : field('', 'PENDIENTE', 'Elige la variante COEX para el texto del color.');
+  }
   if (familyConfig && familyConfig.colorDibujo && familyConfig.colorSugerido && form.fields.colorPreset.value === '' && !sug?.color?.detectado) return applyColor(form, familyConfig.colorSugerido, familyConfig);
   return form;
 }
@@ -203,7 +213,25 @@ export function selectFamily(form: SpecificationForm, family: FamilyCode | null,
   if (config && config.colorDibujo && config.colorSugerido && form.fields.colorPreset.value === '' && form.fields.colorHex.value === '') {
     return applyColor(next, config.colorSugerido, config);
   }
+  // COEX: si el color elegido antes equivale a una variante aprobada (Azul/Verde), se sugiere esa variante; un color personalizado no genera una tercera.
+  if (config && config.variantes.length > 0 && form.fields.coexVariante.value === '') {
+    const equivalente = config.variantes.find((v) => v.presetEquivalente === form.fields.colorPreset.value);
+    if (equivalente) return setCoexVariante(next, equivalente.valor, config);
+  }
   return next;
+}
+
+/**
+ * Variante COEX (Azul o Verde): actualiza el texto impreso del color si no se editó a mano. Solo existen las variantes aprobadas; no hay color personalizado en COEX.
+ */
+export function setCoexVariante(form: SpecificationForm, valor: string, config: FamilyConfig): SpecificationForm {
+  const f = form.fields;
+  const anterior = config.variantes.find((v) => v.valor === f.coexVariante.value);
+  const nueva = config.variantes.find((v) => v.valor === valor);
+  const nombreAuto = f.colorNombre.value === '' || (anterior !== undefined && f.colorNombre.value === anterior.colorTexto) || isAuto(f.colorNombre);
+  const fields = { ...f, coexVariante: { ...f.coexVariante, value: valor, source: undefined } };
+  if (nueva && nombreAuto) fields.colorNombre = systemValue(nueva.colorTexto, 'SUGERIDO', 'Texto del color según la variante COEX.');
+  return { ...form, fields };
 }
 
 /** Acepta explícitamente la familia sugerida. */
@@ -284,7 +312,9 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   colorPreset: 'Color', colorConcentracion: 'Concentración del color (%)', colorNombre: 'Texto del color en el documento', colorHex: 'Color del dibujo (#RRGGBB)',
   composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad por rollo o paquete', cantidadUnidad: 'Unidad de la cantidad',
   ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)', etiqueta: 'Etiqueta', modalidad: 'Hoja doblada o extendida',
-  fuelleTotal: 'Fuelle total', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo', anchoRollo: 'Ancho del rollo', anchoDoblado: 'Ancho doblado',
+  fuelleTotal: 'Fuelle total', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo', coexVariante: 'Variante COEX', pesoCapaInterior: 'Peso de la capa interior (lb)',
+  lbVciInterior: 'Libras de VCI de la capa interior', pesoCapaIntermedia: 'Peso de la capa intermedia (lb)', lbVciIntermedia: 'Libras de VCI de la capa intermedia',
+  pesoCapaExterior: 'Peso de la capa exterior (lb)', lbVciExterior: 'Libras de VCI de la capa exterior', anchoRollo: 'Ancho del rollo', anchoDoblado: 'Ancho doblado',
   medidaPliegue: 'Medida del pliegue', largoPresentacionFinal: 'Largo de la presentación final', anchoPresentacionFinal: 'Ancho de la presentación final'
 };
 
@@ -353,6 +383,11 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
     checkNumber('fuelleDerecho', 'El fuelle derecho debe ser un número mayor que cero.');
     checkNumber('fuelleIzquierdo', 'El fuelle izquierdo debe ser un número mayor que cero.');
     checkNumber('fuelleTotal', 'El fuelle total debe ser un número mayor que cero.', true);
+    for (const key of ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] as const) checkNumber(key, `${FIELD_LABELS[key]} debe ser un número mayor que cero.`);
+    for (const key of ['lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'] as const) {
+      if (!errors[key] && config.campos.includes(key) && !/^\d+([.,]\d+)?$/.test(f[key].value.trim())) errors[key] = `${FIELD_LABELS[key]} debe ser un número (puede ser 0).`;
+    }
+    if (!errors.coexVariante && config.variantes.length > 0 && !config.variantes.some((v) => v.valor === f.coexVariante.value)) errors.coexVariante = 'Elige COEX Azul o COEX Verde (no existen otras variantes aprobadas).';
     for (const key of ['anchoRollo', 'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'] as const) checkNumber(key, `${FIELD_LABELS[key]} debe ser un número mayor que cero.`);
 
     // Calibre: texto literal (p. ej. «200», «2 MIL», «2.7»). Solo se exige que contenga un número mayor que cero; no se convierte ni se completa con unidades.

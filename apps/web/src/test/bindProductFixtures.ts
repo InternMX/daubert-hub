@@ -182,3 +182,37 @@ export function termoencogible(): BindProductLookup {
     familiaSugerida: ['TERMOENCOGIBLE']
   };
 }
+
+/** COEX explícito con color azul en el título: tres medidas (fuelles derivados) y variante sugerida. */
+export function coexAzul(): BindProductLookup {
+  const base = bolsaFuelle();
+  const titulo = 'BOLSA COEX VCI PMG AZUL 51.2 X 23.6 X 31.5" CAL. 2.5 MIL ROLLO C/150 BOLSAS';
+  return {
+    ...base,
+    producto: { ID: '44444444-5555-6666-7777-888888888888', Code: 'COEXAZUL', Title: titulo, Description: null, Weight: 0.3929, CreationDate: null },
+    interpretacion: {
+      ...base.interpretacion,
+      campos: {
+        ...base.interpretacion.campos,
+        codigoDcmx: ext('COEXAZUL', 'Code'),
+        ancho: sug(51.2, '51.2 X 23.6 X 31.5"', PATRON), largo: sug(31.5, '51.2 X 23.6 X 31.5"', PATRON), fuelleTotal: sug(23.6, '51.2 X 23.6 X 31.5"', PATRON),
+        fuelleDerecho: sug(11.8, '51.2 X 23.6 X 31.5"', 'Fuelle total ÷ 2 (derivado; editable).'), fuelleIzquierdo: sug(11.8, '51.2 X 23.6 X 31.5"', 'Fuelle total ÷ 2 (derivado; editable).'),
+        unidadDimensiones: ext('IN', '31.5"'), calibre: ext({ valorOriginal: '2.5', unidadOriginal: 'MIL', textoLiteral: '2.5 MIL' }, 'CAL. 2.5 MIL'),
+        presentacion: ext('ROLLO', 'ROLLO'), cantidad: ext({ cantidad: 150, unidad: 'BOLSAS' as const }, 'C/150 BOLSAS'), pesoLb: ext(0.3929, '0.3929')
+      }
+    },
+    sugerencias: {
+      ...base.sugerencias,
+      familia: { valor: 'COEX', motivo: 'El título indica coextrusión.', incompatibles: [{ familia: 'BOLSA_PLANA_1', motivo: 'El título indica coextrusión.' }] },
+      coexVariante: { valor: 'AZUL', nota: 'El título indica color azul: se sugiere COEX Azul. Confírmalo.' },
+      etiqueta: { valor: titulo, regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
+    },
+    familiaSugerida: ['COEX']
+  };
+}
+
+/** COEX sin color declarado: la variante queda pendiente (no se asume una). */
+export function coexSinColor(): BindProductLookup {
+  const base = coexAzul();
+  return { ...base, sugerencias: { ...base.sugerencias, coexVariante: { valor: null, nota: 'BIND no declara el color: elige la variante COEX (Azul o Verde).' } } };
+}
