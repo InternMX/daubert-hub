@@ -8,7 +8,7 @@ vi.mock('../services/sheetPreview', async (importOriginal) => ({ ...(await impor
 const previewMock = vi.mocked(previewManufacturingSheet);
 
 const response = (html: string, over: Partial<SheetPreviewResponse> = {}): SheetPreviewResponse => ({
-  html, familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], ...over
+  html, familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null, ...over
 });
 const DATA = { codigo: 'SCHFPMG001', ancho: '13', largo: '16' };
 const wait = (ms = PREVIEW_DEBOUNCE_MS + 10) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
@@ -18,7 +18,7 @@ afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
 describe('SheetPreviewPanel', () => {
   it('sin familia no consulta nada y pide seleccionarla; siempre se identifica como borrador', () => {
-    render(<SheetPreviewPanel family={null} data={DATA} />);
+    render(<SheetPreviewPanel family={null} familyLabel="" data={DATA} />);
     expect(screen.getByText(/Selecciona la familia/)).toBeInTheDocument();
     expect(screen.getAllByText('BORRADOR · SIN APROBAR').length).toBeGreaterThan(0);
     expect(screen.getByText('Firmas: SIN FIRMA')).toBeInTheDocument();
@@ -27,7 +27,7 @@ describe('SheetPreviewPanel', () => {
 
   it('muestra el HTML de la plantilla en un iframe aislado (sandbox vacío, sin scripts) con marca de agua de borrador', async () => {
     previewMock.mockResolvedValue(response('<html><body><p id="sheet">HOJA SCHFPMG001</p></body></html>'));
-    render(<SheetPreviewPanel family="BOLSA_PLANA_1" data={DATA} />);
+    render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
     await wait();
     const frame = await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1');
     expect(frame.tagName).toBe('IFRAME');
@@ -40,11 +40,11 @@ describe('SheetPreviewPanel', () => {
 
   it('aplica debounce: varios cambios seguidos generan una sola consulta con los últimos datos', async () => {
     previewMock.mockResolvedValue(response('<p>ok</p>'));
-    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" data={DATA} />);
+    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
     await wait(100);
-    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" data={{ ...DATA, ancho: '14' }} />);
+    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={{ ...DATA, ancho: '14' }} />);
     await wait(100);
-    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" data={{ ...DATA, ancho: '14.5' }} />);
+    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={{ ...DATA, ancho: '14.5' }} />);
     await wait();
     expect(previewMock).toHaveBeenCalledTimes(1);
     expect(previewMock.mock.calls[0]![1]).toEqual({ ...DATA, ancho: '14.5' });
@@ -55,9 +55,9 @@ describe('SheetPreviewPanel', () => {
     previewMock
       .mockImplementationOnce(() => new Promise((resolve) => { resolverViejo = resolve; }))
       .mockResolvedValueOnce(response('<p>NUEVA ancho 14</p>'));
-    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" data={DATA} />);
+    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
     await wait();
-    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" data={{ ...DATA, ancho: '14' }} />);
+    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={{ ...DATA, ancho: '14' }} />);
     await wait();
     expect((await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1')).getAttribute('srcdoc')).toContain('NUEVA ancho 14');
     await act(async () => { resolverViejo(response('<p>VIEJA ancho 13</p>')); await Promise.resolve(); });
@@ -67,36 +67,36 @@ describe('SheetPreviewPanel', () => {
 
   it('cambiar de familia cancela la consulta anterior y usa la plantilla de la nueva', async () => {
     previewMock.mockImplementation(async (family) => response(`<p>PLANTILLA ${family}</p>`, { familia: family }));
-    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" data={DATA} />);
+    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
     await wait();
-    rerender(<SheetPreviewPanel family="HOJA_PAQ" data={DATA} />);
+    rerender(<SheetPreviewPanel family="HOJA_PAQ" familyLabel="Hojas" data={DATA} />);
     await wait();
     expect((await screen.findByTitle('Vista previa de la hoja Hojas')).getAttribute('srcdoc')).toContain('PLANTILLA HOJA_PAQ');
   });
 
   it('muestra los datos faltantes y las advertencias del backend sin inventar nada', async () => {
     previewMock.mockResolvedValue(response('<p>x</p>', { completo: false, faltantes: ['Composición', 'Color del dibujo'], advertencias: ['El peso no es un número válido y no se muestra.'] }));
-    render(<SheetPreviewPanel family="HOJA_PAQ" data={{ codigo: 'X' }} />);
+    render(<SheetPreviewPanel family="HOJA_PAQ" familyLabel="Hojas" data={{ codigo: 'X' }} />);
     await wait();
     const avisos = await screen.findByLabelText('Advertencias de la vista previa');
-    expect(within(avisos).getByText(/Faltan datos obligatorios.*Composición, Color del dibujo/)).toBeInTheDocument();
+    expect(within(avisos).getByText(/Faltan datos técnicos.*Composición, Color del dibujo/)).toBeInTheDocument();
     expect(within(avisos).getByText('El peso no es un número válido y no se muestra.')).toBeInTheDocument();
   });
 
   it('errores: datos no válidos y servidor no disponible', async () => {
     previewMock.mockRejectedValueOnce(new SheetPreviewError('INVALID_DATA', 400));
-    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" data={DATA} />);
+    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
     await wait();
     expect(await screen.findByText(/Algún dato del formulario no es válido/)).toBeInTheDocument();
     previewMock.mockRejectedValueOnce(new SheetPreviewError('UNAVAILABLE', 500));
-    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" data={{ ...DATA, ancho: '15' }} />);
+    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={{ ...DATA, ancho: '15' }} />);
     await wait();
     expect(await screen.findByText('No se pudo generar la vista previa en este momento.')).toBeInTheDocument();
   });
 
   it('permite ampliar para ver la hoja completa en un iframe aislado, manteniendo la marca de borrador y la proporción carta', async () => {
     previewMock.mockResolvedValue(response('<p>HOJA COMPLETA</p>'));
-    render(<SheetPreviewPanel family="BOLSA_PLANA_1" data={DATA} />);
+    render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
     await wait();
     await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1');
     await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole('button', { name: 'Ampliar' }));

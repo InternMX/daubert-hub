@@ -221,9 +221,11 @@ describe('Fase 3.1 · contrato y borrador HTML', () => {
     expect(m.advertencias.join(' ')).toMatch(/no contiene ningún número/);
   });
 
-  it('el cliente y el texto del color son obligatorios en el borrador', () => {
+  it('el texto del color es obligatorio para la vista previa técnica; el cliente NO (demo): queda como pendiente de emisión', () => {
     const m = mapSheetData('BOLSA_PLANA_1', { ...SCHF, cliente: '', colorNombre: '' });
-    expect(m.faltantes).toEqual(expect.arrayContaining(['Cliente', 'Color']));
+    expect(m.faltantes).toEqual(['Color']);
+    expect(m.pendientesEmision).toEqual(['Cliente']);
+    expect(mapSheetData('BOLSA_PLANA_1', SCHF).pendientesEmision).toEqual([]);
   });
 
   it('el texto del color y el dibujo vienen del mismo estado: cambiar el color cambia ambos en el HTML real', async () => {

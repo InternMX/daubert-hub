@@ -2,7 +2,7 @@ import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { previewManufacturingSheet, SheetPreviewError, type SheetPreviewResponse } from '../services/sheetPreview';
-import { FAMILY_LABELS, type FamilyCode } from './specificationForm';
+import type { FamilyCode } from './specificationForm';
 
 // Documento de vista previa en CSS px. La hoja carta mide 816 x 1056 (8.5 x 11 in a 96 ppp), pero las plantillas aprobadas aplican su diseño MÓVIL con ventanas de 816 px o menos
 // (@media screen and (max-width: 816px)): el iframe mide 817 px de ancho para que se vea el diseño de página, y 1120 de alto (1056 + los 32 px de margen superior e inferior que la
@@ -20,7 +20,7 @@ const errorTexts: Record<string, string> = {
 };
 
 // Documento aislado: sandbox vacío = sin scripts, sin formularios, sin mismo origen y sin navegación. El HTML viene de las plantillas aprobadas compuestas en NestJS.
-function SheetFrame({ html, scale, title }: { html: string; scale: number; title: string }) {
+function SheetFrame({ html, scale, title, incomplete }: { html: string; scale: number; title: string; incomplete: boolean }) {
   return (
     <Box sx={{ width: PAGE_WIDTH * scale, height: PAGE_HEIGHT * scale, position: 'relative', overflow: 'hidden', bgcolor: '#fff', border: '1px solid', borderColor: 'divider', boxShadow: 1, mx: 'auto' }}>
       <iframe
@@ -32,7 +32,7 @@ function SheetFrame({ html, scale, title }: { html: string; scale: number; title
       />
       <Box aria-hidden data-testid="draft-watermark" sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', overflow: 'hidden' }}>
         <Typography sx={{ transform: 'rotate(-32deg)', fontSize: Math.max(10, Math.round((PAGE_WIDTH * scale) / 19)), fontWeight: 800, letterSpacing: 2, color: 'rgba(200, 30, 30, 0.14)', whiteSpace: 'nowrap', userSelect: 'none' }}>
-          BORRADOR · SIN APROBAR
+          {incomplete ? 'BORRADOR INCOMPLETO · FALTAN DATOS' : 'BORRADOR · SIN APROBAR'}
         </Typography>
       </Box>
     </Box>
@@ -41,11 +41,13 @@ function SheetFrame({ html, scale, title }: { html: string; scale: number; title
 
 interface SheetPreviewPanelProps {
   family: FamilyCode | null;
+  /** Nombre visible de la familia (viene de la configuración del backend). */
+  familyLabel: string;
   /** Campos del formulario (solo texto). Los datos originales de BIND nunca se envían ni se modifican. */
   data: Record<string, string>;
 }
 
-export function SheetPreviewPanel({ family, data }: SheetPreviewPanelProps) {
+export function SheetPreviewPanel({ family, familyLabel, data }: SheetPreviewPanelProps) {
   const [result, setResult] = useState<SheetPreviewResponse | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorKind, setErrorKind] = useState<string | null>(null);
@@ -93,33 +95,36 @@ export function SheetPreviewPanel({ family, data }: SheetPreviewPanelProps) {
         <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Vista previa</Typography>
         <Chip size="small" color="error" label="BORRADOR · SIN APROBAR" />
         <Chip size="small" label="Firmas: SIN FIRMA" />
+        {result && !result.bloqueado && !result.completo && <Chip size="small" color="warning" label="Datos técnicos incompletos" data-testid="preview-incomplete" />}
         {status === 'loading' && <CircularProgress size={16} aria-label="Actualizando vista previa" />}
-        {result && family && <Button size="small" startIcon={<OpenInFullRoundedIcon />} onClick={() => setExpanded(true)} sx={{ ml: 'auto' }}>Ampliar</Button>}
+        {result && family && !result.bloqueado && <Button size="small" startIcon={<OpenInFullRoundedIcon />} onClick={() => setExpanded(true)} sx={{ ml: 'auto' }}>Ampliar</Button>}
       </Stack>
       <Alert severity="warning" sx={{ mb: 1.5 }}>Borrador sin aprobar: no es una hoja emitida ni lleva firmas reales. Los datos solo existen en memoria.</Alert>
 
       <div ref={container}>
         {!family && <Alert severity="info">Selecciona la familia (Bolsa Plana 1 u Hojas) para ver la vista previa con su plantilla.</Alert>}
         {family && status === 'error' && errorKind && <Alert severity="error" sx={{ mb: 1.5 }}>{errorTexts[errorKind]}</Alert>}
-        {family && result && <SheetFrame html={result.html} scale={scale} title={`Vista previa de la hoja ${FAMILY_LABELS[family]}`} />}
+        {family && result?.bloqueado && <Alert severity="error" data-testid="preview-blocked">{result.bloqueado} No se muestra un documento para no producir una hoja engañosa.</Alert>}
+        {family && result && !result.bloqueado && <SheetFrame html={result.html} scale={scale} title={`Vista previa de la hoja ${familyLabel}`} incomplete={!result.completo} />}
         {family && !result && status === 'loading' && <Typography color="text.secondary">Generando vista previa…</Typography>}
       </div>
 
       {result && family && (
         <Stack spacing={1} sx={{ mt: 1.5 }} aria-label="Advertencias de la vista previa">
-          {result.faltantes.length > 0 && <Alert severity="warning">Faltan datos obligatorios (no se inventan valores ni dibujos): {result.faltantes.join(', ')}.</Alert>}
+          {result.faltantes.length > 0 && <Alert severity="warning">Faltan datos técnicos para esta familia (no se inventan valores ni dibujos; la representación es incompleta): {result.faltantes.join(', ')}.</Alert>}
+          {result.pendientesEmision.length > 0 && <Alert severity="info" data-testid="preview-emission-pending">Pendiente para una emisión futura (no impide esta demostración): {result.pendientesEmision.join(', ')}.</Alert>}
           {result.advertencias.map((a) => <Alert key={a} severity="warning">{a}</Alert>)}
         </Stack>
       )}
 
       <Dialog open={expanded} onClose={() => setExpanded(false)} maxWidth="xl" fullWidth aria-labelledby="preview-dialog-title">
         <DialogTitle id="preview-dialog-title" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          Hoja completa{family ? ` · ${FAMILY_LABELS[family]}` : ''}
+          Hoja completa{family ? ` · ${familyLabel}` : ''}
           <Chip size="small" color="error" label="BORRADOR · SIN APROBAR" />
           <IconButton aria-label="Cerrar vista ampliada" onClick={() => setExpanded(false)} sx={{ ml: 'auto' }}>✕</IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ bgcolor: 'action.hover' }}>
-          {result && family && <SheetFrame html={result.html} scale={fullScale} title={`Hoja completa ${FAMILY_LABELS[family]}`} />}
+          {result && family && !result.bloqueado && <SheetFrame html={result.html} scale={fullScale} title={`Hoja completa ${familyLabel}`} incomplete={!result.completo} />}
         </DialogContent>
       </Dialog>
     </Paper>

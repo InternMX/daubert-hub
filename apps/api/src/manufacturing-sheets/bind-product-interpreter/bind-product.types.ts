@@ -60,6 +60,7 @@ export type CodigoAdvertencia =
   | 'MEDIDAS_INCOMPLETAS'
   | 'MEDIDAS_NO_ESTANDAR'
   | 'MEDIDAS_MULTIPLES'
+  | 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS'
   | 'UNIDAD_AUSENTE'
   | 'UNIDAD_CONTRADICTORIA'
   | 'UNIDAD_NO_SOPORTADA'
@@ -95,7 +96,7 @@ export interface CodigoInterpretado {
   segmentosAdicionales: string[];
 }
 
-export type FamiliaPosible = 'BOLSA_PLANA_1' | 'HOJA_PAQ';
+export type FamiliaPosible = 'BOLSA_PLANA_1' | 'HOJA_PAQ' | 'BOLSA_FUELLE' | 'BOLSA_NATURAL' | 'ROLLO_CONTINUO' | 'TERMOENCOGIBLE' | 'COEX';
 
 /** La familia permanece SIN CONFIRMAR hasta que el usuario la seleccione. Las posibles son solo una pista no vinculante de las familias de esta fase. */
 export interface FamiliaManufactura {
@@ -119,6 +120,10 @@ export interface ResultadoInterpretacion {
     resina: Campo<Resina>;
     ancho: Campo<number>;
     largo: Campo<number>;
+    /** Fuelle total y sus mitades (derecho e izquierdo): solo se sugieren con el patrón Ancho × Fuelle total × Largo de una bolsa; editables. */
+    fuelleTotal: Campo<number>;
+    fuelleDerecho: Campo<number>;
+    fuelleIzquierdo: Campo<number>;
     unidadDimensiones: Campo<UnidadDimension>;
     calibre: Campo<CalibreOriginal>;
     presentacion: Campo<Presentacion>;

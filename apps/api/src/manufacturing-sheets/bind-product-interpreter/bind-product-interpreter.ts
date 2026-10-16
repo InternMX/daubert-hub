@@ -67,13 +67,17 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
     resina: titulo.resina,
     ancho: titulo.ancho,
     largo: titulo.largo,
+    fuelleTotal: titulo.fuelleTotal,
+    fuelleDerecho: titulo.fuelleDerecho,
+    fuelleIzquierdo: titulo.fuelleIzquierdo,
     unidadDimensiones: titulo.unidadDimensiones,
     calibre: titulo.calibre,
     presentacion: titulo.presentacion,
     cantidad: titulo.cantidad,
     pesoLb: peso
   };
-  const pendientes = Object.entries(campos).filter(([, campo]) => campo.origen === 'PENDIENTE').map(([nombre]) => nombre);
+  // Los fuelles no son «pendientes» de un producto sin fuelles: solo se informan cuando el título los sugiere.
+  const pendientes = Object.entries(campos).filter(([nombre, campo]) => campo.origen === 'PENDIENTE' && !nombre.startsWith('fuelle')).map(([nombre]) => nombre);
 
   return {
     producto: { id: String(ID), code, title: Title ?? '', informacionAdicional: textoONulo(Description), fechaAltaBind: fechaIso(CreationDate) },

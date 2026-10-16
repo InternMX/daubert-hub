@@ -1,48 +1,80 @@
 import { describe, expect, it } from 'vitest';
 import { interpretarProductoBind, sugerirEspecificacion } from '../../src/manufacturing-sheets/bind-product-interpreter';
+import { FAMILY_CODES } from '../../src/manufacturing-sheets/preview/family-registry';
 
 const sugerir = (Title: string, Code = 'ABCFPMG001') => sugerirEspecificacion(interpretarProductoBind({ ID: 'x', Code, Title, Weight: 0.05 }));
 
 describe('sugerirEspecificacion · familia', () => {
+  const familia = (titulo: string) => sugerir(titulo).familia;
+
   it('SCHFPMG001: bolsa de dos medidas → Bolsa Plana 1, con motivo', () => {
-    const s = sugerir('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', 'SCHFPMG001');
-    expect(s.familia.valor).toBe('BOLSA_PLANA_1');
-    expect(s.familia.motivo).toMatch(/dos medidas/);
-    expect(s.familia.incompatibles).toEqual([{ familia: 'HOJA_PAQ', motivo: 'BIND describe una bolsa, no una hoja.' }]);
+    const f = familia('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
+    expect(f.valor).toBe('BOLSA_PLANA_1');
+    expect(f.motivo).toMatch(/dos medidas/);
+    expect(f.incompatibles).toEqual([{ familia: 'HOJA_PAQ', motivo: 'BIND describe una bolsa, no una hoja.' }]);
   });
 
-  it('hoja plástica explícita de dos medidas → HOJA_PAQ', () => {
-    const s = sugerir('HOJA VCI PMG 48 x 60" CAL. 3 MIL ROLLO C/25 HOJAS');
-    expect(s.familia.valor).toBe('HOJA_PAQ');
-    expect(s.familia.incompatibles.map((i) => i.familia)).toEqual(['BOLSA_PLANA_1']);
+  it('hoja plástica explícita de dos medidas → Hojas; las familias de bolsa quedan incompatibles', () => {
+    const f = familia('HOJA VCI PMG 48 x 60" CAL. 3 MIL ROLLO C/25 HOJAS');
+    expect(f.valor).toBe('HOJA_PAQ');
+    expect(f.incompatibles.map((i) => i.familia).sort()).toEqual(['BOLSA_FUELLE', 'BOLSA_NATURAL', 'BOLSA_PLANA_1']);
   });
 
   it.each([
-    ['tres dimensiones (fuelle)', 'BOLSA VCI PMG 51 X 46 X 80" CAL. 3 MIL ROLLO C/50 BOLSAS', /fuelle/i],
-    ['palabra FUELLE', 'BOLSA PMG CON FUELLE 13 x 16" CAL. 3 MIL', /fuelle/i],
-    ['coextrusión', 'BOLSA COEX PMG 13 x 16" CAL. 3 MIL', /otra familia/i],
-    ['tubo', 'TUBO PMG 120 x 180 CAL. 2 MIL', /otra familia|bolsa o una hoja/i],
-    ['termoencogible', 'BOLSA TERMOENCOGIBLE PMG 13 x 16" CAL. 3 MIL', /otra familia/i],
+    ['tres medidas', 'BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7', /tres medidas/i],
+    ['la palabra FUELLE', 'BOLSA VCI PMG CON FUELLE 13 x 16" CAL. 3 MIL', /fuelle/i]
+  ])('bolsa con fuelle (%s) → Bolsa Fuelle y Bolsa Plana 1 queda incompatible', (_caso, titulo, motivo) => {
+    const f = familia(titulo);
+    expect(f.valor).toBe('BOLSA_FUELLE');
+    expect(f.motivo).toMatch(motivo);
+    expect(f.incompatibles.map((i) => i.familia)).toEqual(expect.arrayContaining(['BOLSA_PLANA_1', 'HOJA_PAQ']));
+  });
+
+  it('material Natural con fuelle → Bolsa Natural, pidiendo confirmar el tipo real; sin fuelle sigue siendo Bolsa Plana 1 (composición Natural)', () => {
+    const natural = familia('BOLSA LDPE NAT 61 X 48 X 70.9 CAL. 3');
+    expect(natural.valor).toBe('BOLSA_NATURAL');
+    expect(natural.motivo).toMatch(/Confirma que sea realmente una bolsa natural/);
+    const plana = familia('BOLSA LDPE NAT 25 x 30" CAL. 300 PAQUETE C/100 BOLSAS');
+    expect(plana.valor).toBe('BOLSA_PLANA_1');
+    expect(plana.motivo).toMatch(/Natural/);
+  });
+
+  it('una mención genérica de BOLSA no confirma una familia específica: sin medidas queda pendiente', () => {
+    const f = familia('BOLSA VCI PMG CAL. 3 MIL');
+    expect(f.valor).toBeNull();
+    expect(f.motivo).toMatch(/dos medidas/i);
+  });
+
+  it.each([
+    ['termoencogible', 'ROLLO VCI + UV TERMOENCOGIBLE 6 X 30 MTS CAL. 7 MIL', 'TERMOENCOGIBLE', /termoencogible/i],
+    ['coextrusión', 'BOLSA COEX VCI PMG 51 X 46 X 80" CAL. 3', 'COEX', /coextrusi/i],
+    ['rollo continuo', 'ROLLO CONTINUO VCI PMG 58 x 4500" CAL. 3 MIL', 'ROLLO_CONTINUO', /rollo continuo/i]
+  ])('%s explícito: la familia aún no está en el registro, así que queda pendiente con explicación (no se sugiere algo que el prototipo no tiene)', (_caso, titulo, familiaEsperada, motivo) => {
+    const f = familia(titulo);
+    if ((FAMILY_CODES as string[]).includes(familiaEsperada)) expect(f.valor).toBe(familiaEsperada);
+    else {
+      expect(f.valor).toBeNull();
+      expect(f.motivo).toMatch(motivo);
+      expect(f.motivo).toMatch(/todavía no está disponible/);
+    }
+    expect(f.incompatibles.map((i) => i.familia)).not.toContain(familiaEsperada);
+  });
+
+  it.each([
     ['resina ESD sin casilla', 'BOLSA ESD 9.45 X 10.2" CAL. 4 MIL', /ESD/],
-    ['bolsa sin medidas', 'BOLSA VCI PMG CAL. 3 MIL', /dos medidas/i],
     ['tipo ambiguo (bolsa y hoja)', 'BOLSA U HOJA PMG 13 x 16" CAL. 3', /varios tipos/i],
-    ['sin tipo', 'PRODUCTO VCI PMG 13 x 16" CAL. 3', /bolsa o una hoja/i]
-  ])('no sugiere familia cuando %s', (_caso, titulo, motivo) => {
-    const s = sugerir(titulo);
-    expect(s.familia.valor).toBeNull();
-    expect(s.familia.motivo).toMatch(motivo);
+    ['sin tipo', 'PRODUCTO VCI PMG 13 x 16" CAL. 3', /bolsa o una hoja/i],
+    ['tubo', 'TUBO PMG 120 x 180 CAL. 2 MIL', /tubo/i]
+  ])('queda pendiente cuando %s', (_caso, titulo, motivo) => {
+    const f = familia(titulo);
+    expect(f.valor).toBeNull();
+    expect(f.motivo).toMatch(motivo);
   });
 
-  it('no sugiere Bolsa Plana solo porque el título diga BOLSA: con fuelle queda incompatible y se advierte', () => {
-    const s = sugerir('BOLSA VCI PMG CON FUELLE 13 x 16"');
-    expect(s.familia.valor).toBeNull();
-    expect(s.familia.incompatibles.map((i) => i.familia)).toEqual(expect.arrayContaining(['BOLSA_PLANA_1', 'HOJA_PAQ']));
-  });
-
-  it('papel: sin familia y ambas incompatibles', () => {
-    const s = sugerir('PAPEL VCI 48 x 60" C/100 HOJAS');
-    expect(s.familia.valor).toBeNull();
-    expect(s.familia.incompatibles.map((i) => i.familia).sort()).toEqual(['BOLSA_PLANA_1', 'HOJA_PAQ']);
+  it('papel: sin familia y todas incompatibles', () => {
+    const f = familia('PAPEL VCI 48 x 60" C/100 HOJAS');
+    expect(f.valor).toBeNull();
+    expect(f.incompatibles.length).toBeGreaterThanOrEqual(7);
   });
 });
 

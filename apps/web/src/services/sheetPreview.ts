@@ -1,9 +1,10 @@
 import { apiBaseUrl } from './api';
+import type { FamilyCode } from './manufacturingFamilies';
 
 // Vista previa HTML de una hoja de manufactura: POST /api/manufacturing-sheets/previews. La composición (plantillas aprobadas) la hace NestJS; el navegador solo recibe el HTML
 // resultante y lo muestra en un iframe aislado. No se guarda nada.
 
-export type PreviewFamilyCode = 'BOLSA_PLANA_1' | 'HOJA_PAQ';
+export type PreviewFamilyCode = FamilyCode;
 
 export interface SheetPreviewResponse {
   html: string;
@@ -11,9 +12,14 @@ export interface SheetPreviewResponse {
   /** Siempre un borrador sin aprobar con firmas SIN FIRMA. */
   borrador: true;
   firmas: 'SIN_FIRMA';
+  /** Datos TÉCNICOS completos para la familia (el cliente no cuenta). */
   completo: boolean;
   faltantes: string[];
   advertencias: string[];
+  /** Requisitos de una emisión futura que no impiden la demostración (p. ej. «Cliente»). */
+  pendientesEmision: string[];
+  /** Motivo por el que no se muestra el documento (p. ej. modalidad no autorizada); null si se muestra. */
+  bloqueado: string | null;
 }
 
 export type SheetPreviewErrorKind = 'INVALID_DATA' | 'UNAUTHENTICATED' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'NETWORK';
@@ -28,7 +34,7 @@ function isPreview(body: unknown): body is { data: SheetPreviewResponse } {
   if (typeof body !== 'object' || body === null || !('data' in body)) return false;
   const d = (body as { data: unknown }).data as Record<string, unknown> | null;
   return typeof d === 'object' && d !== null && typeof d.html === 'string' && d.borrador === true && d.firmas === 'SIN_FIRMA'
-    && Array.isArray(d.faltantes) && Array.isArray(d.advertencias) && typeof d.completo === 'boolean';
+    && Array.isArray(d.faltantes) && Array.isArray(d.advertencias) && Array.isArray(d.pendientesEmision) && typeof d.completo === 'boolean' && (d.bloqueado === null || typeof d.bloqueado === 'string');
 }
 
 export async function previewManufacturingSheet(familia: PreviewFamilyCode, datos: Record<string, string>, signal?: AbortSignal): Promise<SheetPreviewResponse> {

@@ -49,3 +49,10 @@ Persistir especificaciones o PostgreSQL, firmar o aprobar, emitir hojas definiti
 - **Color unificado:** el formulario mantiene un único estado de color que alimenta `colorNombre` (texto del documento) y `colorHex` (dibujo); la concentración del color es independiente de la Resina VCI.
 - **Etiqueta:** hasta 500 caracteres (antes 200) para no truncar el `Title` completo de BIND; se imprime completo y la fila de la plantilla crece (no se recorta).
 - «Hoja Paq» se muestra como **Hojas** en la interfaz; el identificador `HOJA_PAQ` no cambia.
+
+## Prototipo integral · bloque A (registro de familias)
+- **`family-registry.ts` es la única fuente de verdad de las familias**: campos visibles, obligatorios, composiciones, colores y modalidades (estas salen de `profiles/*.profile.json`). `GET /api/manufacturing-sheets/families` lo entrega al formulario; el frontend no replica reglas por familia. Una prueba (`families-sync.spec.ts`) mantiene sincronizada la copia que usan las pruebas del frontend (`UPDATE_FAMILY_FIXTURE=1` la regenera).
+- Familias habilitadas: Bolsa Plana 1, Hojas (`HOJA_PAQ`), Bolsa Fuelle y Bolsa Natural. Las demás se incorporan en los bloques siguientes.
+- **Niveles de validación:** `completo`/`faltantes` = datos técnicos de la familia (el cliente NO cuenta); `pendientesEmision` lista lo que exigirá una emisión futura (hoy, el cliente identificado). Una modalidad sin variante gráfica autorizada devuelve `bloqueado` y no genera documento.
+- Fuelles: `fuelle_derecho` y `fuelle_izquierdo`; el color de las flechas internas sigue al color elegido (datos aprobados: blanco sobre azul, `#4A7EBB` sobre verde, negro en Bolsa Natural).
+- Bolsa Natural: composición fija PMG = NA, ESD = NA, Natural = X; sin formulación VCI automática.

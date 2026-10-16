@@ -1,4 +1,5 @@
 import { apiBaseUrl } from './api';
+import type { FamilyCode } from './manufacturingFamilies';
 
 // Consulta de productos de BIND ERP para manufactura. El navegador SOLO habla con el backend de Daubert Hub
 // (GET /api/manufacturing-sheets/bind-products/by-code/:code): nunca con BIND, y ninguna credencial de BIND existe en el frontend.
@@ -48,6 +49,10 @@ export interface InterpretacionBind {
     resina: CampoInterpretado<'PMG' | 'CP5000' | 'NAT' | 'ESD' | 'XOW'>;
     ancho: CampoInterpretado<number>;
     largo: CampoInterpretado<number>;
+    /** Fuelle total y sus mitades (solo se sugieren con el patrón Ancho × Fuelle total × Largo de una bolsa). */
+    fuelleTotal: CampoInterpretado<number>;
+    fuelleDerecho: CampoInterpretado<number>;
+    fuelleIzquierdo: CampoInterpretado<number>;
     unidadDimensiones: CampoInterpretado<'IN' | 'MM' | 'CM'>;
     calibre: CampoInterpretado<CalibreInterpretado>;
     presentacion: CampoInterpretado<'ROLLO' | 'PAQUETE'>;
@@ -60,9 +65,9 @@ export interface InterpretacionBind {
 }
 
 export interface SugerenciaFamiliaBind {
-  valor: 'BOLSA_PLANA_1' | 'HOJA_PAQ' | null;
+  valor: FamilyCode | null;
   motivo: string;
-  incompatibles: Array<{ familia: 'BOLSA_PLANA_1' | 'HOJA_PAQ'; motivo: string }>;
+  incompatibles: Array<{ familia: FamilyCode; motivo: string }>;
 }
 
 export interface SugerenciasBind {

@@ -1,3 +1,4 @@
+import { FAMILY_CODES } from '../preview/family-registry';
 import type { FamiliaPosible, ResultadoInterpretacion } from './bind-product.types';
 import { normalizarTitulo } from './title-parser';
 
@@ -51,40 +52,54 @@ export interface SugerenciasEspecificacion {
 
 export const RESINA_VCI_POR_COMPOSICION: Record<string, string> = { PMG: 'PMG AL 3%', CP5000: 'CP5000 AL 3%' };
 
-const MARCAS_ESPECIALES = /\b(FUELLES?|GUSSET\w*|COEX\w*|TUBOS?|TUBING|TERMOENCOG\w*|CONTINUO)\b/;
+const FUELLE = /\b(FUELLES?|GUSSET\w*)\b/;
+const COEX = /\bCOEX\w*\b/;
+const TERMO = /\bTERMOENCOG\w*\b/;
+const ROLLO_CONTINUO = /\bROLLO\s+CONTINUO\b/;
+const OTRA_FORMA = /\b(TUBOS?|TUBING)\b/;
 const COLOR_AZUL = /\b(AZUL|BLUE)\b/;
 const COLOR_VERDE = /\b(VERDE|GREEN)\b/;
 const OTROS_COLORES = /\b(AMARILL[OA]|YELLOW|BANANA|ROSA|PINK|ROJ[OA]|RED|NEGR[OA]|BLACK|BLANC[OA]|WHITE|NARANJA|ORANGE|TRANSPARENTE|CLEAR|NATURAL)\b/g;
+const NOMBRES: Record<FamiliaPosible, string> = {
+  BOLSA_PLANA_1: 'Bolsa Plana 1', HOJA_PAQ: 'Hojas', BOLSA_FUELLE: 'Bolsa Fuelle', BOLSA_NATURAL: 'Bolsa Natural', ROLLO_CONTINUO: 'Rollo Continuo', TERMOENCOGIBLE: 'Termoencogible', COEX: 'COEX'
+};
 
 function sugerirFamilia(r: ResultadoInterpretacion, t: string): SugerenciaFamilia {
   const { tipo, resina, ancho, largo } = r.campos;
-  const incompatibles: FamiliaIncompatible[] = [];
-  const cadenaTresMedidas = /\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+/.test(t);
-  const especial = MARCAS_ESPECIALES.exec(t)?.[1] ?? null;
+  const todas = Object.keys(NOMBRES) as FamiliaPosible[];
+  const dimensiones3 = /\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+/.test(t);
+  const fuelle = FUELLE.test(t) || (tipo.valor === 'BOLSA' && dimensiones3);
+  const incompatiblesExcepto = (familia: FamiliaPosible, motivo: string): FamiliaIncompatible[] => todas.filter((f) => f !== familia).map((f) => ({ familia: f, motivo }));
+  const pendiente = (motivo: string, incompatibles: FamiliaIncompatible[] = []): SugerenciaFamilia => ({ valor: null, motivo, incompatibles });
+  // Solo se sugiere una familia que el prototipo ya tiene habilitada (el registro es la fuente de verdad).
+  const sugerida = (familia: FamiliaPosible, motivo: string, incompatibles: FamiliaIncompatible[]): SugerenciaFamilia => (
+    (FAMILY_CODES as string[]).includes(familia) ? { valor: familia, motivo, incompatibles } : pendiente(`${motivo} ${NOMBRES[familia]} todavía no está disponible en el prototipo: elige la familia manualmente.`, incompatibles)
+  );
 
-  if (tipo.valor === 'PAPEL') return { valor: null, motivo: 'Producto de papel: fuera del alcance de las familias disponibles.', incompatibles: [{ familia: 'BOLSA_PLANA_1', motivo: 'Es un producto de papel.' }, { familia: 'HOJA_PAQ', motivo: 'Es un producto de papel, no una hoja plástica.' }] };
-  if (tipo.valor === 'BOLSA') incompatibles.push({ familia: 'HOJA_PAQ', motivo: 'BIND describe una bolsa, no una hoja.' });
-  if (tipo.valor === 'HOJA') incompatibles.push({ familia: 'BOLSA_PLANA_1', motivo: 'BIND describe una hoja, no una bolsa.' });
-  if (tipo.valor === 'BOLSA' && (cadenaTresMedidas || (especial !== null && /FUELLE|GUSSET/.test(especial)))) {
-    incompatibles.push({ familia: 'BOLSA_PLANA_1', motivo: 'El título indica fuelle o tres dimensiones: no corresponde a una bolsa plana de dos medidas.' });
-  }
-  if (especial !== null && !/FUELLE|GUSSET/.test(especial)) {
-    const motivo = `El título menciona «${especial}», característica de otra familia de manufactura.`;
-    for (const familia of ['BOLSA_PLANA_1', 'HOJA_PAQ'] as const) if (!incompatibles.some((i) => i.familia === familia)) incompatibles.push({ familia, motivo });
-  }
-  const pendiente = (motivo: string): SugerenciaFamilia => ({ valor: null, motivo, incompatibles });
-
+  if (tipo.valor === 'PAPEL') return pendiente('Producto de papel: fuera del alcance de las familias disponibles.', incompatiblesExcepto('COEX', 'Es un producto de papel.').concat([{ familia: 'COEX', motivo: 'Es un producto de papel.' }]));
+  if (TERMO.test(t)) return sugerida('TERMOENCOGIBLE', 'El título indica material termoencogible.', incompatiblesExcepto('TERMOENCOGIBLE', 'El título indica termoencogible.'));
+  if (COEX.test(t)) return sugerida('COEX', 'El título indica coextrusión.', incompatiblesExcepto('COEX', 'El título indica coextrusión.'));
+  if (ROLLO_CONTINUO.test(t)) return sugerida('ROLLO_CONTINUO', 'El título indica rollo continuo.', incompatiblesExcepto('ROLLO_CONTINUO', 'El título indica rollo continuo.'));
+  if (OTRA_FORMA.test(t)) return pendiente('El título menciona tubo: no corresponde a una familia disponible; elige la familia manualmente.', todas.map((f) => ({ familia: f, motivo: 'El título menciona tubo.' })));
   if (r.advertencias.some((a) => a.codigo === 'TIPO_AMBIGUO')) return pendiente('El título menciona varios tipos de producto: elige la familia manualmente.');
   if (tipo.valor === null) return pendiente('El título no indica si el producto es una bolsa o una hoja: elige la familia manualmente.');
-  if (resina.origen === 'EXTRAIDO' && (resina.valor === 'ESD' || resina.valor === 'XOW')) return pendiente(`La resina ${resina.valor} no tiene casilla de Composición en Bolsa Plana 1 ni en Hojas: elige la familia manualmente.`);
-  if (incompatibles.some((i) => (tipo.valor === 'BOLSA' ? i.familia === 'BOLSA_PLANA_1' : i.familia === 'HOJA_PAQ'))) {
-    return pendiente(tipo.valor === 'BOLSA'
-      ? 'Hay indicios de fuelle u otra familia especial: no se sugiere Bolsa Plana 1.'
-      : 'Hay indicios de otra familia especial: no se sugiere Hojas.');
+  if (resina.origen === 'EXTRAIDO' && (resina.valor === 'ESD' || resina.valor === 'XOW')) return pendiente(`La resina ${resina.valor} no tiene casilla de Composición en las familias disponibles: elige la familia manualmente.`);
+
+  const natural = resina.origen === 'EXTRAIDO' && resina.valor === 'NAT';
+  if (tipo.valor === 'HOJA') {
+    const incompat: FamiliaIncompatible[] = (['BOLSA_PLANA_1', 'BOLSA_FUELLE', 'BOLSA_NATURAL'] as const).map((familia) => ({ familia, motivo: 'BIND describe una hoja, no una bolsa.' }));
+    if (ancho.valor === null || largo.valor === null) return pendiente('No se identificaron las dos medidas (ancho y largo) de la hoja: elige la familia manualmente.', incompat);
+    return sugerida('HOJA_PAQ', 'Producto identificado explícitamente como hoja plástica de dos medidas, sin indicios de otra familia especial.', incompat);
   }
-  if (ancho.valor === null || largo.valor === null) return pendiente('No se identificaron las dos medidas (ancho y largo) en el título: elige la familia manualmente.');
-  if (tipo.valor === 'BOLSA') return { valor: 'BOLSA_PLANA_1', motivo: 'Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.', incompatibles };
-  return { valor: 'HOJA_PAQ', motivo: 'Producto identificado explícitamente como hoja plástica de dos medidas, sin indicios de otra familia especial.', incompatibles };
+  // Bolsa
+  const incompat: FamiliaIncompatible[] = [{ familia: 'HOJA_PAQ', motivo: 'BIND describe una bolsa, no una hoja.' }];
+  if (fuelle) {
+    incompat.push({ familia: 'BOLSA_PLANA_1', motivo: 'El título indica fuelle o tres dimensiones: no corresponde a una bolsa plana de dos medidas.' });
+    if (natural) return sugerida('BOLSA_NATURAL', 'Bolsa de material natural con fuelle (o tres medidas). Confirma que sea realmente una bolsa natural.', incompat);
+    return sugerida('BOLSA_FUELLE', FUELLE.test(t) ? 'El título menciona fuelle.' : 'Bolsa con tres medidas: se sugiere Ancho × Fuelle total × Largo; confirma que tenga fuelles.', incompat);
+  }
+  if (ancho.valor === null || largo.valor === null) return pendiente('No se identificaron las dos medidas (ancho y largo) en el título: elige la familia manualmente.', incompat);
+  return sugerida('BOLSA_PLANA_1', natural ? 'Bolsa natural de dos medidas, sin indicios de fuelle (la composición Natural existe en Bolsa Plana 1). Si es una bolsa natural con fuelles, cambia la familia.' : 'Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.', incompat);
 }
 
 function sugerirColor(r: ResultadoInterpretacion, t: string): SugerenciaColor {

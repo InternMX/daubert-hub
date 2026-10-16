@@ -86,10 +86,13 @@ describe('interpretarProductoBind · pruebas negativas', () => {
     }
   });
 
-  it('tres dimensiones o varias expresiones de medidas quedan pendientes', () => {
-    const tres = interpretarProductoBind(producto({ Title: 'BOLSA PMG 61 x 70.9 x 24" CAL. 4 MIL' }));
+  it('tres dimensiones en un producto que no es una bolsa explícita, o varias expresiones de medidas, quedan pendientes', () => {
+    const tres = interpretarProductoBind(producto({ Title: 'HOJA PMG 61 x 70.9 x 24" CAL. 4 MIL' }));
     expect(tres.campos.ancho.valor).toBeNull();
+    expect(tres.campos.fuelleTotal.valor).toBeNull();
     expect(advertencias(tres)).toContain('MEDIDAS_NO_ESTANDAR');
+    const sinTipo = interpretarProductoBind(producto({ Title: 'PRODUCTO PMG 61 x 70.9 x 24" CAL. 4 MIL' }));
+    expect(sinTipo.campos.ancho.valor).toBeNull();
     const varias = interpretarProductoBind(producto({ Title: 'BOLSA PMG 13 x 16" Y 20 x 30" CAL. 3 MIL' }));
     expect(advertencias(varias)).toContain('MEDIDAS_MULTIPLES');
   });
@@ -244,5 +247,38 @@ describe('interpretarProductoBind · alcance de los datos', () => {
     expect(interpretarProductoBind(producto({ CreationDate: 'no es fecha' })).producto.fechaAltaBind).toBeNull();
     expect(interpretarProductoBind(producto({ CreationDate: undefined })).producto.fechaAltaBind).toBeNull();
     expect(interpretarProductoBind(producto({ CreationDate: new Date('2025-01-02T00:00:00Z') })).producto.fechaAltaBind).toBe('2025-01-02T00:00:00.000Z');
+  });
+});
+
+describe('interpretarProductoBind · Ancho × Fuelle total × Largo (bolsa con tres medidas)', () => {
+  it('BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7 → ancho 61, fuelle total 48 (24 + 24), largo 70.9; unidad pendiente', () => {
+    const r = interpretarProductoBind(producto({ Title: 'BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7' }));
+    const c = r.campos;
+    expect([c.ancho.valor, c.fuelleTotal.valor, c.fuelleDerecho.valor, c.fuelleIzquierdo.valor, c.largo.valor]).toEqual([61, 48, 24, 24, 70.9]);
+    for (const k of ['ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo'] as const) expect(c[k].origen).toBe('SUGERIDO');   // suposición de patrón, no extracción
+    expect(c.fuelleDerecho.nota).toMatch(/÷ 2/);
+    expect(c.unidadDimensiones).toMatchObject({ valor: null, origen: 'PENDIENTE' });
+    expect(advertencias(r)).toEqual(expect.arrayContaining(['MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'UNIDAD_AUSENTE']));
+    expect(c.calibre.valor).toMatchObject({ valorOriginal: '2.7', textoLiteral: '2.7' });
+  });
+
+  it('con unidad explícita la hereda; el fuelle impar se reparte en mitades exactas (47 → 23.5)', () => {
+    const r = interpretarProductoBind(producto({ Title: 'BOLSA PMG 51 X 47 X 80" CAL. 3 MIL' }));
+    expect(r.campos.unidadDimensiones).toMatchObject({ valor: 'IN', origen: 'EXTRAIDO' });
+    expect([r.campos.fuelleDerecho.valor, r.campos.fuelleIzquierdo.valor]).toEqual([23.5, 23.5]);
+  });
+
+  it('solo las bolsas: «HOJA» o «BOLSA y HOJA» con tres medidas no inventan fuelles', () => {
+    for (const title of ['HOJA PMG 61 X 48 X 70.9 CAL. 2.7', 'BOLSA U HOJA PMG 61 X 48 X 70.9 CAL. 2.7']) {
+      const r = interpretarProductoBind(producto({ Title: title }));
+      expect(r.campos.fuelleTotal.valor, title).toBeNull();
+      expect(r.campos.ancho.valor, title).toBeNull();
+    }
+  });
+
+  it('dos medidas: los fuelles no son pendientes del producto (no se inventan)', () => {
+    const r = interpretarProductoBind(producto({ Title: 'BOLSA PMG 13 x 16" CAL. 3 MIL' }));
+    expect(r.campos.fuelleDerecho.valor).toBeNull();
+    expect(r.pendientes.some((p) => p.startsWith('fuelle'))).toBe(false);
   });
 });

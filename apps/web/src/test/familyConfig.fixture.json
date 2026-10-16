@@ -1,0 +1,389 @@
+[
+  {
+    "codigo": "BOLSA_PLANA_1",
+    "nombre": "Bolsa Plana 1",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "resinaVci",
+      "colorPreset",
+      "colorConcentracion",
+      "colorNombre",
+      "colorHex",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "etiqueta"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "colorPreset",
+      "colorNombre",
+      "colorHex"
+    ],
+    "composiciones": [
+      "PMG",
+      "CP5000",
+      "NAT"
+    ],
+    "composicionFija": null,
+    "cantidad": true,
+    "fuelles": false,
+    "colorDibujo": true,
+    "colores": [
+      {
+        "id": "DAUBERT_AZUL",
+        "etiqueta": "Daubert Azul",
+        "nombre": "DAUBERT AZUL",
+        "hex": "#538DD5",
+        "cotasInternasHex": "#FFFFFF"
+      },
+      {
+        "id": "VERDE",
+        "etiqueta": "Verde",
+        "nombre": "VERDE",
+        "hex": "#00B050",
+        "cotasInternasHex": "#4A7EBB"
+      }
+    ],
+    "colorSugerido": "DAUBERT_AZUL",
+    "modalidades": [],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "Dibujo de bolsa plana con sello inferior y la nota de altura del sello."
+    ]
+  },
+  {
+    "codigo": "HOJA_PAQ",
+    "nombre": "Hojas",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "resinaVci",
+      "colorPreset",
+      "colorConcentracion",
+      "colorNombre",
+      "colorHex",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "modalidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "etiqueta"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "colorPreset",
+      "colorNombre",
+      "colorHex",
+      "modalidad"
+    ],
+    "composiciones": [
+      "PMG",
+      "CP5000",
+      "NAT"
+    ],
+    "composicionFija": null,
+    "cantidad": true,
+    "fuelles": false,
+    "colorDibujo": true,
+    "colores": [
+      {
+        "id": "DAUBERT_AZUL",
+        "etiqueta": "Daubert Azul",
+        "nombre": "DAUBERT AZUL",
+        "hex": "#538DD5",
+        "cotasInternasHex": "#FFFFFF"
+      },
+      {
+        "id": "VERDE",
+        "etiqueta": "Verde",
+        "nombre": "VERDE",
+        "hex": "#00B050",
+        "cotasInternasHex": "#4A7EBB"
+      }
+    ],
+    "colorSugerido": "DAUBERT_AZUL",
+    "modalidades": [
+      {
+        "valor": "DOBLADA",
+        "etiqueta": "Doblada",
+        "habilitada": true
+      },
+      {
+        "valor": "EXTENDIDA",
+        "etiqueta": "Extendida",
+        "habilitada": true
+      }
+    ],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "Dibujo rectangular de la hoja; la modalidad (doblada o extendida) es un dato explícito."
+    ]
+  },
+  {
+    "codigo": "BOLSA_FUELLE",
+    "nombre": "Bolsa Fuelle",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "resinaVci",
+      "colorPreset",
+      "colorConcentracion",
+      "colorNombre",
+      "colorHex",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "fuelleTotal",
+      "fuelleDerecho",
+      "fuelleIzquierdo",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "etiqueta"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "colorPreset",
+      "colorNombre",
+      "colorHex",
+      "fuelleDerecho",
+      "fuelleIzquierdo"
+    ],
+    "composiciones": [
+      "PMG",
+      "CP5000",
+      "NAT"
+    ],
+    "composicionFija": null,
+    "cantidad": true,
+    "fuelles": true,
+    "colorDibujo": true,
+    "colores": [
+      {
+        "id": "DAUBERT_AZUL",
+        "etiqueta": "Daubert Azul",
+        "nombre": "DAUBERT AZUL",
+        "hex": "#538DD5",
+        "cotasInternasHex": "#FFFFFF"
+      },
+      {
+        "id": "VERDE",
+        "etiqueta": "Verde",
+        "nombre": "VERDE",
+        "hex": "#00B050",
+        "cotasInternasHex": "#4A7EBB"
+      }
+    ],
+    "colorSugerido": "DAUBERT_AZUL",
+    "modalidades": [],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "Ambos fuelles (derecho e izquierdo) y sello integrado. «Fuelle total» es auxiliar: se reparte en dos mitades editables."
+    ]
+  },
+  {
+    "codigo": "BOLSA_NATURAL",
+    "nombre": "Bolsa Natural",
+    "campos": [
+      "codigo",
+      "descripcion",
+      "producto",
+      "cliente",
+      "fechaEmision",
+      "resinaVci",
+      "colorPreset",
+      "colorConcentracion",
+      "colorNombre",
+      "colorHex",
+      "composicion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "fuelleTotal",
+      "fuelleDerecho",
+      "fuelleIzquierdo",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "etiqueta"
+    ],
+    "requeridos": [
+      "codigo",
+      "descripcion",
+      "presentacion",
+      "cantidad",
+      "cantidadUnidad",
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "pesoLb",
+      "colorPreset",
+      "colorNombre",
+      "colorHex",
+      "fuelleDerecho",
+      "fuelleIzquierdo"
+    ],
+    "composiciones": [
+      "NAT"
+    ],
+    "composicionFija": "NAT",
+    "cantidad": true,
+    "fuelles": true,
+    "colorDibujo": true,
+    "colores": [
+      {
+        "id": "NATURAL",
+        "etiqueta": "Natural",
+        "nombre": "NATURAL",
+        "hex": "#FFF2CC",
+        "cotasInternasHex": "#000000"
+      },
+      {
+        "id": "DAUBERT_AZUL",
+        "etiqueta": "Daubert Azul",
+        "nombre": "DAUBERT AZUL",
+        "hex": "#538DD5",
+        "cotasInternasHex": "#FFFFFF"
+      },
+      {
+        "id": "VERDE",
+        "etiqueta": "Verde",
+        "nombre": "VERDE",
+        "hex": "#00B050",
+        "cotasInternasHex": "#4A7EBB"
+      }
+    ],
+    "colorSugerido": "NATURAL",
+    "modalidades": [],
+    "unidades": [
+      {
+        "valor": "IN",
+        "etiqueta": "Pulgadas (IN)"
+      },
+      {
+        "valor": "MM",
+        "etiqueta": "Milímetros (MM)"
+      },
+      {
+        "valor": "CM",
+        "etiqueta": "Centímetros (CM)"
+      },
+      {
+        "valor": "M",
+        "etiqueta": "Metros (M)"
+      }
+    ],
+    "notas": [
+      "La composición es fija (PMG = NA, ESD = NA, Natural = X). No se asigna formulación VCI automáticamente. Confirma que el producto sea realmente una bolsa natural."
+    ]
+  }
+]

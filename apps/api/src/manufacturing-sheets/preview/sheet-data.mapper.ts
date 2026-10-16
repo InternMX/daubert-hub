@@ -1,31 +1,35 @@
-// Traduce los campos del formulario de especificación (Bolsa Plana 1 y Hoja Paq) a los datos de las plantillas aprobadas. Función pura: sin plantillas, sin disco,
-// sin base de datos. Nada se inventa: un dato ausente o no válido queda vacío y se informa como faltante o advertencia.
+import { FAMILIAS, UNIT_LABELS, UNIT_MARKS, type FamilyCode, type FieldKey, type UnitCode } from './family-registry';
 
-export type PreviewFamily = 'BOLSA_PLANA_1' | 'HOJA_PAQ';
+// Traduce los campos del formulario de especificación a los datos de las plantillas aprobadas. Función pura: sin plantillas, sin disco, sin base de datos.
+// Nada se inventa: un dato ausente o no válido queda vacío y se informa como faltante o advertencia. Las reglas por familia salen del REGISTRO (family-registry.ts),
+// no de condiciones repartidas aquí.
+
+export type PreviewFamily = FamilyCode;
 
 /** Campos del formulario (todos opcionales y en texto: el usuario puede estar a medias al escribir). */
-export interface PreviewFormData {
-  codigo?: string; descripcion?: string; producto?: string; cliente?: string; fechaEmision?: string; resinaVci?: string; colorNombre?: string; colorHex?: string;
-  composicion?: string; presentacion?: string; cantidad?: string; cantidadUnidad?: string;
-  ancho?: string; largo?: string; unidadDimensiones?: string; calibre?: string; pesoLb?: string;
-  etiqueta?: string; modalidad?: string;
-}
+export type PreviewFormData = Partial<Record<FieldKey, string>>;
 
 export interface MappedSheetData {
   /** Valores de texto de la plantilla, por nombre de placeholder (sin escapar; el escape lo hace el compositor de la vista previa). */
   datos: Record<string, string>;
-  /** Color del dibujo (#RRGGBB) o null si falta o no es válido: el placeholder queda sin resolver y la plantilla lo muestra en gris. */
+  /** Valores CSS de los placeholders visuales (`color_bolsa_hex`, `color_cotas_internas_hex`…): #RRGGBB o null si faltan/no son válidos (el placeholder queda sin resolver). */
+  visual: Record<string, string | null>;
+  /** Color del dibujo (#RRGGBB) o null; alias de `visual.color_bolsa_hex`. */
   colorBolsaHex: string | null;
+  /** Datos TÉCNICOS obligatorios que faltan para que la vista previa sea completa. El cliente no cuenta aquí. */
   faltantes: string[];
   advertencias: string[];
+  /** Requisitos de una emisión futura que NO impiden la demostración (hoy: el cliente identificado). */
+  pendientesEmision: string[];
 }
 
-const LABELS: Record<string, string> = {
+const LABELS: Partial<Record<FieldKey, string>> = {
   codigo: 'Código DCMX', descripcion: 'Descripción', cliente: 'Cliente', composicion: 'Composición', presentacion: 'Presentación', cantidad: 'Cantidad', cantidadUnidad: 'Unidad de la cantidad',
-  ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)',
-  colorNombre: 'Color', colorHex: 'Color del dibujo', modalidad: 'Hoja doblada o extendida'
+  ancho: 'Ancho', largo: 'Largo', unidadDimensiones: 'Unidad de las medidas', calibre: 'Calibre', pesoLb: 'Peso (lb)', colorNombre: 'Color', colorHex: 'Color del dibujo',
+  modalidad: 'Hoja doblada o extendida', fuelleDerecho: 'Fuelle derecho', fuelleIzquierdo: 'Fuelle izquierdo'
 };
-const REQUIRED_COMMON = ['codigo', 'descripcion', 'cliente', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'colorNombre', 'colorHex'];
+const FRONT_ONLY: FieldKey[] = ['colorPreset'];            // concepto de la interfaz: no tiene placeholder
+const HEX = /^#[0-9A-Fa-f]{6}$/;
 
 const text = (value: string | undefined): string => (value ?? '').trim();
 const positive = (value: string): boolean => /^\d+([.,]\d+)?$/.test(value) && Number(value.replace(',', '.')) > 0;
@@ -41,14 +45,19 @@ function formatDate(value: string, advertencias: string[]): string {
 }
 
 export function mapSheetData(family: PreviewFamily, form: PreviewFormData): MappedSheetData {
+  const def = FAMILIAS[family];
   const advertencias: string[] = [];
-  const v = (k: keyof PreviewFormData): string => text(form[k]);
+  const v = (k: FieldKey): string => text(form[k]);
   const faltantes: string[] = [];
-  const required = [...REQUIRED_COMMON, ...(family === 'HOJA_PAQ' ? ['modalidad'] : [])] as Array<keyof PreviewFormData>;
-  for (const key of required) if (v(key) === '') faltantes.push(LABELS[key] ?? key);
+  for (const key of def.requeridos) {
+    if (FRONT_ONLY.includes(key)) continue;
+    if (key === 'composicion' && def.composicionFija) continue;
+    if (v(key) === '') faltantes.push(LABELS[key] ?? key);
+  }
+  const pendientesEmision = v('cliente') === '' ? ['Cliente'] : [];
 
-  const unidad = v('unidadDimensiones');
-  const marca = unidad === 'IN' ? '"' : unidad === 'MM' ? ' mm' : '';
+  const unidad = v('unidadDimensiones') as UnitCode | '';
+  const marca = unidad !== '' && unidad in UNIT_MARKS ? UNIT_MARKS[unidad] : '';
   const medida = (valor: string, nombre: string): string => {
     if (valor === '') return '';
     if (!positive(valor)) { advertencias.push(`${nombre} no es un número válido y no se muestra.`); return ''; }
@@ -69,25 +78,42 @@ export function mapSheetData(family: PreviewFamily, form: PreviewFormData): Mapp
   const calibre = v('calibre');
   if (calibre !== '' && !/\d/.test(calibre)) advertencias.push('El calibre no contiene ningún número; se muestra tal como se capturó.');
 
-  const composicion = v('composicion');
+  const composicion = def.composicionFija ?? v('composicion');
   const presentacion = v('presentacion');
   const mark = (selected: boolean, has: boolean): string => (has ? (selected ? 'X' : 'NA') : '');   // sin selección no se imprime NA
   const datos: Record<string, string> = {
     sufijo_titulo: '', cliente: v('cliente'), fecha_: formatDate(v('fechaEmision'), advertencias), resina_vci: v('resinaVci'), producto: v('producto'), color: v('colorNombre'),
     codigo: v('codigo'), descripcion: v('descripcion'),
-    comp_pmg: mark(composicion === 'PMG', composicion !== ''), comp_cp5000: mark(composicion === 'CP5000', composicion !== ''), comp_natural: mark(composicion === 'NAT', composicion !== ''),
     pres_rollo: mark(presentacion === 'ROLLO', presentacion !== ''), pres_paquete: mark(presentacion === 'PAQUETE', presentacion !== ''),
-    cantidad, unidad_medidas: unidad === 'IN' ? 'Pulgadas (IN)' : unidad === 'MM' ? 'Milímetros (MM)' : '',
+    cantidad, unidad_medidas: unidad !== '' && unidad in UNIT_LABELS ? UNIT_LABELS[unidad] : '',
     ancho: medida(v('ancho'), 'El ancho'), largo: medida(v('largo'), 'El largo'), calibre, peso_bolsa_lb: peso, etiqueta: v('etiqueta')
   };
-  if (family === 'HOJA_PAQ') {
+  if (family === 'BOLSA_NATURAL') {
+    // Composición fija del formato (PMG = NA, ESD = NA, Natural = X); el perfil la valida y CP5000 no existe en esta plantilla.
+    Object.assign(datos, { comp_pmg: 'NA', comp_esd: 'NA', comp_natural: 'X' });
+  } else {
+    Object.assign(datos, { comp_pmg: mark(composicion === 'PMG', composicion !== ''), comp_cp5000: mark(composicion === 'CP5000', composicion !== ''), comp_natural: mark(composicion === 'NAT', composicion !== '') });
+  }
+  if (def.campos.includes('modalidad')) {
     datos.hoja_doblada = mark(v('modalidad') === 'DOBLADA', v('modalidad') !== '');
     datos.hoja_extendida = mark(v('modalidad') === 'EXTENDIDA', v('modalidad') !== '');
   }
+  if (def.fuelles) {
+    datos.fuelle_derecho = medida(v('fuelleDerecho'), 'El fuelle derecho');
+    datos.fuelle_izquierdo = medida(v('fuelleIzquierdo'), 'El fuelle izquierdo');
+  }
+
+  const visual: Record<string, string | null> = {};
   const hex = v('colorHex');
-  let colorBolsaHex: string | null = null;
-  if (/^#[0-9A-Fa-f]{6}$/.test(hex)) colorBolsaHex = hex;
-  else if (hex !== '') advertencias.push('El color del dibujo debe tener el formato #RRGGBB; el dibujo se muestra sin color.');
-  if (family === 'BOLSA_PLANA_1' && v('modalidad') !== '') advertencias.push('La modalidad no aplica a Bolsa Plana 1 y se ignora.');
-  return { datos, colorBolsaHex, faltantes, advertencias };
+  if (def.colorDibujo) {
+    visual.color_bolsa_hex = HEX.test(hex) ? hex : null;
+    if (hex !== '' && !HEX.test(hex)) advertencias.push('El color del dibujo debe tener el formato #RRGGBB; el dibujo se muestra sin color.');
+  }
+  if (def.fuelles) {
+    const preset = def.colores.find((c) => c.hex.toLowerCase() === hex.toLowerCase());
+    visual.color_cotas_internas_hex = preset?.cotasInternasHex ?? def.cotasInternasPorDefecto;
+  }
+  if (!def.campos.includes('modalidad') && v('modalidad') !== '') advertencias.push('La modalidad no aplica a esta familia y se ignora.');
+  if (!def.fuelles && (v('fuelleDerecho') !== '' || v('fuelleIzquierdo') !== '')) advertencias.push('Los fuelles no aplican a esta familia y se ignoran.');
+  return { datos, visual, colorBolsaHex: visual.color_bolsa_hex ?? null, faltantes, advertencias, pendientesEmision };
 }

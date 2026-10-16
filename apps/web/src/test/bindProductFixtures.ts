@@ -1,4 +1,9 @@
 import type { BindProductLookup, CampoInterpretado } from '../services/bindProducts';
+import type { FamilyConfig } from '../services/manufacturingFamilies';
+import familyConfigJson from './familyConfig.fixture.json';
+
+/** Copia de la configuración del registro del backend (se mantiene sincronizada con una prueba de la API). */
+export const familyConfigs = familyConfigJson as unknown as FamilyConfig[];
 
 // Respuestas de ejemplo del endpoint GET /api/manufacturing-sheets/bind-products/by-code/:code (formato idéntico al que devuelve NestJS).
 const ext = <T,>(valor: T, fuente: string): CampoInterpretado<T> => ({ valor, origen: 'EXTRAIDO', fuente });
@@ -25,6 +30,9 @@ export function schfpmg001(): BindProductLookup {
         resina: ext('PMG', 'PMG'),
         ancho: ext(13, '13 x 16"'),
         largo: ext(16, '13 x 16"'),
+        fuelleTotal: pend('Sin fuelles en el título.'),
+        fuelleDerecho: pend('Sin fuelles en el título.'),
+        fuelleIzquierdo: pend('Sin fuelles en el título.'),
         unidadDimensiones: ext('IN', '13 x 16"'),
         calibre: ext({ valorOriginal: '3', unidadOriginal: 'MIL', textoLiteral: '3 MIL' }, 'CAL. 3 MIL'),
         presentacion: ext('PAQUETE', 'PAQUETE'),
@@ -84,4 +92,56 @@ export function deepFreeze<T>(value: T): T {
     Object.freeze(value);
   }
   return value;
+}
+
+const sug = <T,>(valor: T, fuente: string, nota: string): CampoInterpretado<T> => ({ valor, origen: 'SUGERIDO', fuente, nota });
+const PATRON = 'Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo.';
+
+/** Bolsa con tres medidas «BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7» (sin unidad): el backend sugiere ancho 61, fuelle total 48 (24 + 24) y largo 70.9. */
+export function bolsaFuelle(): BindProductLookup {
+  const base = schfpmg001();
+  const titulo = 'BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7';
+  return {
+    ...base,
+    producto: { ID: '22222222-3333-4444-5555-666666666666', Code: 'FUELLE61', Title: titulo, Description: null, Weight: 1.285, CreationDate: null },
+    interpretacion: {
+      ...base.interpretacion,
+      campos: {
+        ...base.interpretacion.campos,
+        codigoDcmx: ext('FUELLE61', 'Code'),
+        ancho: sug(61, '61 X 48 X 70.9', PATRON), largo: sug(70.9, '61 X 48 X 70.9', PATRON), fuelleTotal: sug(48, '61 X 48 X 70.9', PATRON),
+        fuelleDerecho: sug(24, '61 X 48 X 70.9', 'Fuelle total ÷ 2 (derivado; editable).'), fuelleIzquierdo: sug(24, '61 X 48 X 70.9', 'Fuelle total ÷ 2 (derivado; editable).'),
+        unidadDimensiones: pend('Sin unidad explícita en el título.'),
+        calibre: pend('Unidad o escala del calibre pendiente de confirmación; no se convierte.', { valorOriginal: '2.7', unidadOriginal: null, textoLiteral: '2.7' }),
+        presentacion: pend('Sin presentación en el título.'),
+        cantidad: pend('Sin cantidad en el título.'),
+        pesoLb: ext(1.285, '1.285')
+      }
+    },
+    sugerencias: {
+      ...base.sugerencias,
+      familia: { valor: 'BOLSA_FUELLE', motivo: 'Bolsa con tres medidas: se sugiere Ancho × Fuelle total × Largo; confirma que tenga fuelles.', incompatibles: [{ familia: 'HOJA_PAQ', motivo: 'BIND describe una bolsa, no una hoja.' }, { familia: 'BOLSA_PLANA_1', motivo: 'El título indica fuelle o tres dimensiones: no corresponde a una bolsa plana de dos medidas.' }] },
+      etiqueta: { valor: titulo, regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
+    },
+    familiaSugerida: ['BOLSA_FUELLE'],
+    pendientes: ['unidadDimensiones', 'calibre', 'presentacion', 'cantidad']
+  };
+}
+
+/** Bolsa de material natural con fuelles: el backend sugiere Bolsa Natural pidiendo confirmar el tipo real. */
+export function bolsaNatural(): BindProductLookup {
+  const base = bolsaFuelle();
+  return {
+    ...base,
+    producto: { ...base.producto, Code: 'NAT61', Title: 'BOLSA LDPE NAT 61 X 48 X 70.9 CAL. 3 MIL' },
+    interpretacion: { ...base.interpretacion, campos: { ...base.interpretacion.campos, resina: ext('NAT', 'NAT'), calibre: ext({ valorOriginal: '3', unidadOriginal: 'MIL', textoLiteral: '3 MIL' }, 'CAL. 3 MIL') } },
+    sugerencias: {
+      ...base.sugerencias,
+      familia: { valor: 'BOLSA_NATURAL', motivo: 'Bolsa de material natural con fuelle (o tres medidas). Confirma que sea realmente una bolsa natural.', incompatibles: base.sugerencias.familia.incompatibles },
+      resinaVci: { valor: null, regla: null, nota: 'Composición Natural: no se asigna una formulación VCI automáticamente.' },
+      color: { preset: null, concentracionPct: null, detectado: null, regla: null, nota: 'Sin sugerencia de color: la resina no es PMG ni CP5000 o no se pudo determinar.' },
+      etiqueta: { valor: 'BOLSA LDPE NAT 61 X 48 X 70.9 CAL. 3 MIL', regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
+    },
+    familiaSugerida: ['BOLSA_NATURAL']
+  };
 }

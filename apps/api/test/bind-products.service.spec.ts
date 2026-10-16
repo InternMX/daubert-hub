@@ -60,12 +60,13 @@ describe('BindProductsService', () => {
     expect(data.interpretacion.campos.calibre.valor).toMatchObject({ valorOriginal: '3', unidadOriginal: 'MIL', textoLiteral: '3 MIL' });
   });
 
-  it('un producto con fuelle no recibe familia sugerida (familiaSugerida vacía) y lo explica', async () => {
+  it('un producto con tres medidas se sugiere como Bolsa Fuelle (provisional) y lo explica', async () => {
     const { service } = servicio(resultados({ ...SCHF, Title: 'BOLSA VCI PMG 51 X 46 X 80" CAL. 200 ROLLO C/50 BOLSAS' }));
     const { data } = await service.lookupByCode('SCHFPMG001');
-    expect(data.familiaSugerida).toEqual([]);
-    expect(data.sugerencias.familia.valor).toBeNull();
-    expect(data.sugerencias.familia.motivo).toMatch(/fuelle/i);
+    expect(data.familiaSugerida).toEqual(['BOLSA_FUELLE']);
+    expect(data.sugerencias.familia.valor).toBe('BOLSA_FUELLE');
+    expect(data.sugerencias.familia.motivo).toMatch(/tres medidas/i);
+    expect(data.interpretacion.campos.fuelleTotal.valor).toBe(46);
   });
 
   it('producto encontrado por ID', async () => {

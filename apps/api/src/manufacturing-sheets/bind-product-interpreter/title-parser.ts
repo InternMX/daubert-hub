@@ -6,6 +6,9 @@ export interface TituloInterpretado {
   resina: Campo<Resina>;
   ancho: Campo<number>;
   largo: Campo<number>;
+  fuelleTotal: Campo<number>;
+  fuelleDerecho: Campo<number>;
+  fuelleIzquierdo: Campo<number>;
   unidadDimensiones: Campo<UnidadDimension>;
   calibre: Campo<CalibreOriginal>;
   presentacion: Campo<Presentacion>;
@@ -15,6 +18,7 @@ export interface TituloInterpretado {
 
 const pendiente = <T>(nota?: string, valor: T | null = null, fuente: string | null = null): Campo<T> => ({ valor, origen: 'PENDIENTE', fuente, ...(nota ? { nota } : {}) });
 const extraido = <T>(valor: T, fuente: string): Campo<T> => ({ valor, origen: 'EXTRAIDO', fuente });
+const sugerido = <T>(valor: T, fuente: string, nota: string): Campo<T> => ({ valor, origen: 'SUGERIDO', fuente, nota });
 
 /** Normaliza el título: mayúsculas, espacios simples, «×» → X, comillas tipográficas y '' → ". No convierte unidades ni valores. */
 export function normalizarTitulo(titulo: string): string {
@@ -83,11 +87,15 @@ function unidadDe(texto: string): UnidadDimension {
 interface Medidas {
   ancho: Campo<number>;
   largo: Campo<number>;
+  fuelleTotal: Campo<number>;
+  fuelleDerecho: Campo<number>;
+  fuelleIzquierdo: Campo<number>;
   unidad: Campo<UnidadDimension>;
 }
 
-function interpretarMedidas(t: string, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Medidas {
-  const vacio = (nota: string): Medidas => ({ ancho: pendiente(nota), largo: pendiente(nota), unidad: pendiente('Unidad dimensional sin determinar.') });
+function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Medidas {
+  const sinFuelles = { fuelleTotal: pendiente<number>('Sin fuelles en el título.'), fuelleDerecho: pendiente<number>('Sin fuelles en el título.'), fuelleIzquierdo: pendiente<number>('Sin fuelles en el título.') };
+  const vacio = (nota: string): Medidas => ({ ancho: pendiente(nota), largo: pendiente(nota), ...sinFuelles, unidad: pendiente('Unidad dimensional sin determinar.') });
   const cadenas = t.match(CADENA_MEDIDAS) ?? [];
   if (cadenas.length === 0) {
     adv('MEDIDAS_INCOMPLETAS', 'El título no contiene dos dimensiones (Ancho × Largo).', ['ancho', 'largo']);
@@ -104,6 +112,33 @@ function interpretarMedidas(t: string, adv: (c: CodigoAdvertencia, m: string, ca
     return vacio('Medidas ilegibles.');
   }
   const valores = partes.map((p) => ({ numero: numero(p?.[1] ?? ''), unidad: p?.[2] ?? null }));
+  if (valores.length === 3 && tipo === 'BOLSA') {
+    // Patrón Ancho × Fuelle total × Largo SOLO para una bolsa explícita: se SUGIERE (no se extrae), el fuelle total se reparte en dos mitades y todo es editable.
+    // Tres medidas en otro tipo de producto, o sin tipo, siguen pendientes: no se asume que sean fuelles.
+    const [a3, f3, l3] = valores as [{ numero: number; unidad: string | null }, { numero: number; unidad: string | null }, { numero: number; unidad: string | null }];
+    adv('MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', `El título tiene tres medidas («${cadena}»): se sugiere el patrón Ancho × Fuelle total × Largo, con el fuelle total repartido en dos mitades. Confírmalo.`, ['ancho', 'fuelleTotal', 'largo']);
+    const patron = 'Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo.';
+    const mitad = f3.numero / 2;
+    const unidadesTres = new Set([a3.unidad, f3.unidad, l3.unidad].filter((u): u is string => u !== null).map(unidadDe));
+    const tres = {
+      ancho: sugerido(a3.numero, cadena, patron), largo: sugerido(l3.numero, cadena, patron), fuelleTotal: sugerido(f3.numero, cadena, patron),
+      fuelleDerecho: sugerido(mitad, cadena, 'Fuelle total ÷ 2 (derivado; editable).'), fuelleIzquierdo: sugerido(mitad, cadena, 'Fuelle total ÷ 2 (derivado; editable).')
+    };
+    if (unidadesTres.size === 0) {
+      adv('UNIDAD_AUSENTE', 'El título no indica la unidad de las dimensiones (pulgadas o milímetros): pendiente de confirmación.', ['unidadDimensiones']);
+      return { ...tres, unidad: pendiente('Sin unidad explícita en el título.') };
+    }
+    if (unidadesTres.size > 1) {
+      adv('UNIDAD_CONTRADICTORIA', `Las medidas usan unidades distintas (${[...unidadesTres].join(', ')}).`, ['unidadDimensiones']);
+      return { ...tres, unidad: pendiente('Unidades contradictorias.') };
+    }
+    const unidadTres = [...unidadesTres][0] as UnidadDimension;
+    if (unidadTres === 'CM') {
+      adv('UNIDAD_NO_SOPORTADA', 'La unidad centímetros no está entre las reconocidas (pulgadas o milímetros): no se convierte automáticamente.', ['unidadDimensiones']);
+      return { ...tres, unidad: pendiente('Centímetros: unidad fuera de las reconocidas; sin conversión automática.', unidadTres, cadena) };
+    }
+    return { ...tres, unidad: extraido(unidadTres, cadena) };
+  }
   if (valores.length !== 2) {
     adv('MEDIDAS_NO_ESTANDAR', `El título tiene ${valores.length} dimensiones («${cadena}»); se esperan dos (Ancho × Largo): se deja pendiente de confirmación.`, ['ancho', 'largo']);
     return vacio('Número de dimensiones distinto de dos.');
@@ -111,21 +146,22 @@ function interpretarMedidas(t: string, adv: (c: CodigoAdvertencia, m: string, ca
   const [a, l] = valores as [{ numero: number; unidad: string | null }, { numero: number; unidad: string | null }];
   const ancho = extraido(a.numero, cadena);
   const largo = extraido(l.numero, cadena);
+  const dos = { ancho, largo, ...sinFuelles };
   const unidades = new Set([a.unidad, l.unidad].filter((u): u is string => u !== null).map(unidadDe));
   if (unidades.size === 0) {
     adv('UNIDAD_AUSENTE', 'El título no indica la unidad de las dimensiones (pulgadas o milímetros): pendiente de confirmación.', ['unidadDimensiones']);
-    return { ancho, largo, unidad: pendiente('Sin unidad explícita en el título.') };
+    return { ...dos, unidad: pendiente('Sin unidad explícita en el título.') };
   }
   if (unidades.size > 1) {
     adv('UNIDAD_CONTRADICTORIA', `Las dos dimensiones usan unidades distintas (${[...unidades].join(', ')}).`, ['unidadDimensiones']);
-    return { ancho, largo, unidad: pendiente('Unidades contradictorias.') };
+    return { ...dos, unidad: pendiente('Unidades contradictorias.') };
   }
   const unidad = [...unidades][0] as UnidadDimension;
   if (unidad === 'CM') {
     adv('UNIDAD_NO_SOPORTADA', 'La unidad centímetros no está entre las reconocidas (pulgadas o milímetros): no se convierte automáticamente.', ['unidadDimensiones']);
-    return { ancho, largo, unidad: pendiente('Centímetros: unidad fuera de las reconocidas; sin conversión automática.', unidad, cadena) };
+    return { ...dos, unidad: pendiente('Centímetros: unidad fuera de las reconocidas; sin conversión automática.', unidad, cadena) };
   }
-  return { ancho, largo, unidad: extraido(unidad, cadena) };
+  return { ...dos, unidad: extraido(unidad, cadena) };
 }
 
 // ---------------------------------------------------------------- calibre
@@ -216,7 +252,7 @@ export function interpretarTitulo(titulo: string): TituloInterpretado {
   };
   const tipo = interpretarTipo(t, adv);
   const resina = interpretarResina(t, adv);
-  const medidas = interpretarMedidas(t, adv);
+  const medidas = interpretarMedidas(t, tipo.valor, adv);
   const calibre = interpretarCalibre(t, titulo ?? '', adv);
   const presentacion = interpretarPresentacion(t, adv);
   const cantidad = interpretarCantidad(t, tipo.valor, adv);
@@ -225,5 +261,5 @@ export function interpretarTitulo(titulo: string): TituloInterpretado {
     advertencias.length = 0;
     adv('TITULO_NO_INTERPRETABLE', 'El título no contiene datos técnicos reconocibles: todos los campos quedan pendientes de captura.', ['tipo', 'resina', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'presentacion', 'cantidad']);
   }
-  return { tipo, resina, ancho: medidas.ancho, largo: medidas.largo, unidadDimensiones: medidas.unidad, calibre, presentacion, cantidad, advertencias };
+  return { tipo, resina, ancho: medidas.ancho, largo: medidas.largo, fuelleTotal: medidas.fuelleTotal, fuelleDerecho: medidas.fuelleDerecho, fuelleIzquierdo: medidas.fuelleIzquierdo, unidadDimensiones: medidas.unidad, calibre, presentacion, cantidad, advertencias };
 }
