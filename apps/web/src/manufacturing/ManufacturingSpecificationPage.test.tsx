@@ -6,7 +6,7 @@ import { BindProductApiError, lookupBindProductByCode } from '../services/bindPr
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { previewManufacturingSheet } from '../services/sheetPreview';
-import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
+import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, productoPapel, resinaContradictoria, resinaCorroborada, resinaInferidaDeCode, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
 import { localIsoDate } from './specificationForm';
 
@@ -471,5 +471,71 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect((campo('Variante COEX')).textContent ?? '').not.toMatch(/COEX (Azul|Verde)/);
     expect(within(frameOf('Variante COEX')).getByText('Pendiente de confirmar')).toBeInTheDocument();
     expect(screen.getByTestId('status-technical')).toHaveTextContent('incompletos');
+  });
+});
+
+describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 30_000 }, () => {
+  const chipsDe = (label: string) => within(frameOf(label)).queryAllByTestId('source-chip').map((c) => c.textContent);
+
+  it('composición inferida del Code: se muestra como «Inferido de Code» (y sugerida), nunca como extraída del Title; el material interpretado también', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(resinaInferidaDeCode());
+    renderPage();
+    await buscar(user, 'IMPFPMG012');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
+    const composicion = screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
+    expect(within(composicion).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect(within(composicion).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
+    expect(within(composicion).getByText(/Inferida de la clave PMG del código/)).toBeInTheDocument();
+    expect(screen.getByTestId('material-row')).toHaveTextContent('Film / plástico · clave PMG');
+    expect(within(screen.getByTestId('material-row')).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
+    expect(screen.getByText(/se infirió de la clave PMG del código/)).toBeInTheDocument();
+    // una corrección manual reemplaza la procedencia y se puede restaurar
+    await user.click(screen.getByRole('radio', { name: 'CP5000' }));
+    expect(within(composicion).queryByTestId('source-chip')).not.toBeInTheDocument();
+    expect(within(composicion).getByText('Editado por el usuario')).toBeInTheDocument();
+    expect(campo('Resina VCI').value).toBe('CP5000 AL 3%');            // la resina sugerida (no editada) sigue a la composición del usuario
+    await user.click(within(composicion).getByRole('button', { name: 'Restaurar Composición' }));
+    expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
+    expect(within(composicion).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
+  });
+
+  it('Title y Code coinciden: «Corroborado por Title y Code»; solo Title: «Extraído de Title»', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValueOnce(resinaCorroborada()).mockResolvedValueOnce(schfpmg001());
+    renderPage();
+    await buscar(user);
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    const composicion = () => screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
+    expect(within(composicion()).getByTestId('source-chip')).toHaveTextContent('Corroborado por Title y Code');
+    await user.click(screen.getByRole('button', { name: 'Buscar en BIND' }));
+    await waitFor(() => expect(within(composicion()).getByTestId('source-chip')).toHaveTextContent('Extraído de Title'));
+    expect(chipsDe('Calibre')).toEqual([]);                                 // los demás campos no muestran fuente de Code
+  });
+
+  it('contradicción Title/Code: se conserva el Title, se muestra «Contradicción Title/Code» y la advertencia', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(resinaContradictoria());
+    renderPage();
+    await buscar(user, 'ITESFCP002');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
+    const composicion = screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
+    expect(within(composicion).getByTestId('source-chip')).toHaveTextContent('Contradicción Title/Code');
+    expect(screen.getByText(/El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título/)).toBeInTheDocument();
+  });
+
+  it('producto de papel (TARPPW3301): material Papel · PW33 corroborado, sin familia plástica y con la explicación; no es un error de BIND', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(productoPapel());
+    renderPage();
+    await buscar(user, 'TARPPW3301');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(screen.getByTestId('material-row')).toHaveTextContent('Papel · clave PW33');
+    expect(screen.getAllByText(/no hay una plantilla de papel disponible en este prototipo/).length).toBeGreaterThan(0);
+    for (const familia of familyConfigs) expect(screen.getByRole('radio', { name: familia.nombre })).not.toBeChecked();
+    expect(screen.getByTestId('family-note')).toHaveTextContent(/válido|papel/i);
+    expect(screen.queryByText(/No se encontró un producto/)).not.toBeInTheDocument();
   });
 });

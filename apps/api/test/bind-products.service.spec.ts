@@ -196,3 +196,25 @@ describe('BindProductsController (HTTP)', () => {
     for (const metodo of ['byCode', 'byId'] as const) expect(Reflect.getMetadata(IS_PUBLIC_KEY, BindProductsController.prototype[metodo])).toBeUndefined();
   });
 });
+
+describe('BindProductsService · Code como fuente secundaria (contrato)', () => {
+  it('SCHFPMG001: resina corroborada por Title y Code; material film y clave PMG inferidos del código', async () => {
+    const { service } = servicio(resultados(SCHF));
+    const { data } = await service.lookupByCode('SCHFPMG001');
+    expect(data.interpretacion.campos.resina).toMatchObject({ valor: 'PMG', origen: 'EXTRAIDO', procedencia: 'TITLE_Y_CODE' });
+    expect(data.interpretacion.campos.material).toMatchObject({ valor: 'FILM', origen: 'SUGERIDO', procedencia: 'CODE' });
+    expect(data.interpretacion.campos.claveMaterial).toMatchObject({ valor: 'PMG', procedencia: 'TITLE_Y_CODE' });
+    expect(data.familiaSugerida).toEqual(['BOLSA_PLANA_1']);       // la F del código no cambia la familia
+  });
+
+  it('Title sin resina con IMPFPMG012: composición PMG inferida (CODE) y llega a datosSugeridosPlantilla; el producto de papel TARPPW3301 no recibe plantilla', async () => {
+    const film = await servicio(resultados({ ...SCHF, Code: 'IMPFPMG012', Title: 'BOLSA VCI 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS' })).service.lookupByCode('IMPFPMG012');
+    expect(film.data.interpretacion.campos.resina).toMatchObject({ valor: 'PMG', origen: 'SUGERIDO', procedencia: 'CODE' });
+    expect(film.data.datosSugeridosPlantilla).toMatchObject({ comp_pmg: 'X' });
+    expect(film.data.sugerencias.resinaVci.nota).toMatch(/inferida del código/);
+    const papel = await servicio(resultados({ ...SCHF, Code: 'TARPPW3301', Title: 'PW33 40 x 50" PAQUETE C/100' })).service.lookupByCode('TARPPW3301');
+    expect(papel.data.familiaSugerida).toEqual([]);
+    expect(papel.data.sugerencias.familia.motivo).toMatch(/no hay una plantilla de papel disponible en este prototipo/);
+    expect(papel.data.advertencias.map((a) => a.codigo)).toContain('MATERIAL_PAPEL_SIN_PLANTILLA');
+  });
+});

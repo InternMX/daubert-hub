@@ -29,7 +29,7 @@ describe('interpretarProductoBind · Caso A (SCHFPMG001)', () => {
   });
 
   it('interpreta el código de forma auxiliar y conserva la fecha de alta de BIND (no es fecha de emisión)', () => {
-    expect(r.codigo).toEqual({ interpretable: true, prefijoCliente: 'SCH', material: 'FILM', resina: 'PMG', consecutivo: '001', segmentosAdicionales: [] });
+    expect(r.codigo).toMatchObject({ interpretable: true, prefijoCliente: 'SCH', material: 'FILM', claveMaterial: 'PMG', resina: 'PMG', consecutivo: '001', segmentosAdicionales: [] });
     expect(r.producto.fechaAltaBind).toBe('2025-03-10T00:00:00.000Z');
     expect(JSON.stringify(r)).not.toContain('fecha_');
   });
@@ -112,7 +112,7 @@ describe('interpretarProductoBind · pruebas negativas', () => {
   });
 
   it('producto de papel: se marca fuera de alcance y no propone familia', () => {
-    const r = interpretarProductoBind(producto({ Code: 'SCHPPMG002', Title: 'PAPEL VCI PMG 40 x 50" PAQUETE C/100 HOJAS' }));
+    const r = interpretarProductoBind(producto({ Code: 'TARPPW3301', Title: 'PAPEL VCI PMG 40 x 50" PAQUETE C/100 HOJAS' }));
     expect(r.campos.tipo.valor).toBe('PAPEL');
     expect(advertencias(r)).toContain('PRODUCTO_DE_PAPEL');
     expect(r.familia.posiblesEstaFase).toEqual([]);
@@ -120,14 +120,14 @@ describe('interpretarProductoBind · pruebas negativas', () => {
   });
 
   it('código de papel con título de film: advierte la contradicción', () => {
-    const r = interpretarProductoBind(producto({ Code: 'SCHPPMG002' }));
+    const r = interpretarProductoBind(producto({ Code: 'TARPPW3301' }));
     expect(advertencias(r)).toContain('CODIGO_MATERIAL_DISTINTO');
     expect(r.campos.tipo.valor).toBe('BOLSA');
   });
 
   it('títulos no interpretables: todo queda pendiente y no se inventa nada', () => {
     for (const title of ['', '   ', 'PRODUCTO VARIOS', 'ABC-123']) {
-      const r = interpretarProductoBind(producto({ Title: title, Weight: null }));
+      const r = interpretarProductoBind(producto({ Code: 'LARG01', Title: title, Weight: null }));
       expect(advertencias(r)).toContain('TITULO_NO_INTERPRETABLE');
       for (const c of ['tipo', 'resina', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'presentacion', 'cantidad'] as const) expect(r.campos[c].valor).toBeNull();
       expect(r.familia.valor).toBeNull();
@@ -212,12 +212,12 @@ describe('interpretarCodigo', () => {
   it.each([
     ['SCHFPMG001', { prefijoCliente: 'SCH', material: 'FILM', resina: 'PMG', consecutivo: '001', segmentosAdicionales: [] }],
     ['CONFPMG04', { prefijoCliente: 'CON', material: 'FILM', resina: 'PMG', consecutivo: '04', segmentosAdicionales: [] }],
-    ['AUMFCP5000012', { prefijoCliente: 'AUM', material: 'FILM', resina: 'CP5000', consecutivo: '012', segmentosAdicionales: [] }],
+    ['AUMFCP5000012', { prefijoCliente: 'AUM', material: 'FILM', claveMaterial: 'CP', claveAmbigua: true, resina: 'CP5000', consecutivo: null, segmentosAdicionales: [] }],      // CP + dígitos: no se parte
     ['LEROYPNAT0007-B', { prefijoCliente: 'LEROY', material: 'PAPER', resina: 'NAT', consecutivo: '0007', segmentosAdicionales: ['B'] }],
     ['XFESD1', { prefijoCliente: 'X', material: 'FILM', resina: 'ESD', consecutivo: '1', segmentosAdicionales: [] }],
     ['ABCFXOW010-EXP-2', { prefijoCliente: 'ABC', material: 'FILM', resina: 'XOW', consecutivo: '010', segmentosAdicionales: ['EXP', '2'] }]
   ])('%s', (code, esperado) => {
-    expect(interpretarCodigo(code)).toEqual({ interpretable: true, ...esperado });
+    expect(interpretarCodigo(code)).toMatchObject({ interpretable: true, ...esperado });
   });
 
   it('códigos no interpretables se conservan sin inventar partes', () => {

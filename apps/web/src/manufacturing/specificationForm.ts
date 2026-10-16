@@ -1,4 +1,4 @@
-import type { BindProductLookup, CampoInterpretado } from '../services/bindProducts';
+import type { BindProductLookup, CampoInterpretado, FuenteDato } from '../services/bindProducts';
 import type { ColorPresetConfig, FamilyCode, FamilyConfig, FieldKey } from '../services/manufacturingFamilies';
 
 // Estado y validación del formulario de especificación de manufactura. SOLO transforma el resultado que ya calculó el backend (intérprete, sugerencias y REGISTRO DE FAMILIAS de
@@ -20,7 +20,7 @@ export type DisplayOrigin = BaseOrigin | 'USUARIO' | 'CATALOGO' | 'PROVISIONAL';
 export interface FieldState {
   value: string;
   /** Valor y procedencia con los que llegó (o con los que el sistema lo sugirió por última vez). */
-  base: { value: string; origin: BaseOrigin; note?: string };
+  base: { value: string; origin: BaseOrigin; note?: string; /** Fuente de una interpretación conciliada con el código (Title, Code, ambos o contradicción). */ fuente?: FuenteDato };
   /** Solo para el cliente: tomado del catálogo del Hub o capturado como texto libre. */
   source?: 'CATALOGO' | 'PROVISIONAL';
   /** Solo para el cliente del catálogo: identificador del registro. Sin él no hay vínculo con el catálogo. */
@@ -48,7 +48,10 @@ export interface SpecificationForm {
   fields: Record<FieldKey, FieldState>;
 }
 
-const field = (value = '', origin: BaseOrigin = 'SIN_DATO', note?: string): FieldState => ({ value, base: { value, origin, ...(note ? { note } : {}) } });
+const field = (value = '', origin: BaseOrigin = 'SIN_DATO', note?: string, fuente?: FuenteDato): FieldState => ({ value, base: { value, origin, ...(note ? { note } : {}), ...(fuente ? { fuente } : {}) } });
+
+/** Fuente que se muestra: la conciliada con el código o, si no hay código que la contradiga ni corrobore, el título. */
+const fuenteDe = (campo: CampoInterpretado<unknown>): FuenteDato | undefined => campo.procedencia ?? (campo.origen === 'EXTRAIDO' ? 'TITLE' : undefined);
 
 const originOf = (campo: CampoInterpretado<unknown>): BaseOrigin => (campo.origen === 'EXTRAIDO' ? 'BIND' : campo.origen === 'SUGERIDO' ? 'SUGERIDO' : 'PENDIENTE');
 
@@ -143,8 +146,8 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       colorNombre: colorSugerido ? field(colorText(preset as string, conc, colores), 'SUGERIDO', colorNote) : field('', 'PENDIENTE', colorNote),
       colorHex: presetDef ? field(presetDef.hex, 'SUGERIDO') : field(),
       composicion: resina.valor !== null && composiciones.has(resina.valor) && resina.origen !== 'PENDIENTE'
-        ? field(resina.valor, originOf(resina), resina.nota)
-        : field('', 'PENDIENTE', resina.valor === null ? resina.nota : `La resina ${resina.valor} no tiene casilla en estas familias: selecciona la composición.`),
+        ? field(resina.valor, originOf(resina), resina.nota, fuenteDe(resina))
+        : field('', 'PENDIENTE', resina.valor === null ? resina.nota : `La resina ${resina.valor} no tiene casilla en estas familias: selecciona la composición.`, resina.procedencia),
       presentacion: fromCampo(campos.presentacion, (v) => v),
       cantidad: fromCampo(cantidad, (v) => String(v.cantidad)),
       cantidadUnidad: cantidad.valor?.unidad ? field(cantidad.valor.unidad, originOf(cantidad), cantidad.nota) : field('', 'PENDIENTE', cantidad.nota),

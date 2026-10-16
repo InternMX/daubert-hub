@@ -28,9 +28,17 @@ Cada campo es un `Campo<T>` con `valor`, `origen` (`EXTRAIDO`, `SUGERIDO` o `PEN
 - **Cantidad:** `C/200`, `PAQUETE 100 BOLSAS`, `200 BOLSAS`… Sin la palabra Bolsas/Hojas, la unidad solo se **sugiere** según el tipo.
 - **Peso:** `Weight` en libras; cero, negativo, no numérico o ausente → pendiente con advertencia.
 
-## Código (`code-parser.ts`, auxiliar)
-`prefijo de cliente + F|P + resina + consecutivo (+ segmentos adicionales)`; F = Film, P = Paper. Prefijo y consecutivo de longitud variable. No sobrescribe
-el título: si lo contradice (resina o material) solo agrega una advertencia.
+## Código como fuente SECUNDARIA (`code-parser.ts`, `code-reconciliation.ts`)
+`prefijo variable + F|P + clave + segmentos opcionales + consecutivo`; F = Film, P = Paper. Claves: `PMG`, `CP`, `NAT`, `LDPE`, `ESD`, `XOW` y `PWnn` (papel: PW30, PW33…). No hay longitud fija de prefijo, segmentos ni consecutivo
+(`DANFPMGOC09` → segmento `OC`, consecutivo `09`; `CATCFFPMG-014` conserva `CATCF` como prefijo porque sin catálogo no se separa). **`CP` seguido de dígitos no se divide** (`AUDFCP5010`, `KAMFCP500002`…): `claveAmbigua`, sin consecutivo.
+Una letra implausible con la clave (p. ej. `P` + PMG: `DAIDPPMG02`) deja el material ambiguo y no se sugiere.
+
+Prioridad: **el Title manda**; el Code solo sugiere cuando el Title omite el dato. Cada campo (`resina`, `tipo`, `material`, `claveMaterial`) lleva `procedencia`:
+`TITLE` (extraído del título) · `CODE` (INFERIDO del código; siempre `origen: SUGERIDO`, nunca «extraído») · `TITLE_Y_CODE` (corroborado) · `CONTRADICCION` (se conserva el título o queda pendiente y se advierte con
+`CODIGO_RESINA_DISTINTA` / `CODIGO_MATERIAL_DISTINTO`). Si ambas fuentes son insuficientes, el campo queda `PENDIENTE`.
+- **Film (F):** `material = FILM` y, si el título no indica la resina, la composición compatible (PMG, CP→CP5000, NAT, LDPE→Natural). **No** determina bolsa, hoja, fuelle ni COEX.
+- **Paper (P):** identifica PW30/PW33 y marca `MATERIAL_PAPEL_SIN_PLANTILLA`: producto válido de BIND, familia pendiente y ninguna plantilla plástica.
+- La corrección manual del usuario nunca se sobrescribe (el formulario solo precarga al buscar el producto).
 
 ## Limitaciones conocidas
 - No hay porcentajes de resina (3 %, 2 %…), color, cliente, fecha de emisión, etiqueta ni firmas.

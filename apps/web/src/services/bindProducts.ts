@@ -7,11 +7,15 @@ import type { FamilyCode } from './manufacturingFamilies';
 
 export type Origen = 'EXTRAIDO' | 'SUGERIDO' | 'PENDIENTE';
 
+/** Qué fuente respalda un dato cuando se concilió Title con Code: extraído del título, inferido del código, corroborado por ambos o contradictorio. */
+export type FuenteDato = 'TITLE' | 'CODE' | 'TITLE_Y_CODE' | 'CONTRADICCION';
+
 export interface CampoInterpretado<T> {
   valor: T | null;
   origen: Origen;
   fuente: string | null;
   nota?: string;
+  procedencia?: FuenteDato;
 }
 
 export interface BindProductoOriginal {
@@ -49,6 +53,10 @@ export interface InterpretacionBind {
     resina: CampoInterpretado<'PMG' | 'CP5000' | 'NAT' | 'ESD' | 'XOW'>;
     ancho: CampoInterpretado<number>;
     largo: CampoInterpretado<number>;
+    /** Film o papel (del título o inferido de la letra F/P del código). */
+    material?: CampoInterpretado<'FILM' | 'PAPEL'>;
+    /** Clave de resina o material (PMG, CP, LDPE, PW30, PW33…). */
+    claveMaterial?: CampoInterpretado<string>;
     /** Fuelle total y sus mitades (solo se sugieren con el patrón Ancho × Fuelle total × Largo de una bolsa). */
     fuelleTotal: CampoInterpretado<number>;
     fuelleDerecho: CampoInterpretado<number>;

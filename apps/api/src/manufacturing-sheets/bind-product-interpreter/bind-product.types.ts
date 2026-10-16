@@ -24,6 +24,9 @@ export interface BindProductInput {
 
 export type Origen = 'EXTRAIDO' | 'SUGERIDO' | 'PENDIENTE';
 
+/** Procedencia de una interpretación cuando interviene el código: del título, inferida del código, corroborada por ambos o contradictoria. */
+export type FuenteDato = 'TITLE' | 'CODE' | 'TITLE_Y_CODE' | 'CONTRADICCION';
+
 export interface Campo<T> {
   /** Valor interpretado; null si no se pudo determinar. Un campo PENDIENTE puede conservar una lectura literal que requiere confirmación. */
   valor: T | null;
@@ -31,9 +34,12 @@ export interface Campo<T> {
   /** Fragmento del título (o del código) del que proviene; null si no hay. */
   fuente: string | null;
   nota?: string;
+  /** Qué fuente respalda el valor (solo cuando se concilió con el código). Un dato de `CODE` nunca es «extraído del título». */
+  procedencia?: FuenteDato;
 }
 
 export type TipoProducto = 'BOLSA' | 'HOJA' | 'PAPEL';
+export type MaterialTipo = 'FILM' | 'PAPEL';
 export type Resina = 'PMG' | 'CP5000' | 'NAT' | 'ESD' | 'XOW';
 export type UnidadDimension = 'IN' | 'MM' | 'CM';
 export type Presentacion = 'ROLLO' | 'PAQUETE';
@@ -61,6 +67,8 @@ export type CodigoAdvertencia =
   | 'MEDIDAS_NO_ESTANDAR'
   | 'MEDIDAS_MULTIPLES'
   | 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS'
+  | 'DATO_INFERIDO_DEL_CODIGO'
+  | 'MATERIAL_PAPEL_SIN_PLANTILLA'
   | 'UNIDAD_AUSENTE'
   | 'UNIDAD_CONTRADICTORIA'
   | 'UNIDAD_NO_SOPORTADA'
@@ -89,8 +97,14 @@ export interface Advertencia {
 export interface CodigoInterpretado {
   interpretable: boolean;
   prefijoCliente: string | null;
-  /** F = Film, P = Paper. */
+  /** F = Film, P = Paper. Null si la letra es ambigua con la clave (p. ej. «P» + PMG, donde la P podría ser parte del prefijo). */
   material: 'FILM' | 'PAPER' | null;
+  materialAmbiguo: boolean;
+  /** Clave tal como aparece: PMG, CP, NAT, LDPE, ESD, XOW o PWnn (papel). */
+  claveMaterial: string | null;
+  /** CP seguido de dígitos: no se puede separar CP5000 del consecutivo, así que no se parte. */
+  claveAmbigua: boolean;
+  /** Casilla de Composición equivalente a la clave (LDPE → NAT; CP → CP5000); null para las claves de papel. */
   resina: Resina | null;
   consecutivo: string | null;
   segmentosAdicionales: string[];
@@ -120,6 +134,10 @@ export interface ResultadoInterpretacion {
     resina: Campo<Resina>;
     ancho: Campo<number>;
     largo: Campo<number>;
+    /** Film o papel: del título si lo dice, inferido de la letra F/P del código en caso contrario. */
+    material: Campo<MaterialTipo>;
+    /** Clave de resina o material (PMG, CP, LDPE, PW30, PW33…). */
+    claveMaterial: Campo<string>;
     /** Fuelle total y sus mitades (derecho e izquierdo): solo se sugieren con el patrón Ancho × Fuelle total × Largo de una bolsa; editables. */
     fuelleTotal: Campo<number>;
     fuelleDerecho: Campo<number>;

@@ -72,7 +72,7 @@ const NOMBRES: Record<FamiliaPosible, string> = {
 };
 
 function sugerirFamilia(r: ResultadoInterpretacion, t: string): SugerenciaFamilia {
-  const { tipo, resina, ancho, largo } = r.campos;
+  const { tipo, resina, ancho, largo, material } = r.campos;
   const todas = Object.keys(NOMBRES) as FamiliaPosible[];
   const dimensiones3 = /\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+/.test(t);
   const fuelle = FUELLE.test(t) || (tipo.valor === 'BOLSA' && dimensiones3);
@@ -83,16 +83,17 @@ function sugerirFamilia(r: ResultadoInterpretacion, t: string): SugerenciaFamili
     (FAMILY_CODES as string[]).includes(familia) ? { valor: familia, motivo, incompatibles } : pendiente(`${motivo} ${NOMBRES[familia]} todavía no está disponible en el prototipo: elige la familia manualmente.`, incompatibles)
   );
 
-  if (tipo.valor === 'PAPEL') return pendiente('Producto de papel: fuera del alcance de las familias disponibles.', incompatiblesExcepto('COEX', 'Es un producto de papel.').concat([{ familia: 'COEX', motivo: 'Es un producto de papel.' }]));
+  const esPapel = tipo.valor === 'PAPEL' || (material.valor === 'PAPEL' && material.procedencia !== 'CONTRADICCION');
+  if (esPapel) return pendiente(`Producto de papel${r.campos.claveMaterial.valor?.startsWith('PW') ? ` (clave ${r.campos.claveMaterial.valor}${material.procedencia === 'CODE' ? ', inferida del código' : ''})` : ''}: no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; no se asigna ninguna plantilla plástica.`, incompatiblesExcepto('COEX', 'Es un producto de papel.').concat([{ familia: 'COEX', motivo: 'Es un producto de papel.' }]));
   if (TERMO.test(t)) return sugerida('TERMOENCOGIBLE', 'El título indica material termoencogible.', incompatiblesExcepto('TERMOENCOGIBLE', 'El título indica termoencogible.'));
   if (COEX.test(t)) return sugerida('COEX', 'El título indica coextrusión.', incompatiblesExcepto('COEX', 'El título indica coextrusión.'));
   if (ROLLO_CONTINUO.test(t)) return sugerida('ROLLO_CONTINUO', 'El título indica rollo continuo.', incompatiblesExcepto('ROLLO_CONTINUO', 'El título indica rollo continuo.'));
   if (OTRA_FORMA.test(t)) return pendiente('El título menciona tubo: no corresponde a una familia disponible; elige la familia manualmente.', todas.map((f) => ({ familia: f, motivo: 'El título menciona tubo.' })));
   if (r.advertencias.some((a) => a.codigo === 'TIPO_AMBIGUO')) return pendiente('El título menciona varios tipos de producto: elige la familia manualmente.');
   if (tipo.valor === null) return pendiente('El título no indica si el producto es una bolsa o una hoja: elige la familia manualmente.');
-  if (resina.origen === 'EXTRAIDO' && (resina.valor === 'ESD' || resina.valor === 'XOW')) return pendiente(`La resina ${resina.valor} no tiene casilla de Composición en las familias disponibles: elige la familia manualmente.`);
+  if (resina.origen !== 'PENDIENTE' && (resina.valor === 'ESD' || resina.valor === 'XOW')) return pendiente(`La resina ${resina.valor} no tiene casilla de Composición en las familias disponibles: elige la familia manualmente.`);
 
-  const natural = resina.origen === 'EXTRAIDO' && resina.valor === 'NAT';
+  const natural = resina.origen !== 'PENDIENTE' && resina.valor === 'NAT';
   if (tipo.valor === 'HOJA') {
     const incompat: FamiliaIncompatible[] = (['BOLSA_PLANA_1', 'BOLSA_FUELLE', 'BOLSA_NATURAL'] as const).map((familia) => ({ familia, motivo: 'BIND describe una hoja, no una bolsa.' }));
     if (ancho.valor === null || largo.valor === null) return pendiente('No se identificaron las dos medidas (ancho y largo) de la hoja: elige la familia manualmente.', incompat);
@@ -140,7 +141,7 @@ export function sugerirEspecificacion(r: ResultadoInterpretacion): SugerenciasEs
   const composicion = r.campos.resina.origen === 'PENDIENTE' ? null : r.campos.resina.valor;
   const porComposicion = composicion === null ? undefined : RESINA_VCI_POR_COMPOSICION[composicion];
   const resinaVci: SugerenciaTexto = porComposicion
-    ? { valor: porComposicion, regla: `RESINA_VCI_${composicion}_3PCT`, nota: `Sugerida para composición ${composicion}; el 3 % es la concentración histórica más frecuente, no una obligación.` }
+    ? { valor: porComposicion, regla: `RESINA_VCI_${composicion}_3PCT`, nota: `Sugerida para composición ${composicion}${r.campos.resina.procedencia === 'CODE' ? ' (inferida del código, no del título)' : ''}; el 3 % es la concentración histórica más frecuente, no una obligación.` }
     : { valor: null, regla: null, nota: composicion === 'NAT' ? 'Composición Natural: no se asigna una formulación VCI automáticamente.' : 'Sin regla confirmada para esta composición: captura la resina VCI si aplica.' };
   const titulo = r.producto.title.trim();
   return {

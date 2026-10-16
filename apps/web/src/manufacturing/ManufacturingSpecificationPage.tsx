@@ -4,7 +4,7 @@ import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, FormControl, 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
-import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup } from '../services/bindProducts';
+import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
@@ -40,6 +40,18 @@ const errorMessages: Record<BindProductErrorKind, string> = {
 
 interface TextExtra { onValue?: (value: string) => void; type?: string; placeholder?: string; helperText?: string; multiline?: boolean; minRows?: number; inputMode?: 'numeric' | 'decimal' }
 
+const sourcePresentation: Record<FuenteDato, { label: string; color: 'default' | 'success' | 'info' | 'warning' | 'error' }> = {
+  TITLE: { label: 'Extraído de Title', color: 'success' },
+  CODE: { label: 'Inferido de Code', color: 'info' },
+  TITLE_Y_CODE: { label: 'Corroborado por Title y Code', color: 'success' },
+  CONTRADICCION: { label: 'Contradicción Title/Code', color: 'error' }
+};
+
+function SourceChip({ source }: { source: FuenteDato }) {
+  const p = sourcePresentation[source];
+  return <Chip size="small" label={p.label} color={p.color} variant="outlined" data-testid="source-chip" />;
+}
+
 function OriginChip({ origin }: { origin: DisplayOrigin }) {
   const p = originPresentation[origin];
   return <Chip size="small" label={p.label} color={p.color} variant={p.variant} data-testid="origin-chip" />;
@@ -63,6 +75,7 @@ function FieldFrame({ form, fieldKey, error, onRestore, children }: FieldFramePr
       {children}
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
         <OriginChip origin={origin} />
+        {state.base.fuente && origin !== 'USUARIO' && <SourceChip source={state.base.fuente} />}
         {edited && (
           <>
             <Typography variant="caption" color="text.secondary">{state.base.value === '' ? 'BIND no entregó este dato.' : `Valor de BIND: ${state.base.value}`}</Typography>
@@ -133,6 +146,23 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+const MATERIAL_LABEL: Record<string, string> = { FILM: 'Film / plástico', PAPEL: 'Papel' };
+
+// Material y clave interpretados (del Title y/o del Code) con su procedencia; una inferencia del código nunca se muestra como dato del título.
+function MaterialRow({ lookup }: { lookup: BindProductLookup }) {
+  const { material, claveMaterial } = lookup.interpretacion.campos;
+  if (!material && !claveMaterial) return null;
+  const partes = [material?.valor ? MATERIAL_LABEL[material.valor] : null, claveMaterial?.valor ? `clave ${claveMaterial.valor}` : null].filter(Boolean);
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }} data-testid="material-row">
+      <Typography variant="body2" color="text.secondary">Material interpretado:</Typography>
+      <Typography variant="body2">{partes.length > 0 ? partes.join(' · ') : 'sin interpretación confiable'}</Typography>
+      {material?.procedencia ? <SourceChip source={material.procedencia} /> : material?.origen === 'EXTRAIDO' ? <SourceChip source="TITLE" /> : <Chip size="small" label="Pendiente" color="warning" variant="outlined" data-testid="source-chip" />}
+      {material?.procedencia === 'CONTRADICCION' && material.nota && <Typography variant="caption" color="error" data-testid="material-contradiction">{material.nota}</Typography>}
+    </Stack>
+  );
+}
+
 function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
   const { producto } = lookup;
   const rows: Array<[string, string]> = [
@@ -155,6 +185,7 @@ function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
           </Box>
         ))}
       </Box>
+      <MaterialRow lookup={lookup} />
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>La fecha de alta es la del producto en BIND, no la fecha de emisión de la hoja. Estos datos no se modifican desde esta pantalla.</Typography>
     </Paper>
   );
@@ -284,7 +315,7 @@ export function ManufacturingSpecificationPage() {
           <BindProductPanel lookup={lookup} />
           {lookup.advertencias.length > 0 && (
             <Stack spacing={1} sx={{ mt: 2 }} aria-label="Advertencias del producto">
-              {lookup.advertencias.map((a) => <Alert key={`${a.codigo}-${a.campos.join()}`} severity={a.codigo === 'FAMILIA_NO_CONFIRMADA' || a.codigo === 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS' ? 'info' : 'warning'}>{a.mensaje}</Alert>)}
+              {lookup.advertencias.map((a) => <Alert key={`${a.codigo}-${a.campos.join()}`} severity={['FAMILIA_NO_CONFIRMADA', 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'DATO_INFERIDO_DEL_CODIGO'].includes(a.codigo) ? 'info' : 'warning'}>{a.mensaje}</Alert>)}
             </Stack>
           )}
 

@@ -1,5 +1,6 @@
 import type { Advertencia, BindProductInput, Campo, FamiliaPosible, ResultadoInterpretacion } from './bind-product.types';
 import { interpretarCodigo } from './code-parser';
+import { conciliarConCodigo } from './code-reconciliation';
 import { interpretarTitulo } from './title-parser';
 
 const textoONulo = (valor: unknown): string | null => (typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null);
@@ -40,6 +41,8 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
   const codigo = interpretarCodigo(code);
   const advertencias: Advertencia[] = [...titulo.advertencias];
   const peso = interpretarPeso(Weight, advertencias);
+  // Conciliación Title ↔ Code: el título manda; el código solo sugiere cuando el título omite el dato (con su procedencia) y las contradicciones se advierten.
+  const conciliado = conciliarConCodigo(titulo, codigo, code, Title ?? '', advertencias);
 
   // El código es auxiliar: puede contradecir al título, pero nunca lo sobrescribe.
   if (codigo.interpretable) {
@@ -47,14 +50,14 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
       advertencias.push({ codigo: 'CODIGO_RESINA_DISTINTA', mensaje: `El código sugiere la resina ${codigo.resina}, pero el título indica ${titulo.resina.valor}: se conserva el título.`, campos: ['resina'] });
     }
     const materialTitulo = titulo.tipo.valor === 'PAPEL' ? 'PAPER' : titulo.tipo.valor === null ? null : 'FILM';
-    if (materialTitulo !== null && codigo.material !== materialTitulo) {
+    if (materialTitulo !== null && codigo.material !== null && codigo.material !== materialTitulo) {
       advertencias.push({ codigo: 'CODIGO_MATERIAL_DISTINTO', mensaje: `El código indica ${codigo.material === 'PAPER' ? 'papel (P)' : 'film (F)'}, pero el título indica ${titulo.tipo.valor}: se conserva el título.`, campos: ['tipo'] });
     }
   } else if (code !== '') {
     advertencias.push({ codigo: 'CODIGO_NO_INTERPRETABLE', mensaje: `El código «${code}» no sigue la estructura habitual (prefijo + F/P + resina + consecutivo); se conserva tal cual.`, campos: ['codigoDcmx'] });
   }
 
-  const posibles: FamiliaPosible[] = titulo.tipo.valor === 'BOLSA' ? ['BOLSA_PLANA_1'] : titulo.tipo.valor === 'HOJA' ? ['HOJA_PAQ'] : [];
+  const posibles: FamiliaPosible[] = conciliado.tipo.valor === 'BOLSA' ? ['BOLSA_PLANA_1'] : conciliado.tipo.valor === 'HOJA' ? ['HOJA_PAQ'] : [];
   advertencias.push({
     codigo: 'FAMILIA_NO_CONFIRMADA',
     mensaje: 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).',
@@ -63,8 +66,10 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
 
   const campos = {
     codigoDcmx: (code === '' ? { valor: null, origen: 'PENDIENTE', fuente: null, nota: 'BIND no entrega código.' } : { valor: code, origen: 'EXTRAIDO', fuente: 'Code' }) as Campo<string>,
-    tipo: titulo.tipo,
-    resina: titulo.resina,
+    tipo: conciliado.tipo,
+    resina: conciliado.resina,
+    material: conciliado.material,
+    claveMaterial: conciliado.claveMaterial,
     ancho: titulo.ancho,
     largo: titulo.largo,
     fuelleTotal: titulo.fuelleTotal,

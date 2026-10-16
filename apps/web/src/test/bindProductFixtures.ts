@@ -216,3 +216,65 @@ export function coexSinColor(): BindProductLookup {
   const base = coexAzul();
   return { ...base, sugerencias: { ...base.sugerencias, coexVariante: { valor: null, nota: 'BIND no declara el color: elige la variante COEX (Azul o Verde).' } } };
 }
+
+/** Title sin resina: la composición PMG se INFIERE del código (procedencia CODE) y el material film también. */
+export function resinaInferidaDeCode(): BindProductLookup {
+  const base = schfpmg001();
+  const resina: CampoInterpretado<'PMG' | 'CP5000' | 'NAT' | 'ESD' | 'XOW'> = { valor: 'PMG', origen: 'SUGERIDO', fuente: 'Code IMPFPMG012 (PMG)', procedencia: 'CODE', nota: 'Inferida de la clave PMG del código; el título no indica la resina.' };
+  return {
+    ...base,
+    producto: { ...base.producto, Code: 'IMPFPMG012', Title: 'BOLSA VCI 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS' },
+    interpretacion: {
+      ...base.interpretacion,
+      campos: {
+        ...base.interpretacion.campos, resina,
+        material: { valor: 'FILM', origen: 'SUGERIDO', fuente: 'Code IMPFPMG012 (F)', procedencia: 'CODE', nota: 'Inferido de la letra F (Film) del código.' },
+        claveMaterial: { valor: 'PMG', origen: 'SUGERIDO', fuente: 'Code IMPFPMG012', procedencia: 'CODE' }
+      },
+      advertencias: [...base.interpretacion.advertencias, { codigo: 'DATO_INFERIDO_DEL_CODIGO', mensaje: 'La composición (PMG) se infirió de la clave PMG del código porque el título no indica la resina. Confírmala.', campos: ['resina'] }]
+    },
+    advertencias: [...base.advertencias, { codigo: 'DATO_INFERIDO_DEL_CODIGO', mensaje: 'La composición (PMG) se infirió de la clave PMG del código porque el título no indica la resina. Confírmala.', campos: ['resina'] }]
+  };
+}
+
+/** Title y Code corroboran PMG. */
+export function resinaCorroborada(): BindProductLookup {
+  const base = schfpmg001();
+  return { ...base, interpretacion: { ...base.interpretacion, campos: { ...base.interpretacion.campos, resina: { valor: 'PMG', origen: 'EXTRAIDO', fuente: 'PMG', procedencia: 'TITLE_Y_CODE', nota: 'Corroborada por el código (PMG).' } } } };
+}
+
+/** Title PMG frente a Code CP: se conserva el Title y se marca la contradicción. */
+export function resinaContradictoria(): BindProductLookup {
+  const base = schfpmg001();
+  return {
+    ...base,
+    interpretacion: {
+      ...base.interpretacion,
+      campos: { ...base.interpretacion.campos, resina: { valor: 'PMG', origen: 'EXTRAIDO', fuente: 'PMG', procedencia: 'CONTRADICCION', nota: 'El título indica PMG y el código indica CP: se conserva el título.' } },
+      advertencias: [...base.interpretacion.advertencias, { codigo: 'CODIGO_RESINA_DISTINTA', mensaje: 'El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título.', campos: ['resina'] }]
+    },
+    advertencias: [...base.advertencias, { codigo: 'CODIGO_RESINA_DISTINTA', mensaje: 'El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título.', campos: ['resina'] }]
+  };
+}
+
+/** Producto de papel (TARPPW3301): válido en BIND, sin plantilla de papel en el prototipo. */
+export function productoPapel(): BindProductLookup {
+  const base = schfpmg001();
+  return {
+    ...base,
+    producto: { ...base.producto, Code: 'TARPPW3301', Title: 'PW33 40 x 50" PAQUETE C/100' },
+    interpretacion: {
+      ...base.interpretacion,
+      campos: {
+        ...base.interpretacion.campos,
+        resina: pend('El título no indica una resina reconocida.'),
+        material: { valor: 'PAPEL', origen: 'SUGERIDO', fuente: 'Code TARPPW3301 (P)', procedencia: 'CODE', nota: 'Inferido de la letra P (Paper) del código.' },
+        claveMaterial: { valor: 'PW33', origen: 'EXTRAIDO', fuente: 'PW33', procedencia: 'TITLE_Y_CODE', nota: 'Corroborada por el código.' }
+      },
+      advertencias: [{ codigo: 'MATERIAL_PAPEL_SIN_PLANTILLA', mensaje: 'Material papel (clave PW33): no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; la familia queda pendiente y no se asigna ninguna plantilla plástica.', campos: ['tipo', 'material'] }]
+    },
+    advertencias: [{ codigo: 'MATERIAL_PAPEL_SIN_PLANTILLA', mensaje: 'Material papel (clave PW33): no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; la familia queda pendiente y no se asigna ninguna plantilla plástica.', campos: ['tipo', 'material'] }],
+    sugerencias: { ...base.sugerencias, familia: { valor: null, motivo: 'Producto de papel (clave PW33, inferida del código): no hay una plantilla de papel disponible en este prototipo.', incompatibles: [] } },
+    familiaSugerida: []
+  };
+}

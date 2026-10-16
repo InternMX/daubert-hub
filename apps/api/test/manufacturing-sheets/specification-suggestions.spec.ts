@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { interpretarProductoBind, sugerirEspecificacion } from '../../src/manufacturing-sheets/bind-product-interpreter';
 import { FAMILIAS, FAMILY_CODES } from '../../src/manufacturing-sheets/preview/family-registry';
 
-const sugerir = (Title: string, Code = 'ABCFPMG001') => sugerirEspecificacion(interpretarProductoBind({ ID: 'x', Code, Title, Weight: 0.05 }));
+const sugerir = (Title: string, Code = 'LARG01') => sugerirEspecificacion(interpretarProductoBind({ ID: 'x', Code, Title, Weight: 0.05 }));
 
 describe('sugerirEspecificacion · familia', () => {
   const familia = (titulo: string) => sugerir(titulo).familia;
