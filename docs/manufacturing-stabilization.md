@@ -45,3 +45,14 @@ Los entregables de revisión están en `C:\Users\06\Documents\Daubert\Entregable
 - Entradas nuevas: tests de contexto anidado estricto, longitudes/tipos, propiedades extra, escape de HTML e integración HTTP de coherencia. Se conserva la ruta autenticada.
 - Plantillas, perfiles y referencias históricas: sin cambios respecto a `a9ae9af`. Sin cambios en automatizaciones Audi/Caterpillar/Pagos ni base de datos.
 - Bloque D evaluado y diferido: ver `manufacturing-draft-pdf-proposal.md`. No hay descarga PDF ni emisión.
+
+## Ajustes aprobados de COEX y Producto · posteriores a la estabilización
+
+- El registro central expone `productoSugerido`, su nota y `pesosCapasRegla` (solo COEX Azul/Verde). Producto se actualiza al cambiar familia únicamente si sigue siendo sugerido y no fue personalizado. Una denominación técnica específica original se conserva; el backend advierte incompatibilidades de denominación.
+- COEX sugiere peso total válido y positivo ÷ 3, a **cinco decimales**, con procedencia **Calculado por el sistema**. Se toma inicialmente el Weight interpretado de BIND, en libras. Sin peso válido no se inventan capas. Un total invalidado retira sugerencias automáticas anteriores, preservando campos protegidos.
+- Una edición manual protege la capa incluso si coincide con la sugerencia. Revisar expresamente el borrador también protege los pesos. Cambiar el total recalcula solo las capas automáticas; el diálogo de reemplazo muestra valores actuales y propuestos antes de sustituir capas protegidas. Cancelar conserva los datos.
+- La suma se comprueba en el backend con tolerancia **0.000015 lb** (tres redondeos de hasta 0.000005 lb). El desfase se advierte; no se fuerza la igualdad.
+- Fixture simulado COEX Verde: total 0.7540, capas 0.25133, VCI capturado de ejemplo 0.010053 / 0.005027 / 0. No cambia ninguna referencia histórica ni se automatizan libras de VCI.
+- La revisión visual de Termoencogible detectó una imagen relativa ausente en srcdoc. El servicio ahora incrusta el PNG aprobado del rollo (lista fija de recursos), igual que el logo, sin modificar plantilla, geometría ni CSP.
+- Verificación de estos ajustes: **1929 pruebas API**, **1279 frontend**, lint/typecheck/build OK, ocho regresiones documentales y diez impresiones integrales OK. Dieciséis capturas renovadas; inspección visual de ambos COEX, Hojas, Natural y Termoencogible.
+- Entregables adicionales: `C:\Users\06\Documents\Daubert\Entregables\Estabilizacion_Prototipo_Manufactura\Ajustes_COEX_Producto\`. PDF descargable sigue diferido.

@@ -13,12 +13,15 @@ import type { ColorPresetConfig, FamilyCode, FamilyConfig, FieldKey } from '../s
 export type { FamilyCode, FieldKey };
 
 /** Procedencia del valor INICIAL de un campo, tal como lo entregó el backend. SIN_DATO: BIND no lo proporciona (lo captura el usuario). */
-export type BaseOrigin = 'BIND' | 'SUGERIDO' | 'PENDIENTE' | 'SIN_DATO';
+export type BaseOrigin = 'BIND' | 'SUGERIDO' | 'CALCULADO' | 'PENDIENTE' | 'SIN_DATO';
 /** Procedencia mostrada: lo recuperado de BIND, lo sugerido, lo modificado por el usuario o lo tomado del catálogo de clientes. */
 export type DisplayOrigin = BaseOrigin | 'USUARIO' | 'CATALOGO' | 'PROVISIONAL';
 
 export interface FieldState {
   value: string;
+  /** Protecciones explícitas, incluso si el valor manual coincide con el sugerido. */
+  manual?: boolean;
+  confirmed?: boolean;
   /** Valor y procedencia con los que llegó (o con los que el sistema lo sugirió por última vez). */
   base: { value: string; origin: BaseOrigin; note?: string; /** Fuente de una interpretación conciliada con el código (Title, Code, ambos o contradicción). */ fuente?: FuenteDato };
   /** Solo para el cliente: tomado del catálogo del Hub o capturado como texto libre. */
@@ -44,6 +47,7 @@ export interface SpecificationForm {
   familyNote: string;
   /** Tabla de la regla «composición → resina VCI» entregada por el backend, para recalcular al cambiar la composición. */
   resinaRules: Record<string, string>;
+  layerWeightRule?: FamilyConfig['pesosCapasRegla'];
   /** Todos los campos viven aquí aunque la familia no los muestre: cambiar de familia NO borra lo capturado (los que no aplican solo dejan de enviarse y se avisan). */
   fields: Record<FieldKey, FieldState>;
 }
@@ -70,6 +74,7 @@ const TIPO_LABEL: Record<string, string> = { BOLSA: 'Bolsa', HOJA: 'Hoja' };
 
 // «Producto» no viene de BIND como campo propio: se sugiere el tipo (Bolsa/Hoja) que ya interpretó el backend; el usuario lo ajusta. Para papel no se sugiere nada.
 function productoField(lookup: BindProductLookup): FieldState {
+  if (lookup.sugerencias?.productoEspecifico) return field(lookup.sugerencias.productoEspecifico, 'BIND', 'Denominación técnica explícita de Title: se conserva al cambiar de familia.');
   const tipo = lookup.interpretacion.campos.tipo;
   const label = tipo.valor === null ? undefined : TIPO_LABEL[tipo.valor];
   return label ? field(label, 'SUGERIDO', 'Sugerido a partir del tipo de producto interpretado.') : field();
@@ -134,6 +139,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
     familyOrigin: family ? 'SUGERIDA' : null,
     familyNote: sugFamilia?.motivo ?? '',
     resinaRules: sug?.resinaVciPorComposicion ?? {},
+    layerWeightRule: configOf(configs, family)?.pesosCapasRegla ?? null,
     fields: {
       codigo: field(lookup.producto.Code, 'BIND'),
       descripcion: field(lookup.producto.Title, 'BIND'),
@@ -164,7 +170,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       modalidad: field('', 'PENDIENTE'),
       // Cotas técnicas independientes (Rollo Continuo y Termoencogible): BIND no las entrega y NO se calculan: las captura el usuario.
       anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field(),
-      // COEX: la variante solo se sugiere si el título declara el color; los pesos por capa NO se calculan (los captura el usuario). La capa exterior es SIN VCI: 0 lb de VCI (editable).
+      // COEX: la variante requiere color declarado. Los pesos se sugieren desde el total; las libras de VCI siguen siendo manuales.
       coexVariante: sug?.coexVariante?.valor ? field(sug.coexVariante.valor, 'SUGERIDO', sug.coexVariante.nota) : field('', 'PENDIENTE', sug?.coexVariante?.nota),
       pesoCapaInterior: field(), pesoCapaIntermedia: field(), pesoCapaExterior: field(), lbVciInterior: field(), lbVciIntermedia: field(),
       lbVciExterior: field('0', 'SUGERIDO', 'La capa exterior es SIN VCI: 0 lb de VCI (editable).')
@@ -172,31 +178,35 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
   };
   // Si BIND no declara color, la familia sugerida aporta su color por defecto (p. ej. el natural en Bolsa Natural); nunca se pisa un color sugerido desde el título.
   const familyConfig = configOf(configs, family);
+  if (familyConfig) form.fields.producto = suggestedProduct(form.fields.producto, familyConfig);
   // COEX: el color impreso sale de la variante aprobada (no del color predefinido de otras familias).
   if (familyConfig && familyConfig.variantes.length > 0) {
     const variante = familyConfig.variantes.find((v) => v.valor === form.fields.coexVariante.value);
     form.fields.colorNombre = variante ? field(variante.colorTexto, 'SUGERIDO', 'Texto del color según la variante COEX.') : field('', 'PENDIENTE', 'Elige la variante COEX para el texto del color.');
   }
-  if (familyConfig && familyConfig.colorDibujo && familyConfig.colorSugerido && form.fields.colorPreset.value === '' && !sug?.color?.detectado) return applyColor(form, familyConfig.colorSugerido, familyConfig);
-  return form;
+  const next = familyConfig && familyConfig.colorDibujo && familyConfig.colorSugerido && form.fields.colorPreset.value === '' && !sug?.color?.detectado ? applyColor(form, familyConfig.colorSugerido, familyConfig) : form;
+  return suggestLayerWeights(next);
 }
 
 export function displayOrigin(state: FieldState): DisplayOrigin {
   if (state.source) return state.source;
-  return state.value !== state.base.value ? 'USUARIO' : state.base.origin;
+  return state.manual || state.value !== state.base.value ? 'USUARIO' : state.base.origin;
 }
 
-export const isEdited = (state: FieldState): boolean => state.value !== state.base.value || state.source !== undefined;
+export const isEdited = (state: FieldState): boolean => Boolean(state.manual) || state.value !== state.base.value || state.source !== undefined;
 
 export function setFieldValue(form: SpecificationForm, key: FieldKey, value: string, source?: FieldState['source'], ref?: string): SpecificationForm {
   const current = form.fields[key];
-  const next: FieldState = { ...current, value, source, ref: source === 'CATALOGO' ? ref : undefined };
-  return { ...form, fields: { ...form.fields, [key]: next } };
+  const protectedField = key === 'producto' || ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'].includes(key);
+  const next: FieldState = { ...current, value, source, ref: source === 'CATALOGO' ? ref : undefined, ...(protectedField ? { manual: true, confirmed: false } : {}) };
+  const updated = { ...form, fields: { ...form.fields, [key]: next } };
+  return key === 'pesoLb' ? suggestLayerWeights(updated) : updated;
 }
 
 export function restoreField(form: SpecificationForm, key: FieldKey): SpecificationForm {
   const current = form.fields[key];
-  return { ...form, fields: { ...form.fields, [key]: { ...current, value: current.base.value, source: undefined, ref: undefined } } };
+  const restored = { ...form, fields: { ...form.fields, [key]: { ...current, value: current.base.value, source: undefined, ref: undefined, manual: false, confirmed: false } } };
+  return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) ? suggestLayerWeights(restored) : restored;
 }
 
 /** Reemplaza el valor Y la procedencia de un campo que el SISTEMA derivó de otro (no cuenta como edición del usuario). */
@@ -204,15 +214,48 @@ function systemValue(value: string, origin: BaseOrigin, note?: string): FieldSta
   return { value, base: { value, origin, ...(note ? { note } : {}) } };
 }
 
-const isAuto = (state: FieldState): boolean => state.value === state.base.value && state.source === undefined;
+const isAuto = (state: FieldState): boolean => !state.manual && !state.confirmed && state.value === state.base.value && state.source === undefined;
+
+function suggestedProduct(current: FieldState, config: FamilyConfig): FieldState {
+  if (!isAuto(current) || current.base.origin === 'BIND') return current;
+  return systemValue(config.productoSugerido, 'SUGERIDO', config.productoNota);
+}
+
+/** Regla recibida del registro: nunca se calcula VCI; solo pesos de capas de variantes autorizadas. */
+export function suggestLayerWeights(form: SpecificationForm, replaceProtected = false): SpecificationForm {
+  const rule = form.layerWeightRule;
+  if (!rule || !rule.variantes.includes(form.fields.coexVariante.value)) return form;
+  const text = form.fields.pesoLb.value.trim();
+  const total = /^\d+(?:[.,]\d+)?$/.test(text) ? Number(text.replace(',', '.')) : NaN;
+  const valid = Number.isFinite(total) && total > 0;
+  const value = valid ? (total / rule.divisor).toFixed(rule.decimales) : '';
+  const fields = { ...form.fields };
+  for (const key of rule.campos) {
+    const current = fields[key];
+    if (!replaceProtected && !isAuto(current)) continue;
+    // Un total ausente/incorrecto retira la sugerencia automática anterior; nunca borra capturas protegidas.
+    if (!valid && current.base.origin !== 'CALCULADO') continue;
+    fields[key] = systemValue(value, valid ? 'CALCULADO' : 'PENDIENTE', valid ? `Peso total ${text} lb ÷ ${rule.divisor}; sugerencia a ${rule.decimales} decimales, editable. No calcula libras de VCI.` : 'Sin peso total válido y positivo: no se deriva peso por capa.');
+  }
+  return { ...form, fields };
+}
+
+/** Revisar el borrador fija los pesos actuales hasta una sustitución explícita. */
+export function confirmLayerWeights(form: SpecificationForm): SpecificationForm {
+  if (!form.layerWeightRule) return form;
+  const fields = { ...form.fields };
+  for (const key of form.layerWeightRule.campos) if (fields[key].value !== '') fields[key] = { ...fields[key], confirmed: true };
+  return { ...form, fields };
+}
 
 /**
  * Selección de familia por el usuario: confirma (o corrige) la sugerencia. Los datos capturados NO se borran ni se transforman: los campos que la nueva familia no tiene
  * dejan de mostrarse y de enviarse a la vista previa, y `incompatibleValues` los informa. Solo si el color sigue sin elegir se sugiere el color por defecto de la familia.
  */
 export function selectFamily(form: SpecificationForm, family: FamilyCode | null, configs: FamilyConfig[] = []): SpecificationForm {
-  const next: SpecificationForm = { ...form, family, familyOrigin: family === null ? null : 'USUARIO' };
   const config = configOf(configs, family);
+  let next: SpecificationForm = { ...form, family, familyOrigin: family === null ? null : 'USUARIO', layerWeightRule: config?.pesosCapasRegla ?? null };
+  if (config) next = { ...next, fields: { ...next.fields, producto: suggestedProduct(next.fields.producto, config) } };
   if (config && config.colorDibujo && config.colorSugerido && form.fields.colorPreset.value === '' && form.fields.colorHex.value === '') {
     return applyColor(next, config.colorSugerido, config);
   }
@@ -221,7 +264,7 @@ export function selectFamily(form: SpecificationForm, family: FamilyCode | null,
     const equivalente = config.variantes.find((v) => v.presetEquivalente === form.fields.colorPreset.value);
     if (equivalente) return setCoexVariante(next, equivalente.valor, config);
   }
-  return next;
+  return suggestLayerWeights(next);
 }
 
 /**
@@ -234,7 +277,7 @@ export function setCoexVariante(form: SpecificationForm, valor: string, config: 
   const nombreAuto = f.colorNombre.value === '' || (anterior !== undefined && f.colorNombre.value === anterior.colorTexto) || isAuto(f.colorNombre);
   const fields = { ...f, coexVariante: { ...f.coexVariante, value: valor, source: undefined } };
   if (nueva && nombreAuto) fields.colorNombre = systemValue(nueva.colorTexto, 'SUGERIDO', 'Texto del color según la variante COEX.');
-  return { ...form, fields };
+  return suggestLayerWeights({ ...form, fields });
 }
 
 /** Acepta explícitamente la familia sugerida. */
@@ -368,6 +411,7 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
   const config = configOf(configs, form.family);
   if (form.family === null || config === null) errors.familia = 'Falta elegir la familia de manufactura.';
   const f = form.fields;
+  if (form.layerWeightRule?.campos.some((key) => !isAuto(f[key]))) warnings.push('Hay pesos por capa manuales o confirmados: se conservan al cambiar el peso total. Revisa los valores antes de reemplazarlos por nuevas sugerencias.');
   if (config) {
     for (const key of config.requeridos) {
       if (key === 'composicion' && config.composicionFija) continue;

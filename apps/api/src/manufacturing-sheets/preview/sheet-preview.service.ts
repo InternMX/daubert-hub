@@ -76,7 +76,7 @@ export class SheetPreviewService {
       return '';
     });
     html = html.replace('<head>', `<head>\n  ${CSP}`);
-    html = this.inlineLogo(family, html);
+    html = this.inlineImages(family, html);
     return resultado({ html, completo: mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0, advertencias: mapped.advertencias });
   }
 
@@ -99,9 +99,14 @@ export class SheetPreviewService {
     return html;
   }
 
-  // El PDF existente imprime con la carpeta images/ junto al HTML; en un iframe srcdoc esa ruta relativa no existe, así que el logo se incrusta como data URI (solo en la vista previa).
-  private inlineLogo(family: FamilyCode, html: string): string {
+  // En srcdoc no existe la carpeta images/ y CSP bloquea la red. Solo se incrustan estos dos recursos FIJOS aprobados; nunca se aceptan rutas del usuario.
+  private inlineImages(family: FamilyCode, html: string): string {
     const logo = readFileSync(resolve(ROOT, FAMILIAS[family].imagenes, 'DC_logo.jpg'));
-    return html.replace('.\\images\\DC_logo.jpg', `data:image/jpeg;base64,${logo.toString('base64')}`);
+    let result = html.replace('.\\images\\DC_logo.jpg', `data:image/jpeg;base64,${logo.toString('base64')}`);
+    if (result.includes('href="images/rollo_doblado_original.png"')) {
+      const rollo = readFileSync(resolve(ROOT, FAMILIAS[family].imagenes, 'rollo_doblado_original.png'));
+      result = result.replace('href="images/rollo_doblado_original.png"', `href="data:image/png;base64,${rollo.toString('base64')}"`);
+    }
+    return result;
   }
 }

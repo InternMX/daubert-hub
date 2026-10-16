@@ -209,6 +209,8 @@ describe('Termoencogible · plantilla aprobada', () => {
     expect(r.html.replace(/<!--[^]*?-->/g, '')).not.toContain('Cantidad Por Rollo o Paquete');
     expect(celda(r.html, 'color')).toBe('NATURAL');
     expect(r.html).not.toMatch(/\{\{/);
+    expect(r.html).toContain('href="data:image/png;base64,');
+    expect(r.html).not.toContain('href="images/rollo_doblado_original.png"');
   });
 
   it('las cotas técnicas son obligatorias e independientes: sin ellas la representación es incompleta', async () => {

@@ -2,6 +2,9 @@
   {
     "codigo": "BOLSA_PLANA_1",
     "nombre": "Bolsa Plana 1",
+    "productoSugerido": "Bolsa PLANA",
+    "productoNota": "Nombre sugerido desde el machote de la familia; editable y pendiente de revisión.",
+    "pesosCapasRegla": null,
     "campos": [
       "codigo",
       "descripcion",
@@ -94,6 +97,9 @@
   {
     "codigo": "HOJA_PAQ",
     "nombre": "Hojas",
+    "productoSugerido": "Bolsa PLANA",
+    "productoNota": "Nombre sugerido conforme al machote compartido de Hojas; editable.",
+    "pesosCapasRegla": null,
     "campos": [
       "codigo",
       "descripcion",
@@ -199,6 +205,9 @@
   {
     "codigo": "BOLSA_FUELLE",
     "nombre": "Bolsa Fuelle",
+    "productoSugerido": "Bolsa con Fuelle",
+    "productoNota": "Nombre sugerido desde el machote de la familia; editable y pendiente de revisión.",
+    "pesosCapasRegla": null,
     "campos": [
       "codigo",
       "descripcion",
@@ -296,6 +305,9 @@
   {
     "codigo": "ROLLO_CONTINUO",
     "nombre": "Rollo Continuo",
+    "productoSugerido": "ROLLO VCI",
+    "productoNota": "Nombre sugerido desde el machote de la familia; editable y pendiente de revisión.",
+    "pesosCapasRegla": null,
     "campos": [
       "codigo",
       "descripcion",
@@ -400,6 +412,9 @@
   {
     "codigo": "TERMOENCOGIBLE",
     "nombre": "Termoencogible",
+    "productoSugerido": "ROLLO VCI + UV TERMOENCOGIBLE",
+    "productoNota": "Nombre sugerido desde el machote de la familia; editable y pendiente de revisión.",
+    "pesosCapasRegla": null,
     "campos": [
       "codigo",
       "descripcion",
@@ -489,6 +504,22 @@
   {
     "codigo": "COEX",
     "nombre": "COEX",
+    "productoSugerido": "Bolsa con Fuelle - 20% de material reciclado",
+    "productoNota": "Sugerencia editable del machote COEX: el 20% reciclado no es una característica universal ni un dato confirmado del producto.",
+    "pesosCapasRegla": {
+      "divisor": 3,
+      "decimales": 5,
+      "toleranciaLb": 0.000015,
+      "variantes": [
+        "AZUL",
+        "VERDE"
+      ],
+      "campos": [
+        "pesoCapaInterior",
+        "pesoCapaIntermedia",
+        "pesoCapaExterior"
+      ]
+    },
     "campos": [
       "codigo",
       "descripcion",
@@ -615,12 +646,15 @@
       }
     ],
     "notas": [
-      "Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI); el peso por capa y las libras de VCI no se calculan: se capturan."
+      "Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI). Peso por capa sugerido: peso total ÷ 3, editable y con cinco decimales. Las libras de VCI se capturan, no se calculan."
     ]
   },
   {
     "codigo": "BOLSA_NATURAL",
     "nombre": "Bolsa Natural",
+    "productoSugerido": "Bolsa con Fuelle",
+    "productoNota": "Nombre sugerido desde el machote de la familia; editable y pendiente de revisión.",
+    "pesosCapasRegla": null,
     "campos": [
       "codigo",
       "descripcion",

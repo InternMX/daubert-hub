@@ -105,7 +105,7 @@ export function mapSheetData(family: PreviewFamily, form: PreviewFormData): Mapp
     datos.fuelle_izquierdo = medida(v('fuelleIzquierdo'), 'El fuelle izquierdo');
   }
 
-  // COEX: tres capas con formulación fija; el peso por capa y las libras de VCI se imprimen tal como se capturaron (no se calculan ni se completan).
+  // COEX: tres capas con formulación fija; se imprimen los pesos actuales (sugeridos o capturados) y las libras de VCI capturadas. Este mapeador no recalcula datos.
   const variante = def.variantes?.find((x) => x.valor === v('coexVariante'));
   if (def.capas) {
     datos.sufijo_titulo = ' - COEXTRUSIÓN';

@@ -93,10 +93,16 @@ async function capturas(port) {
           const l=[...document.querySelectorAll('label')].find(l=>l.textContent===label);
           const e=l && document.getElementById(l.htmlFor);
           if(!e || !['INPUT','TEXTAREA'].includes(e.tagName)) continue;
+          if(e.value===d[k]) continue; // conservar la procedencia automática cuando el valor ya es el esperado
           const proto=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
           Object.getOwnPropertyDescriptor(proto,'value').set.call(e,d[k]);e.dispatchEvent(new Event('input',{bubbles:true}));await pause();
         }
         for(const k of ['composicion','presentacion','modalidad']) { const e=document.querySelector('input[value="'+d[k]+'"]'); if(e&&!e.disabled)e.click(); await pause(); }
+        // Elegir composición puede sugerir resina: el caso simulado conserva su captura independiente final.
+        if('resinaVci' in d) {
+          const l=[...document.querySelectorAll('label')].find(l=>l.textContent==='Resina VCI');const e=l&&document.getElementById(l.htmlFor);
+          if(e&&e.value!==d.resinaVci) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,d.resinaVci);e.dispatchEvent(new Event('input',{bubbles:true}));await pause(); }
+        }
         for(const [k,label] of [['unidadDimensiones','Unidad de las medidas'],['cantidadUnidad','Unidad de la cantidad'],['coexVariante','Variante COEX']]) {
           if(!d[k])continue; const l=[...document.querySelectorAll('label')].find(l=>l.textContent===label);const e=l&&document.getElementById(l.htmlFor);
           if(!e)continue; e.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}));await pause();
@@ -108,6 +114,7 @@ async function capturas(port) {
       await delay(150);
       const texto = await evaluate('document.body.innerText');
       if (texto.includes('Datos técnicos incompletos (')) throw new Error(`Caso incompleto en UI: ${caso.id}: ${texto.slice(-4000)}`);
+      if (caso.familia === 'COEX' && !texto.includes('Calculado por el sistema')) throw new Error(`No se conserva la procedencia calculada: ${caso.id}`);
       const dims = await cdp('Page.getLayoutMetrics');
       const shot = await cdp('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: 1600, height: dims.cssContentSize.height, scale: 1 } });
       fs.writeFileSync(path.join(salida, `${caso.id}-formulario.png`), Buffer.from(shot.data, 'base64'));
@@ -136,15 +143,18 @@ async function main() {
   fs.writeFileSync(path.join(salida, 'casos-extra-simulados.json'), JSON.stringify(productos.slice(casos.length), null, 2));
   const lineas = ['# Ocho casos reproducibles', '', '**Todos son fixtures simulados reproducidos localmente; no se consultó BIND real.**', '', 'Los datos finales son valores de prueba capturados o confirmados por el demostrador. Cliente vacío en todos los casos. Ninguno es una especificación oficial.', ''];
   for (const c of documentados) {
+    const config = configuracionFamilias().find((f) => f.codigo === c.familia);
     lineas.push(`## ${c.id} · ${c.familia}`, '', `- Código: \`${c.producto.Code}\``, `- Title: ${c.producto.Title}`, `- Familia esperada: ${c.familia}. Seleccionarla o confirmar la sugerencia.`, '', '### Datos obtenidos automáticamente del fixture', '');
     for (const [key, campo] of Object.entries(c.automaticos)) if (campo.origen === 'EXTRAIDO' && campo.valor !== null) lineas.push(`- ${key}: ${JSON.stringify(campo.valor)} (${campo.procedencia ?? (key === 'codigoDcmx' ? 'BIND.Code' : key === 'pesoLb' ? 'BIND.Weight' : 'TITLE')}).`);
     lineas.push('', '### Derivados / sugeridos (requieren revisión)', '', `- Familia: ${c.sugerencias.familia.valor ?? 'pendiente'}. ${c.sugerencias.familia.motivo}`, `- Color: ${c.sugerencias.color.nota}`, `- Resina VCI: ${c.sugerencias.resinaVci.nota}`);
+    lineas.push(`- Producto: ${config.productoSugerido}. ${config.productoNota} Una denominación específica original o personalización se conserva.`);
+    if (config.pesosCapasRegla) lineas.push(`- Pesos por capa: peso total ÷ ${config.pesosCapasRegla.divisor}, ${config.pesosCapasRegla.decimales} decimales, procedencia Calculado por el sistema. Valores del caso: ${config.pesosCapasRegla.campos.map((k) => c.datos[k]).join(' / ')} lb. Las libras de VCI son captura independiente.`);
     for (const [key, campo] of Object.entries(c.automaticos)) if (campo.origen === 'SUGERIDO') lineas.push(`- ${key}: ${JSON.stringify(campo.valor)}. ${campo.nota ?? ''}`);
     lineas.push('', '### Captura / confirmación manual', '', '- Confirmar familia y revisar todos los valores sugeridos. Fecha local editable; cliente opcional solo para demostración.');
     const equivalencias = { composicion: 'resina', cantidadUnidad: 'cantidad' };
     for (const [key, valor] of Object.entries(c.datos)) {
       const campo = c.automaticos[equivalencias[key] ?? key];
-      if ((!campo || campo.origen === 'PENDIENTE' || campo.valor === null) && !['codigo', 'descripcion', 'etiqueta', 'fechaEmision', 'colorHex', 'colorNombre', 'resinaVci'].includes(key) && !(key === 'producto' && ['BOLSA', 'HOJA'].includes(c.automaticos.tipo.valor))) lineas.push(`- ${labels[key] ?? key}: \`${valor}\`.`);
+      if ((!campo || campo.origen === 'PENDIENTE' || campo.valor === null) && !['codigo', 'descripcion', 'producto', 'etiqueta', 'fechaEmision', 'colorHex', 'colorNombre', 'resinaVci'].includes(key) && !config.pesosCapasRegla?.campos.includes(key)) lineas.push(`- ${labels[key] ?? key}: \`${valor}\`.`);
     }
     lineas.push('', '### Advertencias esperadas y vista previa', '', ...c.advertenciasOrigen.map((a) => `- Origen: ${a.mensaje}`), ...c.resultado.avisosTecnicos.map((a) => `- ${a.nivel}: ${a.mensaje}`), `- Resultado final: ${c.resultado.completo ? 'datos técnicos completos' : 'incompleto'}, ${c.resultado.bloqueado ?? 'HTML generado con su plantilla aprobada'}, firmas SIN FIRMA. Pendientes de emisión: ${c.resultado.pendientesEmision.join(', ') || 'ninguno'}.`, `- Capturas: \`${c.id}-formulario.png\` y \`${c.id}-hoja-ampliada.png\`.`, '', '### Valores finales del caso', '', '```json', JSON.stringify(c.datos, null, 2), '```', '');
   }

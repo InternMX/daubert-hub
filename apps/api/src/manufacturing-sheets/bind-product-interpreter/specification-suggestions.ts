@@ -1,6 +1,7 @@
 import { FAMILY_CODES } from '../preview/family-registry';
 import type { FamiliaPosible, ResultadoInterpretacion } from './bind-product.types';
 import { normalizarTitulo } from './title-parser';
+import { denominacionEspecifica } from '../preview/product-denomination';
 
 // Sugerencias de la fase 3.1 para el formulario de especificación. Función pura (sin red ni base de datos) construida SOBRE el resultado del interpretador:
 // no relee BIND ni reinterpreta el título más allá de buscar marcas explícitas. Todo lo que devuelve es una SUGERENCIA editable con su regla de origen;
@@ -46,6 +47,7 @@ export interface SugerenciaVariante {
 }
 
 export interface SugerenciasEspecificacion {
+  productoEspecifico: string | null;
   coexVariante: SugerenciaVariante;
   familia: SugerenciaFamilia;
   /** Resina VCI sugerida para la composición interpretada (monocapa). */
@@ -145,6 +147,7 @@ export function sugerirEspecificacion(r: ResultadoInterpretacion): SugerenciasEs
     : { valor: null, regla: null, nota: composicion === 'NAT' ? 'Composición Natural: no se asigna una formulación VCI automáticamente.' : 'Sin regla confirmada para esta composición: captura la resina VCI si aplica.' };
   const titulo = r.producto.title.trim();
   return {
+    productoEspecifico: denominacionEspecifica(r.producto.title),
     familia: sugerirFamilia(r, t),
     coexVariante: sugerirVariante(t),
     resinaVci,

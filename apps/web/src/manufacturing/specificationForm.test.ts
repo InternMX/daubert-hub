@@ -3,7 +3,7 @@ import type { BindProductLookup } from '../services/bindProducts';
 import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import {
   buildInitialForm, changedFields, colorText, configOf, confirmFamily, setCoexVariante, displayOrigin, incompatibleValues, isEdited, localIsoDate, restoreField, selectFamily, setColorConcentracion, setColorPreset,
-  setComposition, setFieldValue, setFuelleTotal, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
+  setComposition, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
 } from './specificationForm';
 
 const HOY = '2026-10-16';
@@ -457,10 +457,15 @@ describe('COEX · una familia con variante Azul/Verde y tres capas', () => {
     expect(validar(sin).errors.coexVariante).toBeDefined();
   });
 
-  it('las capas tienen formulación fija; el peso por capa y las libras de VCI se capturan (no se calculan); la exterior sugiere 0 lb', () => {
+  it('las capas tienen formulación fija; su peso se sugiere, las libras de VCI se capturan y la exterior sugiere 0 lb', () => {
     const f = build(coexAzul());
     expect(config.capas?.map((c) => [c.id, c.resina])).toEqual([['interior', 'VCI PMG al 4%'], ['intermedia', 'VCI PMG al 2%'], ['exterior', 'SIN VCI']]);
-    for (const k of ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia'] as const) {
+    for (const k of ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] as const) {
+      expect(f.fields[k].value).toBe('0.13097');
+      expect(displayOrigin(f.fields[k])).toBe('CALCULADO');
+      expect(validar(f).errors[k]).toBeUndefined();
+    }
+    for (const k of ['lbVciInterior', 'lbVciIntermedia'] as const) {
       expect(f.fields[k].value, k).toBe('');
       expect(validar(f).errors[k], k).toBeDefined();
     }
@@ -492,5 +497,86 @@ describe('COEX · una familia con variante Azul/Verde y tres capas', () => {
     const otro = selectFamily(setFieldValue(setColorPreset(build(bolsaFuelle()), 'OTRO', cfg('BOLSA_FUELLE')), 'colorHex', '#C00000'), 'COEX', familyConfigs);
     expect(otro.fields.coexVariante.value).toBe('');
     expect(validar(otro).errors.coexVariante).toBeDefined();
+  });
+});
+
+describe('Pesos COEX sugeridos y protegidos', () => {
+  const keys = ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] as const;
+  it.each([['0.3929', '0.13097'], ['0.7540', '0.25133'], ['3', '1.00000'], ['0,7540', '0.25133']])('total %s → %s por capa, solo Azul/Verde', (total, expected) => {
+    for (const variant of ['AZUL', 'VERDE']) {
+      const f = setFieldValue(setCoexVariante(build(coexAzul()), variant, cfg('COEX')), 'pesoLb', total);
+      for (const k of keys) expect(f.fields[k]).toMatchObject({ value: expected, base: { origin: 'CALCULADO' } });
+      expect(f.fields.lbVciInterior.value).toBe('');
+      expect(f.fields.lbVciIntermedia.value).toBe('');
+    }
+  });
+  it.each(['', '0', '-1', 'abc', 'Infinity', '1e3'])('total %s no deriva ni conserva sugerencias obsoletas', (total) => {
+    const f = setFieldValue(build(coexAzul()), 'pesoLb', total);
+    for (const k of keys) expect(f.fields[k].value).toBe('');
+  });
+  it('Weight ausente/cero/inválido no inventa capas al iniciar', () => {
+    for (const weight of [null, 0, 'inválido']) {
+      const lookup = coexAzul();
+      lookup.producto.Weight = weight;
+      lookup.interpretacion.campos.pesoLb = { valor: null, origen: 'PENDIENTE', fuente: null };
+      const f = build(lookup);
+      for (const k of keys) expect(f.fields[k].value).toBe('');
+    }
+  });
+  it('no deriva sin variante autorizada ni en otra familia', () => {
+    const noVariant = build(coexSinColor());
+    expect(noVariant.fields.pesoCapaInterior.value).toBe('');
+    expect(setCoexVariante(noVariant, 'AZUL', cfg('COEX')).fields.pesoCapaInterior.value).toBe('0.13097');
+    const other = setFieldValue(selectFamily(build(coexAzul()), 'BOLSA_FUELLE', familyConfigs), 'pesoLb', '0.7540');
+    expect(other.fields.pesoCapaInterior.value).toBe('0.13097'); // conservado, no se recalcula ni envía
+    expect(toPreviewData(other, cfg('BOLSA_FUELLE'))).not.toHaveProperty('pesoCapaInterior');
+  });
+  it('edición manual, incluso igual al valor inicial, sobrevive a un cambio del total', () => {
+    const f = setFieldValue(build(coexAzul()), 'pesoCapaInterior', '0.13097');
+    const changed = setFieldValue(f, 'pesoLb', '0.7540');
+    expect(displayOrigin(changed.fields.pesoCapaInterior)).toBe('USUARIO');
+    expect(changed.fields.pesoCapaInterior.value).toBe('0.13097');
+    expect(changed.fields.pesoCapaIntermedia.value).toBe('0.25133');
+    expect(validar(changed).warnings.join(' ')).toMatch(/manuales o confirmados/);
+    const restored = restoreField(changed, 'pesoCapaInterior');
+    expect(restored.fields.pesoCapaInterior.value).toBe('0.25133');
+    expect(displayOrigin(restored.fields.pesoCapaInterior)).toBe('CALCULADO');
+  });
+  it('pesos confirmados no se recalculan; reemplazo explícito conserva todas las libras de VCI', () => {
+    let f = confirmLayerWeights(build(coexAzul()));
+    f = setFieldValue(setFieldValue(f, 'lbVciInterior', '0.123456'), 'pesoLb', '0.7540');
+    for (const k of keys) expect(f.fields[k].value).toBe('0.13097');
+    const replaced = suggestLayerWeights(f, true);
+    for (const k of keys) expect(replaced.fields[k]).toMatchObject({ value: '0.25133', base: { origin: 'CALCULADO' } });
+    expect(replaced.fields.lbVciInterior.value).toBe('0.123456');
+    expect(replaced.fields.lbVciExterior.value).toBe('0');
+  });
+});
+
+describe('Producto editable desde el registro central', () => {
+  it.each([
+    ['BOLSA_PLANA_1', 'Bolsa PLANA'], ['HOJA_PAQ', 'Bolsa PLANA'], ['BOLSA_FUELLE', 'Bolsa con Fuelle'], ['BOLSA_NATURAL', 'Bolsa con Fuelle'],
+    ['ROLLO_CONTINUO', 'ROLLO VCI'], ['TERMOENCOGIBLE', 'ROLLO VCI + UV TERMOENCOGIBLE'], ['COEX', 'Bolsa con Fuelle - 20% de material reciclado']
+  ] as const)('%s sugiere %s sin tocar Title/Description', (family, expected) => {
+    const lookup = deepFreeze(schfpmg001());
+    const f = selectFamily(build(lookup), family, familyConfigs);
+    expect(f.fields.producto.value).toBe(expected);
+    expect(displayOrigin(f.fields.producto)).toBe('SUGERIDO');
+    expect(f.fields.descripcion.value).toBe(lookup.producto.Title);
+    expect(lookup.producto.Description).toBeNull();
+  });
+  it('COEX explica que 20% es del machote; personalización (también igual al sugerido) no se pierde', () => {
+    const f = build(coexAzul());
+    expect(f.fields.producto.base.note).toMatch(/no es una característica universal/);
+    const personalizado = setFieldValue(f, 'producto', 'Denominación particular');
+    expect(selectFamily(personalizado, 'HOJA_PAQ', familyConfigs).fields.producto.value).toBe('Denominación particular');
+    const manualIgual = setFieldValue(f, 'producto', f.fields.producto.value);
+    expect(selectFamily(manualIgual, 'HOJA_PAQ', familyConfigs).fields.producto.value).toBe(f.fields.producto.value);
+  });
+  it('denominación específica de BIND se conserva al elegir familia incompatible', () => {
+    const lookup = withSuggestion(schfpmg001(), { productoEspecifico: 'ROLLO VCI + UV TERMOENCOGIBLE' });
+    const f = selectFamily(build(lookup), 'BOLSA_PLANA_1', familyConfigs);
+    expect(f.fields.producto.value).toBe('ROLLO VCI + UV TERMOENCOGIBLE');
+    expect(displayOrigin(f.fields.producto)).toBe('BIND');
   });
 });

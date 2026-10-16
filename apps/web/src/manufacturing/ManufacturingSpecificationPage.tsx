@@ -1,6 +1,6 @@
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
@@ -11,13 +11,14 @@ import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
-  setCoexVariante, setFieldValue, setFuelleTotal, toPreviewData, validateSpecification,
+  setCoexVariante, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification,
   type DisplayOrigin, type FamilyCode, type FieldKey, type SpecificationForm, type SpecificationValidation
 } from './specificationForm';
 
 const originPresentation: Record<DisplayOrigin, { label: string; color: 'default' | 'success' | 'info' | 'warning' | 'secondary'; variant: 'filled' | 'outlined' }> = {
   BIND: { label: 'Recuperado de BIND', color: 'success', variant: 'outlined' },
   SUGERIDO: { label: 'Sugerido por el sistema', color: 'info', variant: 'outlined' },
+  CALCULADO: { label: 'Calculado por el sistema', color: 'info', variant: 'outlined' },
   PENDIENTE: { label: 'Pendiente de confirmar', color: 'warning', variant: 'filled' },
   SIN_DATO: { label: 'Captura manual', color: 'default', variant: 'outlined' },
   USUARIO: { label: 'Editado por el usuario', color: 'secondary', variant: 'filled' },
@@ -79,15 +80,16 @@ function FieldFrame({ form, fieldKey, error, onRestore, children }: FieldFramePr
         {state.base.fuente && origin !== 'USUARIO' && <SourceChip source={state.base.fuente} />}
         {edited && (
           <>
-            <Typography variant="caption" color="text.secondary">{state.base.value === '' ? 'BIND no entregó este dato.' : `Valor de BIND: ${state.base.value}`}</Typography>
-            <Tooltip title="Restaurar el valor de BIND">
+            <Typography variant="caption" color="text.secondary">{state.base.value === '' ? 'Sin valor inicial.' : `${state.base.origin === 'BIND' ? 'Valor de BIND' : 'Valor inicial sugerido'}: ${state.base.value}`}</Typography>
+            <Tooltip title={state.base.origin === 'BIND' ? 'Restaurar el valor de BIND' : 'Restaurar sugerencia (en capas usa el peso total actual)'}>
               <IconButton size="small" aria-label={`Restaurar ${FIELD_LABELS[fieldKey]}`} onClick={() => onRestore(fieldKey)}><RestoreRoundedIcon fontSize="inherit" /></IconButton>
             </Tooltip>
           </>
         )}
       </Stack>
       {origin === 'PENDIENTE' && state.base.note && <Typography variant="caption" color="warning.main" display="block">{state.base.note}</Typography>}
-      {origin === 'SUGERIDO' && state.base.note && fieldKey !== 'fechaEmision' && <Typography variant="caption" color="text.secondary" display="block">{state.base.note}</Typography>}
+      {(origin === 'SUGERIDO' || origin === 'CALCULADO') && state.base.note && fieldKey !== 'fechaEmision' && <Typography variant="caption" color="text.secondary" display="block">{state.base.note}</Typography>}
+      {state.confirmed && <Typography variant="caption" display="block">Peso revisado para este borrador; protegido frente al recálculo automático.</Typography>}
       {error && <Typography variant="caption" color="error" display="block" role="alert">{error}</Typography>}
     </Box>
   );
@@ -205,6 +207,7 @@ export function ManufacturingSpecificationPage() {
   const [validation, setValidation] = useState<SpecificationValidation | null>(null);
   const [assessment, setAssessment] = useState<{ key: string; result: SheetPreviewResponse } | null>(null);
   const [reviewedKey, setReviewedKey] = useState('');
+  const [reviewWeights, setReviewWeights] = useState(false);
   const controller = useRef<AbortController | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
@@ -222,6 +225,7 @@ export function ManufacturingSpecificationPage() {
     controller.current = current;
     setValidation(null);
     setReviewedKey('');
+    setReviewWeights(false);
     if (!BIND_CODE_PATTERN.test(code.trim())) {
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
@@ -411,7 +415,8 @@ export function ManufacturingSpecificationPage() {
           {config?.capas && (
             <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Capas COEX">
               <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 0.5 }}>Capas COEX</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>La formulación de cada capa es fija. El peso por capa y las libras de VCI no se calculan: se capturan.</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>La formulación de cada capa es fija. Peso por capa sugerido: peso total ÷ 3, con cinco decimales. Los pesos manuales o confirmados se conservan. Las libras de VCI se capturan: no se calculan.</Typography>
+              <Button size="small" disabled={!form.fields.pesoLb.value.trim() || !config.pesosCapasRegla?.variantes.includes(form.fields.coexVariante.value) || !/^\d+(?:[.,]\d+)?$/.test(form.fields.pesoLb.value.trim()) || !(Number(form.fields.pesoLb.value.replace(',', '.')) > 0)} onClick={() => setReviewWeights(true)}>Revisar reemplazo de pesos por sugerencias</Button>
               <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
                 {config.capas.map((capa) => (
                   <Box key={capa.id} sx={{ display: 'contents' }}>
@@ -481,7 +486,7 @@ export function ManufacturingSpecificationPage() {
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <Button variant="contained" onClick={() => setValidation(validateSpecification(form, configs, lookup))}>Validar especificación</Button>
-              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO'} onClick={() => setReviewedKey(reviewKey)}>{contradictions.length ? 'Revisé las discrepancias: intencionales en este borrador' : 'Confirmar revisión del borrador'}</Button>
+              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO'} onClick={() => { const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>{contradictions.length ? 'Revisé las discrepancias: intencionales en este borrador' : 'Confirmar revisión del borrador'}</Button>
               <Typography variant="body2" color="text.secondary">
                 {changedFields(form, config).length === 0 ? 'Sin cambios respecto a lo recuperado de BIND.' : `Campos modificados por el usuario: ${changedFields(form, config).map((k) => FIELD_LABELS[k]).join(', ')}.`}
               </Typography>
@@ -496,6 +501,14 @@ export function ManufacturingSpecificationPage() {
               </Stack>
             )}
           </Paper>
+          <Dialog open={reviewWeights && Boolean(config?.pesosCapasRegla)} onClose={() => setReviewWeights(false)} aria-labelledby="review-layer-weights-title">
+            <DialogTitle id="review-layer-weights-title">Revisar reemplazo de pesos por capa</DialogTitle>
+            <DialogContent>
+              <Alert severity="warning">Esta acción reemplaza también los pesos manuales o confirmados. Revisa los valores antes de continuar. No cambia las libras de VCI ni autoriza una especificación oficial.</Alert>
+              {config?.pesosCapasRegla?.campos.map((key) => <Typography key={key} sx={{ mt: 1 }}>{FIELD_LABELS[key]}: {form.fields[key].value || 'vacío'} → {suggestLayerWeights(form, true).fields[key].value || 'sin sugerencia'}</Typography>)}
+            </DialogContent>
+            <DialogActions><Button onClick={() => setReviewWeights(false)}>Cancelar</Button><Button onClick={() => { update((f) => suggestLayerWeights(f, true)); setReviewWeights(false); }}>Reemplazar pesos por sugerencias actuales</Button></DialogActions>
+          </Dialog>
         </Box>
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
           <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData}

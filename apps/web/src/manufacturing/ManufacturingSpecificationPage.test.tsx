@@ -439,6 +439,43 @@ describe('ManufacturingSpecificationPage · Rollo Continuo y Termoencogible', { 
 });
 
 describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
+  it('sugiere cinco decimales, protege edición manual y pide revisión antes de sustituir pesos', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(coexAzul());
+    renderPage();
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(campo('Producto').value).toBe('Bolsa con Fuelle - 20% de material reciclado');
+    expect(screen.getByText(/no es una característica universal/)).toBeInTheDocument();
+    fireEvent.change(campo('Peso de la capa interior (lb)'), { target: { value: '0.20000' } });
+    fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
+    expect(campo('Peso de la capa interior (lb)').value).toBe('0.20000');
+    expect(campo('Peso de la capa intermedia (lb)').value).toBe('0.25133');
+    expect(campo('Libras de VCI de la capa interior').value).toBe('');
+    await user.click(screen.getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' }));
+    const dialog = screen.getByRole('dialog', { name: 'Revisar reemplazo de pesos por capa' });
+    expect(within(dialog).getByText(/0.20000 → 0.25133/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Revisar reemplazo de pesos por capa' })).not.toBeInTheDocument());
+    expect(campo('Peso de la capa interior (lb)').value).toBe('0.20000');
+    await user.click(screen.getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' }));
+    await user.click(screen.getByRole('button', { name: 'Reemplazar pesos por sugerencias actuales' }));
+    expect(campo('Peso de la capa interior (lb)').value).toBe('0.25133');
+    expect(within(frameOf('Peso de la capa interior (lb)')).getByText('Calculado por el sistema')).toBeInTheDocument();
+  });
+  it('Producto cambia con familia mientras sea sugerido; la denominación manual permanece', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await buscar(user);
+    expect(campo('Producto').value).toBe('Bolsa PLANA');
+    await user.click(screen.getByRole('radio', { name: 'Bolsa Natural' }));
+    expect(campo('Producto').value).toBe('Bolsa con Fuelle');
+    fireEvent.change(campo('Producto'), { target: { value: 'Mi producto particular' } });
+    await user.click(screen.getByRole('radio', { name: 'Termoencogible' }));
+    expect(campo('Producto').value).toBe('Mi producto particular');
+    expect(campo('Descripción').value).toBe(schfpmg001().producto.Title);
+  });
   it('COEX es UNA familia con selector de variante (Azul/Verde) y tres capas con formulación fija', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(coexAzul());
@@ -455,13 +492,14 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(screen.getByTestId('capa-intermedia')).toHaveTextContent('VCI PMG al 2%');
     expect(screen.getByTestId('capa-exterior')).toHaveTextContent('SIN VCI');
     expect(campo('Libras de VCI de la capa exterior').value).toBe('0');
-    expect(campo('Peso de la capa interior (lb)').value).toBe('');                       // no se calcula
+    expect(campo('Peso de la capa interior (lb)').value).toBe('0.13097');
+    expect(within(frameOf('Peso de la capa interior (lb)')).getByText('Calculado por el sistema')).toBeInTheDocument();
     expect(campo('Fuelle derecho').value).toBe('11.8');
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeDisabled();
     expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();  // sin selector de color libre: solo la variante
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Faltan datos técnicos/)).toBeInTheDocument();
-    expect(screen.getByText(/Falta peso de la capa interior/i)).toBeInTheDocument();
+    expect(screen.getByText(/Falta libras de VCI de la capa interior/i)).toBeInTheDocument();
   });
 
   it('con pesos por capa y variante la vista previa recibe la variante y los datos capturados; cambiar a Verde actualiza el texto del color', async () => {

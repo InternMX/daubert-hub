@@ -43,7 +43,7 @@ export interface VarianteDef {
   presetEquivalente: string;
 }
 
-/** Capa de la coextrusión: la formulación VCI de cada capa es FIJA (no se calcula ni se edita); el peso por capa y las libras de VCI los captura el usuario. */
+/** Capa de coextrusión: formulación fija; peso sugerido editable desde el total, libras de VCI siempre capturadas por el usuario. */
 export interface CapaDef {
   id: 'interior' | 'intermedia' | 'exterior';
   etiqueta: string;
@@ -74,6 +74,9 @@ export interface ModalidadDef {
 export interface FamilyDef {
   codigo: FamilyCode;
   nombre: string;
+  productoSugerido: string;
+  productoNota?: string;
+  pesosCapasRegla?: { divisor: number; decimales: number; toleranciaLb: number; variantes: string[]; campos: FieldKey[] };
   plantilla: string;
   imagenes: string;
   perfil: string;
@@ -114,12 +117,14 @@ const OBLIGATORIOS_BASE: FieldKey[] = ['codigo', 'descripcion', 'composicion', '
 
 export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
   BOLSA_PLANA_1: {
+    productoSugerido: 'Bolsa PLANA',
     codigo: 'BOLSA_PLANA_1', nombre: 'Bolsa Plana 1', plantilla: 'templates/bolsa-plana-1/bolsa-plana-1.template.html', imagenes: 'templates/bolsa-plana-1/images', perfil: 'bolsa-plana-1.profile.json',
     campos: [...BASE_ANTES, 'cantidad', 'cantidadUnidad', ...MEDIDAS, ...BASE_DESPUES], requeridos: OBLIGATORIOS_BASE,
     composiciones: ['PMG', 'CP5000', 'NAT'], composicionFija: null, cantidad: true, fuelles: false, colorDibujo: true, colores: [AZUL, VERDE], colorSugerido: 'DAUBERT_AZUL', cotasInternasPorDefecto: '#FFFFFF', validador: null,
     notas: ['Dibujo de bolsa plana con sello inferior y la nota de altura del sello.']
   },
   HOJA_PAQ: {
+    productoSugerido: 'Bolsa PLANA', productoNota: 'Nombre sugerido conforme al machote compartido de Hojas; editable.',
     codigo: 'HOJA_PAQ', nombre: 'Hojas', plantilla: 'templates/hoja-paq/hoja-paq.template.html', imagenes: 'templates/hoja-paq/images', perfil: 'hoja-paq.profile.json',
     campos: [...BASE_ANTES, 'cantidad', 'cantidadUnidad', 'modalidad', ...MEDIDAS, ...BASE_DESPUES], requeridos: [...OBLIGATORIOS_BASE, 'modalidad'],
     composiciones: ['PMG', 'CP5000', 'NAT'], composicionFija: null, cantidad: true, fuelles: false, colorDibujo: true, colores: [AZUL, VERDE], colorSugerido: 'DAUBERT_AZUL', cotasInternasPorDefecto: '#FFFFFF',
@@ -127,6 +132,7 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
     notas: ['Dibujo rectangular de la hoja; la modalidad (doblada o extendida) es un dato explícito.']
   },
   BOLSA_FUELLE: {
+    productoSugerido: 'Bolsa con Fuelle',
     codigo: 'BOLSA_FUELLE', nombre: 'Bolsa Fuelle', plantilla: 'templates/bolsa-fuelle/bolsa-fuelle.template.html', imagenes: 'templates/bolsa-fuelle/images', perfil: 'bolsa-fuelle.profile.json',
     campos: [...BASE_ANTES, 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones', ...BASE_DESPUES],
     requeridos: [...OBLIGATORIOS_BASE, 'fuelleDerecho', 'fuelleIzquierdo'] as FieldKey[],
@@ -134,6 +140,7 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
     notas: ['Ambos fuelles (derecho e izquierdo) y sello integrado. «Fuelle total» es auxiliar: se reparte en dos mitades editables.']
   },
   ROLLO_CONTINUO: {
+    productoSugerido: 'ROLLO VCI',
     codigo: 'ROLLO_CONTINUO', nombre: 'Rollo Continuo', plantilla: 'templates/rollo-continuo/rollo-continuo.template.html', imagenes: 'templates/rollo-continuo/images', perfil: 'rollo-continuo.profile.json',
     campos: [...BASE_ANTES, 'modalidad', ...MEDIDAS, 'anchoRollo', ...BASE_DESPUES],
     requeridos: [...OBLIGATORIOS_BASE.filter((k) => k !== 'cantidad' && k !== 'cantidadUnidad'), 'modalidad', 'anchoRollo'] as FieldKey[],
@@ -142,6 +149,7 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
     notas: ['Dibujo de hoja y dibujo de rollo doblado; el ancho del rollo es un dato independiente del ancho. Solo la modalidad Doblada está autorizada: Extendida no tiene variante gráfica confirmada.']
   },
   TERMOENCOGIBLE: {
+    productoSugerido: 'ROLLO VCI + UV TERMOENCOGIBLE',
     codigo: 'TERMOENCOGIBLE', nombre: 'Termoencogible', plantilla: 'templates/termoencogible/termoencogible.template.html', imagenes: 'templates/termoencogible/images', perfil: 'termoencogible.profile.json',
     campos: ['codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'resinaVci', 'colorNombre', 'composicion', 'presentacion', 'modalidad', ...MEDIDAS, 'calibre', 'pesoLb', 'etiqueta',
       'anchoDoblado', 'medidaPliegue', 'largoPresentacionFinal', 'anchoPresentacionFinal'],
@@ -151,6 +159,8 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
     notas: ['Dibujo del material y de la presentación final: las cuatro cotas técnicas (ancho doblado, pliegue, largo y ancho de la presentación final) son datos independientes y no se calculan. Solo la modalidad Doblada está autorizada.']
   },
   COEX: {
+    productoSugerido: 'Bolsa con Fuelle - 20% de material reciclado', productoNota: 'Sugerencia editable del machote COEX: el 20% reciclado no es una característica universal ni un dato confirmado del producto.',
+    pesosCapasRegla: { divisor: 3, decimales: 5, toleranciaLb: 0.000015, variantes: ['AZUL', 'VERDE'], campos: ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] },
     codigo: 'COEX', nombre: 'COEX', plantilla: 'templates/coex/coex.template.html', imagenes: 'templates/coex/images', perfil: 'coex.profile.json',
     campos: ['codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'coexVariante', 'colorNombre', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo',
       'unidadDimensiones', 'calibre', 'pesoLb', 'pesoCapaInterior', 'lbVciInterior', 'pesoCapaIntermedia', 'lbVciIntermedia', 'pesoCapaExterior', 'lbVciExterior', 'etiqueta'],
@@ -158,9 +168,10 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
       'pesoCapaInterior', 'lbVciInterior', 'pesoCapaIntermedia', 'lbVciIntermedia', 'pesoCapaExterior', 'lbVciExterior'],
     composiciones: ['PMG'], composicionFija: 'PMG', cantidad: true, fuelles: true, colorDibujo: false, colores: [], colorSugerido: null, cotasInternasPorDefecto: '#FFFFFF', validador: null,
     variantes: VARIANTES_COEX, capas: CAPAS_COEX,
-    notas: ['Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI); el peso por capa y las libras de VCI no se calculan: se capturan.']
+    notas: ['Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI). Peso por capa sugerido: peso total ÷ 3, editable y con cinco decimales. Las libras de VCI se capturan, no se calculan.']
   },
   BOLSA_NATURAL: {
+    productoSugerido: 'Bolsa con Fuelle',
     codigo: 'BOLSA_NATURAL', nombre: 'Bolsa Natural', plantilla: 'templates/bolsa-natural/bolsa-natural.template.html', imagenes: 'templates/bolsa-natural/images', perfil: 'bolsa-natural.profile.json',
     campos: [...BASE_ANTES, 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones', ...BASE_DESPUES],
     requeridos: ([...OBLIGATORIOS_BASE, 'fuelleDerecho', 'fuelleIzquierdo'] as FieldKey[]).filter((k) => k !== 'composicion'),
@@ -188,6 +199,9 @@ export function modalidadesDe(def: FamilyDef): ModalidadDef[] {
 export interface FamilyConfigDto {
   codigo: FamilyCode;
   nombre: string;
+  productoSugerido: string;
+  productoNota: string;
+  pesosCapasRegla: FamilyDef['pesosCapasRegla'] | null;
   campos: FieldKey[];
   requeridos: FieldKey[];
   composiciones: Composition[];
@@ -208,7 +222,7 @@ export function configuracionFamilias(): FamilyConfigDto[] {
   return FAMILY_CODES.map((codigo) => {
     const d = FAMILIAS[codigo];
     return {
-      codigo, nombre: d.nombre, campos: d.campos, requeridos: d.requeridos, composiciones: d.composiciones, composicionFija: d.composicionFija, cantidad: d.cantidad, fuelles: d.fuelles,
+      codigo, nombre: d.nombre, productoSugerido: d.productoSugerido, productoNota: d.productoNota ?? 'Nombre sugerido desde el machote de la familia; editable y pendiente de revisión.', pesosCapasRegla: d.pesosCapasRegla ?? null, campos: d.campos, requeridos: d.requeridos, composiciones: d.composiciones, composicionFija: d.composicionFija, cantidad: d.cantidad, fuelles: d.fuelles,
       colorDibujo: d.colorDibujo, colores: d.colores, colorSugerido: d.colorSugerido, modalidades: modalidadesDe(d), variantes: d.variantes ?? [], capas: d.capas ?? null, unidades: (Object.keys(UNIT_LABELS) as UnitCode[]).map((valor) => ({ valor, etiqueta: UNIT_LABELS[valor] })), notas: d.notas
     };
   });

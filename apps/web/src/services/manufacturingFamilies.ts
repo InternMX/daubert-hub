@@ -31,6 +31,9 @@ export interface ModalidadConfig { valor: string; etiqueta: string; habilitada: 
 export interface FamilyConfig {
   codigo: FamilyCode;
   nombre: string;
+  productoSugerido: string;
+  productoNota: string;
+  pesosCapasRegla: { divisor: number; decimales: number; toleranciaLb: number; variantes: string[]; campos: FieldKey[] } | null;
   campos: FieldKey[];
   requeridos: FieldKey[];
   composiciones: Composition[];

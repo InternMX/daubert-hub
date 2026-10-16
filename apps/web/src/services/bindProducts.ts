@@ -79,6 +79,7 @@ export interface SugerenciaFamiliaBind {
 }
 
 export interface SugerenciasBind {
+  productoEspecifico?: string | null;
   familia: SugerenciaFamiliaBind;
   /** Variante COEX declarada por el título (nunca se asume una por defecto). */
   coexVariante?: { valor: 'AZUL' | 'VERDE' | null; nota: string };

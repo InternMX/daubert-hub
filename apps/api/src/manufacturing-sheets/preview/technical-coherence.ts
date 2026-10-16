@@ -3,6 +3,7 @@ import { sugerirEspecificacion } from '../bind-product-interpreter/specification
 import { normalizarTitulo } from '../bind-product-interpreter/title-parser';
 import { FAMILIAS, type FamilyCode } from './family-registry';
 import type { PreviewFormData } from './sheet-data.mapper';
+import { claseDenominacion } from './product-denomination';
 
 export interface BindReviewContext {
   title: string;
@@ -28,6 +29,22 @@ export function revisarCoherencia(family: FamilyCode, data: PreviewFormData, con
   const def = FAMILIAS[family];
   const avisos: TechnicalNotice[] = [];
   const add = (id: string, mensaje: string, nivel: TechnicalNotice['nivel'] = 'CONTRADICCION'): void => { avisos.push({ id, nivel, mensaje }); };
+  const claseProducto = claseDenominacion(data.producto ?? '');
+  if (claseProducto && claseProducto !== claseDenominacion(def.productoSugerido)) add('PRODUCTO_FAMILIA', `La denominación explícita «${data.producto}» no coincide con el nombre sugerido de ${def.nombre}: «${def.productoSugerido}». Se conserva; revisa antes de reemplazarla.`);
+  const regla = def.pesosCapasRegla;
+  const numeroPositivo = (v: string | undefined): number | null => {
+    const texto = (v ?? '').trim();
+    const n = /^\d+(?:[.,]\d+)?$/.test(texto) ? Number(texto.replace(',', '.')) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  if (regla && regla.variantes.includes(data.coexVariante ?? '')) {
+    const total = numeroPositivo(data.pesoLb);
+    const capas = regla.campos.map((key) => numeroPositivo(data[key]));
+    if (total !== null && capas.every((p): p is number => p !== null)) {
+      const suma = capas.reduce((a, p) => a + p, 0);
+      if (Math.abs(suma - total) > regla.toleranciaLb + Number.EPSILON * Math.max(1, total, suma)) add('COEX_SUMA_PESOS', `Los pesos por capa suman ${suma.toFixed(regla.decimales)} lb, pero el peso total declarado es ${data.pesoLb} lb. La diferencia excede la tolerancia de ${regla.toleranciaLb} lb por redondeo a cinco decimales. Revisa los pesos; no se corrigen automáticamente.`);
+    }
+  }
   for (const campo of ['descripcion', 'etiqueta'] as const) {
     const valor = data[campo] ?? '';
     if (valor.length > 180 || /\S{60}/.test(valor)) add(`TEXTO_EXTENSO_${campo}`, `${campo === 'descripcion' ? 'La descripción' : 'La etiqueta'} contiene texto extenso: revisa la hoja ampliada y la paginación antes de la demostración. El texto se conserva íntegro; no se reducen los dibujos.`, 'PENDIENTE');
