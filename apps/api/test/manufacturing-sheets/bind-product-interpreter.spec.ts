@@ -168,12 +168,12 @@ describe('interpretarProductoBind · reglas de título', () => {
     expect(r.familia.posiblesEstaFase).toEqual(['HOJA_PAQ']);
   });
 
-  it('centímetros: unidad fuera de las reconocidas, pendiente y sin conversión', () => {
+  it('centímetros reconocidos, conserva valores y calibre sin conversión', () => {
     const r = interpretarProductoBind(producto({ Title: 'BOLSA VCI PMG 50 x 50 cm CAL.300 PAQUETE C/250 BOLSAS' }));
-    expect(r.campos.unidadDimensiones).toMatchObject({ valor: 'CM', origen: 'PENDIENTE' });
-    expect(advertencias(r)).toContain('UNIDAD_NO_SOPORTADA');
+    expect(r.campos.unidadDimensiones).toMatchObject({ valor: 'CM', origen: 'EXTRAIDO' });
+    expect(advertencias(r)).not.toContain('UNIDAD_NO_SOPORTADA');
     expect(r.campos.calibre.valor).toEqual(expect.objectContaining({ valorOriginal: '300', unidadOriginal: null, textoLiteral: '300' }));
-    expect(sugerirDatosPlantilla(r)).not.toHaveProperty('ancho');
+    expect(sugerirDatosPlantilla(r)).toHaveProperty('ancho', '50 cm');
   });
 
   it('unidades contradictorias entre las dos dimensiones quedan pendientes', () => {

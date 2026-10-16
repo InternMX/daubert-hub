@@ -2,6 +2,7 @@ import type { Advertencia, BindProductInput, Campo, FamiliaPosible, ResultadoInt
 import { interpretarCodigo } from './code-parser';
 import { conciliarConCodigo } from './code-reconciliation';
 import { interpretarTitulo } from './title-parser';
+import { UNIT_LABELS, UNIT_MARKS } from '../preview/family-registry';
 
 const textoONulo = (valor: unknown): string | null => (typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null);
 
@@ -120,9 +121,9 @@ export function sugerirDatosPlantilla(resultado: ResultadoInterpretacion): Recor
   const unidad = usable(campos.unidadDimensiones);
   const ancho = usable(campos.ancho);
   const largo = usable(campos.largo);
-  if (unidad !== null && (unidad === 'IN' || unidad === 'MM') && ancho !== null && largo !== null) {
-    datos.unidad_medidas = unidad === 'IN' ? 'Pulgadas (IN)' : 'Milímetros (MM)';
-    const marca = unidad === 'IN' ? '"' : ' mm';
+  if (unidad !== null && ancho !== null && largo !== null) {
+    datos.unidad_medidas = UNIT_LABELS[unidad];
+    const marca = UNIT_MARKS[unidad];
     datos.ancho = `${ancho}${marca}`;
     datos.largo = `${largo}${marca}`;
   }

@@ -61,7 +61,7 @@ export interface InterpretacionBind {
     fuelleTotal: CampoInterpretado<number>;
     fuelleDerecho: CampoInterpretado<number>;
     fuelleIzquierdo: CampoInterpretado<number>;
-    unidadDimensiones: CampoInterpretado<'IN' | 'MM' | 'CM'>;
+    unidadDimensiones: CampoInterpretado<'IN' | 'MM' | 'CM' | 'M'>;
     calibre: CampoInterpretado<CalibreInterpretado>;
     presentacion: CampoInterpretado<'ROLLO' | 'PAQUETE'>;
     cantidad: CampoInterpretado<CantidadInterpretada>;

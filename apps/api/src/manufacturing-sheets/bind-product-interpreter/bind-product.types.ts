@@ -41,7 +41,7 @@ export interface Campo<T> {
 export type TipoProducto = 'BOLSA' | 'HOJA' | 'PAPEL';
 export type MaterialTipo = 'FILM' | 'PAPEL';
 export type Resina = 'PMG' | 'CP5000' | 'NAT' | 'ESD' | 'XOW';
-export type UnidadDimension = 'IN' | 'MM' | 'CM';
+export type UnidadDimension = 'IN' | 'MM' | 'CM' | 'M';
 export type Presentacion = 'ROLLO' | 'PAQUETE';
 
 /** Calibre tal como aparece: el valor y la unidad originales, sin convertir (p. ej. «CAL. 200» no se transforma en «2 MIL»). */

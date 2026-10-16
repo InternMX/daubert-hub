@@ -34,6 +34,7 @@ export function revisarCoherencia(family: FamilyCode, data: PreviewFormData, con
   if (!context) return avisos;
   const r = interpretarProductoBind({ ID: 'borrador', Code: context.code, Title: context.title });
   const sug = sugerirEspecificacion(r);
+  if (def.fuelles && r.campos.fuelleTotal.valor !== null && !data.fuelleTotal) add('CONFIRMAR_FUELLE_TOTAL', 'Falta confirmar el fuelle total sugerido por las tres medidas de BIND.', 'PENDIENTE');
   const colores = coloresExplicitos(context.title);
   const variante = def.variantes?.find((v) => v.valor === data.coexVariante);
   const preset = def.colores.find((c) => c.hex.toLowerCase() === data.colorHex?.toLowerCase());

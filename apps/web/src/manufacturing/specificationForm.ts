@@ -156,7 +156,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       fuelleDerecho: fuelleField(campos.fuelleDerecho),
       fuelleIzquierdo: fuelleField(campos.fuelleIzquierdo),
       largo: fromCampo(campos.largo, String),
-      unidadDimensiones: unidad.valor !== null && unidad.valor !== 'CM' && unidad.origen !== 'PENDIENTE' ? field(unidad.valor, originOf(unidad), unidad.nota) : field('', 'PENDIENTE', unidad.nota),
+      unidadDimensiones: unidad.valor !== null && unidad.origen !== 'PENDIENTE' ? field(unidad.valor, originOf(unidad), unidad.nota) : field('', 'PENDIENTE', unidad.nota),
       calibre: calibreField,
       pesoLb: fromCampo(campos.pesoLb, String),
       // Etiqueta: Title completo de BIND, editable de forma independiente a la descripción.
@@ -371,7 +371,7 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
   if (config) {
     for (const key of config.requeridos) {
       if (key === 'composicion' && config.composicionFija) continue;
-      if (f[key].value.trim() === '') errors[key] = `Falta ${FIELD_LABELS[key].toLowerCase()}.`;
+      if (f[key].value.trim() === '') errors[key] = key === 'unidadDimensiones' ? 'La unidad dimensional no está identificada.' : `Falta ${FIELD_LABELS[key].toLowerCase()}.`;
     }
     const checkNumber = (key: FieldKey, message: string, optional = false): void => {
       if (errors[key] || !config.campos.includes(key)) return;
@@ -441,7 +441,7 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
   }
   const technicalReady = Object.keys(errors).length === 0;
   const emissionReady = technicalReady && clientIdentified && form.familyOrigin === 'USUARIO';
-  return { errors, warnings, pending, emissionPending, previewable: form.family !== null && config !== null, technicalReady, clientIdentified, emissionReady };
+  return { errors, warnings, pending: [...pending, ...Object.values(errors)], emissionPending, previewable: form.family !== null && config !== null, technicalReady, clientIdentified, emissionReady };
 }
 
 /** Campos cuyo valor difiere del que entregó BIND o del sistema (para mostrar qué cambió el usuario). */

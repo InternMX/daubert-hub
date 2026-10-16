@@ -327,7 +327,7 @@ export function ManufacturingSpecificationPage() {
           <BindProductPanel lookup={lookup} />
           {lookup.advertencias.length > 0 && (
             <Stack spacing={1} sx={{ mt: 2 }} aria-label="Advertencias del producto">
-              {lookup.advertencias.map((a) => <Alert key={`${a.codigo}-${a.campos.join()}`} severity={['FAMILIA_NO_CONFIRMADA', 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'DATO_INFERIDO_DEL_CODIGO'].includes(a.codigo) ? 'info' : 'warning'}>{a.mensaje}</Alert>)}
+              {lookup.advertencias.filter((a) => !currentAssessment || (!a.codigo.startsWith('CODIGO_RESINA_') && !a.codigo.startsWith('CODIGO_MATERIAL_') && !a.campos.every((k) => k in form.fields && form.fields[k as FieldKey].value.trim() !== ''))).map((a) => <Alert key={`${a.codigo}-${a.campos.join()}`} severity={['FAMILIA_NO_CONFIRMADA', 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'DATO_INFERIDO_DEL_CODIGO'].includes(a.codigo) ? 'info' : 'warning'}><strong>Información de origen:</strong> {a.mensaje}</Alert>)}
             </Stack>
           )}
 
@@ -353,7 +353,7 @@ export function ManufacturingSpecificationPage() {
 
           {live && live.warnings.length > 0 && (
             <Stack spacing={1} sx={{ mt: 2 }} aria-label="Atención">
-              {live.warnings.map((w) => <Alert key={w} severity="warning" data-testid="live-warning">{w}</Alert>)}
+              {live.warnings.filter((w) => !contradictions.some((a) => a.id === 'FAMILIA_BIND') || !w.startsWith('Familia incompatible')).map((w) => <Alert key={w} severity="warning" data-testid="live-warning">{w}</Alert>)}
             </Stack>
           )}
           {contradictions.length > 0 && <Stack spacing={1} sx={{ mt: 2 }} aria-label="Contradicciones técnicas">
@@ -469,8 +469,8 @@ export function ManufacturingSpecificationPage() {
             )}
             {live && live.pending.length > 0 && (
               <Alert severity="warning" sx={{ mb: 1.5 }} data-testid="pending-list">
-                <strong>Pendientes:</strong>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{live.pending.map((p) => <li key={p}>{p}</li>)}</ul>
+                <strong>Pendientes de confirmación / errores que impiden validar:</strong>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{live.pending.filter((p) => !Object.values(errors).includes(p)).map((p) => <li key={p}>{p}</li>)}</ul>
               </Alert>
             )}
             {live && live.emissionPending.length > 0 && (

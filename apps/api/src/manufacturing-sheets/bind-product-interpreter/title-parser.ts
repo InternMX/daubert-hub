@@ -59,6 +59,7 @@ const RESINAS: Resina[] = ['PMG', 'CP5000', 'NAT', 'ESD', 'XOW'];
 
 function interpretarResina(t: string, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Campo<Resina> {
   const encontradas = new Set<Resina>();
+  if (/\b(?:BOLSA|MATERIAL|COMPOSICI[ÓO]N|RESINA)\s+NATURAL\b/.test(t)) encontradas.add('NAT');
   for (const r of RESINAS) if (new RegExp(`\\b${r}\\b`).test(t)) encontradas.add(r);
   if (encontradas.size === 0) return pendiente('El título no indica una resina reconocida (PMG, CP5000, NAT, ESD o XOW).');
   if (encontradas.size > 1) {
@@ -73,7 +74,7 @@ function interpretarResina(t: string, adv: (c: CodigoAdvertencia, m: string, cam
 }
 
 // ---------------------------------------------------------------- dimensiones
-const UNIDAD = '(?:"|MM\\b|CM\\b|IN\\b|PULG\\w*)';
+const UNIDAD = '(?:"|MM\\b|CM\\b|CENT[ÍI]METROS?\\b|IN\\b|PULGADAS?\\b|PULG\\b|METROS?\\b|MTS?\\b|M\\b)';
 const NUM = '\\d+(?:[.,]\\d+)?';
 const CADENA_MEDIDAS = new RegExp(`${NUM}\\s*${UNIDAD}?(?:\\s*X\\s*${NUM}\\s*${UNIDAD}?)+`, 'g');
 const PARTE_MEDIDA = new RegExp(`^(${NUM})\\s*(${UNIDAD})?$`);
@@ -81,6 +82,7 @@ const PARTE_MEDIDA = new RegExp(`^(${NUM})\\s*(${UNIDAD})?$`);
 function unidadDe(texto: string): UnidadDimension {
   if (texto === '"' || texto === 'IN' || texto.startsWith('PULG')) return 'IN';
   if (texto === 'MM') return 'MM';
+  if (/^(?:M|MT|MTS|METROS?)$/.test(texto)) return 'M';
   return 'CM';
 }
 
@@ -96,6 +98,20 @@ interface Medidas {
 function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Medidas {
   const sinFuelles = { fuelleTotal: pendiente<number>('Sin fuelles en el título.'), fuelleDerecho: pendiente<number>('Sin fuelles en el título.'), fuelleIzquierdo: pendiente<number>('Sin fuelles en el título.') };
   const vacio = (nota: string): Medidas => ({ ancho: pendiente(nota), largo: pendiente(nota), ...sinFuelles, unidad: pendiente('Unidad dimensional sin determinar.') });
+  // En rollos y termoencogibles no se presupone el orden comercial de las medidas.
+  // Solo las etiquetas ANCHO / LARGO identifican esos dos campos; las cotas del dibujo siguen siendo independientes.
+  if (/\bROLLO\s+CONTINUO\b|\bTERMOENCOG\w*\b/.test(t)) {
+    const anchos = [...t.matchAll(new RegExp(`\\bANCHO\\s*[:=]?\\s*(${NUM})\\s*(${UNIDAD})?`, 'g'))];
+    const largos = [...t.matchAll(new RegExp(`\\bLARGO\\s*[:=]?\\s*(${NUM})\\s*(${UNIDAD})?`, 'g'))];
+    if (anchos.length === 1 && largos.length === 1) {
+      const a = anchos[0]!; const l = largos[0]!;
+      if (a[2] && l[2] && unidadDe(a[2]) === unidadDe(l[2])) return { ancho: extraido(numero(a[1]!), a[0]), largo: extraido(numero(l[1]!), l[0]), ...sinFuelles, unidad: extraido(unidadDe(a[2]), `${a[0]} / ${l[0]}`) };
+      adv('UNIDAD_CONTRADICTORIA', 'Ancho y largo no tienen una misma unidad explícita: confirma ambos valores y su unidad. No se convierten medidas.', ['ancho', 'largo', 'unidadDimensiones']);
+      return vacio('Unidades independientes o ausentes: captura las medidas sin conversión automática.');
+    }
+    adv('MEDIDAS_NO_ESTANDAR', 'Rollo o termoencogible: el orden de las dimensiones no es inequívoco. Captura ancho, largo y las cotas independientes del dibujo.', ['ancho', 'largo']);
+    return vacio('Orden dimensional pendiente: no se supone Ancho × Largo.');
+  }
   const cadenas = t.match(CADENA_MEDIDAS) ?? [];
   if (cadenas.length === 0) {
     adv('MEDIDAS_INCOMPLETAS', 'El título no contiene dos dimensiones (Ancho × Largo).', ['ancho', 'largo']);
@@ -130,13 +146,9 @@ function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: Codig
     }
     if (unidadesTres.size > 1) {
       adv('UNIDAD_CONTRADICTORIA', `Las medidas usan unidades distintas (${[...unidadesTres].join(', ')}).`, ['unidadDimensiones']);
-      return { ...tres, unidad: pendiente('Unidades contradictorias.') };
+      return vacio('Unidades contradictorias: confirma valores y unidad sin convertir.');
     }
     const unidadTres = [...unidadesTres][0] as UnidadDimension;
-    if (unidadTres === 'CM') {
-      adv('UNIDAD_NO_SOPORTADA', 'La unidad centímetros no está entre las reconocidas (pulgadas o milímetros): no se convierte automáticamente.', ['unidadDimensiones']);
-      return { ...tres, unidad: pendiente('Centímetros: unidad fuera de las reconocidas; sin conversión automática.', unidadTres, cadena) };
-    }
     return { ...tres, unidad: extraido(unidadTres, cadena) };
   }
   if (valores.length !== 2) {
@@ -154,13 +166,9 @@ function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: Codig
   }
   if (unidades.size > 1) {
     adv('UNIDAD_CONTRADICTORIA', `Las dos dimensiones usan unidades distintas (${[...unidades].join(', ')}).`, ['unidadDimensiones']);
-    return { ...dos, unidad: pendiente('Unidades contradictorias.') };
+    return vacio('Unidades contradictorias: confirma valores y unidad sin convertir.');
   }
   const unidad = [...unidades][0] as UnidadDimension;
-  if (unidad === 'CM') {
-    adv('UNIDAD_NO_SOPORTADA', 'La unidad centímetros no está entre las reconocidas (pulgadas o milímetros): no se convierte automáticamente.', ['unidadDimensiones']);
-    return { ...dos, unidad: pendiente('Centímetros: unidad fuera de las reconocidas; sin conversión automática.', unidad, cadena) };
-  }
   return { ...dos, unidad: extraido(unidad, cadena) };
 }
 
