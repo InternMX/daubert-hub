@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FAMILIAS, modalidadesDe, type FamilyCode } from './family-registry';
 import { mapSheetData, type PreviewFamily, type PreviewFormData } from './sheet-data.mapper';
+import { revisarCoherencia, type BindReviewContext, type TechnicalNotice } from './technical-coherence';
 
 // Vista previa HTML de las Hojas de Instrucción de Manufactura. Reutiliza EXACTAMENTE el compositor (tools/compose-template.mjs), las plantillas aprobadas y los validadores de
 // tools/: aquí solo se sustituyen los placeholders (con escape) y se endurece el HTML para mostrarlo en un iframe aislado. No escribe en disco ni en PostgreSQL.
@@ -37,6 +38,7 @@ export interface SheetPreviewResult {
   pendientesEmision: string[];
   /** Motivo por el que no se muestra el documento (p. ej. modalidad sin variante gráfica autorizada); null si se muestra. */
   bloqueado: string | null;
+  avisosTecnicos: TechnicalNotice[];
 }
 
 export function escapeHtml(value: string): string {
@@ -48,12 +50,12 @@ export class SheetPreviewService {
   private readonly composed = new Map<FamilyCode, string>();
   private componer: Promise<Componer> | null = null;
 
-  async preview(family: PreviewFamily, form: PreviewFormData): Promise<SheetPreviewResult> {
+  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext): Promise<SheetPreviewResult> {
     const def = FAMILIAS[family];
     const mapped = mapSheetData(family, form);
     const resultado = (extra: Partial<SheetPreviewResult>): SheetPreviewResult => ({
       html: '', familia: family, borrador: true, firmas: 'SIN_FIRMA', completo: mapped.faltantes.length === 0, faltantes: mapped.faltantes, advertencias: mapped.advertencias,
-      pendientesEmision: mapped.pendientesEmision, bloqueado: null, ...extra
+      pendientesEmision: mapped.pendientesEmision, bloqueado: null, avisosTecnicos: revisarCoherencia(family, form, context), ...extra
     });
 
     // Modalidades SIN variante gráfica confirmada (perfil): no se genera un documento engañoso.
@@ -75,7 +77,7 @@ export class SheetPreviewService {
     });
     html = html.replace('<head>', `<head>\n  ${CSP}`);
     html = this.inlineLogo(family, html);
-    return resultado({ html, advertencias: mapped.advertencias });
+    return resultado({ html, completo: mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0, advertencias: mapped.advertencias });
   }
 
   private async validar(validador: { archivo: string; funcion: string } | null, family: FamilyCode, modalidad: string, datos: Record<string, string>): Promise<string[]> {

@@ -5,6 +5,8 @@ import type { FamilyCode } from './manufacturingFamilies';
 // resultante y lo muestra en un iframe aislado. No se guarda nada.
 
 export type PreviewFamilyCode = FamilyCode;
+export interface BindReviewContext { title: string; code: string; composicionSeleccionada?: string }
+export interface TechnicalNotice { id: string; nivel: 'INFORMACION' | 'PENDIENTE' | 'CONTRADICCION' | 'ERROR'; mensaje: string }
 
 export interface SheetPreviewResponse {
   html: string;
@@ -20,6 +22,7 @@ export interface SheetPreviewResponse {
   pendientesEmision: string[];
   /** Motivo por el que no se muestra el documento (p. ej. modalidad no autorizada); null si se muestra. */
   bloqueado: string | null;
+  avisosTecnicos?: TechnicalNotice[];
 }
 
 export type SheetPreviewErrorKind = 'INVALID_DATA' | 'UNAUTHENTICATED' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'NETWORK';
@@ -37,10 +40,10 @@ function isPreview(body: unknown): body is { data: SheetPreviewResponse } {
     && Array.isArray(d.faltantes) && Array.isArray(d.advertencias) && Array.isArray(d.pendientesEmision) && typeof d.completo === 'boolean' && (d.bloqueado === null || typeof d.bloqueado === 'string');
 }
 
-export async function previewManufacturingSheet(familia: PreviewFamilyCode, datos: Record<string, string>, signal?: AbortSignal): Promise<SheetPreviewResponse> {
+export async function previewManufacturingSheet(familia: PreviewFamilyCode, datos: Record<string, string>, signal?: AbortSignal, contexto?: BindReviewContext): Promise<SheetPreviewResponse> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/manufacturing-sheets/previews`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ familia, datos }), signal });
+    response = await fetch(`${apiBaseUrl}/manufacturing-sheets/previews`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ familia, datos, ...(contexto ? { contexto } : {}) }), signal });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new SheetPreviewError('NETWORK', 0);

@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
+import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
@@ -202,6 +203,8 @@ export function ManufacturingSpecificationPage() {
   const [lookup, setLookup] = useState<BindProductLookup | null>(null);
   const [form, setForm] = useState<SpecificationForm | null>(null);
   const [validation, setValidation] = useState<SpecificationValidation | null>(null);
+  const [assessment, setAssessment] = useState<{ key: string; result: SheetPreviewResponse } | null>(null);
+  const [reviewedKey, setReviewedKey] = useState('');
   const controller = useRef<AbortController | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
@@ -218,6 +221,7 @@ export function ManufacturingSpecificationPage() {
     const current = new AbortController();
     controller.current = current;
     setValidation(null);
+    setReviewedKey('');
     if (!BIND_CODE_PATTERN.test(code.trim())) {
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
@@ -237,6 +241,7 @@ export function ManufacturingSpecificationPage() {
   const update = (updater: (previous: SpecificationForm) => SpecificationForm): void => {
     setForm((previous) => (previous ? updater(previous) : previous));
     setValidation(null);
+    setReviewedKey('');
   };
   const setValue = (key: FieldKey, value: string): void => update((f) => setFieldValue(f, key, value));
   const restore = (key: FieldKey): void => update((f) => restoreField(f, key));
@@ -284,6 +289,13 @@ export function ManufacturingSpecificationPage() {
   );
 
   const live = form && configStatus === 'ready' ? validateSpecification(form, configs, lookup ?? undefined) : null;
+  const reviewKey = JSON.stringify({ form, producto: lookup?.producto });
+  const previewData = form && config ? { ...toPreviewData(form, config), ...(config.fuelles ? { fuelleTotal: form.fields.fuelleTotal.value } : {}) } : {};
+  const previewContext = lookup && form ? { title: lookup.producto.Title, code: lookup.producto.Code, composicionSeleccionada: form.fields.composicion.value } : undefined;
+  const assessmentKey = JSON.stringify({ family: form?.family, data: previewData, context: previewContext });
+  const currentAssessment = assessment?.key === assessmentKey ? assessment.result : null;
+  const contradictions = currentAssessment?.avisosTecnicos?.filter((a) => a.nivel !== 'INFORMACION') ?? [];
+  const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO';
   const colorPreset = form?.fields.colorPreset.value ?? '';
   const colorSwatch = (hex: string) => <Box aria-label="Muestra del color" role="img" data-testid="color-swatch" sx={{ width: 32, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : 'transparent', flexShrink: 0 }} />;
   const composiciones = (config?.composiciones ?? ['PMG', 'CP5000', 'NAT']).map((value) => ({ value, label: value === 'NAT' ? 'Natural' : value }));
@@ -344,6 +356,10 @@ export function ManufacturingSpecificationPage() {
               {live.warnings.map((w) => <Alert key={w} severity="warning" data-testid="live-warning">{w}</Alert>)}
             </Stack>
           )}
+          {contradictions.length > 0 && <Stack spacing={1} sx={{ mt: 2 }} aria-label="Contradicciones técnicas">
+            {contradictions.map((a) => <Alert key={a.id} severity={a.nivel === 'ERROR' ? 'error' : 'warning'}><strong>{a.nivel === 'PENDIENTE' ? 'Pendiente de confirmación' : 'Contradicción técnica'}:</strong> {a.mensaje}</Alert>)}
+            <Typography variant="caption">La revisión solo vale para los valores del borrador actual. No autoriza una especificación oficial.</Typography>
+          </Stack>}
 
           <SectionCard title="Datos generales">
             {text('codigo')}
@@ -446,7 +462,8 @@ export function ManufacturingSpecificationPage() {
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }} aria-label="Estado de la especificación">
                 <Chip size="small" color={live.previewable ? 'info' : 'default'} label={live.previewable ? 'Borrador previsualizable' : 'Borrador: falta la familia'} data-testid="status-preview" />
                 <Chip size="small" color={live.technicalReady ? 'success' : 'warning'} label={live.technicalReady ? 'Datos técnicos suficientes' : `Datos técnicos incompletos (${Object.keys(live.errors).length})`} data-testid="status-technical" />
-                <Chip size="small" color={live.emissionReady ? 'success' : 'default'} variant={live.emissionReady ? 'filled' : 'outlined'} label={live.emissionReady ? 'Apto para emisión futura (sin guardar)' : 'No apto para emisión futura'} data-testid="status-emission" />
+                <Chip size="small" color={reviewed ? 'success' : 'warning'} label={reviewed ? 'Datos revisados para este borrador' : 'Datos pendientes de revisión'} data-testid="status-reviewed" />
+                <Chip size="small" color={live.emissionReady && reviewed ? 'success' : 'default'} label={live.emissionReady && reviewed ? 'Apto para emisión futura (sin guardar)' : 'No apto para emisión futura'} data-testid="status-emission" />
                 <Chip size="small" variant="outlined" label="Aprobación: fuera de alcance" data-testid="status-approval" />
               </Stack>
             )}
@@ -464,13 +481,14 @@ export function ManufacturingSpecificationPage() {
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <Button variant="contained" onClick={() => setValidation(validateSpecification(form, configs, lookup))}>Validar especificación</Button>
+              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO'} onClick={() => setReviewedKey(reviewKey)}>{contradictions.length ? 'Revisé las discrepancias: intencionales en este borrador' : 'Confirmar revisión del borrador'}</Button>
               <Typography variant="body2" color="text.secondary">
                 {changedFields(form, config).length === 0 ? 'Sin cambios respecto a lo recuperado de BIND.' : `Campos modificados por el usuario: ${changedFields(form, config).map((k) => FIELD_LABELS[k]).join(', ')}.`}
               </Typography>
             </Stack>
             {validation && (
               <Stack spacing={1} sx={{ mt: 2 }}>
-                {validation.emissionReady
+                {validation.emissionReady && reviewed
                   ? <Alert severity="success">Los datos técnicos están completos, hay cliente del catálogo y la familia fue confirmada: apto para una emisión futura. Aún no se guarda ni se emite ninguna hoja.</Alert>
                   : validation.technicalReady
                     ? <Alert severity="info">Datos técnicos suficientes para la vista previa. {validation.clientIdentified ? 'Confirma la familia para considerarlo apto para una emisión futura.' : 'Falta identificar el cliente para una emisión futura (opcional en la demostración).'} Aún no se guarda ni se emite ninguna hoja.</Alert>
@@ -480,7 +498,9 @@ export function ManufacturingSpecificationPage() {
           </Paper>
         </Box>
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
-          <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={config ? toPreviewData(form, config) : {}} />
+          <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData}
+            context={previewContext}
+            onAssessment={(result, key) => setAssessment(result ? { key, result } : null)} />
         </Box>
         </Box>
       )}

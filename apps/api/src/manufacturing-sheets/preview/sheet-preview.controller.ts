@@ -12,6 +12,6 @@ export class SheetPreviewController {
   @Post()
   @HttpCode(200)
   async create(@Body() body: SheetPreviewRequestDto): Promise<{ data: SheetPreviewResult }> {
-    return { data: await this.preview.preview(body.familia, body.datos) };
+    return { data: await this.preview.preview(body.familia, body.datos, body.contexto) };
   }
 }

@@ -1,7 +1,7 @@
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
-import { previewManufacturingSheet, SheetPreviewError, type SheetPreviewResponse } from '../services/sheetPreview';
+import { previewManufacturingSheet, SheetPreviewError, type SheetPreviewResponse, type BindReviewContext } from '../services/sheetPreview';
 import type { FamilyCode } from './specificationForm';
 
 // Documento de vista previa en CSS px. La hoja carta mide 816 x 1056 (8.5 x 11 in a 96 ppp), pero las plantillas aprobadas aplican su diseño MÓVIL con ventanas de 816 px o menos
@@ -45,9 +45,11 @@ interface SheetPreviewPanelProps {
   familyLabel: string;
   /** Campos del formulario (solo texto). Los datos originales de BIND nunca se envían ni se modifican. */
   data: Record<string, string>;
+  context?: BindReviewContext;
+  onAssessment?: (result: SheetPreviewResponse | null, key: string) => void;
 }
 
-export function SheetPreviewPanel({ family, familyLabel, data }: SheetPreviewPanelProps) {
+export function SheetPreviewPanel({ family, familyLabel, data, context, onAssessment }: SheetPreviewPanelProps) {
   const [result, setResult] = useState<SheetPreviewResponse | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorKind, setErrorKind] = useState<string | null>(null);
@@ -55,7 +57,9 @@ export function SheetPreviewPanel({ family, familyLabel, data }: SheetPreviewPan
   const [width, setWidth] = useState(420);
   const container = useRef<HTMLDivElement | null>(null);
   const sequence = useRef(0);
-  const payloadKey = family ? JSON.stringify({ family, data }) : '';
+  const payloadKey = family ? JSON.stringify({ family, data, context }) : '';
+  const assessmentCallback = useRef(onAssessment);
+  assessmentCallback.current = onAssessment;
 
   // Actualiza la vista previa con debounce. Cada cambio cancela la solicitud anterior y descarta cualquier respuesta que llegue fuera de orden.
   useEffect(() => {
@@ -63,10 +67,12 @@ export function SheetPreviewPanel({ family, familyLabel, data }: SheetPreviewPan
     const current = ++sequence.current;
     const controller = new AbortController();
     setStatus('loading');
+    assessmentCallback.current?.(null, payloadKey);
     const timer = setTimeout(() => {
-      previewManufacturingSheet(family, data, controller.signal).then((response) => {
+      previewManufacturingSheet(family, data, controller.signal, context).then((response) => {
         if (current !== sequence.current) return;
         setResult(response); setStatus('ready'); setErrorKind(null);
+        assessmentCallback.current?.(response, payloadKey);
       }).catch((error: unknown) => {
         if (current !== sequence.current || (error instanceof DOMException && error.name === 'AbortError')) return;
         setStatus('error'); setErrorKind(error instanceof SheetPreviewError ? error.kind : 'NETWORK');

@@ -51,6 +51,24 @@ afterEach(() => { vi.clearAllMocks(); });
 
 // El formulario completo (MUI + vista previa con debounce) es costoso de renderizar: con la suite completa en paralelo y cobertura, 5 s no alcanzan.
 describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
+  it('una discrepancia exige revisión explícita del borrador y cualquier edición invalida la revisión', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    previewMock.mockResolvedValue({ html: '<p>Borrador</p>', familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: ['Cliente'], bloqueado: null,
+      avisosTecnicos: [{ id: 'COLOR_AZUL', nivel: 'CONTRADICCION', mensaje: 'BIND menciona AZUL, pero la hoja utiliza VERDE.' }] });
+    renderPage();
+    await buscar(user);
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    const review = await screen.findByRole('button', { name: 'Revisé las discrepancias: intencionales en este borrador' });
+    await waitFor(() => expect(review).toBeEnabled());
+    expect(screen.getByTestId('status-reviewed')).toHaveTextContent('pendientes de revisión');
+    await user.click(review);
+    expect(screen.getByTestId('status-reviewed')).toHaveTextContent('Datos revisados para este borrador');
+    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    expect(screen.getByTestId('status-reviewed')).toHaveTextContent('pendientes de revisión');
+    expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto');
+    expect(campo('Descripción').value).toBe(schfpmg001().producto.Title);
+  });
   it('muestra el buscador y no consulta nada hasta que el usuario lo pide', async () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'Especificación de manufactura' })).toBeInTheDocument();
@@ -130,6 +148,9 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(within(frameOf(CLIENTE)).getByText('Cliente del catálogo (confirmado)')).toBeInTheDocument();
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto para emisión futura');            // la familia sigue siendo una sugerencia
     await user.click(screen.getByRole('button', { name: 'Confirmar familia' }));
+    expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto para emisión futura');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar revisión del borrador' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Confirmar revisión del borrador' }));
     expect(screen.getByTestId('status-emission')).toHaveTextContent('Apto para emisión futura');
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/apto para una emisión futura/)).toBeInTheDocument();
@@ -160,7 +181,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(within(frameOf('Fuelle derecho')).getByText('Editado por el usuario')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Fuelle').getAttribute('srcdoc')).toContain('fuelles=26/25'), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![0]).toBe('BOLSA_FUELLE');
-    expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('fuelleTotal');
+    expect(previewMock.mock.calls.at(-1)![1]).toHaveProperty('fuelleTotal', '50'); // auxiliar de coherencia: no se imprime
   });
 
   it('Bolsa Natural: composición fija (no editable), sin formulación VCI automática y color natural por defecto', async () => {

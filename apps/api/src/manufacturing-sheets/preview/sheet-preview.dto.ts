@@ -43,9 +43,15 @@ export class SheetPreviewDataDto {
   @IsOptional() @IsString() @MaxLength(16) anchoPresentacionFinal?: string;
 }
 
+export class BindReviewContextDto {
+  @IsString() @MaxLength(500) title!: string;
+  @IsString() @MaxLength(64) code!: string;
+  @IsOptional() @IsString() @MaxLength(40) composicionSeleccionada?: string;
+}
+
 export class SheetPreviewRequestDto {
   @IsIn(FAMILY_CODES) familia!: FamilyCode;
 
   @IsDefined() @IsObject() @ValidateNested() @Type(() => SheetPreviewDataDto) datos!: SheetPreviewDataDto;
+  @IsOptional() @IsObject() @ValidateNested() @Type(() => BindReviewContextDto) contexto?: BindReviewContextDto;
 }
-

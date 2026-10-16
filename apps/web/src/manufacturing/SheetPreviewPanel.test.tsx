@@ -35,7 +35,7 @@ describe('SheetPreviewPanel', () => {
     expect(frame.getAttribute('srcdoc')).toContain('HOJA SCHFPMG001');
     expect(frame).not.toHaveAttribute('src');
     expect(screen.getByTestId('draft-watermark')).toHaveTextContent('BORRADOR · SIN APROBAR');
-    expect(previewMock).toHaveBeenCalledWith('BOLSA_PLANA_1', DATA, expect.any(AbortSignal));
+    expect(previewMock).toHaveBeenCalledWith('BOLSA_PLANA_1', DATA, expect.any(AbortSignal), undefined);
   });
 
   it('aplica debounce: varios cambios seguidos generan una sola consulta con los últimos datos', async () => {
