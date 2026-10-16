@@ -188,11 +188,26 @@ describe('POST /api/manufacturing-sheets/previews', { timeout: 20_000 }, () => {
       { familia: 'HOJA_PAQ', datos: { composicion: 'ESD' } },
       { familia: 'HOJA_PAQ', datos: { descripcion: 'x'.repeat(501) } },
       { familia: 'HOJA_PAQ', datos: { cliente: 42 } },
+      { familia: 'HOJA_PAQ', datos: {}, contexto: { title: 'x'.repeat(501), code: 'A' } },
+      { familia: 'HOJA_PAQ', datos: {}, contexto: { title: 'COLOR AZUL', code: 'A', html: '<script>x</script>' } },
+      { familia: 'HOJA_PAQ', datos: {}, contexto: { title: 123, code: 'A' } },
+      { familia: 'HOJA_PAQ', datos: {}, contexto: { title: 'COLOR AZUL', code: 'A'.repeat(65) } },
       { familia: 'HOJA_PAQ', datos: {}, extra: true }
     ]) {
       const res = await post(body);
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
+  });
+
+  it('el contexto original activa coherencia en HTTP sin insertarse como contenido activo ni modificar el borrador', async () => {
+    const datos = { ...SCHF, colorNombre: 'VERDE', colorHex: '#00B050', cliente: '' };
+    const res = await post({ familia: 'BOLSA_PLANA_1', datos, contexto: { title: 'BOLSA PMG COLOR AZUL <script>alert(1)</script>', code: 'SCHFPMG001' } });
+    expect(res.status).toBe(200);
+    expect(res.body.data.avisosTecnicos).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'COLOR_AZUL', nivel: 'CONTRADICCION' })]));
+    expect(res.body.data.html).not.toContain('<script>');
+    expect(res.body.data.html).toContain('fill="#00B050"');
+    expect(res.body.data.pendientesEmision).toContain('Cliente');
+    expect(pgPool).not.toHaveBeenCalled();
   });
 
   it('la ruta es autenticada (no @Public) y sigue la convención /api/manufacturing-sheets/…', () => {

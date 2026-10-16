@@ -19,6 +19,7 @@ fs.mkdirSync(salida, { recursive: true });
 const service = new SheetPreviewService();
 const productos = casos.map((c) => ({ ID: `simulado-${c.id}`, Code: c.datos.codigo, Title: c.datos.descripcion, Weight: c.datos.pesoLb, Description: 'FIXTURE SIMULADO para demostración local; no consultado a BIND real.', CreationDate: null }));
 productos.push({ ID: 'simulado-paper', Code: 'TARPPW3301', Title: 'PAPEL VCI PW33 100 X 200 MM PAQUETE C/100 HOJAS', Weight: null, Description: 'FIXTURE SIMULADO: detección de papel sin plantilla.', CreationDate: null });
+productos.push({ ID: 'simulado-color', Code: 'DEMOFPMG001', Title: 'BOLSA VCI PMG 13 X 16 IN CAL. 3 MIL COLOR AZUL PAQUETE C/200 BOLSAS', Weight: '0.0428', Description: 'FIXTURE SIMULADO: cambiar a Verde para revisar una contradicción explícita de color.', CreationDate: null });
 function lookup(producto) {
   const interpretacion = interpretarProductoBind(producto);
   const sugerencias = sugerirEspecificacion(interpretacion);
@@ -132,6 +133,7 @@ async function main() {
     documentados.push({ ...c, origen: 'FIXTURE_SIMULADO_NO_CONSULTADO_A_BIND', producto: p, automaticos: r.interpretacion.campos, sugerencias: r.sugerencias, advertenciasOrigen: r.advertencias, resultado: { ...preview, html: undefined } });
   }
   fs.writeFileSync(path.join(salida, 'casos-demostracion.json'), JSON.stringify(documentados, null, 2));
+  fs.writeFileSync(path.join(salida, 'casos-extra-simulados.json'), JSON.stringify(productos.slice(casos.length), null, 2));
   const lineas = ['# Ocho casos reproducibles', '', '**Todos son fixtures simulados reproducidos localmente; no se consultó BIND real.**', '', 'Los datos finales son valores de prueba capturados o confirmados por el demostrador. Cliente vacío en todos los casos. Ninguno es una especificación oficial.', ''];
   for (const c of documentados) {
     lineas.push(`## ${c.id} · ${c.familia}`, '', `- Código: \`${c.producto.Code}\``, `- Title: ${c.producto.Title}`, `- Familia esperada: ${c.familia}. Seleccionarla o confirmar la sugerencia.`, '', '### Datos obtenidos automáticamente del fixture', '');
