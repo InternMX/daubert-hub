@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { PaymentNotificationsService } from '../src/automations/payment-notifications/payment-notifications.service';
+import type { PaymentAliasResolution } from '../src/aliases/payment-alias-resolution';
 
 function execution(overrides: Partial<{
   execution_id: string; created_at: string; processed_at: string | null; processing_status: 'PENDIENTE' | 'PROCESADO' | 'ERROR';
@@ -51,8 +52,9 @@ function setup(options: {
     triggerReprocess: vi.fn().mockResolvedValue(options.triggerReprocessOutcome ?? 'ACCEPTED')
   };
   const triggerRequests = { record: options.recordImplementation ? vi.fn().mockImplementation(options.recordImplementation) : vi.fn().mockResolvedValue(undefined) };
-  const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never);
-  return { service, repository, reviewAcknowledgements, webhookClient, triggerRequests };
+  const aliases = { resolvePaymentAliases: vi.fn(async (values: string[]): Promise<{ data: PaymentAliasResolution[] }> => ({ data: values.map((alias) => ({ alias, normalizedAlias: alias, state: 'UNASSIGNED', assignment: null, company: null })) })) };
+  const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, aliases as never);
+  return { service, repository, reviewAcknowledgements, webhookClient, triggerRequests, aliases };
 }
 
 const identity = { userId: '5', userEmail: 'user@daubert.mx' };
@@ -236,12 +238,30 @@ describe('PaymentNotificationsService', () => {
       expect(data.totalResults).toBe(11);
       expect(data.errorCount).toBe(0);
       expect(data.fileErrors).toBe(2);
-      expect(data.fileErrorDetails).toEqual([
+      expect(data.fileErrorDetails.map((file) => ({ fileName: file.fileName, errorCode: file.errorCode, detail: file.detail, fileHash: file.fileHash }))).toEqual([
         { fileName: '13.-KARINA MEZA.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'KARINA MEZA', fileHash: HASH_A },
         { fileName: '2.-CTO DE ABASTECIMIENT.pdf', errorCode: 'ALIAS_NO_CATALOGADO', detail: 'CTO DE ABASTECIMIENT', fileHash: HASH_B }
       ]);
       expect(data.fileErrors).toBe(data.fileErrorDetails.length);
       expect(data.results).toHaveLength(1);
+    });
+
+    it('reads current assignments on every detail request, preserving the historical error through assignment and deactivation', async () => {
+      const original = execution({ file_error_detail: `test.pdf: ALIAS_NO_CATALOGADO - TEST ALIAS | HASH=${HASH_A}` });
+      const { service, aliases, repository, webhookClient } = setup({ findExecutionById: original });
+      const base: PaymentAliasResolution = { alias: 'TEST ALIAS', normalizedAlias: 'TEST ALIAS', state: 'UNASSIGNED', assignment: null, company: null };
+      aliases.resolvePaymentAliases.mockResolvedValueOnce({ data: [base] })
+        .mockResolvedValueOnce({ data: [{ ...base, state: 'ACTIVE', company: { id: '121', name: 'Empresa TEST' } }] })
+        .mockResolvedValueOnce({ data: [{ ...base, state: 'INACTIVE' }] });
+      for (const state of ['UNASSIGNED', 'ACTIVE', 'INACTIVE']) {
+        const { data } = await service.getDetail('32');
+        expect(data.fileErrorDetails[0]).toMatchObject({ errorCode: 'ALIAS_NO_CATALOGADO', detail: 'TEST ALIAS', aliasResolution: { state } });
+        expect(data.fileErrors).toBe(1);
+      }
+      expect(aliases.resolvePaymentAliases).toHaveBeenCalledTimes(3);
+      expect(repository.findExecutionById).toHaveBeenCalledTimes(3);
+      expect(original.file_error_detail).toContain('ALIAS_NO_CATALOGADO');
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
     });
 
     it('global outcome is identical with and without file errors (PARTIAL stays PARTIAL); only a pending HASH flag can change reprocessAvailable', async () => {
@@ -437,7 +457,7 @@ describe('PaymentNotificationsService', () => {
       const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
       const repository = { list: vi.fn(), findExecutionById: vi.fn(), findResultsByExecutionId: vi.fn(), listRecent: vi.fn(), findReprocessableCorreoByExecutionId: lookup };
       const reviewAcknowledgements = { findLatest: vi.fn() };
-      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never);
+      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, {} as never);
 
       const result = await service.reprocess('exec-A', 'req-A', identity);
 
@@ -459,7 +479,7 @@ describe('PaymentNotificationsService', () => {
       const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
       const repository = { list: vi.fn(), findExecutionById: vi.fn(), findResultsByExecutionId: vi.fn(), listRecent: vi.fn(), findReprocessableCorreoByExecutionId: lookup };
       const reviewAcknowledgements = { findLatest: vi.fn() };
-      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never);
+      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, {} as never);
 
       const result = await service.reprocess('exec-B', 'req-B', identity);
 

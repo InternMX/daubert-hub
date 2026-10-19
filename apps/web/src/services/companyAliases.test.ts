@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getCompanyAliases, updateCompanyAliases } from './companyAliases';
+import { getCompanyAliases, managePaymentAlias, updateCompanyAliases } from './companyAliases';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('company alias client', () => {
+  it('sends the reviewed snapshot and explicit confirmation for reassignment and deactivation', async () => {
+    const record = { aliasId: '9007199254740993', companyId: '121', companyName: 'Empresa TEST', alias: 'TEST', normalizedAlias: 'TEST', status: 'ACTIVO' as const, type: 'NOMBRE_ARCHIVO', updatedAt: '2026-10-19 10:00:00.123456+00' };
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ data: record }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await managePaymentAlias(record, 'REASSIGN', '122');
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/aliases/9007199254740993/payment-notifications', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'REASSIGN', expectedCompanyId: '121', expectedUpdatedAt: record.updatedAt, confirmed: true, companyId: '122' }) });
+    await managePaymentAlias(record, 'DEACTIVATE');
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/aliases/9007199254740993/payment-notifications', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'DEACTIVATE', expectedCompanyId: '121', expectedUpdatedAt: record.updatedAt, confirmed: true }) });
+  });
   it('reads aliases with an encoded company ID', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), json: async () => ({ data: { aliases: ['BMASC'], otherAliases: [{ alias: 'ACME FILE', type: 'NOMBRE_ARCHIVO' }] } }) });
     vi.stubGlobal('fetch', fetchMock);

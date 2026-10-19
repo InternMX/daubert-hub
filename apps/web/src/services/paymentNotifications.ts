@@ -1,4 +1,5 @@
 import { apiBaseUrl as baseUrl } from './api';
+import type { PaymentAliasResolution } from './companyAliases';
 
 export type PaymentNotificationProcessingStatus = 'PENDIENTE' | 'PROCESADO' | 'ERROR';
 export type PaymentNotificationOutcomeStatus = 'COMPLETED' | 'PARTIAL' | 'FAILED' | null;
@@ -43,6 +44,8 @@ export type PaymentNotificationFileError = {
   errorCode: string;
   detail: string | null;
   fileHash: string;
+  // Current PostgreSQL catalog state; separate from the error originally recorded by n8n.
+  aliasResolution?: PaymentAliasResolution | null;
 };
 
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
@@ -129,7 +132,25 @@ function isFileError(value: unknown): value is PaymentNotificationFileError {
   return typeof item.fileName === 'string' && item.fileName.length > 0
     && typeof item.errorCode === 'string' && item.errorCode.length > 0
     && isNullableString(item.detail)
-    && typeof item.fileHash === 'string';
+    && typeof item.fileHash === 'string'
+    && (item.aliasResolution === undefined || item.aliasResolution === null || isAliasResolution(item.aliasResolution));
+}
+
+function isAliasResolution(value: unknown): value is PaymentAliasResolution {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  if (typeof item.alias !== 'string' || typeof item.normalizedAlias !== 'string'
+    || !['UNASSIGNED', 'ACTIVE', 'INACTIVE', 'CONFLICT', 'NAME_ONLY'].includes(String(item.state))) return false;
+  const company = item.company as Record<string, unknown> | null;
+  if (company !== null && (typeof company !== 'object' || typeof company.id !== 'string' || typeof company.name !== 'string')) return false;
+  const assignment = item.assignment as Record<string, unknown> | null;
+  if (assignment !== null && (typeof assignment !== 'object'
+    || !['aliasId', 'companyId', 'companyName', 'alias', 'normalizedAlias', 'type', 'updatedAt'].every((key) => typeof assignment[key] === 'string')
+    || !['ACTIVO', 'INACTIVO'].includes(String(assignment.status)))) return false;
+  if (item.state === 'ACTIVE') return assignment?.status === 'ACTIVO' && company?.id === assignment.companyId;
+  if (item.state === 'INACTIVE') return assignment?.status === 'INACTIVO' && company === null;
+  if (item.state === 'NAME_ONLY') return assignment === null && company !== null;
+  return assignment === null && company === null;
 }
 
 function isExecutionDetail(value: unknown): value is PaymentNotificationExecutionDetail {
@@ -168,7 +189,7 @@ export async function listPaymentNotificationExecutions(page: number, pageSize: 
 // beyond Number.MAX_SAFE_INTEGER is never silently truncated on its way to the API or back.
 export async function getPaymentNotificationExecution(executionId: string): Promise<PaymentNotificationExecutionDetail> {
   let response: Response;
-  try { response = await fetch(`${baseUrl}/automations/payment-notifications/${encodeURIComponent(executionId)}`); }
+  try { response = await fetch(`${baseUrl}/automations/payment-notifications/${encodeURIComponent(executionId)}`, { cache: 'no-store' }); }
   catch { throw new PaymentNotificationApiError(0); }
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok || typeof body !== 'object' || body === null || !('data' in body) || !isExecutionDetail(body.data)) {

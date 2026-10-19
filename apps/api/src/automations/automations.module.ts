@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { HealthModule } from '../health/health.module';
+import { AliasesModule } from '../aliases/aliases.module';
 import { AutomationsController } from './automations.controller';
 import { AutomationsService } from './automations.service';
 import { DocumentSeriesRepository } from './document-series.repository';
@@ -26,7 +27,7 @@ import { ReviewAcknowledgementsService } from './review/review-acknowledgements.
 import { AutomationTriggerRequestsRepository } from './trigger-requests/automation-trigger-requests.repository';
 
 @Module({
-  imports: [DatabaseModule, HealthModule],
+  imports: [DatabaseModule, HealthModule, AliasesModule],
   controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, CaterpillarController, ReviewAcknowledgementsController],
   providers: [
     AutomationsService, DocumentSeriesRepository,

@@ -14,7 +14,6 @@ import {
   type PaymentNotificationExecutionSummary
 } from '../services/paymentNotifications';
 import { OutcomeStatusChip, ResultStatusChip } from './PaymentNotificationStatusChips';
-import { PaymentNotificationFileErrors } from './PaymentNotificationFileErrors';
 import { executionTimestamp, fileErrorsSummary, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
 import { ReprocessCell } from './ReprocessCell';
 import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
@@ -120,7 +119,10 @@ function AttentionSection({ executionId }: { executionId: string }) {
       )}
       {!loading && !error && detail && hasFileErrors && (
         <Box sx={{ mt: attentionItems.length > 0 ? 3 : 2 }}>
-          <PaymentNotificationFileErrors fileErrors={detail.fileErrorDetails} titleId="payment-notifications-latest-file-errors-title" />
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="body2" color="warning.main">{fileErrorsSummary(detail.fileErrors)}</Typography>
+            <Button component={Link} to={`/automations/payment-notifications/${executionId}`} sx={{ mt: 0.5 }}>Ver archivos en el detalle</Button>
+          </Paper>
         </Box>
       )}
     </Box>

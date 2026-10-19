@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPaymentNotificationExecution, PaymentNotificationApiError, type PaymentNotificationExecutionDetail } from '../services/paymentNotifications';
@@ -70,7 +70,7 @@ describe('PaymentNotificationExecutionDetailPage', () => {
       const section = within(heading.closest('section') as HTMLElement);
       expect(section.getByText('13.-KARINA MEZA.pdf')).toBeInTheDocument();
       expect(section.getByText('2.-CTO DE ABASTECIMIENT.pdf')).toBeInTheDocument();
-      expect(section.getAllByText('ALIAS_NO_CATALOGADO')).toHaveLength(2);
+      expect(section.getAllByRole('button', { name: 'Ver detalle' })).toHaveLength(2);
       expect(section.getByText('KARINA MEZA')).toBeInTheDocument();
       expect(section.getByText('CTO DE ABASTECIMIENT')).toBeInTheDocument();
       // The technical hash is a contract for n8n/API, not user-facing content.
@@ -102,7 +102,8 @@ describe('PaymentNotificationExecutionDetailPage', () => {
       detailMock.mockResolvedValue(detail({ fileErrors: 1, fileErrorDetails: [{ fileName: 'x.pdf', errorCode: 'RUTA_NO_VALIDADA', detail: null, fileHash: hash }] }));
       renderPage();
       expect(await screen.findByText('x.pdf')).toBeInTheDocument();
-      expect(screen.getByText('RUTA_NO_VALIDADA')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+      expect(screen.getByText(/RUTA_NO_VALIDADA/)).toBeInTheDocument();
     });
   });
 

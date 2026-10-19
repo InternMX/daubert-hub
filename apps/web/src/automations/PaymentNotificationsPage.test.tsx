@@ -705,16 +705,14 @@ describe('PaymentNotificationsPage', () => {
       expect(card.getByText('2 errores de archivo')).toBeInTheDocument();
     });
 
-    it('lists the file errors under "Archivos que requieren atención" for the latest execution and never claims it needs no attention', async () => {
+    it('keeps the latest file-errors summary compact and links to management in the existing detail', async () => {
       listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
       detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails }));
       renderPage();
-      const heading = await screen.findByRole('heading', { level: 2, name: 'Archivos que requieren atención' });
-      const section = within(heading.closest('section') as HTMLElement);
-      expect(section.getByText('13.-KARINA MEZA.pdf')).toBeInTheDocument();
-      expect(section.getByText('2.-CTO DE ABASTECIMIENT.pdf')).toBeInTheDocument();
-      expect(section.getAllByText('ALIAS_NO_CATALOGADO')).toHaveLength(2);
-      expect(section.getByText('KARINA MEZA')).toBeInTheDocument();
+      expect(await screen.findByRole('link', { name: 'Ver archivos en el detalle' })).toHaveAttribute('href', `/automations/payment-notifications/${elevenReadyWithFileErrors.executionId}`);
+      expect(screen.queryByText('13.-KARINA MEZA.pdf')).not.toBeInTheDocument();
+      expect(screen.queryByText('ALIAS_NO_CATALOGADO')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Asignar alias' })).not.toBeInTheDocument();
       expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
     });
 

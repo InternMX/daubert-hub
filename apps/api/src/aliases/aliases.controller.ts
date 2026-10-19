@@ -3,10 +3,19 @@ import { identityFromRequest, type AuthenticatedRequest } from '../common/authen
 import { AliasesService } from './aliases.service';
 import { UpdateCompanyAliasesDto } from './dto/update-company-aliases.dto';
 import { CreatePaymentAliasDto } from './dto/create-payment-alias.dto';
+import { ManagePaymentAliasDto } from './dto/manage-payment-alias.dto';
 
 @Controller()
 export class AliasesController {
   constructor(private readonly aliases: AliasesService) {}
+
+  @Patch('aliases/:aliasId/payment-notifications')
+  managePaymentAlias(@Param('aliasId') aliasId: string, @Body() input: ManagePaymentAliasDto, @Req() request: AuthenticatedRequest): ReturnType<AliasesService['managePaymentAlias']> {
+    this.assertId(aliasId);
+    this.assertId(input.expectedCompanyId);
+    if (input.companyId !== undefined) this.assertId(input.companyId);
+    return this.aliases.managePaymentAlias(aliasId, input, request.requestId, identityFromRequest(request));
+  }
 
   @Get('companies/:companyId/aliases')
   list(@Param('companyId') companyId: string): ReturnType<AliasesService['list']> {

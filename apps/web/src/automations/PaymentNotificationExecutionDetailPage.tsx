@@ -17,11 +17,23 @@ export function PaymentNotificationExecutionDetailPage() {
   const [error, setError] = useState<PaymentNotificationApiError | null>(null);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const [refreshingFiles, setRefreshingFiles] = useState(false);
+  const [fileRefreshError, setFileRefreshError] = useState(false);
+
+  async function refreshFiles() {
+    setRefreshingFiles(true); setFileRefreshError(false);
+    try {
+      const response = await getPaymentNotificationExecution(executionId);
+      setExecution((current) => current?.executionId === response.executionId ? response : current);
+    } catch (reason) { setFileRefreshError(true); throw reason; }
+    finally { setRefreshingFiles(false); }
+  }
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
+    setFileRefreshError(false);
     getPaymentNotificationExecution(executionId)
       .then((response) => { if (active) setExecution(response); })
       .catch((reason: unknown) => { if (active) setError(reason instanceof PaymentNotificationApiError ? reason : new PaymentNotificationApiError(0)); })
@@ -102,7 +114,8 @@ export function PaymentNotificationExecutionDetailPage() {
             </Paper>
           )}
         </Box>
-        {execution.fileErrors > 0 && <PaymentNotificationFileErrors fileErrors={execution.fileErrorDetails} titleId="payment-notification-file-errors-title" />}
+        {execution.fileErrors > 0 && <PaymentNotificationFileErrors fileErrors={execution.fileErrorDetails} titleId="payment-notification-file-errors-title"
+          unavailable={refreshingFiles || fileRefreshError} onRefresh={refreshFiles} />}
       </Stack>
     </>
   );

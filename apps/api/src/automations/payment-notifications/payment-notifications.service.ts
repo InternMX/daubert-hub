@@ -9,6 +9,8 @@ import { mapAttentionReason } from './payment-notification-reason';
 import { derivePaymentNotificationOutcome, deriveReprocessAvailability, type PaymentNotificationOutcomeStatus, type PaymentNotificationProcessingStatus } from './payment-notification-status';
 import { PaymentNotificationsRepository, type PaymentNotificationExecutionRow, type PaymentNotificationProviderResultRow } from './payment-notifications.repository';
 import { PaymentNotificationsWebhookClient } from './payment-notifications-webhook.client';
+import { AliasesService } from '../../aliases/aliases.service';
+import type { PaymentAliasResolution } from '../../aliases/payment-alias-resolution';
 
 const AUTOMATION_CODE = 'PAYMENT_NOTIFICATIONS';
 
@@ -64,7 +66,7 @@ export interface PaymentNotificationProviderResult {
 
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
   results: PaymentNotificationProviderResult[];
-  fileErrorDetails: PaymentNotificationFileError[];
+  fileErrorDetails: Array<PaymentNotificationFileError & { aliasResolution: PaymentAliasResolution | null }>;
 }
 
 export interface PaymentNotificationExecutionDetailResponse {
@@ -85,7 +87,8 @@ export class PaymentNotificationsService {
     private readonly repository: PaymentNotificationsRepository,
     private readonly reviewAcknowledgements: ReviewAcknowledgementsRepository,
     private readonly webhookClient: PaymentNotificationsWebhookClient,
-    private readonly triggerRequests: AutomationTriggerRequestsRepository
+    private readonly triggerRequests: AutomationTriggerRequestsRepository,
+    private readonly aliases: AliasesService
   ) {}
 
   async list(input: ListPaymentNotificationsDto): Promise<ListPaymentNotificationsResponse> {
@@ -104,11 +107,17 @@ export class PaymentNotificationsService {
     const execution = await this.repository.findExecutionById(executionId);
     if (!execution) throw new NotFoundException('Ejecución de notificaciones de pago no encontrada.');
     const results = await this.repository.findResultsByExecutionId(executionId);
+    const fileErrors = parsePaymentNotificationFileErrors(execution.file_error_detail);
+    const detectableAliases = [...new Set(fileErrors.filter((file) => ['ALIAS_NO_CATALOGADO', 'ALIAS_AMBIGUO'].includes(file.errorCode) && file.detail).map((file) => file.detail!))];
+    // Read current permanent assignments on EVERY detail request, using the same alias module
+    // and n8n normalization as mutations. Historical error text and counts remain untouched.
+    const resolutions = detectableAliases.length ? (await this.aliases.resolvePaymentAliases(detectableAliases)).data : [];
+    const byAlias = new Map(resolutions.map((resolution) => [resolution.alias, resolution]));
     return {
       data: {
         ...this.mapSummary(execution),
         results: results.map((result) => this.mapResult(result)),
-        fileErrorDetails: parsePaymentNotificationFileErrors(execution.file_error_detail)
+        fileErrorDetails: fileErrors.map((file) => ({ ...file, aliasResolution: byAlias.get(file.detail ?? '') ?? null }))
       }
     };
   }

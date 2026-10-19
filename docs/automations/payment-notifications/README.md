@@ -61,7 +61,7 @@ Comportamiento del Hub:
 
 ### Asignar un alias permanente desde un error
 
-Los errores `ALIAS_NO_CATALOGADO` incluyen **Asignar alias**. El modal precarga el detalle detectado, permite revisarlo y busca empresas mediante `GET /api/companies/search`. Al guardar utiliza el módulo existente de aliases:
+La gestión está en **Archivos que requieren atención**, dentro del detalle existente de una notificación. El listado general mantiene conteos y un enlace **Ver archivos en el detalle**. En el detalle, una fila compacta por PDF muestra archivo, alias detectado, empresa actual, estado y una sola acción: **Asignar alias** si no hay asociación activa, o **Gestionar alias** si existe. El modal reutiliza el formulario MUI y el buscador `GET /api/companies/search`. Al asignar utiliza el módulo existente de aliases:
 
 - `POST /api/companies/:companyId/aliases/payment-notifications`, cuerpo `{ alias, confirmPermanent?: boolean }`.
 - Requiere sesión válida; admite `GENERAL` y `ADMIN`, como el CRUD actual. Aplica las protecciones globales de sesión, cambio obligatorio de contraseña y origen CSRF.
@@ -71,8 +71,35 @@ Los errores `ALIAS_NO_CATALOGADO` incluyen **Asignar alias**. El modal precarga 
 - Un identificador numérico, una secuencia larga de dígitos, UUID o términos de documento/temporal requiere `confirmPermanent = true`; de otro modo devuelve `400 PERMANENT_ALIAS_CONFIRMATION_REQUIRED` y el modal solicita confirmación adicional. Editar el alias o cambiar la empresa reinicia la confirmación.
 - La comprobación y el alta son una transacción auditada corta con bloqueos `SHARE ROW EXCLUSIVE` sobre `core.empresas` y `core.alias_empresa`, en ese orden, para evitar escrituras concurrentes durante la evaluación del catálogo. No hay llamadas externas dentro de la transacción.
 
-Tras guardar, la sección muestra la empresa elegida y conserva el error original. El usuario puede utilizar el botón de reproceso existente. La confirmación visual corresponde a la sesión de la pantalla; el alias permanente se conserva en PostgreSQL y se consulta también desde los aliases de la empresa. No existe una asignación puntual por archivo/hash.
+El endpoint existente `GET /api/automations/payment-notifications/:executionId` enriquece cada `fileErrorDetails[]` con `aliasResolution` en **cada consulta**. El servicio reutiliza `AliasesService` y la normalización de n8n para resolver `core.alias_empresa` y los nombres comerciales actuales; no depende de confirmaciones temporales del navegador. No se agregó un endpoint de consulta de aliases ni una asignación puntual por archivo/hash.
+
+`aliasResolution` incluye `state`, `company` y, cuando existe un registro independiente, `assignment` con `aliasId`, empresa, estatus, tipo y `updatedAt`. Los estados internos son `UNASSIGNED`, `ACTIVE`, `INACTIVE`, `CONFLICT` y `NAME_ONLY`. `NAME_ONLY` distingue una coincidencia con el nombre comercial, que no se puede desactivar como si fuese un alias independiente.
+
+La fila muestra **Sin asignar** o **Asignado**; una asignación activa lleva **Pendiente de reproceso**, y una desactivación conserva la indicación **Alias desactivado**. `ALIAS_NO_CATALOGADO` permanece en los datos y en el modal como **error histórico**, separado del estado actual. Si no se pudo consultar el estado, la UI muestra estado no disponible y no habilita mutaciones basadas en suposiciones. Después de guardar, se vuelve a consultar el mismo detalle sin desmontar la página; al recargar o volver a abrir se obtiene de nuevo el estado persistido.
 
 Guardar no cambia el estado del correo, los resultados, su `detalle_error`, los destinatarios ni la configuración de la empresa. La vista `core.vw_catalogo_notificacion_pago_n8n` sigue exponiendo el alias según sus filtros existentes (incluido `procesa_comprobantes_pago`); el alta no activa esa configuración. No requiere migraciones ni modificaciones del workflow o webhook.
 
 Verificación: `npm run test:integration:aliases --workspace=@daubert/api` cubre sesión requerida, alta con usuario GENERAL, persistencia, idempotencia, colisiones canónicas y con nombres comerciales, concurrencia y visibilidad en el catálogo. Pruebas unitarias: `payment-alias.spec.ts`, `aliases.repository.spec.ts`; formulario: `AssignPaymentAliasDialog.test.tsx`.
+
+### Cambiar empresa y desactivar
+
+El modal **Gestionar alias** ofrece **Cambiar empresa** y **Desactivar alias** cuando hay un registro activo inequívoco. Ambas acciones exigen confirmación y utilizan un único endpoint especializado del módulo existente:
+
+```text
+PATCH /api/aliases/:aliasId/payment-notifications
+{
+  action: "REASSIGN" | "DEACTIVATE",
+  companyId?: "empresa destino, solo para REASSIGN",
+  expectedCompanyId: "empresa mostrada al confirmar",
+  expectedUpdatedAt: "versión exacta recibida del servidor",
+  confirmed: true
+}
+```
+
+- **Cambiar empresa:** actualiza `empresa_id` de la misma fila, manteniendo `alias_id`, texto, tipo y estatus. Rechaza coincidencias canónicas con otros aliases activos (también duplicados en la empresa destino) o nombres comerciales que harían ambiguo el catálogo.
+- **Desactivar:** actualiza `estatus = INACTIVO`, sin DELETE ni reinserción. Los filtros existentes de la vista de n8n excluyen esa fila; no se desactiva la empresa ni sus otros aliases o nombres comerciales.
+- La versión y empresa esperadas se comprueban bajo los mismos bloqueos transaccionales de catálogo que usa el alta. Una pantalla obsoleta devuelve `409 ALIAS_STATE_CHANGED`, actualiza el detalle y exige una nueva confirmación; no reintenta la mutación automáticamente.
+- Se conserva el contexto de auditoría y el trigger existente registra la operación UPDATE, actor y valores anteriores/nuevos. Se mantienen autenticación, roles permitidos del CRUD actual y CSRF globales. No cambian correos, resultados históricos, configuración de pagos ni n8n; no se ejecutan reprocesos.
+- No requiere migraciones ni cambios de esquema/vistas. Usa los permisos existentes de lectura/actualización sobre empresas y aliases.
+
+La integración usa exclusivamente fixtures sintéticos en `daubert_hub_test`, incluidos equivalentes **prefijados con un marcador único** de `MINERVA ALVAREZ → MINERVA`, `MINTT SOLUTIONS → Bind ERP` y `CTRO DE ABSTECIMEINT → CADIS`. Verifica nuevas peticiones GET del mismo detalle, estado correcto tras asignar/cambiar/desactivar, historial de error intacto, catálogo n8n, conflictos, CSRF y auditoría antes/después. Las empresas, aliases y notificaciones sintéticos se limpian al terminar; la limpieza de usuarios de prueba sigue el procedimiento existente y requiere conexión administrativa TEST para automatizarse.
