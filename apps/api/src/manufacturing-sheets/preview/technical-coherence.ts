@@ -4,6 +4,7 @@ import { normalizarTitulo } from '../bind-product-interpreter/title-parser';
 import { FAMILIAS, type FamilyCode } from './family-registry';
 import type { PreviewFormData } from './sheet-data.mapper';
 import { claseDenominacion } from './product-denomination';
+import { calcularLibrasVci, mismaCantidad } from './vci-calculation';
 
 export interface BindReviewContext {
   title: string;
@@ -43,6 +44,12 @@ export function revisarCoherencia(family: FamilyCode, data: PreviewFormData, con
     if (total !== null && capas.every((p): p is number => p !== null)) {
       const suma = capas.reduce((a, p) => a + p, 0);
       if (Math.abs(suma - total) > regla.toleranciaLb + Number.EPSILON * Math.max(1, total, suma)) add('COEX_SUMA_PESOS', `Los pesos por capa suman ${suma.toFixed(regla.decimales)} lb, pero el peso total declarado es ${data.pesoLb} lb. La diferencia excede la tolerancia de ${regla.toleranciaLb} lb por redondeo a cinco decimales. Revisa los pesos; no se corrigen automáticamente.`);
+    }
+    // Libras de VCI capturadas que ya no coinciden con peso_capa × porcentaje / 100 (peso redondeado a cinco decimales): se conservan y solo se advierte.
+    for (const capa of def.capas ?? []) {
+      const capturadas = (data[capa.lbKey] ?? '').trim();
+      const esperadas = capturadas === '' ? null : calcularLibrasVci(data[capa.pesoKey] ?? '', capa.porcentajeVci, regla.decimales, regla.decimalesVci);
+      if (esperadas !== null && !mismaCantidad(capturadas, esperadas, regla.decimalesVci)) add(`COEX_VCI_${capa.id.toUpperCase()}`, `Las libras de VCI de la ${capa.etiqueta.toLowerCase()} (${capturadas}) no coinciden con el cálculo esperado (${esperadas} lb = peso de la capa × ${capa.porcentajeVci}%). Se conserva el valor capturado; no se corrige automáticamente.`);
     }
   }
   for (const campo of ['descripcion', 'etiqueta'] as const) {

@@ -415,7 +415,7 @@ export function ManufacturingSpecificationPage() {
           {config?.capas && (
             <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Capas COEX">
               <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 0.5 }}>Capas COEX</Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>La formulación de cada capa es fija. Peso por capa sugerido: peso total ÷ 3, con cinco decimales. Los pesos manuales o confirmados se conservan. Las libras de VCI se capturan: no se calculan.</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>La formulación de cada capa es fija. Peso por capa sugerido: peso total ÷ 3, con cinco decimales. Libras de VCI sugeridas: peso de la capa × porcentaje de VCI ÷ 100, con seis decimales (el exterior es SIN VCI: 0). Los valores manuales o confirmados se conservan y se avisa si dejan de coincidir con el cálculo; «Restaurar» vuelve al cálculo.</Typography>
               <Button size="small" disabled={!form.fields.pesoLb.value.trim() || !config.pesosCapasRegla?.variantes.includes(form.fields.coexVariante.value) || !/^\d+(?:[.,]\d+)?$/.test(form.fields.pesoLb.value.trim()) || !(Number(form.fields.pesoLb.value.replace(',', '.')) > 0)} onClick={() => setReviewWeights(true)}>Revisar reemplazo de pesos por sugerencias</Button>
               <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
                 {config.capas.map((capa) => (

@@ -48,14 +48,16 @@ export interface CapaDef {
   id: 'interior' | 'intermedia' | 'exterior';
   etiqueta: string;
   resina: string;
+  /** Porcentaje de resina VCI de la capa (0 = SIN VCI). Base de `libras_vci_capa = peso_capa_lb × porcentaje / 100`. */
+  porcentajeVci: number;
   pesoKey: FieldKey;
   lbKey: FieldKey;
 }
 
 export const CAPAS_COEX: CapaDef[] = [
-  { id: 'interior', etiqueta: 'Capa interior', resina: 'VCI PMG al 4%', pesoKey: 'pesoCapaInterior', lbKey: 'lbVciInterior' },
-  { id: 'intermedia', etiqueta: 'Capa intermedia', resina: 'VCI PMG al 2%', pesoKey: 'pesoCapaIntermedia', lbKey: 'lbVciIntermedia' },
-  { id: 'exterior', etiqueta: 'Capa exterior', resina: 'SIN VCI', pesoKey: 'pesoCapaExterior', lbKey: 'lbVciExterior' }
+  { id: 'interior', etiqueta: 'Capa interior', resina: 'VCI PMG al 4%', porcentajeVci: 4, pesoKey: 'pesoCapaInterior', lbKey: 'lbVciInterior' },
+  { id: 'intermedia', etiqueta: 'Capa intermedia', resina: 'VCI PMG al 2%', porcentajeVci: 2, pesoKey: 'pesoCapaIntermedia', lbKey: 'lbVciIntermedia' },
+  { id: 'exterior', etiqueta: 'Capa exterior', resina: 'SIN VCI', porcentajeVci: 0, pesoKey: 'pesoCapaExterior', lbKey: 'lbVciExterior' }
 ];
 
 export const VARIANTES_COEX: VarianteDef[] = [
@@ -76,7 +78,7 @@ export interface FamilyDef {
   nombre: string;
   productoSugerido: string;
   productoNota?: string;
-  pesosCapasRegla?: { divisor: number; decimales: number; toleranciaLb: number; variantes: string[]; campos: FieldKey[] };
+  pesosCapasRegla?: { divisor: number; decimales: number; toleranciaLb: number; decimalesVci: number; variantes: string[]; campos: FieldKey[] };
   plantilla: string;
   imagenes: string;
   perfil: string;
@@ -160,7 +162,7 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
   },
   COEX: {
     productoSugerido: 'Bolsa con Fuelle - 20% de material reciclado', productoNota: 'Sugerencia editable del machote COEX: el 20% reciclado no es una característica universal ni un dato confirmado del producto.',
-    pesosCapasRegla: { divisor: 3, decimales: 5, toleranciaLb: 0.000015, variantes: ['AZUL', 'VERDE'], campos: ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] },
+    pesosCapasRegla: { divisor: 3, decimales: 5, toleranciaLb: 0.000015, decimalesVci: 6, variantes: ['AZUL', 'VERDE'], campos: ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] },
     codigo: 'COEX', nombre: 'COEX', plantilla: 'templates/coex/coex.template.html', imagenes: 'templates/coex/images', perfil: 'coex.profile.json',
     campos: ['codigo', 'descripcion', 'producto', 'cliente', 'fechaEmision', 'coexVariante', 'colorNombre', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo',
       'unidadDimensiones', 'calibre', 'pesoLb', 'pesoCapaInterior', 'lbVciInterior', 'pesoCapaIntermedia', 'lbVciIntermedia', 'pesoCapaExterior', 'lbVciExterior', 'etiqueta'],
@@ -168,7 +170,7 @@ export const FAMILIAS: Record<FamilyCode, FamilyDef> = {
       'pesoCapaInterior', 'lbVciInterior', 'pesoCapaIntermedia', 'lbVciIntermedia', 'pesoCapaExterior', 'lbVciExterior'],
     composiciones: ['PMG'], composicionFija: 'PMG', cantidad: true, fuelles: true, colorDibujo: false, colores: [], colorSugerido: null, cotasInternasPorDefecto: '#FFFFFF', validador: null,
     variantes: VARIANTES_COEX, capas: CAPAS_COEX,
-    notas: ['Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI). Peso por capa sugerido: peso total ÷ 3, editable y con cinco decimales. Las libras de VCI se capturan, no se calculan.']
+    notas: ['Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI). Peso por capa sugerido: peso total ÷ 3, editable y con cinco decimales. Libras de VCI sugeridas: peso de la capa × porcentaje de VCI ÷ 100, con seis decimales; editables.']
   },
   BOLSA_NATURAL: {
     productoSugerido: 'Bolsa con Fuelle',

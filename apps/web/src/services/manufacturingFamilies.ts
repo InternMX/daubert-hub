@@ -25,7 +25,7 @@ export interface VarianteConfig {
   cotasInternasHex: string;
   presetEquivalente: string;
 }
-export interface CapaConfig { id: 'interior' | 'intermedia' | 'exterior'; etiqueta: string; resina: string; pesoKey: FieldKey; lbKey: FieldKey }
+export interface CapaConfig { id: 'interior' | 'intermedia' | 'exterior'; etiqueta: string; resina: string; porcentajeVci: number; pesoKey: FieldKey; lbKey: FieldKey }
 export interface ModalidadConfig { valor: string; etiqueta: string; habilitada: boolean; motivo?: string }
 
 export interface FamilyConfig {
@@ -33,7 +33,7 @@ export interface FamilyConfig {
   nombre: string;
   productoSugerido: string;
   productoNota: string;
-  pesosCapasRegla: { divisor: number; decimales: number; toleranciaLb: number; variantes: string[]; campos: FieldKey[] } | null;
+  pesosCapasRegla: { divisor: number; decimales: number; toleranciaLb: number; decimalesVci: number; variantes: string[]; campos: FieldKey[] } | null;
   campos: FieldKey[];
   requeridos: FieldKey[];
   composiciones: Composition[];

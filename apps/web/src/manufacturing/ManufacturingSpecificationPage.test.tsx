@@ -451,7 +451,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
     expect(campo('Peso de la capa interior (lb)').value).toBe('0.20000');
     expect(campo('Peso de la capa intermedia (lb)').value).toBe('0.25133');
-    expect(campo('Libras de VCI de la capa interior').value).toBe('');
+    expect(campo('Libras de VCI de la capa interior').value).toBe('0.008000');   // 0.20000 × 4 %: sigue al peso de capa vigente
     await user.click(screen.getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' }));
     const dialog = screen.getByRole('dialog', { name: 'Revisar reemplazo de pesos por capa' });
     expect(within(dialog).getByText(/0.20000 → 0.25133/)).toBeInTheDocument();
@@ -462,6 +462,26 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Reemplazar pesos por sugerencias actuales' }));
     expect(campo('Peso de la capa interior (lb)').value).toBe('0.25133');
     expect(within(frameOf('Peso de la capa interior (lb)')).getByText('Calculado por el sistema')).toBeInTheDocument();
+    expect(campo('Libras de VCI de la capa interior').value).toBe('0.010053');      // 0.25133 × 4 %
+  });
+  it('libras de VCI: calculadas por capa, el valor manual se conserva con aviso y «Restaurar» vuelve al cálculo', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(coexAzul());
+    renderPage();
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(campo('Libras de VCI de la capa interior').value).toBe('0.005239');
+    expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.002619');
+    expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
+    expect(within(frameOf('Libras de VCI de la capa interior')).getByText('Calculado por el sistema')).toBeInTheDocument();
+    fireEvent.change(campo('Libras de VCI de la capa interior'), { target: { value: '0.006' } });
+    fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
+    expect(campo('Libras de VCI de la capa interior').value).toBe('0.006');
+    expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.005027');
+    expect((await screen.findAllByTestId('live-warning')).map((w) => w.textContent).join(' ')).toMatch(/Libras de VCI de la capa interior \(0\.006\) ya no coincide con el cálculo esperado \(0\.010053 lb/);
+    await user.click(screen.getByRole('button', { name: 'Restaurar Libras de VCI de la capa interior' }));
+    expect(campo('Libras de VCI de la capa interior').value).toBe('0.010053');
+    await waitFor(() => expect(screen.queryAllByTestId('live-warning').map((w) => w.textContent).join(' ')).not.toMatch(/cálculo esperado/));
   });
   it('Producto cambia con familia mientras sea sugerido; la denominación manual permanece', async () => {
     const user = userEvent.setup();
@@ -491,12 +511,13 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(screen.getByTestId('capa-interior')).toHaveTextContent('VCI PMG al 4%');
     expect(screen.getByTestId('capa-intermedia')).toHaveTextContent('VCI PMG al 2%');
     expect(screen.getByTestId('capa-exterior')).toHaveTextContent('SIN VCI');
-    expect(campo('Libras de VCI de la capa exterior').value).toBe('0');
+    expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
     expect(campo('Peso de la capa interior (lb)').value).toBe('0.13097');
     expect(within(frameOf('Peso de la capa interior (lb)')).getByText('Calculado por el sistema')).toBeInTheDocument();
     expect(campo('Fuelle derecho').value).toBe('11.8');
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeDisabled();
     expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();  // sin selector de color libre: solo la variante
+    fireEvent.change(campo('Libras de VCI de la capa interior'), { target: { value: '' } });   // el usuario las vacía: el faltante se sigue reportando
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Faltan datos técnicos/)).toBeInTheDocument();
     expect(screen.getByText(/Falta libras de VCI de la capa interior/i)).toBeInTheDocument();

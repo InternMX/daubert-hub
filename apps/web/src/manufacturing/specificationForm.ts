@@ -1,5 +1,5 @@
 import type { BindProductLookup, CampoInterpretado, FuenteDato } from '../services/bindProducts';
-import type { ColorPresetConfig, FamilyCode, FamilyConfig, FieldKey } from '../services/manufacturingFamilies';
+import type { CapaConfig, ColorPresetConfig, FamilyCode, FamilyConfig, FieldKey } from '../services/manufacturingFamilies';
 
 // Estado y validación del formulario de especificación de manufactura. SOLO transforma el resultado que ya calculó el backend (intérprete, sugerencias y REGISTRO DE FAMILIAS de
 // NestJS) en campos editables y valida lo obligatorio según la configuración de la familia: no interpreta títulos ni códigos y no contiene reglas por familia propias.
@@ -48,6 +48,8 @@ export interface SpecificationForm {
   /** Tabla de la regla «composición → resina VCI» entregada por el backend, para recalcular al cambiar la composición. */
   resinaRules: Record<string, string>;
   layerWeightRule?: FamilyConfig['pesosCapasRegla'];
+  /** Capas COEX con su porcentaje de VCI (de la configuración): base del cálculo de libras de VCI. */
+  layerVci?: CapaConfig[];
   /** Todos los campos viven aquí aunque la familia no los muestre: cambiar de familia NO borra lo capturado (los que no aplican solo dejan de enviarse y se avisan). */
   fields: Record<FieldKey, FieldState>;
 }
@@ -140,6 +142,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
     familyNote: sugFamilia?.motivo ?? '',
     resinaRules: sug?.resinaVciPorComposicion ?? {},
     layerWeightRule: configOf(configs, family)?.pesosCapasRegla ?? null,
+    layerVci: configOf(configs, family)?.capas ?? [],
     fields: {
       codigo: field(lookup.producto.Code, 'BIND'),
       descripcion: field(lookup.producto.Title, 'BIND'),
@@ -172,8 +175,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field(),
       // COEX: la variante requiere color declarado. Los pesos se sugieren desde el total; las libras de VCI siguen siendo manuales.
       coexVariante: sug?.coexVariante?.valor ? field(sug.coexVariante.valor, 'SUGERIDO', sug.coexVariante.nota) : field('', 'PENDIENTE', sug?.coexVariante?.nota),
-      pesoCapaInterior: field(), pesoCapaIntermedia: field(), pesoCapaExterior: field(), lbVciInterior: field(), lbVciIntermedia: field(),
-      lbVciExterior: field('0', 'SUGERIDO', 'La capa exterior es SIN VCI: 0 lb de VCI (editable).')
+      pesoCapaInterior: field(), pesoCapaIntermedia: field(), pesoCapaExterior: field(), lbVciInterior: field(), lbVciIntermedia: field(), lbVciExterior: field()
     }
   };
   // Si BIND no declara color, la familia sugerida aporta su color por defecto (p. ej. el natural en Bolsa Natural); nunca se pisa un color sugerido desde el título.
@@ -197,16 +199,16 @@ export const isEdited = (state: FieldState): boolean => Boolean(state.manual) ||
 
 export function setFieldValue(form: SpecificationForm, key: FieldKey, value: string, source?: FieldState['source'], ref?: string): SpecificationForm {
   const current = form.fields[key];
-  const protectedField = key === 'producto' || ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'].includes(key);
+  const protectedField = key === 'producto' || ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'].includes(key);
   const next: FieldState = { ...current, value, source, ref: source === 'CATALOGO' ? ref : undefined, ...(protectedField ? { manual: true, confirmed: false } : {}) };
   const updated = { ...form, fields: { ...form.fields, [key]: next } };
-  return key === 'pesoLb' ? suggestLayerWeights(updated) : updated;
+  return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) ? suggestLayerWeights(updated) : updated;
 }
 
 export function restoreField(form: SpecificationForm, key: FieldKey): SpecificationForm {
   const current = form.fields[key];
   const restored = { ...form, fields: { ...form.fields, [key]: { ...current, value: current.base.value, source: undefined, ref: undefined, manual: false, confirmed: false } } };
-  return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) ? suggestLayerWeights(restored) : restored;
+  return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) || form.layerVci?.some((c) => c.lbKey === key) ? suggestLayerWeights(restored) : restored;
 }
 
 /** Reemplaza el valor Y la procedencia de un campo que el SISTEMA derivó de otro (no cuenta como edición del usuario). */
@@ -221,7 +223,40 @@ function suggestedProduct(current: FieldState, config: FamilyConfig): FieldState
   return systemValue(config.productoSugerido, 'SUGERIDO', config.productoNota);
 }
 
-/** Regla recibida del registro: nunca se calcula VCI; solo pesos de capas de variantes autorizadas. */
+// ---------------------------------------------------------------- libras de VCI por capa
+// libras_vci_capa = peso_capa_lb × (porcentaje_vci / 100). Aritmética decimal exacta sobre enteros (sin coma flotante binaria), redondeo half-up:
+// el peso se redondea a cinco decimales (el valor que se muestra y se usa) y el VCI se entrega con seis. Debe coincidir con vci-calculation.ts de la API.
+const DECIMAL = /^\d+(?:[.,]\d+)?$/;
+
+/** Unidades de 10^-escala del texto decimal (half-up); null si no es un decimal no negativo. */
+function scaleDecimal(text: string, scale: number): number | null {
+  const t = text.trim();
+  if (!DECIMAL.test(t)) return null;
+  const [int = '0', frac = ''] = t.replace(',', '.').split('.');
+  const units = Number(`${int}${frac.slice(0, scale).padEnd(scale, '0')}`) + (Number(frac[scale] ?? '0') >= 5 ? 1 : 0);
+  return Number.isSafeInteger(units) ? units : null;
+}
+
+/** Libras de VCI de una capa con `vciDecimals` decimales, o null si el peso de la capa falta, no es numérico o no es positivo. */
+export function computeVciPounds(layerWeight: string, vciPercent: number, weightDecimals = 5, vciDecimals = 6): string | null {
+  const weight = scaleDecimal(layerWeight, weightDecimals);
+  const step = weightDecimals + 4 - vciDecimals;
+  if (weight === null || weight <= 0 || !Number.isFinite(vciPercent) || vciPercent < 0 || step < 0) return null;
+  const raw = weight * Math.round(vciPercent * 100);
+  if (!Number.isSafeInteger(raw)) return null;
+  const divisor = 10 ** step;
+  const s = String(Math.floor((raw + divisor / 2) / divisor)).padStart(vciDecimals + 1, '0');
+  return `${s.slice(0, s.length - vciDecimals)}.${s.slice(s.length - vciDecimals)}`;
+}
+
+/** Libras de VCI esperadas por el cálculo para cada capa (null si el peso de la capa no permite calcular). */
+export function expectedVci(form: SpecificationForm): Array<{ capa: CapaConfig; esperado: string | null }> {
+  const rule = form.layerWeightRule;
+  if (!rule || !rule.variantes.includes(form.fields.coexVariante.value)) return [];
+  return (form.layerVci ?? []).map((capa) => ({ capa, esperado: computeVciPounds(form.fields[capa.pesoKey].value, capa.porcentajeVci, rule.decimales, rule.decimalesVci) }));
+}
+
+/** Regla recibida del registro: pesos de capas de variantes autorizadas y, a partir de ellos, las libras de VCI por capa (solo con un peso válido). */
 export function suggestLayerWeights(form: SpecificationForm, replaceProtected = false): SpecificationForm {
   const rule = form.layerWeightRule;
   if (!rule || !rule.variantes.includes(form.fields.coexVariante.value)) return form;
@@ -235,7 +270,21 @@ export function suggestLayerWeights(form: SpecificationForm, replaceProtected = 
     if (!replaceProtected && !isAuto(current)) continue;
     // Un total ausente/incorrecto retira la sugerencia automática anterior; nunca borra capturas protegidas.
     if (!valid && current.base.origin !== 'CALCULADO') continue;
-    fields[key] = systemValue(value, valid ? 'CALCULADO' : 'PENDIENTE', valid ? `Peso total ${text} lb ÷ ${rule.divisor}; sugerencia a ${rule.decimales} decimales, editable. No calcula libras de VCI.` : 'Sin peso total válido y positivo: no se deriva peso por capa.');
+    fields[key] = systemValue(value, valid ? 'CALCULADO' : 'PENDIENTE', valid ? `Peso total ${text} lb ÷ ${rule.divisor}; sugerencia a ${rule.decimales} decimales, editable.` : 'Sin peso total válido y positivo: no se deriva peso por capa.');
+  }
+  // Libras de VCI: se derivan del peso de capa vigente (sugerido o capturado). Un valor capturado a mano se conserva; sin peso válido se retira el cálculo anterior.
+  for (const capa of form.layerVci ?? []) {
+    const current = fields[capa.lbKey];
+    if (!isAuto(current)) continue;
+    const weight = fields[capa.pesoKey].value;
+    const calculated = computeVciPounds(weight, capa.porcentajeVci, rule.decimales, rule.decimalesVci);
+    if (calculated === null) {
+      if (current.base.origin === 'CALCULADO') fields[capa.lbKey] = systemValue('', 'PENDIENTE', 'Sin peso de capa válido y positivo: no se calculan libras de VCI.');
+      continue;
+    }
+    const shown = scaleDecimal(weight, rule.decimales);
+    const weight5 = shown === null ? weight : `${String(shown).padStart(rule.decimales + 1, '0').slice(0, -rule.decimales)}.${String(shown).padStart(rule.decimales + 1, '0').slice(-rule.decimales)}`;
+    fields[capa.lbKey] = systemValue(calculated, 'CALCULADO', capa.porcentajeVci === 0 ? `${capa.resina}: ${weight5} lb × 0% = ${calculated} lb (editable).` : `${weight5} lb × ${capa.porcentajeVci}% = ${calculated} lb de VCI (${capa.resina}); editable.`);
   }
   return { ...form, fields };
 }
@@ -254,7 +303,7 @@ export function confirmLayerWeights(form: SpecificationForm): SpecificationForm 
  */
 export function selectFamily(form: SpecificationForm, family: FamilyCode | null, configs: FamilyConfig[] = []): SpecificationForm {
   const config = configOf(configs, family);
-  let next: SpecificationForm = { ...form, family, familyOrigin: family === null ? null : 'USUARIO', layerWeightRule: config?.pesosCapasRegla ?? null };
+  let next: SpecificationForm = { ...form, family, familyOrigin: family === null ? null : 'USUARIO', layerWeightRule: config?.pesosCapasRegla ?? null, layerVci: config?.capas ?? [] };
   if (config) next = { ...next, fields: { ...next.fields, producto: suggestedProduct(next.fields.producto, config) } };
   if (config && config.colorDibujo && config.colorSugerido && form.fields.colorPreset.value === '' && form.fields.colorHex.value === '') {
     return applyColor(next, config.colorSugerido, config);
@@ -412,6 +461,13 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
   if (form.family === null || config === null) errors.familia = 'Falta elegir la familia de manufactura.';
   const f = form.fields;
   if (form.layerWeightRule?.campos.some((key) => !isAuto(f[key]))) warnings.push('Hay pesos por capa manuales o confirmados: se conservan al cambiar el peso total. Revisa los valores antes de reemplazarlos por nuevas sugerencias.');
+  for (const { capa, esperado } of expectedVci(form)) {
+    const typed = f[capa.lbKey].value.trim();
+    const decimals = form.layerWeightRule?.decimalesVci ?? 6;
+    if (esperado !== null && typed !== '' && scaleDecimal(typed, decimals) !== null && scaleDecimal(typed, decimals) !== scaleDecimal(esperado, decimals)) {
+      warnings.push(`${FIELD_LABELS[capa.lbKey]} (${typed}) ya no coincide con el cálculo esperado (${esperado} lb = peso de la capa × ${capa.porcentajeVci}%). Se conserva tu valor; usa «Restaurar» para volver al cálculo.`);
+    }
+  }
   if (config) {
     for (const key of config.requeridos) {
       if (key === 'composicion' && config.composicionFija) continue;

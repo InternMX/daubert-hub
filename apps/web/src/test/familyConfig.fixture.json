@@ -510,6 +510,7 @@
       "divisor": 3,
       "decimales": 5,
       "toleranciaLb": 0.000015,
+      "decimalesVci": 6,
       "variantes": [
         "AZUL",
         "VERDE"
@@ -609,6 +610,7 @@
         "id": "interior",
         "etiqueta": "Capa interior",
         "resina": "VCI PMG al 4%",
+        "porcentajeVci": 4,
         "pesoKey": "pesoCapaInterior",
         "lbKey": "lbVciInterior"
       },
@@ -616,6 +618,7 @@
         "id": "intermedia",
         "etiqueta": "Capa intermedia",
         "resina": "VCI PMG al 2%",
+        "porcentajeVci": 2,
         "pesoKey": "pesoCapaIntermedia",
         "lbKey": "lbVciIntermedia"
       },
@@ -623,6 +626,7 @@
         "id": "exterior",
         "etiqueta": "Capa exterior",
         "resina": "SIN VCI",
+        "porcentajeVci": 0,
         "pesoKey": "pesoCapaExterior",
         "lbKey": "lbVciExterior"
       }
@@ -646,7 +650,7 @@
       }
     ],
     "notas": [
-      "Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI). Peso por capa sugerido: peso total ÷ 3, editable y con cinco decimales. Las libras de VCI se capturan, no se calculan."
+      "Una sola familia COEX con dos variantes aprobadas (Azul #558ED5 y Verde #00B050) sobre la misma plantilla. Tres capas con formulación fija (interior VCI PMG al 4 %, intermedia VCI PMG al 2 %, exterior SIN VCI). Peso por capa sugerido: peso total ÷ 3, editable y con cinco decimales. Libras de VCI sugeridas: peso de la capa × porcentaje de VCI ÷ 100, con seis decimales; editables."
     ]
   },
   {

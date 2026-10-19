@@ -3,7 +3,7 @@ import type { BindProductLookup } from '../services/bindProducts';
 import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import {
   buildInitialForm, changedFields, colorText, configOf, confirmFamily, setCoexVariante, displayOrigin, incompatibleValues, isEdited, localIsoDate, restoreField, selectFamily, setColorConcentracion, setColorPreset,
-  setComposition, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
+  setComposition, setFieldValue, setFuelleTotal, computeVciPounds, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
 } from './specificationForm';
 
 const HOY = '2026-10-16';
@@ -457,7 +457,7 @@ describe('COEX · una familia con variante Azul/Verde y tres capas', () => {
     expect(validar(sin).errors.coexVariante).toBeDefined();
   });
 
-  it('las capas tienen formulación fija; su peso se sugiere, las libras de VCI se capturan y la exterior sugiere 0 lb', () => {
+  it('las capas tienen formulación fija; su peso y sus libras de VCI se sugieren (la exterior da 0.000000)', () => {
     const f = build(coexAzul());
     expect(config.capas?.map((c) => [c.id, c.resina])).toEqual([['interior', 'VCI PMG al 4%'], ['intermedia', 'VCI PMG al 2%'], ['exterior', 'SIN VCI']]);
     for (const k of ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] as const) {
@@ -465,18 +465,17 @@ describe('COEX · una familia con variante Azul/Verde y tres capas', () => {
       expect(displayOrigin(f.fields[k])).toBe('CALCULADO');
       expect(validar(f).errors[k]).toBeUndefined();
     }
-    for (const k of ['lbVciInterior', 'lbVciIntermedia'] as const) {
-      expect(f.fields[k].value, k).toBe('');
-      expect(validar(f).errors[k], k).toBeDefined();
+    for (const [k, v] of [['lbVciInterior', '0.005239'], ['lbVciIntermedia', '0.002619'], ['lbVciExterior', '0.000000']] as const) {
+      expect(f.fields[k].value, k).toBe(v);
+      expect(displayOrigin(f.fields[k]), k).toBe('CALCULADO');
+      expect(validar(f).errors[k], k).toBeUndefined();
     }
-    expect(f.fields.lbVciExterior).toMatchObject({ value: '0' });
-    expect(displayOrigin(f.fields.lbVciExterior)).toBe('SUGERIDO');
     let g = f;
     for (const [k, v] of [['pesoCapaInterior', '0.13097'], ['pesoCapaIntermedia', '0.13097'], ['pesoCapaExterior', '0.13097'], ['lbVciInterior', '0.005239'], ['lbVciIntermedia', '0.002619']] as const) g = setFieldValue(g, k, v);
     expect(validar(g).technicalReady).toBe(true);
     expect(validar(setFieldValue(g, 'pesoCapaInterior', '0')).errors.pesoCapaInterior).toBeDefined();
     expect(validar(setFieldValue(g, 'lbVciIntermedia', 'x')).errors.lbVciIntermedia).toBeDefined();
-    expect(toPreviewData(g, config)).toMatchObject({ coexVariante: 'AZUL', pesoCapaInterior: '0.13097', lbVciExterior: '0', fuelleDerecho: '11.8', composicion: 'PMG' });
+    expect(toPreviewData(g, config)).toMatchObject({ coexVariante: 'AZUL', pesoCapaInterior: '0.13097', lbVciExterior: '0.000000', fuelleDerecho: '11.8', composicion: 'PMG' });
   });
 
   it('cambiar la variante actualiza el texto del color si no se editó a mano; solo existen las variantes aprobadas', () => {
@@ -506,8 +505,7 @@ describe('Pesos COEX sugeridos y protegidos', () => {
     for (const variant of ['AZUL', 'VERDE']) {
       const f = setFieldValue(setCoexVariante(build(coexAzul()), variant, cfg('COEX')), 'pesoLb', total);
       for (const k of keys) expect(f.fields[k]).toMatchObject({ value: expected, base: { origin: 'CALCULADO' } });
-      expect(f.fields.lbVciInterior.value).toBe('');
-      expect(f.fields.lbVciIntermedia.value).toBe('');
+      expect(f.fields.lbVciInterior.value).toBe(computeVciPounds(expected, 4));
     }
   });
   it.each(['', '0', '-1', 'abc', 'Infinity', '1e3'])('total %s no deriva ni conserva sugerencias obsoletas', (total) => {
@@ -549,7 +547,7 @@ describe('Pesos COEX sugeridos y protegidos', () => {
     const replaced = suggestLayerWeights(f, true);
     for (const k of keys) expect(replaced.fields[k]).toMatchObject({ value: '0.25133', base: { origin: 'CALCULADO' } });
     expect(replaced.fields.lbVciInterior.value).toBe('0.123456');
-    expect(replaced.fields.lbVciExterior.value).toBe('0');
+    expect(replaced.fields.lbVciExterior.value).toBe('0.000000');
   });
 });
 
@@ -578,5 +576,115 @@ describe('Producto editable desde el registro central', () => {
     const f = selectFamily(build(lookup), 'BOLSA_PLANA_1', familyConfigs);
     expect(f.fields.producto.value).toBe('ROLLO VCI + UV TERMOENCOGIBLE');
     expect(displayOrigin(f.fields.producto)).toBe('BIND');
+  });
+});
+
+describe('Libras de VCI por capa COEX (peso de capa × % VCI ÷ 100)', () => {
+  const pesos = ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior'] as const;
+  const coexCon = (total: string, variant = 'AZUL') => setFieldValue(setCoexVariante(build(coexAzul()), variant, cfg('COEX')), 'pesoLb', total);
+
+  it.each([
+    ['AZUL', '0.3929', '0.13097', '0.005239', '0.002619'],
+    ['VERDE', '0.7540', '0.25133', '0.010053', '0.005027']
+  ])('ejemplo obligatorio COEX %s con total %s', (variant, total, peso, interior, intermedia) => {
+    const f = coexCon(total, variant);
+    for (const k of pesos) expect(f.fields[k].value).toBe(peso);
+    expect(f.fields.lbVciInterior).toMatchObject({ value: interior, base: { origin: 'CALCULADO' } });
+    expect(f.fields.lbVciIntermedia).toMatchObject({ value: intermedia, base: { origin: 'CALCULADO' } });
+    expect(f.fields.lbVciExterior.value).toBe('0.000000');
+    expect(validar(f).warnings.join(' ')).not.toMatch(/cálculo esperado/);
+  });
+
+  describe('precisión', () => {
+    it.each([
+      ['0.13097', 4, '0.005239'], ['0.13097', 2, '0.002619'], ['0.25133', 4, '0.010053'], ['0.25133', 2, '0.005027'], ['0.13097', 0, '0.000000'],
+      ['0.1', 3, '0.003000'], ['0.29', 3, '0.008700'], ['1.00000', 4, '0.040000'], ['0,25133', 4, '0.010053'],
+      ['0.00001', 4, '0.000000'], ['0.00001', 50, '0.000005'], ['0.00001', 60, '0.000006']    // half-up exacto sobre decimales
+    ])('%s lb × %s%% = %s lb', (peso, pct, esperado) => expect(computeVciPounds(peso, pct)).toBe(esperado));
+    it('redondea el peso a cinco decimales ANTES de calcular el VCI', () => {
+      expect(computeVciPounds('0.130965', 4)).toBe('0.005239');       // 0.130965 → 0.13097
+      expect(computeVciPounds('0.130964', 4)).toBe('0.005238');       // 0.130964 → 0.13096
+      expect(computeVciPounds('0.1309649999', 4)).toBe('0.005238');
+    });
+    it('no arrastra errores de representación binaria', () => {
+      // En coma flotante 1.005 × 100 = 100.49999999999999 y 0.07 × 100 = 7.000000000000001.
+      expect(computeVciPounds('1.005', 50)).toBe('0.502500');
+      expect(computeVciPounds('0.07', 50)).toBe('0.035000');
+      expect(computeVciPounds('0.15', 3)).toBe('0.004500');
+    });
+  });
+
+  describe('valores ausentes o inválidos', () => {
+    it.each(['', ' ', '0', '0.000001', '-1', 'abc', '1e3', 'Infinity', 'NaN', '1..2'])('el peso «%s» no genera VCI', (peso) => expect(computeVciPounds(peso, 4)).toBeNull());
+    it('sin peso total no hay peso por capa ni VCI, y un cálculo anterior se retira', () => {
+      const f = coexCon('0.3929');
+      expect(f.fields.lbVciInterior.value).toBe('0.005239');
+      for (const total of ['', '0', 'abc']) {
+        const g = setFieldValue(f, 'pesoLb', total);
+        for (const k of ['lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'] as const) expect(g.fields[k].value, `${total}/${k}`).toBe('');
+      }
+    });
+    it('no calcula sin variante autorizada ni cuando el peso de la capa es inválido', () => {
+      const sinVariante = build(coexSinColor());
+      for (const k of ['lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'] as const) expect(sinVariante.fields[k].value).toBe('');
+      const roto = setFieldValue(coexCon('0.3929'), 'pesoCapaInterior', 'abc');
+      expect(roto.fields.lbVciInterior.value).toBe('');
+      expect(roto.fields.lbVciIntermedia.value).toBe('0.002619');
+    });
+  });
+
+  describe('recálculo', () => {
+    it('cambiar el peso total actualiza pesos y libras de VCI', () => {
+      const f = setFieldValue(coexCon('0.3929'), 'pesoLb', '0.7540');
+      expect(f.fields.lbVciInterior.value).toBe('0.010053');
+      expect(f.fields.lbVciIntermedia.value).toBe('0.005027');
+    });
+    it('cambiar manualmente el peso de una capa recalcula solo las libras de esa capa', () => {
+      const f = setFieldValue(coexCon('0.3929'), 'pesoCapaInterior', '0.2');
+      expect(f.fields.lbVciInterior).toMatchObject({ value: '0.008000', base: { origin: 'CALCULADO' } });
+      expect(f.fields.lbVciIntermedia.value).toBe('0.002619');
+    });
+    it('el VCI se calcula del peso que se muestra, redondeado a cinco decimales', () => {
+      const f = setFieldValue(coexCon('0.3929'), 'pesoCapaInterior', '0.130969');
+      expect(f.fields.pesoCapaInterior.value).toBe('0.130969');
+      expect(f.fields.lbVciInterior.value).toBe('0.005239');
+    });
+    it('cambiar la variante conserva el cálculo (misma formulación en Azul y Verde)', () => {
+      const f = setCoexVariante(coexCon('0.7540'), 'VERDE', cfg('COEX'));
+      expect(f.fields.lbVciInterior.value).toBe('0.010053');
+    });
+  });
+
+  describe('edición manual', () => {
+    it('conserva el valor del usuario ante cambios del peso, avisa si no coincide y se puede restaurar', () => {
+      let f = setFieldValue(coexCon('0.3929'), 'lbVciInterior', '0.006');
+      expect(displayOrigin(f.fields.lbVciInterior)).toBe('USUARIO');
+      expect(validar(f).warnings.join(' ')).toMatch(/Libras de VCI de la capa interior \(0\.006\) ya no coincide con el cálculo esperado \(0\.005239 lb/);
+      f = setFieldValue(f, 'pesoLb', '0.7540');
+      expect(f.fields.lbVciInterior.value).toBe('0.006');
+      expect(f.fields.lbVciIntermedia.value).toBe('0.005027');                  // las demás capas siguen automáticas
+      expect(validar(f).warnings.join(' ')).toMatch(/\(0\.006\).*\(0\.010053 lb/);
+      const restaurado = restoreField(f, 'lbVciInterior');
+      expect(restaurado.fields.lbVciInterior).toMatchObject({ value: '0.010053', base: { origin: 'CALCULADO' } });
+      expect(displayOrigin(restaurado.fields.lbVciInterior)).toBe('CALCULADO');
+      expect(validar(restaurado).warnings.join(' ')).not.toMatch(/cálculo esperado/);
+    });
+    it('un valor manual equivalente al cálculo no genera aviso (0.0052390 = 0.005239) y 0 manual en la exterior tampoco', () => {
+      const f = setFieldValue(setFieldValue(coexCon('0.3929'), 'lbVciInterior', '0.0052390'), 'lbVciExterior', '0');
+      expect(validar(f).warnings.join(' ')).not.toMatch(/cálculo esperado/);
+    });
+    it('un valor manual en la capa exterior distinto de cero avisa', () => {
+      const f = setFieldValue(coexCon('0.3929'), 'lbVciExterior', '0.1');
+      expect(validar(f).warnings.join(' ')).toMatch(/capa exterior \(0\.1\).*\(0\.000000 lb/);
+    });
+    it('el valor vacío escrito por el usuario no se sobrescribe al recalcular', () => {
+      const f = setFieldValue(setFieldValue(coexCon('0.3929'), 'lbVciInterior', ''), 'pesoLb', '0.7540');
+      expect(f.fields.lbVciInterior.value).toBe('');
+      expect(validar(f).errors.lbVciInterior).toBeDefined();
+    });
+  });
+
+  it('las libras calculadas viajan a la vista previa con seis decimales', () => {
+    expect(toPreviewData(coexCon('0.3929'), cfg('COEX'))).toMatchObject({ lbVciInterior: '0.005239', lbVciIntermedia: '0.002619', lbVciExterior: '0.000000' });
   });
 });
