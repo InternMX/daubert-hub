@@ -71,12 +71,29 @@ describe('listPaymentNotificationExecutions', () => {
 describe('getPaymentNotificationExecution', () => {
   const detail = { ...summary, results: [{ companyId: '7', companyName: 'NOVAPAK', status: 'MANUAL', attentionReason: 'Faltan destinatarios principales configurados.' }], fileErrorDetails: [] as unknown[] };
 
+  it('preserves current assignment alongside the historical error on every fresh GET', async () => {
+    const assignment = { aliasId: '5', companyId: '121', companyName: 'Empresa TEST', alias: 'TEST ALIAS', normalizedAlias: 'TEST ALIAS', status: 'ACTIVO', type: 'NOMBRE_ARCHIVO', updatedAt: 'version' };
+    const aliasResolution = { alias: 'TEST ALIAS', normalizedAlias: 'TEST ALIAS', state: 'ACTIVE', assignment, company: { id: '121', name: 'Empresa TEST' } };
+    const enriched = { ...detail, fileErrorDetails: [{ fileName: 'test.pdf', fileHash: 'a'.repeat(64), errorCode: 'ALIAS_NO_CATALOGADO', detail: 'TEST ALIAS', aliasResolution }] };
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({ data: enriched }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await getPaymentNotificationExecution('32')).fileErrorDetails[0]?.aliasResolution?.state).toBe('ACTIVE');
+    expect((await getPaymentNotificationExecution('32')).fileErrorDetails[0]?.errorCode).toBe('ALIAS_NO_CATALOGADO');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a malformed current assignment instead of showing it as unassigned', async () => {
+    const malformed = { ...detail, fileErrorDetails: [{ fileName: 'test.pdf', fileHash: 'a'.repeat(64), errorCode: 'ALIAS_NO_CATALOGADO', detail: 'TEST ALIAS', aliasResolution: { state: 'ACTIVE', assignment: null } }] };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ data: malformed })));
+    await expect(getPaymentNotificationExecution('32')).rejects.toBeInstanceOf(PaymentNotificationApiError);
+  });
+
   it('requests the detail endpoint with the exact executionId string, never Number()', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: detail }));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(getPaymentNotificationExecution('9007199254740993')).resolves.toEqual(detail);
-    expect(fetchMock).toHaveBeenCalledWith('/api/automations/payment-notifications/9007199254740993');
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/payment-notifications/9007199254740993', { cache: 'no-store' });
   });
 
   it('accepts a null companyName and a null attentionReason', async () => {

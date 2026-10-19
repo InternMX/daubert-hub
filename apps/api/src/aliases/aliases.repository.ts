@@ -3,6 +3,8 @@ import type { PoolClient, QueryResultRow } from 'pg';
 import { replaceCompanyAliases } from '../companies/company-aliases.repository';
 import { DatabaseService } from '../database/database.service';
 import { normalizePaymentAlias } from './payment-alias';
+import { resolvePaymentAlias, type PaymentAliasRecord } from './payment-alias-resolution';
+import type { ManagePaymentAliasDto } from './dto/manage-payment-alias.dto';
 
 export interface AuditIdentity {
   userId: string | null;
@@ -23,6 +25,11 @@ const aliasesQuery = `SELECT alias, tipo_alias FROM core.alias_empresa
   WHERE empresa_id = $1 AND estatus = 'ACTIVO'
   ORDER BY tipo_alias, lower(btrim(alias)), alias_id`;
 
+const paymentAliasesQuery = `SELECT a.alias_id::text AS "aliasId", a.empresa_id::text AS "companyId",
+  e.nombre_comercial AS "companyName", a.alias, a.alias_normalizado AS "normalizedAlias",
+  a.estatus AS status, a.tipo_alias AS type, a.updated_at::text AS "updatedAt"
+  FROM core.alias_empresa a JOIN core.empresas e USING (empresa_id)`;
+
 function group(rows: CompanyAliasRow[]): CompanyAliases {
   return {
     aliases: rows.filter((row) => row.tipo_alias === 'NOMBRE_COMERCIAL_ALTERNATIVO').map((row) => row.alias),
@@ -34,12 +41,50 @@ function group(rows: CompanyAliasRow[]): CompanyAliases {
 export class AliasesRepository {
   constructor(private readonly database: DatabaseService) {}
 
+  async resolvePaymentAliases(aliases: string[]) {
+    const records = await this.database.query<PaymentAliasRecord>(`${paymentAliasesQuery} ORDER BY a.updated_at DESC, a.alias_id DESC`);
+    const companies = await this.database.query<{ id: string; name: string }>('SELECT empresa_id::text AS id, nombre_comercial AS name FROM core.empresas');
+    return aliases.map((alias) => resolvePaymentAlias(alias, records, companies));
+  }
+
+  async managePaymentAlias(aliasId: string, input: ManagePaymentAliasDto, requestId: string, identity: AuditIdentity) {
+    return this.transaction(requestId, identity, async (client) => {
+      await this.lockPaymentCatalog(client);
+      const current = (await client.query<PaymentAliasRecord>(`${paymentAliasesQuery} WHERE a.alias_id = $1 FOR UPDATE OF a`, [aliasId])).rows[0];
+      if (!current) return null;
+      if (current.status !== 'ACTIVO' || current.companyId !== input.expectedCompanyId || current.updatedAt !== input.expectedUpdatedAt) {
+        throw Object.assign(new Error('ALIAS_STATE_CHANGED'), { code: 'ALIAS_STATE_CHANGED' });
+      }
+      if (input.action === 'REASSIGN') {
+        const target = (await client.query<{ name: string }>('SELECT nombre_comercial AS name FROM core.empresas WHERE empresa_id = $1', [input.companyId])).rows[0];
+        if (!target) throw Object.assign(new Error('COMPANY_NOT_FOUND'), { code: 'COMPANY_NOT_FOUND' });
+        if (current.companyId === input.companyId) throw Object.assign(new Error('ALIAS_COMPANY_UNCHANGED'), { code: 'ALIAS_COMPANY_UNCHANGED' });
+        const candidates = await client.query<{ company_id: string; alias: string; stored_alias: boolean }>(`
+          SELECT empresa_id::text AS company_id, alias, TRUE AS stored_alias FROM core.alias_empresa
+          WHERE estatus = 'ACTIVO' AND alias_id <> $1
+          UNION ALL SELECT empresa_id::text, nombre_comercial, FALSE FROM core.empresas`, [aliasId]);
+        const normalized = normalizePaymentAlias(current.alias);
+        if (candidates.rows.some((row) => normalizePaymentAlias(row.alias) === normalized && (row.stored_alias || row.company_id !== input.companyId))) {
+          throw Object.assign(new Error('ALIAS_ALREADY_ASSOCIATED'), { code: 'ALIAS_ALREADY_ASSOCIATED' });
+        }
+        await client.query('UPDATE core.alias_empresa SET empresa_id = $2, updated_at = clock_timestamp() WHERE alias_id = $1', [aliasId, input.companyId]);
+      } else {
+        await client.query("UPDATE core.alias_empresa SET estatus = 'INACTIVO', updated_at = clock_timestamp() WHERE alias_id = $1", [aliasId]);
+      }
+      return (await client.query<PaymentAliasRecord>(`${paymentAliasesQuery} WHERE a.alias_id = $1`, [aliasId])).rows[0]!;
+    });
+  }
+
+  private async lockPaymentCatalog(client: PoolClient): Promise<void> {
+    await client.query('LOCK TABLE core.empresas IN SHARE ROW EXCLUSIVE MODE');
+    await client.query('LOCK TABLE core.alias_empresa IN SHARE ROW EXCLUSIVE MODE');
+  }
+
   async createPaymentAlias(companyId: string, alias: string, normalizedAlias: string, requestId: string, identity: AuditIdentity) {
     return this.transaction(requestId, identity, async (client) => {
       // Serialize with all catalog writers, including the existing replace CRUD.
       // Name changes must not race the ambiguity check either.
-      await client.query('LOCK TABLE core.empresas IN SHARE ROW EXCLUSIVE MODE');
-      await client.query('LOCK TABLE core.alias_empresa IN SHARE ROW EXCLUSIVE MODE');
+      await this.lockPaymentCatalog(client);
       const company = (await client.query<{ name: string }>('SELECT nombre_comercial AS name FROM core.empresas WHERE empresa_id = $1', [companyId])).rows[0];
       if (!company) return null;
       const candidates = await client.query<{ company_id: string; alias: string; stored_alias: boolean }>(`
