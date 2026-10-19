@@ -1,5 +1,8 @@
-import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
 import type { PaymentNotificationFileError } from '../services/paymentNotifications';
+import type { PermanentAliasAssignment } from '../services/companyAliases';
+import { AssignPaymentAliasDialog } from './AssignPaymentAliasDialog';
 
 interface PaymentNotificationFileErrorsProps {
   fileErrors: PaymentNotificationFileError[];
@@ -12,6 +15,8 @@ interface PaymentNotificationFileErrorsProps {
 // NestJS); every value is rendered as plain text. fileHash is a technical contract for n8n/API and
 // is deliberately not shown to the user.
 export function PaymentNotificationFileErrors({ fileErrors, titleId }: PaymentNotificationFileErrorsProps) {
+  const [selected, setSelected] = useState<PaymentNotificationFileError | null>(null);
+  const [assignments, setAssignments] = useState<Record<string, PermanentAliasAssignment>>({});
   if (fileErrors.length === 0) return null;
   return (
     <Box component="section" aria-labelledby={titleId}>
@@ -24,9 +29,18 @@ export function PaymentNotificationFileErrors({ fileErrors, titleId }: PaymentNo
               <Chip size="small" color="warning" variant="outlined" label={fileError.errorCode} sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }} />
             </Stack>
             {fileError.detail && <Typography color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>{fileError.detail}</Typography>}
+            {fileError.errorCode === 'ALIAS_NO_CATALOGADO' && <Box sx={{ mt: 1.5 }}>
+              {assignments[fileError.fileHash] && <Alert severity="success" sx={{ mb: 1 }}>
+                Alias permanente guardado para {assignments[fileError.fileHash]!.companyName}. Puedes utilizar el botón de reproceso actual. El error original se conserva hasta el reproceso.
+              </Alert>}
+              <Button variant="outlined" onClick={() => setSelected(fileError)}>Asignar alias</Button>
+            </Box>}
           </Paper>
         ))}
       </Stack>
+      {selected && <AssignPaymentAliasDialog key={selected.fileHash + selected.fileName} fileError={selected} onClose={() => setSelected(null)} onAssigned={(assignment) => {
+        setAssignments((current) => ({ ...current, [selected.fileHash]: assignment })); setSelected(null);
+      }} />}
     </Box>
   );
 }

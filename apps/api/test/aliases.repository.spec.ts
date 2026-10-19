@@ -12,6 +12,38 @@ function harness(handler: (sql: string, values?: unknown[]) => unknown) {
 function result(rows: unknown[] = []) { return { rows }; }
 
 describe('AliasesRepository', () => {
+  it('adds a normalized NOMBRE_ARCHIVO without replacing any aliases, in an audited transaction', async () => {
+    const { repository, query } = harness((sql) => {
+      if (sql.startsWith('SELECT nombre_comercial AS name')) return result([{ name: 'Acme' }]);
+      return result();
+    });
+    await expect(repository.createPaymentAlias('121', 'Ácme PDF', 'ACME PDF', 'r', identity)).resolves.toMatchObject({ companyId: '121', companyName: 'Acme', alreadyAssigned: false });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("'NOMBRE_ARCHIVO', 'ACTIVO'"), ['121', 'Ácme PDF', 'ACME PDF']);
+    expect(query).toHaveBeenCalledWith('COMMIT');
+    expect(query.mock.calls.some(([sql]) => /^(UPDATE|DELETE)/.test(sql))).toBe(false);
+  });
+
+  it.each([true, false])('rejects canonical conflicts with another company (stored alias = %s)', async (storedAlias) => {
+    const { repository, query } = harness((sql) => {
+      if (sql.startsWith('SELECT nombre_comercial AS name')) return result([{ name: 'Acme' }]);
+      if (sql.includes('UNION ALL')) return result([{ company_id: '122', alias: 'Ácme--PDF', stored_alias: storedAlias }]);
+      return result();
+    });
+    await expect(repository.createPaymentAlias('121', 'Acme PDF', 'ACME PDF', 'r', identity)).rejects.toMatchObject({ code: 'ALIAS_ALREADY_ASSOCIATED' });
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+    expect(query.mock.calls.some(([sql]) => /^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
+  });
+
+  it('treats an existing alias on the same company as idempotent across types and normalization', async () => {
+    const { repository, query } = harness((sql) => {
+      if (sql.startsWith('SELECT nombre_comercial AS name')) return result([{ name: 'Acme' }]);
+      if (sql.includes('UNION ALL')) return result([{ company_id: '121', alias: 'Ácme--PDF', stored_alias: true }]);
+      return result();
+    });
+    await expect(repository.createPaymentAlias('121', 'Acme PDF', 'ACME PDF', 'r', identity)).resolves.toMatchObject({ alreadyAssigned: true });
+    expect(query.mock.calls.some(([sql]) => /^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
+  });
+
   it('checks company existence before listing aliases, grouping editable vs read-only types', async () => {
     const query = vi.fn()
       .mockResolvedValueOnce([{ exists: true }])

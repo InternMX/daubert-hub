@@ -133,6 +133,8 @@ async function run() {
     api.stdout.on('data', (chunk) => { startup += chunk; });
     api.stderr.on('data', (chunk) => { startup += chunk; });
     await waitForApi();
+    const unauthenticated = await request('/companies/1/aliases/payment-notifications', 'POST', { alias: marker });
+    assert(unauthenticated.response.status === 401, 'Permanent alias mutation must require authentication.');
     authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
     sessionCookie = authSession.cookie;
 
@@ -164,6 +166,44 @@ async function run() {
     assert(conflict.response.status === 409 && conflict.body.code === 'ALIAS_ALREADY_ASSOCIATED', `Cross-company alias conflict was not rejected: ${JSON.stringify(conflict.body)}`);
     const conflictState = await getAliases(conflictTarget.id);
     assert(conflictState.body.data.aliases.length === 0, 'A rejected alias conflict left a partial mutation.');
+
+    // Permanent assignment reuses the aliases domain, without replacing the existing list.
+    // The real GENERAL session exercises the same permissions as the current alias CRUD.
+    const permanentPath = `/companies/${providerCompany.id}/aliases/payment-notifications`;
+    const blockedOrigin = await fetch(`http://127.0.0.1:${port}/api${permanentPath}`, {
+      method: 'POST', headers: { cookie: sessionCookie, origin: 'https://untrusted.example.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ alias: `${marker} FORGED`, confirmPermanent: true })
+    });
+    assert(blockedOrigin.status === 403, 'Permanent assignment must enforce the global CSRF origin protection.');
+    const permanent = `${marker} ÁLIAS--PDF`;
+    const canonical = `${marker.replace(/[^A-Z0-9]+/g, ' ')} ALIAS PDF`;
+    const assigned = await request(permanentPath, 'POST', { alias: permanent, confirmPermanent: true });
+    assert(assigned.response.status === 201 && assigned.body.data.normalizedAlias === canonical, `Permanent assignment failed: ${JSON.stringify(assigned.body)}`);
+    const stored = (await pool.query('SELECT alias, alias_normalizado, tipo_alias, estatus FROM core.alias_empresa WHERE empresa_id = $1 AND alias = $2', [providerCompany.id, permanent])).rows;
+    assert(stored.length === 1 && stored[0].alias_normalizado === canonical && stored[0].tipo_alias === 'NOMBRE_ARCHIVO' && stored[0].estatus === 'ACTIVO', 'Permanent alias was not persisted with the required model.');
+    assert((await getAliases(providerCompany.id)).body.data.aliases.includes(`${marker}_PROVIDER_ALT`), 'Assignment replaced another alias.');
+    const duplicatePermanent = await request(permanentPath, 'POST', { alias: canonical, confirmPermanent: true });
+    assert(duplicatePermanent.response.status === 201 && duplicatePermanent.body.data.alreadyAssigned, 'Equivalent alias on the same company should be idempotent.');
+    const canonicalConflict = await request(`/companies/${conflictTarget.id}/aliases/payment-notifications`, 'POST', { alias: canonical, confirmPermanent: true });
+    assert(canonicalConflict.response.status === 409, 'Canonical cross-company conflict accepted.');
+    const nameConflict = await request(permanentPath, 'POST', { alias: conflictTarget.name, confirmPermanent: true });
+    assert(nameConflict.response.status === 409, 'Commercial-name collision accepted.');
+    const unconfirmed = await request(permanentPath, 'POST', { alias: '1800006184145' });
+    assert(unconfirmed.response.status === 400 && unconfirmed.body.code === 'PERMANENT_ALIAS_CONFIRMATION_REQUIRED', 'Numeric identifier did not require confirmation.');
+    const confirmed = await request(permanentPath, 'POST', { alias: `${marker} DOCUMENTO 1800006184145`, confirmPermanent: true });
+    assert(confirmed.response.status === 201, 'Explicitly confirmed permanent identifier failed.');
+    const raceAlias = `${marker} RACE`;
+    const racing = await Promise.all([
+      request(permanentPath, 'POST', { alias: raceAlias, confirmPermanent: true }),
+      request(`/companies/${conflictTarget.id}/aliases/payment-notifications`, 'POST', { alias: raceAlias.replace(/ /g, '-'), confirmPermanent: true })
+    ]);
+    assert(racing.map((item) => item.response.status).sort().join(',') === '201,409', 'Concurrent canonical assignments must have exactly one winner.');
+
+    // Catalog visibility must follow existing configuration, never enable it as a side effect.
+    assert((await pool.query('SELECT 1 FROM core.empresas_notificacion_pago WHERE empresa_id = $1', [providerCompany.id])).rows.length === 0, 'Saving an alias changed payment configuration.');
+    await audited(pool, `alias-catalog-${randomUUID()}`, `INSERT INTO core.empresas_notificacion_pago (empresa_id, procesa_comprobantes_pago, notificaciones_activas) VALUES ($1, TRUE, FALSE)`, [providerCompany.id]);
+    const catalogAliases = (await pool.query('SELECT alias_pdf FROM core.vw_catalogo_notificacion_pago_n8n WHERE empresa_id = $1', [providerCompany.id])).rows;
+    assert(catalogAliases.some((row) => row.alias_pdf === permanent), 'The permanent alias is missing from the existing n8n catalog after enabling receipt processing.');
 
     // Validation: blank entries and case-insensitive duplicates are rejected before any write.
     const blank = await patchAliases(clientOnly.id, ['', 'Valid']);
