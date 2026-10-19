@@ -203,7 +203,7 @@ describe('POST /api/manufacturing-sheets/previews', { timeout: 20_000 }, () => {
     const datos = { ...SCHF, colorNombre: 'VERDE', colorHex: '#00B050', cliente: '' };
     const res = await post({ familia: 'BOLSA_PLANA_1', datos, contexto: { title: 'BOLSA PMG COLOR AZUL <script>alert(1)</script>', code: 'SCHFPMG001' } });
     expect(res.status).toBe(200);
-    expect(res.body.data.avisosTecnicos).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'COLOR_AZUL', nivel: 'CONTRADICCION' })]));
+    expect(res.body.data.incidencias).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'COLOR_AZUL:colorPreset', nivel: 'CONTRADICCION' })]));
     expect(res.body.data.html).not.toContain('<script>');
     expect(res.body.data.html).toContain('fill="#00B050"');
     expect(res.body.data.pendientesEmision).toContain('Cliente');

@@ -1,7 +1,7 @@
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
-import { previewManufacturingSheet, SheetPreviewError, type SheetPreviewResponse, type BindReviewContext } from '../services/sheetPreview';
+import { previewManufacturingSheet, SheetPreviewError, type Incidencia, type SheetPreviewResponse, type BindReviewContext } from '../services/sheetPreview';
 import type { FamilyCode } from './specificationForm';
 
 // Documento de vista previa en CSS px. La hoja carta mide 816 x 1056 (8.5 x 11 in a 96 ppp), pero las plantillas aprobadas aplican su diseño MÓVIL con ventanas de 816 px o menos
@@ -46,11 +46,14 @@ interface SheetPreviewPanelProps {
   /** Campos del formulario (solo texto). Los datos originales de BIND nunca se envían ni se modifican. */
   data: Record<string, string>;
   context?: BindReviewContext;
+  /** Incidencias vigentes que afectan directamente la representación del documento (valor que no se imprime, texto que puede desbordarse…). Los datos faltantes vienen de la respuesta. */
+  avisos?: Incidencia[];
   onAssessment?: (result: SheetPreviewResponse | null, key: string) => void;
 }
 
-export function SheetPreviewPanel({ family, familyLabel, data, context, onAssessment }: SheetPreviewPanelProps) {
+export function SheetPreviewPanel({ family, familyLabel, data, context, avisos = [], onAssessment }: SheetPreviewPanelProps) {
   const [result, setResult] = useState<SheetPreviewResponse | null>(null);
+  const [resultKey, setResultKey] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorKind, setErrorKind] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -71,7 +74,7 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, onAssess
     const timer = setTimeout(() => {
       previewManufacturingSheet(family, data, controller.signal, context).then((response) => {
         if (current !== sequence.current) return;
-        setResult(response); setStatus('ready'); setErrorKind(null);
+        setResult(response); setResultKey(payloadKey); setStatus('ready'); setErrorKind(null);
         assessmentCallback.current?.(response, payloadKey);
       }).catch((error: unknown) => {
         if (current !== sequence.current || (error instanceof DOMException && error.name === 'AbortError')) return;
@@ -92,6 +95,8 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, onAssess
     return () => observer.disconnect();
   }, [family]);
 
+  // El resultado solo habla de SUS datos: mientras llega la respuesta del cambio más reciente, sus mensajes (faltantes, bloqueo) no se muestran. El documento anterior sigue visible.
+  const actual = result !== null && resultKey === payloadKey ? result : null;
   const scale = Math.min(1, Math.max(0.2, (width - 2) / PAGE_WIDTH));
   const fullScale = Math.min(1.25, Math.max(0.4, (Math.min(typeof window === 'undefined' ? 1000 : window.innerWidth, 1100) - 96) / PAGE_WIDTH));
 
@@ -101,25 +106,29 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, onAssess
         <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Vista previa</Typography>
         <Chip size="small" color="error" label="BORRADOR · SIN APROBAR" />
         <Chip size="small" label="Firmas: SIN FIRMA" />
-        {result && !result.bloqueado && !result.completo && <Chip size="small" color="warning" label="Datos técnicos incompletos" data-testid="preview-incomplete" />}
+        {actual && !actual.bloqueado && !actual.completo && <Chip size="small" color="warning" label="Datos técnicos incompletos" data-testid="preview-incomplete" />}
         {status === 'loading' && <CircularProgress size={16} aria-label="Actualizando vista previa" />}
         {result && family && !result.bloqueado && <Button size="small" startIcon={<OpenInFullRoundedIcon />} onClick={() => setExpanded(true)} sx={{ ml: 'auto' }}>Ampliar</Button>}
       </Stack>
-      <Alert severity="warning" sx={{ mb: 1.5 }}>Borrador sin aprobar: no es una hoja emitida ni lleva firmas reales. Los datos solo existen en memoria.</Alert>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>Borrador sin aprobar: no es una hoja emitida ni lleva firmas reales. Los datos solo existen en memoria.</Typography>
 
       <div ref={container}>
         {!family && <Alert severity="info">Selecciona la familia (Bolsa Plana 1 u Hojas) para ver la vista previa con su plantilla.</Alert>}
         {family && status === 'error' && errorKind && <Alert severity="error" sx={{ mb: 1.5 }}>{errorTexts[errorKind]}</Alert>}
-        {family && result?.bloqueado && <Alert severity="error" data-testid="preview-blocked">{result.bloqueado} No se muestra un documento para no producir una hoja engañosa.</Alert>}
+        {family && actual?.bloqueado && <Alert severity="error" data-testid="preview-blocked">{actual.bloqueado} No se muestra un documento para no producir una hoja engañosa.</Alert>}
         {family && result && !result.bloqueado && <SheetFrame html={result.html} scale={scale} title={`Vista previa de la hoja ${familyLabel}`} incomplete={!result.completo} />}
         {family && !result && status === 'loading' && <Typography color="text.secondary">Generando vista previa…</Typography>}
       </div>
 
-      {result && family && (
+      {family && ((actual && actual.faltantes.length > 0) || avisos.length > 0) && (
         <Stack spacing={1} sx={{ mt: 1.5 }} aria-label="Advertencias de la vista previa">
-          {result.faltantes.length > 0 && <Alert severity="warning">Faltan datos técnicos para esta familia (no se inventan valores ni dibujos; la representación es incompleta): {result.faltantes.join(', ')}.</Alert>}
-          {result.pendientesEmision.length > 0 && <Alert severity="info" data-testid="preview-emission-pending">Pendiente para una emisión futura (no impide esta demostración): {result.pendientesEmision.join(', ')}.</Alert>}
-          {result.advertencias.map((a) => <Alert key={a} severity="warning">{a}</Alert>)}
+          {actual && actual.faltantes.length > 0 && <Alert severity="warning">Faltan datos técnicos para esta familia (no se inventan valores ni dibujos; la representación es incompleta): {actual.faltantes.join(', ')}.</Alert>}
+          {avisos.length > 0 && (
+            <Alert severity="warning" data-testid="preview-avisos">
+              Revisa la hoja:
+              <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{avisos.map((a) => <li key={a.id}>{a.resumen ?? a.mensaje}</li>)}</ul>
+            </Alert>
+          )}
         </Stack>
       )}
 

@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FAMILIAS, modalidadesDe, type FamilyCode } from './family-registry';
 import { mapSheetData, type PreviewFamily, type PreviewFormData } from './sheet-data.mapper';
-import { revisarCoherencia, type BindReviewContext, type TechnicalNotice } from './technical-coherence';
+import { consolidarIncidencias, incidencia, type Incidencia } from './incidencias';
+import { revisarCoherencia, type BindReviewContext } from './technical-coherence';
 
 // Vista previa HTML de las Hojas de Instrucción de Manufactura. Reutiliza EXACTAMENTE el compositor (tools/compose-template.mjs), las plantillas aprobadas y los validadores de
 // tools/: aquí solo se sustituyen los placeholders (con escape) y se endurece el HTML para mostrarlo en un iframe aislado. No escribe en disco ni en PostgreSQL.
@@ -38,7 +39,8 @@ export interface SheetPreviewResult {
   pendientesEmision: string[];
   /** Motivo por el que no se muestra el documento (p. ej. modalidad sin variante gráfica autorizada); null si se muestra. */
   bloqueado: string | null;
-  avisosTecnicos: TechnicalNotice[];
+  /** Lista ÚNICA de incidencias de esta vista previa (modelo único, sin duplicados por causa): faltantes, valores no válidos, coherencia técnica y bloqueo. `faltantes`, `advertencias` y `pendientesEmision` son proyecciones de ella. */
+  incidencias: Incidencia[];
 }
 
 export function escapeHtml(value: string): string {
@@ -53,19 +55,24 @@ export class SheetPreviewService {
   async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext): Promise<SheetPreviewResult> {
     const def = FAMILIAS[family];
     const mapped = mapSheetData(family, form);
-    const resultado = (extra: Partial<SheetPreviewResult>): SheetPreviewResult => ({
+    const coherencia = revisarCoherencia(family, form, context);
+    const resultado = (extra: Partial<SheetPreviewResult>, adicionales: Incidencia[] = []): SheetPreviewResult => ({
       html: '', familia: family, borrador: true, firmas: 'SIN_FIRMA', completo: mapped.faltantes.length === 0, faltantes: mapped.faltantes, advertencias: mapped.advertencias,
-      pendientesEmision: mapped.pendientesEmision, bloqueado: null, avisosTecnicos: revisarCoherencia(family, form, context), ...extra
+      pendientesEmision: mapped.pendientesEmision, bloqueado: null, incidencias: consolidarIncidencias([...mapped.incidencias, ...coherencia, ...adicionales]), ...extra
     });
 
     // Modalidades SIN variante gráfica confirmada (perfil): no se genera un documento engañoso.
     const modalidad = (form.modalidad ?? '').trim();
     const bloqueada = modalidadesDe(def).find((m) => m.valor === modalidad && !m.habilitada);
-    if (bloqueada) return resultado({ completo: false, bloqueado: `La modalidad ${bloqueada.etiqueta} de ${def.nombre} no está autorizada: ${bloqueada.motivo ?? 'sin variante gráfica confirmada por Manufactura.'}` });
+    if (bloqueada) {
+      const motivo = `La modalidad ${bloqueada.etiqueta} de ${def.nombre} no está autorizada: ${bloqueada.motivo ?? 'sin variante gráfica confirmada por Manufactura.'}`;
+      return resultado({ completo: false, bloqueado: motivo }, [incidencia({ codigo: 'MODALIDAD_NO_AUTORIZADA', nivel: 'ERROR', campos: ['modalidad'], seccion: 'datos', mensaje: motivo, origen: 'PLANTILLA', afectaVistaPrevia: true })]);
+    }
 
     // Red de seguridad: el validador autoritativo de tools/ revisa los datos ya completos (composición fija, indicadores X/NA, cotas…).
     const errores = mapped.faltantes.length === 0 ? await this.validar(def.validador, family, modalidad, mapped.datos) : [];
     if (errores.length > 0) mapped.advertencias.push(...errores.map((e) => `Validación de la familia: ${e}`));
+    const incidenciasValidador = errores.map((e) => incidencia({ codigo: 'VALIDACION_FAMILIA', id: `VALIDACION_FAMILIA:${e}`, nivel: 'ERROR', mensaje: `Validación de la familia: ${e}`, seccion: 'datos', origen: 'PLANTILLA', afectaVistaPrevia: true }));
 
     const template = await this.composedTemplate(family);
     const values: Record<string, string> = { ...mapped.datos, bloque_firma_elaboro: SIN_FIRMA_MARKER, bloque_firma_aprobo: SIN_FIRMA_MARKER };
@@ -77,7 +84,7 @@ export class SheetPreviewService {
     });
     html = html.replace('<head>', `<head>\n  ${CSP}`);
     html = this.inlineImages(family, html);
-    return resultado({ html, completo: mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0, advertencias: mapped.advertencias });
+    return resultado({ html, completo: mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0, advertencias: mapped.advertencias }, incidenciasValidador);
   }
 
   private async validar(validador: { archivo: string; funcion: string } | null, family: FamilyCode, modalidad: string, datos: Record<string, string>): Promise<string[]> {

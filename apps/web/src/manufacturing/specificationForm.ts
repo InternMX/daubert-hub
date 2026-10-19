@@ -1,4 +1,5 @@
 import type { BindProductLookup, CampoInterpretado, FuenteDato } from '../services/bindProducts';
+import { consolidar, crearIncidencia, seccionDeCampo, type Incidencia } from './incidencias';
 import type { CapaConfig, ColorPresetConfig, FamilyCode, FamilyConfig, FieldKey } from '../services/manufacturingFamilies';
 
 // Estado y validación del formulario de especificación de manufactura. SOLO transforma el resultado que ya calculó el backend (intérprete, sugerencias y REGISTRO DE FAMILIAS de
@@ -249,13 +250,6 @@ export function computeVciPounds(layerWeight: string, vciPercent: number, weight
   return `${s.slice(0, s.length - vciDecimals)}.${s.slice(s.length - vciDecimals)}`;
 }
 
-/** Libras de VCI esperadas por el cálculo para cada capa (null si el peso de la capa no permite calcular). */
-export function expectedVci(form: SpecificationForm): Array<{ capa: CapaConfig; esperado: string | null }> {
-  const rule = form.layerWeightRule;
-  if (!rule || !rule.variantes.includes(form.fields.coexVariante.value)) return [];
-  return (form.layerVci ?? []).map((capa) => ({ capa, esperado: computeVciPounds(form.fields[capa.pesoKey].value, capa.porcentajeVci, rule.decimales, rule.decimalesVci) }));
-}
-
 /** Regla recibida del registro: pesos de capas de variantes autorizadas y, a partir de ellos, las libras de VCI por capa (solo con un peso válido). */
 export function suggestLayerWeights(form: SpecificationForm, replaceProtected = false): SpecificationForm {
   const rule = form.layerWeightRule;
@@ -418,11 +412,8 @@ const positive = (value: string): boolean => /^\d+([.,]\d+)?$/.test(value.trim()
 export interface SpecificationValidation {
   /** Errores TÉCNICOS de los datos que exige la familia (no incluye el cliente). */
   errors: Partial<Record<FieldKey | 'familia', string>>;
-  warnings: string[];
-  /** Pendientes legibles, siempre visibles (aunque el usuario no pulse «Validar»). */
-  pending: string[];
-  /** Pendientes de una emisión FUTURA que no impiden la demostración (cliente identificado, familia confirmada). */
-  emissionPending: string[];
+  /** Incidencias propias del formulario, una por causa (modelo único: ver incidencias.ts). Se combinan con las de BIND y las del backend para mostrarlas y resumirlas. */
+  incidencias: Incidencia[];
   /** Nivel 1 · Borrador previsualizable: hay familia (aunque sea la sugerida) y se puede mostrar el documento; puede no tener cliente. */
   previewable: boolean;
   /** Nivel 2 · Datos técnicos suficientes para la vista previa: no falta ni es inválido ningún dato técnico de la familia. */
@@ -434,40 +425,31 @@ export interface SpecificationValidation {
 }
 
 /** Valores capturados que la familia ELEGIDA no admite o no tiene: se conservan (no se borran) pero no se envían a la vista previa. */
-export function incompatibleValues(form: SpecificationForm, config: FamilyConfig | null): string[] {
+export function incompatibleIncidencias(form: SpecificationForm, config: FamilyConfig | null): Incidencia[] {
   if (!config) return [];
   const f = form.fields;
-  const avisos: string[] = [];
+  const lista: Incidencia[] = [];
   const ignorados: FieldKey[] = ['colorPreset', 'colorConcentracion', 'fuelleTotal', 'composicion', 'cliente'];
   for (const key of ALL_FIELDS) {
     if (config.campos.includes(key) || ignorados.includes(key)) continue;
-    if (f[key].value.trim() !== '' && isEdited(f[key])) avisos.push(`${FIELD_LABELS[key]} (${f[key].value.trim()}) no aplica a ${config.nombre}: se conserva, pero no se envía a la vista previa.`);
+    if (f[key].value.trim() !== '' && isEdited(f[key])) lista.push(crearIncidencia({ codigo: 'CAMPO_NO_APLICA', nivel: 'INFORMACION', campos: [key], seccion: 'familia', mensaje: `${FIELD_LABELS[key]} (${f[key].value.trim()}) no aplica a ${config.nombre}: se conserva, pero no se envía a la vista previa.` }));
   }
-  if (!config.composicionFija && f.composicion.value !== '' && !config.composiciones.includes(f.composicion.value as never)) avisos.push(`La composición ${f.composicion.value} no existe en ${config.nombre}: elige otra.`);
-  if (config.composicionFija && f.composicion.value !== '' && f.composicion.value !== config.composicionFija) avisos.push(`La composición ${f.composicion.value} se ignora: ${config.nombre} tiene composición fija (${config.composicionFija}).`);
-  if (config.colorDibujo && f.colorPreset.value !== '' && f.colorPreset.value !== COLOR_OTRO && !config.colores.some((c) => c.id === f.colorPreset.value)) avisos.push(`El color «${f.colorPreset.value}» no está disponible en ${config.nombre}: elige otro o «Otro».`);
-  const modalidad = config.modalidades.find((m) => m.valor === f.modalidad.value);
-  if (modalidad && !modalidad.habilitada) avisos.push(`${modalidad.etiqueta} no está autorizada en ${config.nombre}.`);
-  return avisos;
+  if (!config.composicionFija && f.composicion.value !== '' && !config.composiciones.includes(f.composicion.value as never)) lista.push(crearIncidencia({ codigo: 'COMPOSICION_FAMILIA', nivel: 'CONTRADICCION', campos: ['composicion'], seccion: 'composicion', mensaje: `La composición ${f.composicion.value} no existe en ${config.nombre}: elige otra.` }));
+  if (config.composicionFija && f.composicion.value !== '' && f.composicion.value !== config.composicionFija) lista.push(crearIncidencia({ codigo: 'COMPOSICION_FAMILIA', nivel: 'CONTRADICCION', campos: ['composicion'], seccion: 'composicion', mensaje: `La composición ${f.composicion.value} se ignora: ${config.nombre} tiene composición fija (${config.composicionFija}).` }));
+  if (config.colorDibujo && f.colorPreset.value !== '' && f.colorPreset.value !== COLOR_OTRO && !config.colores.some((c) => c.id === f.colorPreset.value)) lista.push(crearIncidencia({ codigo: 'COLOR_NO_DISPONIBLE', nivel: 'PENDIENTE', campos: ['colorPreset'], seccion: 'color', mensaje: `El color «${f.colorPreset.value}» no está disponible en ${config.nombre}: elige otro o «Otro».` }));
+  // La modalidad no autorizada ya es un error del campo (MODALIDAD_NO_AUTORIZADA): no se repite aquí.
+  return lista;
 }
 
-/** Valida los datos de la familia elegida con su configuración (backend). El cliente NO es un error técnico: es un requisito de emisión (ver `emissionPending`). */
+export const incompatibleValues = (form: SpecificationForm, config: FamilyConfig | null): string[] => incompatibleIncidencias(form, config).map((i) => i.mensaje);
+
+/** Valida los datos de la familia elegida con su configuración (backend). El cliente NO es un error técnico: es un requisito de emisión (incidencia informativa CLIENTE_SIN_IDENTIFICAR). */
 export function validateSpecification(form: SpecificationForm, configs: FamilyConfig[], lookup?: BindProductLookup): SpecificationValidation {
   const errors: SpecificationValidation['errors'] = {};
-  const warnings: string[] = [];
-  const pending: string[] = [];
-  const emissionPending: string[] = [];
+  const incidencias: Incidencia[] = [];
   const config = configOf(configs, form.family);
   if (form.family === null || config === null) errors.familia = 'Falta elegir la familia de manufactura.';
   const f = form.fields;
-  if (form.layerWeightRule?.campos.some((key) => !isAuto(f[key]))) warnings.push('Hay pesos por capa manuales o confirmados: se conservan al cambiar el peso total. Revisa los valores antes de reemplazarlos por nuevas sugerencias.');
-  for (const { capa, esperado } of expectedVci(form)) {
-    const typed = f[capa.lbKey].value.trim();
-    const decimals = form.layerWeightRule?.decimalesVci ?? 6;
-    if (esperado !== null && typed !== '' && scaleDecimal(typed, decimals) !== null && scaleDecimal(typed, decimals) !== scaleDecimal(esperado, decimals)) {
-      warnings.push(`${FIELD_LABELS[capa.lbKey]} (${typed}) ya no coincide con el cálculo esperado (${esperado} lb = peso de la capa × ${capa.porcentajeVci}%). Se conserva tu valor; usa «Restaurar» para volver al cálculo.`);
-    }
-  }
   if (config) {
     for (const key of config.requeridos) {
       if (key === 'composicion' && config.composicionFija) continue;
@@ -518,30 +500,35 @@ export function validateSpecification(form: SpecificationForm, configs: FamilyCo
     const conc = f.colorConcentracion.value.trim();
     if (conc !== '' && !(positive(conc) && Number(conc.replace(',', '.')) <= 100)) errors.colorConcentracion = 'La concentración del color debe ser un número entre 0 y 100.';
     if (f.fechaEmision.value.trim() !== '' && Number.isNaN(Date.parse(f.fechaEmision.value))) errors.fechaEmision = 'La fecha de emisión no es válida.';
-    for (const aviso of incompatibleValues(form, config)) warnings.push(aviso);
+    incidencias.push(...incompatibleIncidencias(form, config));
   }
 
-  // Cliente: requisito de la EMISIÓN futura; puede quedar vacío durante la demostración.
+  // Cliente: requisito de la EMISIÓN futura; puede quedar vacío durante la demostración (informativa, nunca bloquea).
   const cliente = f.cliente;
   const clientIdentified = cliente.source === 'CATALOGO' && Boolean(cliente.ref);
   if (!clientIdentified) {
-    emissionPending.push(cliente.value.trim() === '' ? 'Cliente sin identificar: se permite en la demostración, pero una emisión futura exigirá un cliente del catálogo.' : 'Cliente capturado como texto libre: no está vinculado al catálogo y una emisión futura exigirá un cliente identificado.');
+    incidencias.push(crearIncidencia({ codigo: 'CLIENTE_SIN_IDENTIFICAR', nivel: 'INFORMACION', campos: ['cliente'], seccion: 'datos', mensaje: cliente.value.trim() === '' ? 'Cliente sin identificar: se permite en la demostración, pero una emisión futura exigirá un cliente del catálogo.' : 'Cliente capturado como texto libre: no está vinculado al catálogo y una emisión futura exigirá un cliente identificado.' }));
   }
 
   if (form.family && config) {
     const incompatible = lookup?.sugerencias?.familia.incompatibles.find((i) => i.familia === form.family);
-    if (incompatible) warnings.push(`Familia incompatible con los datos de BIND: ${incompatible.motivo} Confirma la familia.`);
-    else if (lookup?.sugerencias?.familia.valor && lookup.sugerencias.familia.valor !== form.family) warnings.push(`El sistema sugería ${familyName(configs, lookup.sugerencias.familia.valor)}, pero elegiste ${config.nombre}.`);
-    if (form.familyOrigin === 'SUGERIDA') {
-      pending.push(`Familia: ${config.nombre} es una sugerencia del sistema; confírmala.`);
-      emissionPending.push('Familia sin confirmar por el usuario.');
-    }
-  } else {
-    pending.push('Familia: elige una familia de manufactura.');
+    if (incompatible) incidencias.push(crearIncidencia({ codigo: 'FAMILIA_INCOMPATIBLE', nivel: 'CONTRADICCION', seccion: 'familia', mensaje: `Familia incompatible con los datos de BIND: ${incompatible.motivo} Confirma la familia.`, origen: 'BIND' }));
+    else if (lookup?.sugerencias?.familia.valor && lookup.sugerencias.familia.valor !== form.family) incidencias.push(crearIncidencia({ codigo: 'FAMILIA_DISTINTA_SUGERIDA', nivel: 'INFORMACION', seccion: 'familia', mensaje: `El sistema sugería ${familyName(configs, lookup.sugerencias.familia.valor)}, pero elegiste ${config.nombre}.` }));
+    if (form.familyOrigin === 'SUGERIDA') incidencias.push(crearIncidencia({ codigo: 'FAMILIA_NO_CONFIRMADA', nivel: 'PENDIENTE', seccion: 'familia', mensaje: `Familia: ${config.nombre} es una sugerencia del sistema; confírmala.` }));
+  }
+  // Errores técnicos como incidencias: una por causa y campo (dato faltante, valor no válido o modalidad no autorizada).
+  for (const [key, mensaje] of Object.entries(errors)) {
+    if (key === 'familia') { incidencias.push(crearIncidencia({ codigo: 'FAMILIA_SIN_ELEGIR', nivel: 'ERROR', seccion: 'familia', mensaje })); continue; }
+    const campo = key as FieldKey;
+    const noAutorizada = campo === 'modalidad' && Boolean(config?.modalidades.some((m) => m.valor === f.modalidad.value && !m.habilitada));
+    const codigo = noAutorizada ? 'MODALIDAD_NO_AUTORIZADA' : f[campo].value.trim() === '' ? 'FALTANTE' : 'VALOR_INVALIDO';
+    const etiqueta = FIELD_LABELS[campo].replace(/ \(.+\)$/, '');
+    const resumen = codigo === 'FALTANTE' ? `Falta ${etiqueta.toLowerCase()}.` : codigo === 'MODALIDAD_NO_AUTORIZADA' ? 'La modalidad elegida no está autorizada.' : `${etiqueta}: valor no válido (no se muestra).`;
+    incidencias.push(crearIncidencia({ codigo, nivel: 'ERROR', campos: [campo], seccion: seccionDeCampo(campo), mensaje, resumen, afectaVistaPrevia: true }));
   }
   const technicalReady = Object.keys(errors).length === 0;
   const emissionReady = technicalReady && clientIdentified && form.familyOrigin === 'USUARIO';
-  return { errors, warnings, pending: [...pending, ...Object.values(errors)], emissionPending, previewable: form.family !== null && config !== null, technicalReady, clientIdentified, emissionReady };
+  return { errors, incidencias: consolidar(incidencias), previewable: form.family !== null && config !== null, technicalReady, clientIdentified, emissionReady };
 }
 
 /** Campos cuyo valor difiere del que entregó BIND o del sistema (para mostrar qué cambió el usuario). */

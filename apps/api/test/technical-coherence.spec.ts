@@ -35,44 +35,44 @@ describe('Coherencia del borrador (sin confirmar ni sobrescribir)', () => {
     expect(sugerirEspecificacion(r).productoEspecifico).toBe('BOLSA PLANA');
     expect(r.producto.title).toBe(title);
     expect(denominacionEspecifica('BOLSA VCI PMG')).toBeNull();
-    expect(revisarCoherencia('BOLSA_FUELLE', { producto: 'BOLSA PLANA' }).some((a) => a.id === 'PRODUCTO_FAMILIA')).toBe(true);
-    expect(revisarCoherencia('HOJA_PAQ', { producto: 'Bolsa PLANA' }).some((a) => a.id === 'PRODUCTO_FAMILIA')).toBe(false);
-    expect(revisarCoherencia('TERMOENCOGIBLE', { producto: 'ROLLO VCI + UV TERMOENCOGIBLE' }).some((a) => a.id === 'PRODUCTO_FAMILIA')).toBe(false);
+    expect(revisarCoherencia('BOLSA_FUELLE', { producto: 'BOLSA PLANA' }).some((a) => a.id === 'PRODUCTO_FAMILIA:producto')).toBe(true);
+    expect(revisarCoherencia('HOJA_PAQ', { producto: 'Bolsa PLANA' }).some((a) => a.id === 'PRODUCTO_FAMILIA:producto')).toBe(false);
+    expect(revisarCoherencia('TERMOENCOGIBLE', { producto: 'ROLLO VCI + UV TERMOENCOGIBLE' }).some((a) => a.id === 'PRODUCTO_FAMILIA:producto')).toBe(false);
   });
   it('color explícito, con detección conservadora y sin alterar texto', () => {
     expect(coloresExplicitos('CLIENTE AZUL BANANA BLUE NATURAL')).toEqual([]);
     expect(coloresExplicitos('COLOR: BLUE / COLOR VERDE')).toEqual(['AZUL', 'VERDE']);
     const datos = Object.freeze({ colorNombre: 'VERDE', colorHex: '#00B050', descripcion: 'Original', etiqueta: 'Original' });
     const avisos = revisarCoherencia('BOLSA_PLANA_1', datos, { title: 'BOLSA PMG COLOR AZUL', code: 'SCHFPMG001' });
-    expect(avisos.find((a) => a.id === 'COLOR_AZUL')).toMatchObject({ nivel: 'CONTRADICCION', mensaje: expect.stringContaining('VERDE') });
+    expect(avisos.find((a) => a.id === 'COLOR_AZUL:colorPreset')).toMatchObject({ nivel: 'CONTRADICCION', mensaje: expect.stringContaining('VERDE') });
     expect(datos.descripcion).toBe('Original');
     expect(datos.etiqueta).toBe('Original');
   });
 
   it.each([
-    ['BOLSA PMG', 'SCHFPMG001', 'CORROBORADO_resina'],
-    ['BOLSA PMG', 'ITESFCP002', 'TITLE_CODE_resina'],
-    ['BOLSA NAT', 'SCHFPMG001', 'TITLE_CODE_resina'],
-    ['PAPEL PW33', 'TARPPW3301', 'FAMILIA_BIND'],
-    ['BOLSA ESD', 'SCHFESD001', 'RESINA_SIN_COMPOSICION'],
-    ['BOLSA XOW', 'SCHFXOW001', 'RESINA_SIN_COMPOSICION'],
-    ['BOLSA PMG CON FUELLE', 'SCHFPMG001', 'FAMILIA_BIND']
+    ['BOLSA PMG', 'SCHFPMG001', 'CORROBORADO:composicion'],
+    ['BOLSA PMG', 'ITESFCP002', 'TITLE_CODE:composicion'],
+    ['BOLSA NAT', 'SCHFPMG001', 'TITLE_CODE:composicion'],
+    ['PAPEL PW33', 'TARPPW3301', 'FAMILIA_INCOMPATIBLE'],
+    ['BOLSA ESD', 'SCHFESD001', 'RESINA_SIN_CASILLA:composicion'],
+    ['BOLSA XOW', 'SCHFXOW001', 'RESINA_SIN_CASILLA:composicion'],
+    ['BOLSA PMG CON FUELLE', 'SCHFPMG001', 'FAMILIA_INCOMPATIBLE']
   ])('%s / %s: %s', (title, code, id) => {
     expect(revisarCoherencia('BOLSA_PLANA_1', { composicion: 'PMG' }, { title, code }).map((a) => a.id)).toContain(id);
   });
 
   it('COEX mantiene las capas; natural y fuelles incompatibles se explican', () => {
-    expect(revisarCoherencia('COEX', { lbVciExterior: '1' }).map((a) => a.id)).toContain('COEX_EXTERIOR');
-    expect(revisarCoherencia('BOLSA_NATURAL', {}, { title: 'BOLSA PMG', code: 'SCHFPMG001', composicionSeleccionada: 'PMG' }).map((a) => a.id)).toContain('COMPOSICION_FAMILIA');
+    expect(revisarCoherencia('COEX', { lbVciExterior: '1' }).map((a) => a.id)).toContain('COEX_EXTERIOR:lbVciExterior');
+    expect(revisarCoherencia('BOLSA_NATURAL', {}, { title: 'BOLSA PMG', code: 'SCHFPMG001', composicionSeleccionada: 'PMG' }).map((a) => a.id)).toContain('COMPOSICION_FAMILIA:composicion');
     expect(revisarCoherencia('BOLSA_FUELLE', { fuelleTotal: '10', fuelleDerecho: '4', fuelleIzquierdo: '4' }, { title: 'BOLSA PMG', code: '' }).map((a) => a.id)).toContain('FUELLE_TOTAL');
   });
 
   it('texto extremo se detecta y conserva completo en el HTML; no reduce dibujos', async () => {
     const texto = `INICIO ${'DATOS DE PRUEBA '.repeat(25)} FINAL`;
     const r = await new SheetPreviewService().preview('BOLSA_PLANA_1', { descripcion: texto, etiqueta: texto });
-    expect(r.avisosTecnicos.filter((a) => a.id.startsWith('TEXTO_EXTENSO'))).toHaveLength(2);
+    expect(r.incidencias.filter((a) => a.id.startsWith('TEXTO_EXTENSO'))).toHaveLength(2);
     expect(r.html.split(texto)).toHaveLength(3);
-    expect(r.avisosTecnicos.find((a) => a.id === 'TEXTO_EXTENSO_descripcion')?.nivel).toBe('PENDIENTE');
+    expect(r.incidencias.find((a) => a.id === 'TEXTO_EXTENSO:descripcion')?.nivel).toBe('PENDIENTE');
   });
 
   it('el contexto nuevo rechaza propiedades extra y títulos excesivos sin habilitar HTML', async () => {

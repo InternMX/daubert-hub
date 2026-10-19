@@ -74,13 +74,34 @@ describe('SheetPreviewPanel', () => {
     expect((await screen.findByTitle('Vista previa de la hoja Hojas')).getAttribute('srcdoc')).toContain('PLANTILLA HOJA_PAQ');
   });
 
-  it('muestra los datos faltantes y las advertencias del backend sin inventar nada', async () => {
-    previewMock.mockResolvedValue(response('<p>x</p>', { completo: false, faltantes: ['Composición', 'Color del dibujo'], advertencias: ['El peso no es un número válido y no se muestra.'] }));
-    render(<SheetPreviewPanel family="HOJA_PAQ" familyLabel="Hojas" data={{ codigo: 'X' }} />);
+  it('muestra los datos faltantes (de la respuesta) y solo los avisos que afectan la representación; no repite el cliente ni los pendientes de emisión', async () => {
+    previewMock.mockResolvedValue(response('<p>x</p>', { completo: false, faltantes: ['Composición', 'Color del dibujo'], advertencias: ['El peso no es un número válido y no se muestra.'], pendientesEmision: ['Cliente'] }));
+    const aviso = { id: 'TEXTO_EXTENSO:etiqueta', codigo: 'TEXTO_EXTENSO', nivel: 'PENDIENTE' as const, campos: ['etiqueta' as const], seccion: 'datos' as const, mensaje: 'La etiqueta contiene texto extenso: revisa la hoja ampliada y la paginación antes de la demostración.', resumen: 'La etiqueta es extensa: revisa la hoja ampliada.', origen: 'SISTEMA' as const, afectaVistaPrevia: true, reconocible: true };
+    render(<SheetPreviewPanel family="HOJA_PAQ" familyLabel="Hojas" data={{ codigo: 'X' }} avisos={[aviso]} />);
     await wait();
     const avisos = await screen.findByLabelText('Advertencias de la vista previa');
     expect(within(avisos).getByText(/Faltan datos técnicos.*Composición, Color del dibujo/)).toBeInTheDocument();
-    expect(within(avisos).getByText('El peso no es un número válido y no se muestra.')).toBeInTheDocument();
+    expect(within(avisos).getByTestId('preview-avisos')).toHaveTextContent('La etiqueta es extensa: revisa la hoja ampliada.');      // resumen breve, no el mensaje completo
+    expect(within(avisos).getByTestId('preview-avisos')).not.toHaveTextContent('paginación');
+    expect(screen.queryByText(/emisión futura/)).not.toBeInTheDocument();
+    expect(screen.queryByText('El peso no es un número válido y no se muestra.')).not.toBeInTheDocument();                           // lo cuenta la incidencia VALOR_INVALIDO, no un texto suelto
+  });
+
+  it('no muestra faltantes ni bloqueo de una respuesta anterior mientras llega la del cambio más reciente (sin mensajes obsoletos)', async () => {
+    previewMock.mockResolvedValueOnce(response('<p>A</p>', { completo: false, faltantes: ['Composición'] }));
+    const { rerender } = render(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={DATA} />);
+    await wait();
+    expect(await screen.findByText(/Faltan datos técnicos.*Composición/)).toBeInTheDocument();
+    expect(screen.getByTestId('preview-incomplete')).toBeInTheDocument();
+    let resolver: (r: SheetPreviewResponse) => void = () => undefined;
+    previewMock.mockImplementationOnce(() => new Promise<SheetPreviewResponse>((resolve) => { resolver = resolve; }));
+    rerender(<SheetPreviewPanel family="BOLSA_PLANA_1" familyLabel="Bolsa Plana 1" data={{ ...DATA, ancho: '14' }} />);
+    expect(screen.queryByText(/Faltan datos técnicos/)).not.toBeInTheDocument();                       // al cambiar los datos, el mensaje anterior ya no vale
+    expect(screen.queryByTestId('preview-incomplete')).not.toBeInTheDocument();
+    await wait();
+    await act(async () => { resolver(response('<p>B</p>', { completo: true })); await Promise.resolve(); });
+    expect(screen.queryByText(/Faltan datos técnicos/)).not.toBeInTheDocument();                       // y la respuesta nueva (completa) no los recupera
+    expect(screen.queryByTestId('preview-incomplete')).not.toBeInTheDocument();
   });
 
   it('errores: datos no válidos y servidor no disponible', async () => {

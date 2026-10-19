@@ -1,12 +1,32 @@
 import { apiBaseUrl } from './api';
-import type { FamilyCode } from './manufacturingFamilies';
+import type { FamilyCode, FieldKey } from './manufacturingFamilies';
 
 // Vista previa HTML de una hoja de manufactura: POST /api/manufacturing-sheets/previews. La composición (plantillas aprobadas) la hace NestJS; el navegador solo recibe el HTML
 // resultante y lo muestra en un iframe aislado. No se guarda nada.
 
 export type PreviewFamilyCode = FamilyCode;
 export interface BindReviewContext { title: string; code: string; composicionSeleccionada?: string }
-export interface TechnicalNotice { id: string; nivel: 'INFORMACION' | 'PENDIENTE' | 'CONTRADICCION' | 'ERROR'; mensaje: string }
+export type NivelIncidencia = 'INFORMACION' | 'PENDIENTE' | 'CONTRADICCION' | 'ERROR';
+export type SeccionIncidencia = 'familia' | 'bind' | 'datos' | 'color' | 'capas' | 'composicion' | 'medidas' | 'vista-previa';
+
+/**
+ * Modelo único de incidencias (lo define y autoriza el backend; ver preview/incidencias.ts en la API). El `id` describe la CAUSA (código + campo): dos orígenes que
+ * describen el mismo problema comparten id y se cuentan una sola vez.
+ */
+export interface Incidencia {
+  id: string;
+  codigo: string;
+  nivel: NivelIncidencia;
+  /** Campos afectados (vacío si es de sección). Con un solo campo visible se muestra en el campo; con varios, en la sección. */
+  campos: FieldKey[];
+  seccion: SeccionIncidencia;
+  mensaje: string;
+  /** Texto breve para resúmenes y para la vista previa. */
+  resumen?: string;
+  origen: 'TITLE' | 'CODE' | 'CONCILIACION' | 'BIND' | 'SISTEMA' | 'FORMULARIO' | 'PLANTILLA';
+  afectaVistaPrevia: boolean;
+  reconocible: boolean;
+}
 
 export interface SheetPreviewResponse {
   html: string;
@@ -22,7 +42,8 @@ export interface SheetPreviewResponse {
   pendientesEmision: string[];
   /** Motivo por el que no se muestra el documento (p. ej. modalidad no autorizada); null si se muestra. */
   bloqueado: string | null;
-  avisosTecnicos?: TechnicalNotice[];
+  /** Lista única de incidencias de esta vista previa (sin duplicados por causa). `faltantes`, `advertencias` y `pendientesEmision` son proyecciones de ella. */
+  incidencias?: Incidencia[];
 }
 
 export type SheetPreviewErrorKind = 'INVALID_DATA' | 'UNAUTHENTICATED' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'NETWORK';

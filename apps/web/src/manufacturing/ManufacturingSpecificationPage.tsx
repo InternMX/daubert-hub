@@ -8,6 +8,8 @@ import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type B
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
+import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
+import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
@@ -19,7 +21,7 @@ const originPresentation: Record<DisplayOrigin, { label: string; color: 'default
   BIND: { label: 'Recuperado de BIND', color: 'success', variant: 'outlined' },
   SUGERIDO: { label: 'Sugerido por el sistema', color: 'info', variant: 'outlined' },
   CALCULADO: { label: 'Calculado por el sistema', color: 'info', variant: 'outlined' },
-  PENDIENTE: { label: 'Pendiente de confirmar', color: 'warning', variant: 'filled' },
+  PENDIENTE: { label: 'Pendiente de confirmar', color: 'warning', variant: 'outlined' },
   SIN_DATO: { label: 'Captura manual', color: 'default', variant: 'outlined' },
   USUARIO: { label: 'Editado por el usuario', color: 'secondary', variant: 'filled' },
   CATALOGO: { label: 'Cliente del catálogo (confirmado)', color: 'success', variant: 'outlined' },
@@ -62,18 +64,19 @@ function OriginChip({ origin }: { origin: DisplayOrigin }) {
 interface FieldFrameProps {
   form: SpecificationForm;
   fieldKey: FieldKey;
+  /** Marca el campo en rojo (el mensaje lo muestra la incidencia del campo). */
   error?: string;
   onRestore: (key: FieldKey) => void;
   children: ReactNode;
 }
 
 // Marco común de cada campo: procedencia, nota del sistema, valor original de BIND cuando el usuario lo modificó y botón para restaurarlo.
-function FieldFrame({ form, fieldKey, error, onRestore, children }: FieldFrameProps) {
+function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
   const state = form.fields[fieldKey];
   const origin = displayOrigin(state);
   const edited = isEdited(state) && state.base.origin !== 'SIN_DATO';
   return (
-    <Box sx={{ minWidth: 0 }}>
+    <Box sx={{ minWidth: 0 }} data-field={fieldKey}>
       {children}
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
         <OriginChip origin={origin} />
@@ -90,7 +93,7 @@ function FieldFrame({ form, fieldKey, error, onRestore, children }: FieldFramePr
       {origin === 'PENDIENTE' && state.base.note && <Typography variant="caption" color="warning.main" display="block">{state.base.note}</Typography>}
       {(origin === 'SUGERIDO' || origin === 'CALCULADO') && state.base.note && fieldKey !== 'fechaEmision' && <Typography variant="caption" color="text.secondary" display="block">{state.base.note}</Typography>}
       {state.confirmed && <Typography variant="caption" display="block">Peso revisado para este borrador; protegido frente al recálculo automático.</Typography>}
-      {error && <Typography variant="caption" color="error" display="block" role="alert">{error}</Typography>}
+      <IncidenciasDeCampo campo={fieldKey} />
     </Box>
   );
 }
@@ -134,11 +137,12 @@ function ClientField({ form, onChange, onRestore }: { form: SpecificationForm; o
   );
 }
 
-function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+function SectionCard({ title, seccion, children }: { title: string; seccion?: SeccionIncidencia; children: ReactNode }) {
   return (
     <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label={title}>
       <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 2 }}>{title}</Typography>
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>{children}</Box>
+      {seccion && <IncidenciasDeSeccion seccion={seccion} />}
     </Paper>
   );
 }
@@ -161,7 +165,6 @@ function MaterialRow({ lookup }: { lookup: BindProductLookup }) {
       <Typography variant="body2" color="text.secondary">Material interpretado:</Typography>
       <Typography variant="body2">{partes.length > 0 ? partes.join(' · ') : 'sin interpretación confiable'}</Typography>
       {material?.procedencia ? <SourceChip source={material.procedencia} /> : material?.origen === 'EXTRAIDO' ? <SourceChip source="TITLE" /> : <Chip size="small" label="Pendiente" color="warning" variant="outlined" data-testid="source-chip" />}
-      {material?.procedencia === 'CONTRADICCION' && material.nota && <Typography variant="caption" color="error" data-testid="material-contradiction">{material.nota}</Typography>}
     </Stack>
   );
 }
@@ -189,6 +192,7 @@ function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
         ))}
       </Box>
       <MaterialRow lookup={lookup} />
+      <IncidenciasDeSeccion seccion="bind" />
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>La fecha de alta es la del producto en BIND, no la fecha de emisión de la hoja. Estos datos no se modifican desde esta pantalla.</Typography>
     </Paper>
   );
@@ -208,6 +212,7 @@ export function ManufacturingSpecificationPage() {
   const [assessment, setAssessment] = useState<{ key: string; result: SheetPreviewResponse } | null>(null);
   const [reviewedKey, setReviewedKey] = useState('');
   const [reviewWeights, setReviewWeights] = useState(false);
+  const [reconocidas, setReconocidas] = useState<Reconocimientos>({});
   const controller = useRef<AbortController | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
@@ -226,6 +231,7 @@ export function ManufacturingSpecificationPage() {
     setValidation(null);
     setReviewedKey('');
     setReviewWeights(false);
+    setReconocidas({});
     if (!BIND_CODE_PATTERN.test(code.trim())) {
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
@@ -298,8 +304,17 @@ export function ManufacturingSpecificationPage() {
   const previewContext = lookup && form ? { title: lookup.producto.Title, code: lookup.producto.Code, composicionSeleccionada: form.fields.composicion.value } : undefined;
   const assessmentKey = JSON.stringify({ family: form?.family, data: previewData, context: previewContext });
   const currentAssessment = assessment?.key === assessmentKey ? assessment.result : null;
-  const contradictions = currentAssessment?.avisosTecnicos?.filter((a) => a.nivel !== 'INFORMACION') ?? [];
-  const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO';
+  // UNA lista de incidencias por causa (mismo id), reunida de: validación local, coherencia del backend (solo la respuesta VIGENTE para estos datos) y advertencias de BIND.
+  const valores = (key: FieldKey): string => form?.fields[key].value ?? '';
+  const todas: Incidencia[] = form && lookup
+    ? buildIncidencias({ locales: live?.incidencias ?? [], backend: currentAssessment?.incidencias ?? [], advertencias: lookup.advertencias, valores, config })
+    : [];
+  const sinReconocer = todas.filter((i) => i.nivel === 'CONTRADICCION' && !estaReconocida(i, valores, reconocidas));
+  const avisosVistaPrevia = todas.filter((i) => i.afectaVistaPrevia && i.codigo !== 'FALTANTE' && !estaReconocida(i, valores, reconocidas));
+  const reconocer = (i: Incidencia): void => setReconocidas((r) => ({ ...r, [i.id]: huella(i, valores) }));
+  const deshacer = (i: Incidencia): void => setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id)));
+  const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: validation !== null };
+  const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO' && sinReconocer.length === 0;
   const colorPreset = form?.fields.colorPreset.value ?? '';
   const colorSwatch = (hex: string) => <Box aria-label="Muestra del color" role="img" data-testid="color-swatch" sx={{ width: 32, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : 'transparent', flexShrink: 0 }} />;
   const composiciones = (config?.composiciones ?? ['PMG', 'CP5000', 'NAT']).map((value) => ({ value, label: value === 'NAT' ? 'Natural' : value }));
@@ -327,13 +342,10 @@ export function ManufacturingSpecificationPage() {
 
       {status === 'ready' && lookup && form && (
         <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) minmax(420px, 520px)' }, alignItems: 'start' }}>
+        <IncidenciasProvider value={ctx}>
         <Box sx={{ minWidth: 0, order: { xs: 2, lg: 1 } }}>
           <BindProductPanel lookup={lookup} />
-          {lookup.advertencias.length > 0 && (
-            <Stack spacing={1} sx={{ mt: 2 }} aria-label="Advertencias del producto">
-              {lookup.advertencias.filter((a) => !currentAssessment || (!a.codigo.startsWith('CODIGO_RESINA_') && !a.codigo.startsWith('CODIGO_MATERIAL_') && !a.campos.every((k) => k in form.fields && form.fields[k as FieldKey].value.trim() !== ''))).map((a) => <Alert key={`${a.codigo}-${a.campos.join()}`} severity={['FAMILIA_NO_CONFIRMADA', 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'DATO_INFERIDO_DEL_CODIGO'].includes(a.codigo) ? 'info' : 'warning'}><strong>Información de origen:</strong> {a.mensaje}</Alert>)}
-            </Stack>
-          )}
+          {live && <ResumenIncidencias lista={todas} ctx={ctx} />}
 
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Familia de manufactura">
             <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 1 }}>Familia de manufactura</Typography>
@@ -342,7 +354,6 @@ export function ManufacturingSpecificationPage() {
               <RadioGroup row aria-labelledby="family-label" value={form.family ?? ''} onChange={(e) => update((f) => selectFamily(f, e.target.value as FamilyCode, configs))}>
                 {configs.map((c) => <FormControlLabel key={c.codigo} value={c.codigo} control={<Radio />} label={c.nombre} />)}
               </RadioGroup>
-              {errors.familia && <FormHelperText role="alert">{errors.familia}</FormHelperText>}
             </FormControl>
             {form.familyOrigin === 'SUGERIDA' && (
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
@@ -351,21 +362,12 @@ export function ManufacturingSpecificationPage() {
               </Stack>
             )}
             {form.familyOrigin === 'USUARIO' && <Chip size="small" color="secondary" label="Familia elegida por el usuario" sx={{ mt: 0.5 }} data-testid="family-chip" />}
-            {form.familyNote && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }} data-testid="family-note">{form.family ? `Motivo: ${form.familyNote}` : `Sin familia sugerida. ${form.familyNote}`}</Typography>}
+            {form.familyNote && (form.family || !todas.some((i) => i.id === 'MATERIAL_PAPEL_SIN_PLANTILLA')) && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }} data-testid="family-note">{form.family ? `Motivo: ${form.familyNote}` : `Sin familia sugerida. ${form.familyNote}`}</Typography>}
             {config && config.notas.map((n) => <Typography key={n} variant="caption" color="text.secondary" display="block" data-testid="family-particularity">{n}</Typography>)}
+            <IncidenciasDeSeccion seccion="familia" />
           </Paper>
 
-          {live && live.warnings.length > 0 && (
-            <Stack spacing={1} sx={{ mt: 2 }} aria-label="Atención">
-              {live.warnings.filter((w) => !contradictions.some((a) => a.id === 'FAMILIA_BIND') || !w.startsWith('Familia incompatible')).map((w) => <Alert key={w} severity="warning" data-testid="live-warning">{w}</Alert>)}
-            </Stack>
-          )}
-          {contradictions.length > 0 && <Stack spacing={1} sx={{ mt: 2 }} aria-label="Contradicciones técnicas">
-            {contradictions.map((a) => <Alert key={a.id} severity={a.nivel === 'ERROR' ? 'error' : 'warning'}><strong>{a.nivel === 'PENDIENTE' ? 'Pendiente de confirmación' : 'Contradicción técnica'}:</strong> {a.mensaje}</Alert>)}
-            <Typography variant="caption">La revisión solo vale para los valores del borrador actual. No autoriza una especificación oficial.</Typography>
-          </Stack>}
-
-          <SectionCard title="Datos generales">
+          <SectionCard title="Datos generales" seccion="datos">
             {text('codigo')}
             {text('descripcion', { multiline: true, minRows: 2 })}
             {text('producto')}
@@ -409,6 +411,7 @@ export function ManufacturingSpecificationPage() {
                   ? text('colorHex', { placeholder: '#RRGGBB', helperText: 'Color del dibujo para «Otro».' })
                   : <Typography variant="body2" color="text.secondary" data-testid="color-hex-readonly">{colorPreset ? `Color del dibujo: ${form.fields.colorHex.value}` : 'Elige un color para el dibujo.'}</Typography>)}
               </Box>
+              <IncidenciasDeSeccion seccion="color" />
             </Paper>
           )}
 
@@ -426,10 +429,11 @@ export function ManufacturingSpecificationPage() {
                   </Box>
                 ))}
               </Box>
+              <IncidenciasDeSeccion seccion="capas" />
             </Paper>
           )}
 
-          <SectionCard title="Composición y presentación">
+          <SectionCard title="Composición y presentación" seccion="composicion">
             {radios('composicion', composiciones, (value) => update((f) => setComposition(f, value)), config?.composicionFija ?? null)}
             {radios('presentacion', [{ value: 'ROLLO', label: 'Rollo' }, { value: 'PAQUETE', label: 'Paquete' }])}
             {text('cantidad', { inputMode: 'numeric' })}
@@ -437,7 +441,7 @@ export function ManufacturingSpecificationPage() {
             {radios('modalidad', (config?.modalidades ?? []).map((m) => ({ value: m.valor, label: m.etiqueta, disabled: !m.habilitada, hint: m.motivo })))}
           </SectionCard>
 
-          <SectionCard title="Medidas y peso">
+          <SectionCard title="Medidas y peso" seccion="medidas">
             {text('ancho', { inputMode: 'decimal' })}
             {text('largo', { inputMode: 'decimal' })}
             {text('anchoRollo', { inputMode: 'decimal', helperText: 'Dato independiente del ancho; se imprime con la unidad de las medidas.' })}
@@ -472,21 +476,10 @@ export function ManufacturingSpecificationPage() {
                 <Chip size="small" variant="outlined" label="Aprobación: fuera de alcance" data-testid="status-approval" />
               </Stack>
             )}
-            {live && live.pending.length > 0 && (
-              <Alert severity="warning" sx={{ mb: 1.5 }} data-testid="pending-list">
-                <strong>Pendientes de confirmación / errores que impiden validar:</strong>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{live.pending.filter((p) => !Object.values(errors).includes(p)).map((p) => <li key={p}>{p}</li>)}</ul>
-              </Alert>
-            )}
-            {live && live.emissionPending.length > 0 && (
-              <Alert severity="info" sx={{ mb: 1.5 }} data-testid="emission-pending-list">
-                <strong>Para una emisión futura (no impide la demostración):</strong>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{live.emissionPending.map((p) => <li key={p}>{p}</li>)}</ul>
-              </Alert>
-            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <Button variant="contained" onClick={() => setValidation(validateSpecification(form, configs, lookup))}>Validar especificación</Button>
-              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO'} onClick={() => { const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>{contradictions.length ? 'Revisé las discrepancias: intencionales en este borrador' : 'Confirmar revisión del borrador'}</Button>
+              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO' || sinReconocer.length > 0} onClick={() => { const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>Confirmar revisión del borrador</Button>
+              {sinReconocer.length > 0 && <Typography variant="body2" color="text.secondary" data-testid="review-blocked-hint">Corrige o reconoce las contradicciones técnicas ({sinReconocer.length}) para confirmar la revisión.</Typography>}
               <Typography variant="body2" color="text.secondary">
                 {changedFields(form, config).length === 0 ? 'Sin cambios respecto a lo recuperado de BIND.' : `Campos modificados por el usuario: ${changedFields(form, config).map((k) => FIELD_LABELS[k]).join(', ')}.`}
               </Typography>
@@ -496,7 +489,7 @@ export function ManufacturingSpecificationPage() {
                 {validation.emissionReady && reviewed
                   ? <Alert severity="success">Los datos técnicos están completos, hay cliente del catálogo y la familia fue confirmada: apto para una emisión futura. Aún no se guarda ni se emite ninguna hoja.</Alert>
                   : validation.technicalReady
-                    ? <Alert severity="info">Datos técnicos suficientes para la vista previa. {validation.clientIdentified ? 'Confirma la familia para considerarlo apto para una emisión futura.' : 'Falta identificar el cliente para una emisión futura (opcional en la demostración).'} Aún no se guarda ni se emite ninguna hoja.</Alert>
+                    ? <Alert severity="info">Datos técnicos suficientes para la vista previa. Aún no se guarda ni se emite ninguna hoja. El detalle de pendientes y requisitos de una emisión futura está en la revisión del borrador.</Alert>
                     : <Alert severity="error">Faltan datos técnicos o hay valores no válidos ({Object.keys(validation.errors).length}). Revisa los campos marcados. El borrador sigue visible, pero la representación es incompleta.</Alert>}
               </Stack>
             )}
@@ -510,8 +503,9 @@ export function ManufacturingSpecificationPage() {
             <DialogActions><Button onClick={() => setReviewWeights(false)}>Cancelar</Button><Button onClick={() => { update((f) => suggestLayerWeights(f, true)); setReviewWeights(false); }}>Reemplazar pesos por sugerencias actuales</Button></DialogActions>
           </Dialog>
         </Box>
+        </IncidenciasProvider>
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
-          <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData}
+          <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData} avisos={avisosVistaPrevia}
             context={previewContext}
             onAssessment={(result, key) => setAssessment(result ? { key, result } : null)} />
         </Box>

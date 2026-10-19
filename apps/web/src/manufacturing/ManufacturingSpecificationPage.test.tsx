@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,21 +51,30 @@ afterEach(() => { vi.clearAllMocks(); });
 
 // El formulario completo (MUI + vista previa con debounce) es costoso de renderizar: con la suite completa en paralelo y cobertura, 5 s no alcanzan.
 describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
-  it('una discrepancia exige revisión explícita del borrador y cualquier edición invalida la revisión', async () => {
+  it('una contradicción exige reconocerla antes de confirmar la revisión; editar los datos que la originan invalida el reconocimiento', async () => {
     const user = userEvent.setup();
     lookupMock.mockResolvedValue(schfpmg001());
     previewMock.mockResolvedValue({ html: '<p>Borrador</p>', familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: ['Cliente'], bloqueado: null,
-      avisosTecnicos: [{ id: 'COLOR_AZUL', nivel: 'CONTRADICCION', mensaje: 'BIND menciona AZUL, pero la hoja utiliza VERDE.' }] });
+      incidencias: [{ id: 'COLOR_VARIANTE:colorNombre', codigo: 'COLOR_VARIANTE', nivel: 'CONTRADICCION', campos: ['colorNombre'], seccion: 'color', mensaje: 'La hoja usa AZUL, pero BIND menciona COLOR VERDE.', origen: 'TITLE', afectaVistaPrevia: false, reconocible: true }] });
     renderPage();
     await buscar(user);
     await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
-    const review = await screen.findByRole('button', { name: 'Revisé las discrepancias: intencionales en este borrador' });
+    const review = await screen.findByRole('button', { name: 'Confirmar revisión del borrador' });
+    const color = await screen.findByTestId('incidencia');
+    expect(color).toHaveTextContent('BIND menciona COLOR VERDE');
+    expect(within(frameOf('Texto del color en el documento')).getByTestId('incidencia')).toBe(color);                  // se muestra en el campo, una sola vez
+    expect(screen.getByTestId('review-blocked-hint')).toHaveTextContent('contradicciones técnicas (1)');
+    expect(review).toBeDisabled();
+    await user.click(within(color).getByRole('button', { name: 'Reconocer esta diferencia' }));
+    expect(screen.queryByTestId('review-blocked-hint')).not.toBeInTheDocument();
     await waitFor(() => expect(review).toBeEnabled());
     expect(screen.getByTestId('status-reviewed')).toHaveTextContent('pendientes de revisión');
     await user.click(review);
     expect(screen.getByTestId('status-reviewed')).toHaveTextContent('Datos revisados para este borrador');
-    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    // editar los datos que originaron la contradicción: el reconocimiento caduca y la revisión también
+    fireEvent.change(campo('Texto del color en el documento'), { target: { value: 'VERDE' } });
     expect(screen.getByTestId('status-reviewed')).toHaveTextContent('pendientes de revisión');
+    expect(await screen.findByTestId('review-blocked-hint')).toBeInTheDocument();                  // tras la respuesta del backend para los datos nuevos
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto');
     expect(campo('Descripción').value).toBe(schfpmg001().producto.Title);
   });
@@ -123,13 +132,14 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByTestId('status-technical')).toHaveTextContent('Datos técnicos suficientes');
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto para emisión futura');
     expect(screen.getByTestId('status-approval')).toHaveTextContent('fuera de alcance');
-    expect(screen.getByTestId('emission-pending-list')).toHaveTextContent(/Cliente sin identificar: se permite en la demostración/);
+    expect(screen.getByTestId('resumen-INFORMACION')).toHaveTextContent('informativa');                 // el cliente es informativo: se cuenta una vez en la revisión
+    expect(screen.getByText(/Puede quedar vacío en la demostración/)).toBeInTheDocument();             // y se explica donde se captura
+    expect(screen.queryByTestId('emission-pending-list')).not.toBeInTheDocument();
     await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1', undefined, { timeout: 3000 });
-    expect(screen.getByTestId('preview-emission-pending')).toHaveTextContent(/Cliente/);
+    expect(screen.queryByTestId('preview-emission-pending')).not.toBeInTheDocument();                    // el cliente no afecta la representación: la vista previa no lo repite
 
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Datos técnicos suficientes para la vista previa/)).toBeInTheDocument();
-    expect(screen.getByText(/Falta identificar el cliente para una emisión futura/)).toBeInTheDocument();
     expect(screen.queryByText(/apto para una emisión futura/)).not.toBeInTheDocument();
   });
 
@@ -142,7 +152,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(campo(CLIENTE).value).toBe('');
     await user.type(campo(CLIENTE), 'Nuevo Cliente SA');
     expect(within(frameOf(CLIENTE)).getByText('Texto libre: no vinculado al catálogo')).toBeInTheDocument();
-    expect(screen.getByTestId('emission-pending-list')).toHaveTextContent(/texto libre/);
+    expect(screen.getByTestId('resumen-INFORMACION')).toBeInTheDocument();
     await user.clear(campo(CLIENTE));
     await elegirCliente(user);
     expect(within(frameOf(CLIENTE)).getByText('Cliente del catálogo (confirmado)')).toBeInTheDocument();
@@ -211,7 +221,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
     expect(screen.queryByLabelText('Fuelle derecho')).not.toBeInTheDocument();
     expect(campo('Calibre').value).toBe('300');                           // compatible: se conserva
-    expect((await screen.findAllByTestId('live-warning')).map((e) => e.textContent).join(' ')).toMatch(/Fuelle derecho \(26\) no aplica a Bolsa Plana 1/);
+    expect((await screen.findByTestId('incidencias-familia')).textContent).toMatch(/Fuelle derecho \(26\) no aplica a Bolsa Plana 1/);
     await waitFor(() => expect(previewMock.mock.calls.at(-1)![0]).toBe('BOLSA_PLANA_1'), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('fuelleDerecho');
     await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
@@ -259,12 +269,13 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByRole('region', { name: 'Datos de Hojas' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Doblada' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeEnabled();
+    expect(screen.getByTestId('resumen-ERROR')).toBeInTheDocument();                                     // faltan datos: se cuenta en la revisión; el campo lo marca al validar
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Falta hoja doblada o extendida/i)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Extendida' }));
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Datos técnicos suficientes para la vista previa/)).toBeInTheDocument();
-    expect((await screen.findAllByTestId('live-warning')).map((e) => e.textContent).join(' ')).toMatch(/Familia incompatible con los datos de BIND: BIND describe una bolsa, no una hoja/);
+    expect((await screen.findByTestId('incidencias-familia')).textContent).toMatch(/Familia incompatible con los datos de BIND: BIND describe una bolsa, no una hoja/);
   });
 
   it('caso B: conserva CAL.200 literal, sin exigir unidad; los pendientes reales siguen marcados', async () => {
@@ -474,14 +485,26 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.002619');
     expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
     expect(within(frameOf('Libras de VCI de la capa interior')).getByText('Calculado por el sistema')).toBeInTheDocument();
+    // la coherencia del cálculo es del backend: la simulamos con su misma regla (id COEX_VCI:lbVciInterior)
+    previewMock.mockImplementation(async (familia, datos) => ({
+      html: '<p>coex</p>', familia, borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null,
+      incidencias: datos.lbVciInterior !== '0.010053' && datos.pesoLb === '0.7540'
+        ? [{ id: 'COEX_VCI:lbVciInterior', codigo: 'COEX_VCI', nivel: 'CONTRADICCION', campos: ['lbVciInterior'], seccion: 'capas', mensaje: `Las libras de VCI de la capa interior (${datos.lbVciInterior}) no coinciden con el cálculo esperado (0.010053 lb = peso de la capa × 4%). Se conserva el valor capturado; usa «Restaurar» para volver al cálculo.`, origen: 'SISTEMA', afectaVistaPrevia: false, reconocible: true }]
+        : []
+    }));
     fireEvent.change(campo('Libras de VCI de la capa interior'), { target: { value: '0.006' } });
     fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
     expect(campo('Libras de VCI de la capa interior').value).toBe('0.006');
     expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.005027');
-    expect((await screen.findAllByTestId('live-warning')).map((w) => w.textContent).join(' ')).toMatch(/Libras de VCI de la capa interior \(0\.006\) ya no coincide con el cálculo esperado \(0\.010053 lb/);
+    // UNA sola incidencia, en el campo de la capa: ni alerta global ni texto en la vista previa
+    const incidencia = await within(frameOf('Libras de VCI de la capa interior')).findByTestId('incidencia', undefined, { timeout: 3000 });
+    expect(incidencia).toHaveTextContent(/\(0\.006\) no coinciden con el cálculo esperado \(0\.010053 lb/);
+    expect(screen.getAllByText(/no coinciden con el cálculo esperado/)).toHaveLength(1);
+    expect(screen.getByTestId('resumen-CONTRADICCION')).toHaveTextContent('1 contradicción');
     await user.click(screen.getByRole('button', { name: 'Restaurar Libras de VCI de la capa interior' }));
     expect(campo('Libras de VCI de la capa interior').value).toBe('0.010053');
-    await waitFor(() => expect(screen.queryAllByTestId('live-warning').map((w) => w.textContent).join(' ')).not.toMatch(/cálculo esperado/));
+    await waitFor(() => expect(screen.queryByText(/no coinciden con el cálculo esperado/)).not.toBeInTheDocument(), { timeout: 3000 });
+    expect(screen.queryByTestId('resumen-CONTRADICCION')).not.toBeInTheDocument();
   });
   it('Producto cambia con familia mientras sea sugerido; la denominación manual permanece', async () => {
     const user = userEvent.setup();
@@ -570,7 +593,7 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     expect(within(composicion).getByText(/Inferida de la clave PMG del código/)).toBeInTheDocument();
     expect(screen.getByTestId('material-row')).toHaveTextContent('Film / plástico · clave PMG');
     expect(within(screen.getByTestId('material-row')).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
-    expect(screen.getByText(/se infirió de la clave PMG del código/)).toBeInTheDocument();
+    expect(screen.queryByText(/se infirió de la clave PMG del código/)).not.toBeInTheDocument();         // la procedencia ya la dicen el chip y la nota del campo: no se repite como alerta
     // una corrección manual reemplaza la procedencia y se puede restaurar
     await user.click(screen.getByRole('radio', { name: 'CP5000' }));
     expect(within(composicion).queryByTestId('source-chip')).not.toBeInTheDocument();
@@ -613,9 +636,110 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     await buscar(user, 'TARPPW3301');
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(screen.getByTestId('material-row')).toHaveTextContent('Papel · clave PW33');
-    expect(screen.getAllByText(/no hay una plantilla de papel disponible en este prototipo/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/no hay una plantilla de papel disponible en este prototipo/)).toHaveLength(1);          // la explicación aparece UNA vez (sección de familia)
+    expect(within(screen.getByTestId('incidencias-familia')).getByText(/no hay una plantilla de papel/)).toBeInTheDocument();
     for (const familia of familyConfigs) expect(screen.getByRole('radio', { name: familia.nombre })).not.toBeChecked();
-    expect(screen.getByTestId('family-note')).toHaveTextContent(/válido|papel/i);
+    expect(screen.queryByText(/Producto de papel: fuera del alcance/)).not.toBeInTheDocument();
     expect(screen.queryByText(/No se encontró un producto/)).not.toBeInTheDocument();
+  });
+});
+
+// Incidencias unificadas: una causa se identifica una sola vez, se explica donde se corrige y se resume sin repetir el texto íntegro.
+describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 30_000 }, () => {
+  const deId = (id: string) => screen.queryAllByTestId('incidencia').filter((e) => e.getAttribute('data-incidencia-id') === id);
+  const completa = { html: '<p>x</p>', familia: 'BOLSA_PLANA_1' as const, borrador: true as const, firmas: 'SIN_FIRMA' as const, completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null };
+
+  it('un dato faltante (unidad dimensional) se explica UNA vez en el campo; el resumen lo cuenta y permite localizarlo; desaparece al corregirlo', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(casoB());
+    renderPage();
+    await buscar(user, 'PRUEBA58X43');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+    // antes de validar: el campo no se marca en rojo, pero la revisión ya lo cuenta (y el texto de BIND «no indica la unidad» no se repite como alerta)
+    expect(screen.getByTestId('resumen-ERROR')).toBeInTheDocument();
+    expect(screen.queryByText(/El título no indica la unidad de las dimensiones/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(1);
+    expect(screen.getAllByText('La unidad dimensional no está identificada.')).toHaveLength(1);
+    // el resumen coincide con las incidencias reales (errores + contradicciones + pendientes listados) y localiza el campo
+    await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    const items = screen.getAllByTestId('resumen-item');
+    const cuentas = ['ERROR', 'CONTRADICCION', 'PENDIENTE'].map((n) => Number(screen.queryByTestId(`resumen-${n}`)?.textContent?.split(' ')[0] ?? 0));
+    expect(items).toHaveLength(cuentas.reduce((a, b) => a + b, 0));
+    const ids = items.map((e) => e.getAttribute('data-incidencia-id'));
+    expect(new Set(ids).size).toBe(ids.length);
+    const unidad = items.find((e) => e.getAttribute('data-incidencia-id') === 'FALTANTE:unidadDimensiones')!;
+    await user.click(within(unidad).getByRole('button', { name: 'Ir' }));
+    expect(frameOf('Unidad de las medidas').contains(document.activeElement)).toBe(true);
+    // corregir el dato elimina la incidencia en todos los lugares
+    await user.click(screen.getByRole('combobox', { name: /Unidad de las medidas/ }));
+    await user.click(await screen.findByRole('option', { name: /Pulgadas/ }));
+    await waitFor(() => expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(0));
+    expect(screen.queryByText('La unidad dimensional no está identificada.')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('resumen-item').some((e) => e.getAttribute('data-incidencia-id') === 'FALTANTE:unidadDimensiones')).toBe(false);
+  });
+
+  it('una contradicción de varias fuentes (formulario, backend y BIND) se muestra y se cuenta UNA vez', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(resinaContradictoria());
+    previewMock.mockResolvedValue({ ...completa, incidencias: [
+      { id: 'TITLE_CODE:composicion', codigo: 'TITLE_CODE', nivel: 'CONTRADICCION', campos: ['composicion'], seccion: 'composicion', mensaje: 'El título indica PMG y el código indica CP: se conserva el título.', origen: 'CONCILIACION', afectaVistaPrevia: false, reconocible: true }
+    ] });
+    renderPage();
+    await buscar(user, 'ITESFCP002');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await waitFor(() => expect(deId('TITLE_CODE:composicion')).toHaveLength(1), { timeout: 3000 });
+    expect(screen.getByTestId('resumen-CONTRADICCION')).toHaveTextContent('1 contradicción');
+    expect(screen.queryAllByTestId('incidencia').filter((e) => /código (sugiere la resina|indica CP)/.test(e.textContent ?? ''))).toHaveLength(1);
+    expect(within(screen.getByRole('region', { name: 'Producto en BIND' })).queryByTestId('incidencia')).not.toBeInTheDocument();      // el panel de BIND solo muestra procedencia
+  });
+
+  it('con solo avisos informativos (cliente vacío) la revisión del borrador se puede confirmar: no bloquean', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await buscar(user);
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    const revisar = screen.getByRole('button', { name: 'Confirmar revisión del borrador' });
+    await waitFor(() => expect(screen.getByTestId('resumen-INFORMACION')).toBeInTheDocument());       // solo informativas (cliente)
+    await waitFor(() => expect(revisar).toBeEnabled(), { timeout: 3000 });
+    expect(screen.queryByTestId('resumen-ERROR')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resumen-CONTRADICCION')).not.toBeInTheDocument();
+    await user.click(revisar);
+    expect(screen.getByTestId('status-reviewed')).toHaveTextContent('Datos revisados para este borrador');
+  });
+
+  it('una respuesta tardía del backend para datos anteriores no hace reaparecer mensajes obsoletos', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    let resolverViejo: (r: unknown) => void = () => undefined;
+    previewMock.mockImplementationOnce(() => new Promise((resolve) => { resolverViejo = resolve as never; }));
+    renderPage();
+    await buscar(user);
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await act(async () => {
+      resolverViejo({ ...completa, completo: false, incidencias: [{ id: 'COLOR_AZUL:colorPreset', codigo: 'COLOR_AZUL', nivel: 'CONTRADICCION', campos: ['colorPreset'], seccion: 'color', mensaje: 'MENSAJE OBSOLETO', origen: 'TITLE', afectaVistaPrevia: false, reconocible: true }] });
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('MENSAJE OBSOLETO')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resumen-CONTRADICCION')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('review-blocked-hint')).not.toBeInTheDocument();
+  });
+
+  it('Rollo Continuo: la advertencia de BIND sobre la cantidad no aplica (la familia no tiene cantidad) y Extendida no autorizada no se ofrece', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(rolloContinuo());
+    renderPage();
+    await buscar(user, 'ROLLO58');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
+    expect(screen.queryByLabelText('Cantidad por rollo o paquete')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no indica la cantidad de bolsas u hojas/)).not.toBeInTheDocument();
   });
 });

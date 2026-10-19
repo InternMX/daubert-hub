@@ -6,6 +6,9 @@
  * La familia de manufactura nunca se confirma aquí: la selecciona el usuario.
  */
 
+import type { FieldKey } from '../preview/family-registry';
+import type { NivelIncidencia, SeccionIncidencia } from '../preview/incidencias';
+
 /** Campos de BIND que el interpretador acepta. No se leen costos, inventarios ni precios: cualquier otro campo se ignora. */
 export interface BindProductInput {
   /** Identificador único del producto en BIND. */
@@ -87,10 +90,24 @@ export type CodigoAdvertencia =
   | 'CODIGO_MATERIAL_DISTINTO'
   | 'FAMILIA_NO_CONFIRMADA';
 
-export interface Advertencia {
+/** Advertencia tal como la producen los parsers: aún sin clasificar. */
+export interface AdvertenciaBase {
   codigo: CodigoAdvertencia;
   mensaje: string;
   campos: string[];
+}
+
+/** Advertencia clasificada con el modelo único de incidencias (ver preview/incidencias.ts): identidad estable por causa, severidad y campos del formulario. */
+export interface Advertencia extends AdvertenciaBase {
+  /** Identidad de la causa: dos advertencias (o una incidencia del formulario o de la coherencia técnica) con el mismo id son el MISMO problema. */
+  id: string;
+  nivel: NivelIncidencia;
+  /** Sección donde se muestra cuando no se refiere a un campo del formulario (p. ej. el papel sin plantilla pertenece a la familia). */
+  seccion: SeccionIncidencia;
+  /** Campos del formulario a los que se refiere (los nombres internos de `campos` como «resina» se traducen: resina → composicion). */
+  camposFormulario: FieldKey[];
+  /** Explica por qué un campo quedó vacío: si ese campo ya aparece como dato faltante, la advertencia no se repite. */
+  explicaFaltante: boolean;
 }
 
 /** Interpretación AUXILIAR de Code: prefijo variable de cliente + F/P + resina + consecutivo (+ segmentos adicionales). No sobrescribe lo identificado en Title. */

@@ -114,9 +114,16 @@ describe('interpretarProductoBind · pruebas negativas', () => {
   it('producto de papel: se marca fuera de alcance y no propone familia', () => {
     const r = interpretarProductoBind(producto({ Code: 'TARPPW3301', Title: 'PAPEL VCI PMG 40 x 50" PAQUETE C/100 HOJAS' }));
     expect(r.campos.tipo.valor).toBe('PAPEL');
-    expect(advertencias(r)).toContain('PRODUCTO_DE_PAPEL');
+    // Una sola advertencia por causa: el material de papel sin plantilla absorbe al aviso genérico de producto de papel.
+    expect(advertencias(r)).toContain('MATERIAL_PAPEL_SIN_PLANTILLA');
+    expect(advertencias(r)).not.toContain('PRODUCTO_DE_PAPEL');
     expect(r.familia.posiblesEstaFase).toEqual([]);
     expect(r.codigo.material).toBe('PAPER');
+  });
+
+  it('producto de papel solo por el título (sin código interpretable): se informa una vez como producto de papel', () => {
+    const r = interpretarProductoBind(producto({ Code: 'LARG01', Title: 'PAPEL VCI PMG 40 x 50" PAQUETE C/100 HOJAS' }));
+    expect(advertencias(r).filter((c) => c === 'PRODUCTO_DE_PAPEL' || c === 'MATERIAL_PAPEL_SIN_PLANTILLA').length).toBeGreaterThanOrEqual(1);
   });
 
   it('código de papel con título de film: advierte la contradicción', () => {

@@ -1,5 +1,5 @@
-import type { BindProductLookup, CampoInterpretado } from '../services/bindProducts';
-import type { FamilyConfig } from '../services/manufacturingFamilies';
+import type { AdvertenciaBind, BindProductLookup, CampoInterpretado } from '../services/bindProducts';
+import type { FamilyConfig, FieldKey } from '../services/manufacturingFamilies';
 import familyConfigJson from './familyConfig.fixture.json';
 
 /** Copia de la configuración del registro del backend (se mantiene sincronizada con una prueba de la API). */
@@ -17,7 +17,17 @@ const sugerenciasBase = (titulo: string, resina: string | null, familia: 'BOLSA_
   etiqueta: { valor: titulo, regla: 'ETIQUETA_TITLE_BIND', nota: 'Título completo de BIND.' }
 });
 
-const FAMILIA_NO_CONFIRMADA = { codigo: 'FAMILIA_NO_CONFIRMADA', mensaje: 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).', campos: ['familia'] };
+// Estas advertencias simulan la respuesta del backend, que las clasifica (id estable por causa, severidad y campos del formulario; ver advertencias-catalogo.ts de la API).
+const NIVEL_ADV: Record<string, AdvertenciaBind['nivel']> = { CODIGO_RESINA_DISTINTA: 'CONTRADICCION', CODIGO_MATERIAL_DISTINTO: 'CONTRADICCION', DATO_INFERIDO_DEL_CODIGO: 'INFORMACION', CALIBRE_SIN_UNIDAD: 'INFORMACION', CODIGO_NO_INTERPRETABLE: 'INFORMACION' };
+const ID_ADV: Record<string, string> = { CODIGO_RESINA_DISTINTA: 'TITLE_CODE:composicion', CODIGO_MATERIAL_DISTINTO: 'TITLE_CODE:material', MATERIAL_PAPEL_SIN_PLANTILLA: 'MATERIAL_PAPEL_SIN_PLANTILLA', FAMILIA_NO_CONFIRMADA: 'FAMILIA_NO_CONFIRMADA' };
+const FALTANTE_ADV = new Set(['UNIDAD_AUSENTE', 'CALIBRE_AUSENTE', 'PRESENTACION_AUSENTE', 'CANTIDAD_AUSENTE', 'PESO_AUSENTE', 'PESO_CERO', 'PESO_INVALIDO', 'MEDIDAS_INCOMPLETAS']);
+const CAMPO_FORM: Record<string, FieldKey> = { resina: 'composicion', codigoDcmx: 'codigo', unidadDimensiones: 'unidadDimensiones', ancho: 'ancho', largo: 'largo', calibre: 'calibre', presentacion: 'presentacion', cantidad: 'cantidad', pesoLb: 'pesoLb' };
+export const adv = (codigo: string, mensaje: string, campos: string[]): AdvertenciaBind => {
+  const camposFormulario = campos.map((c) => CAMPO_FORM[c]).filter((c): c is FieldKey => c !== undefined);
+  return { codigo, mensaje, campos, id: ID_ADV[codigo] ?? `${codigo}${camposFormulario.length > 0 ? `:${camposFormulario.join('+')}` : ''}`, nivel: NIVEL_ADV[codigo] ?? 'PENDIENTE', seccion: codigo === 'MATERIAL_PAPEL_SIN_PLANTILLA' || codigo === 'PRODUCTO_DE_PAPEL' ? 'familia' : 'bind', camposFormulario, explicaFaltante: FALTANTE_ADV.has(codigo) };
+};
+
+const FAMILIA_NO_CONFIRMADA = adv('FAMILIA_NO_CONFIRMADA', 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).', ['familia']);
 
 export function schfpmg001(): BindProductLookup {
   return {
@@ -56,9 +66,9 @@ export function schfpmg001(): BindProductLookup {
 export function casoB(): BindProductLookup {
   const base = schfpmg001();
   const advertencias = [
-    { codigo: 'UNIDAD_AUSENTE', mensaje: 'El título no indica la unidad de las dimensiones (pulgadas o milímetros): pendiente de confirmación.', campos: ['unidadDimensiones'] },
-    { codigo: 'CALIBRE_SIN_UNIDAD', mensaje: 'Calibre «CAL.200» sin unidad: se conserva el valor original y la unidad/escala queda pendiente (no se convierte).', campos: ['calibre'] },
-    { codigo: 'PESO_AUSENTE', mensaje: 'BIND no entrega el peso del producto.', campos: ['pesoLb'] },
+    adv('UNIDAD_AUSENTE', 'El título no indica la unidad de las dimensiones (pulgadas o milímetros): pendiente de confirmación.', ['unidadDimensiones']),
+    adv('CALIBRE_SIN_UNIDAD', 'Calibre «CAL.200» sin unidad: se conserva el valor original y la unidad/escala queda pendiente (no se convierte).', ['calibre']),
+    adv('PESO_AUSENTE', 'BIND no entrega el peso del producto.', ['pesoLb']),
     FAMILIA_NO_CONFIRMADA
   ];
   return {
@@ -231,9 +241,9 @@ export function resinaInferidaDeCode(): BindProductLookup {
         material: { valor: 'FILM', origen: 'SUGERIDO', fuente: 'Code IMPFPMG012 (F)', procedencia: 'CODE', nota: 'Inferido de la letra F (Film) del código.' },
         claveMaterial: { valor: 'PMG', origen: 'SUGERIDO', fuente: 'Code IMPFPMG012', procedencia: 'CODE' }
       },
-      advertencias: [...base.interpretacion.advertencias, { codigo: 'DATO_INFERIDO_DEL_CODIGO', mensaje: 'La composición (PMG) se infirió de la clave PMG del código porque el título no indica la resina. Confírmala.', campos: ['resina'] }]
+      advertencias: [...base.interpretacion.advertencias, adv('DATO_INFERIDO_DEL_CODIGO', 'La composición (PMG) se infirió de la clave PMG del código porque el título no indica la resina. Confírmala.', ['resina'])]
     },
-    advertencias: [...base.advertencias, { codigo: 'DATO_INFERIDO_DEL_CODIGO', mensaje: 'La composición (PMG) se infirió de la clave PMG del código porque el título no indica la resina. Confírmala.', campos: ['resina'] }]
+    advertencias: [...base.advertencias, adv('DATO_INFERIDO_DEL_CODIGO', 'La composición (PMG) se infirió de la clave PMG del código porque el título no indica la resina. Confírmala.', ['resina'])]
   };
 }
 
@@ -251,9 +261,9 @@ export function resinaContradictoria(): BindProductLookup {
     interpretacion: {
       ...base.interpretacion,
       campos: { ...base.interpretacion.campos, resina: { valor: 'PMG', origen: 'EXTRAIDO', fuente: 'PMG', procedencia: 'CONTRADICCION', nota: 'El título indica PMG y el código indica CP: se conserva el título.' } },
-      advertencias: [...base.interpretacion.advertencias, { codigo: 'CODIGO_RESINA_DISTINTA', mensaje: 'El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título.', campos: ['resina'] }]
+      advertencias: [...base.interpretacion.advertencias, adv('CODIGO_RESINA_DISTINTA', 'El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título.', ['resina'])]
     },
-    advertencias: [...base.advertencias, { codigo: 'CODIGO_RESINA_DISTINTA', mensaje: 'El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título.', campos: ['resina'] }]
+    advertencias: [...base.advertencias, adv('CODIGO_RESINA_DISTINTA', 'El código sugiere la resina CP5000, pero el título indica PMG: se conserva el título.', ['resina'])]
   };
 }
 
@@ -271,9 +281,9 @@ export function productoPapel(): BindProductLookup {
         material: { valor: 'PAPEL', origen: 'SUGERIDO', fuente: 'Code TARPPW3301 (P)', procedencia: 'CODE', nota: 'Inferido de la letra P (Paper) del código.' },
         claveMaterial: { valor: 'PW33', origen: 'EXTRAIDO', fuente: 'PW33', procedencia: 'TITLE_Y_CODE', nota: 'Corroborada por el código.' }
       },
-      advertencias: [{ codigo: 'MATERIAL_PAPEL_SIN_PLANTILLA', mensaje: 'Material papel (clave PW33): no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; la familia queda pendiente y no se asigna ninguna plantilla plástica.', campos: ['tipo', 'material'] }]
+      advertencias: [adv('MATERIAL_PAPEL_SIN_PLANTILLA', 'Material papel (clave PW33): no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; la familia queda pendiente y no se asigna ninguna plantilla plástica.', ['tipo', 'material'])]
     },
-    advertencias: [{ codigo: 'MATERIAL_PAPEL_SIN_PLANTILLA', mensaje: 'Material papel (clave PW33): no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; la familia queda pendiente y no se asigna ninguna plantilla plástica.', campos: ['tipo', 'material'] }],
+    advertencias: [adv('MATERIAL_PAPEL_SIN_PLANTILLA', 'Material papel (clave PW33): no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; la familia queda pendiente y no se asigna ninguna plantilla plástica.', ['tipo', 'material'])],
     sugerencias: { ...base.sugerencias, familia: { valor: null, motivo: 'Producto de papel (clave PW33, inferida del código): no hay una plantilla de papel disponible en este prototipo.', incompatibles: [] } },
     familiaSugerida: []
   };

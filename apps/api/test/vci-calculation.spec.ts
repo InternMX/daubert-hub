@@ -44,11 +44,12 @@ describe('aviso técnico: libras de VCI que no coinciden con el cálculo', () =>
   it('no avisa por formato equivalente (0, 0.0052390)', () => expect(ids({ lbVciInterior: '0.0052390', lbVciExterior: '0' }).filter((i) => i.startsWith('COEX_VCI'))).toEqual([]));
   it('avisa y conserva el valor capturado por capa', () => {
     const avisos = revisarCoherencia('COEX', { ...base, lbVciInterior: '0.006', lbVciIntermedia: '0.002619', lbVciExterior: '0.1' });
-    expect(avisos.filter((a) => a.id.startsWith('COEX_VCI')).map((a) => a.id)).toEqual(['COEX_VCI_INTERIOR', 'COEX_VCI_EXTERIOR']);
-    expect(avisos.find((a) => a.id === 'COEX_VCI_INTERIOR')?.mensaje).toMatch(/\(0\.006\).*\(0\.005239 lb/);
+    expect(avisos.filter((a) => a.codigo === 'COEX_VCI').map((a) => a.id)).toEqual(['COEX_VCI:lbVciInterior']);
+    expect(avisos.filter((a) => a.codigo === 'COEX_EXTERIOR')).toHaveLength(1);                  // la capa SIN VCI la cubre COEX_EXTERIOR: una sola incidencia
+    expect(avisos.find((a) => a.id === 'COEX_VCI:lbVciInterior')?.mensaje).toMatch(/\(0\.006\).*\(0\.005239 lb/);
   });
   it('no avisa sin peso de capa válido ni sin libras capturadas', () => {
-    expect(ids({ pesoCapaInterior: '', lbVciInterior: '0.006' }).filter((i) => i === 'COEX_VCI_INTERIOR')).toEqual([]);
+    expect(ids({ pesoCapaInterior: '', lbVciInterior: '0.006' }).filter((i) => i === 'COEX_VCI:lbVciInterior')).toEqual([]);
     expect(ids({ lbVciInterior: '' }).filter((i) => i.startsWith('COEX_VCI'))).toEqual([]);
   });
   it('solo aplica a las variantes autorizadas', () => expect(ids({ coexVariante: '', lbVciInterior: '0.006' }).filter((i) => i.startsWith('COEX_VCI'))).toEqual([]));

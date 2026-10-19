@@ -1,5 +1,5 @@
 import { apiBaseUrl } from './api';
-import type { FamilyCode } from './manufacturingFamilies';
+import type { FamilyCode, FieldKey } from './manufacturingFamilies';
 
 // Consulta de productos de BIND ERP para manufactura. El navegador SOLO habla con el backend de Daubert Hub
 // (GET /api/manufacturing-sheets/bind-products/by-code/:code): nunca con BIND, y ninguna credencial de BIND existe en el frontend.
@@ -32,6 +32,15 @@ export interface AdvertenciaBind {
   codigo: string;
   mensaje: string;
   campos: string[];
+  /** Identidad de la causa (la misma que usa la coherencia técnica y el formulario). */
+  id: string;
+  nivel: 'INFORMACION' | 'PENDIENTE' | 'CONTRADICCION' | 'ERROR';
+  /** Sección donde se muestra si no se refiere a un campo (p. ej. el papel sin plantilla pertenece a la familia). */
+  seccion: 'familia' | 'bind';
+  /** Campos del formulario a los que se refiere (resina → composicion). */
+  camposFormulario: FieldKey[];
+  /** Solo explica por qué un campo quedó vacío: si ya aparece como dato faltante, no se repite. */
+  explicaFaltante: boolean;
 }
 
 export interface CalibreInterpretado {

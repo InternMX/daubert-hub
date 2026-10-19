@@ -10,6 +10,7 @@ const HOY = '2026-10-16';
 const cfg = (code: FamilyCode) => configOf(familyConfigs, code)!;
 const build = (lookup: BindProductLookup) => buildInitialForm(lookup, familyConfigs, HOY);
 const validar = (form: SpecificationForm, lookup?: BindProductLookup) => validateSpecification(form, familyConfigs, lookup);
+const mensajeDe = (r: ReturnType<typeof validar>, id: string): string => r.incidencias.find((i) => i.id === id)?.mensaje ?? '';
 
 /** Formulario técnicamente completo para la familia indicada (el cliente es opcional en la demostración). */
 function listo(form: SpecificationForm, family: FamilyCode = 'BOLSA_PLANA_1'): SpecificationForm {
@@ -93,8 +94,8 @@ describe('niveles de validación: borrador · datos técnicos · emisión futura
     const r = validar(build(lookup), lookup);
     expect(r.errors).toEqual({});
     expect(r).toMatchObject({ previewable: true, technicalReady: true, clientIdentified: false, emissionReady: false });
-    expect(r.emissionPending.join(' ')).toMatch(/Cliente sin identificar: se permite en la demostración/);
-    expect(r.pending.join(' ')).not.toMatch(/Cliente/);          // el cliente ya no es un pendiente técnico
+    expect(mensajeDe(r, 'CLIENTE_SIN_IDENTIFICAR:cliente')).toMatch(/Cliente sin identificar: se permite en la demostración/);
+    expect(r.incidencias.filter((i) => i.nivel !== 'INFORMACION').map((i) => i.mensaje).join(' ')).not.toMatch(/Cliente/);          // el cliente es informativo, no un pendiente técnico
     expect(r.errors).not.toHaveProperty('cliente');
   });
 
@@ -103,20 +104,20 @@ describe('niveles de validación: borrador · datos técnicos · emisión futura
     expect(validar(f)).toMatchObject({ technicalReady: true, emissionReady: false });
     const libre = validar(setFieldValue(f, 'cliente', 'Schneider', 'PROVISIONAL'));
     expect(libre.emissionReady).toBe(false);
-    expect(libre.emissionPending.join(' ')).toMatch(/texto libre/);
+    expect(mensajeDe(libre, 'CLIENTE_SIN_IDENTIFICAR:cliente')).toMatch(/texto libre/);
     expect(validar(setFieldValue(f, 'cliente', 'Schneider', 'CATALOGO')).emissionReady).toBe(false);       // sin referencia al registro
   });
 
   it('cliente del catálogo + familia confirmada + datos técnicos → apto para emisión futura (aún sin guardar)', () => {
     const r = validar(conCliente(confirmFamily(build(schfpmg001()))));
     expect(r).toMatchObject({ previewable: true, technicalReady: true, clientIdentified: true, emissionReady: true });
-    expect(r.emissionPending).toEqual([]);
+    expect(r.incidencias.some((i) => i.codigo === 'CLIENTE_SIN_IDENTIFICAR')).toBe(false);
   });
 
   it('con cliente pero la familia solo sugerida: técnicos listos, no apto para emisión', () => {
     const r = validar(conCliente(build(schfpmg001())));
     expect(r).toMatchObject({ technicalReady: true, clientIdentified: true, emissionReady: false });
-    expect(r.pending.join(' ')).toMatch(/Familia: Bolsa Plana 1 es una sugerencia/);
+    expect(mensajeDe(r, 'FAMILIA_NO_CONFIRMADA')).toMatch(/Familia: Bolsa Plana 1 es una sugerencia/);
   });
 
   it('sin familia no es previsualizable ni técnicamente suficiente', () => {
@@ -243,7 +244,7 @@ describe('cambio de familia sin contaminación de datos', () => {
     expect(plana.fields.colorPreset.value).toBe('NATURAL');        // no se borra
     const r = validar(plana);
     expect(r.errors.colorPreset).toMatch(/Elige un color disponible/);
-    expect(r.warnings.join(' ')).toMatch(/NATURAL.*no está disponible/);
+    expect(mensajeDe(r, 'COLOR_NO_DISPONIBLE:colorPreset')).toMatch(/NATURAL.*no está disponible/);
     expect(validar(setColorPreset(plana, 'DAUBERT_AZUL', cfg('BOLSA_PLANA_1'))).errors.colorPreset).toBeUndefined();
   });
 
@@ -368,7 +369,7 @@ describe('Hojas', () => {
     const base = selectFamily(build(lookup), 'HOJA_PAQ', familyConfigs);
     expect(validar(base).errors.modalidad).toBeDefined();
     for (const m of ['DOBLADA', 'EXTENDIDA']) expect(validar(setFieldValue(base, 'modalidad', m)).errors.modalidad).toBeUndefined();
-    expect(validar(listo(build(lookup), 'HOJA_PAQ'), lookup).warnings.join(' ')).toMatch(/Familia incompatible.*bolsa, no una hoja/);
+    expect(mensajeDe(validar(listo(build(lookup), 'HOJA_PAQ'), lookup), 'FAMILIA_INCOMPATIBLE')).toMatch(/Familia incompatible.*bolsa, no una hoja/);
   });
 });
 
@@ -535,7 +536,7 @@ describe('Pesos COEX sugeridos y protegidos', () => {
     expect(displayOrigin(changed.fields.pesoCapaInterior)).toBe('USUARIO');
     expect(changed.fields.pesoCapaInterior.value).toBe('0.13097');
     expect(changed.fields.pesoCapaIntermedia.value).toBe('0.25133');
-    expect(validar(changed).warnings.join(' ')).toMatch(/manuales o confirmados/);
+    expect(validar(changed).incidencias.some((i) => /manuales o confirmados/.test(i.mensaje))).toBe(false);          // el estado manual lo muestran su chip y su nota; no es una incidencia
     const restored = restoreField(changed, 'pesoCapaInterior');
     expect(restored.fields.pesoCapaInterior.value).toBe('0.25133');
     expect(displayOrigin(restored.fields.pesoCapaInterior)).toBe('CALCULADO');
@@ -592,7 +593,7 @@ describe('Libras de VCI por capa COEX (peso de capa × % VCI ÷ 100)', () => {
     expect(f.fields.lbVciInterior).toMatchObject({ value: interior, base: { origin: 'CALCULADO' } });
     expect(f.fields.lbVciIntermedia).toMatchObject({ value: intermedia, base: { origin: 'CALCULADO' } });
     expect(f.fields.lbVciExterior.value).toBe('0.000000');
-    expect(validar(f).warnings.join(' ')).not.toMatch(/cálculo esperado/);
+    expect(validar(f).incidencias.some((i) => i.codigo === 'COEX_VCI')).toBe(false);
   });
 
   describe('precisión', () => {
@@ -659,23 +660,22 @@ describe('Libras de VCI por capa COEX (peso de capa × % VCI ÷ 100)', () => {
     it('conserva el valor del usuario ante cambios del peso, avisa si no coincide y se puede restaurar', () => {
       let f = setFieldValue(coexCon('0.3929'), 'lbVciInterior', '0.006');
       expect(displayOrigin(f.fields.lbVciInterior)).toBe('USUARIO');
-      expect(validar(f).warnings.join(' ')).toMatch(/Libras de VCI de la capa interior \(0\.006\) ya no coincide con el cálculo esperado \(0\.005239 lb/);
+      expect(validar(f).incidencias.some((i) => i.codigo === 'COEX_VCI')).toBe(false);          // la coherencia del cálculo es del backend (COEX_VCI); el formulario no la duplica
       f = setFieldValue(f, 'pesoLb', '0.7540');
       expect(f.fields.lbVciInterior.value).toBe('0.006');
       expect(f.fields.lbVciIntermedia.value).toBe('0.005027');                  // las demás capas siguen automáticas
-      expect(validar(f).warnings.join(' ')).toMatch(/\(0\.006\).*\(0\.010053 lb/);
       const restaurado = restoreField(f, 'lbVciInterior');
       expect(restaurado.fields.lbVciInterior).toMatchObject({ value: '0.010053', base: { origin: 'CALCULADO' } });
       expect(displayOrigin(restaurado.fields.lbVciInterior)).toBe('CALCULADO');
-      expect(validar(restaurado).warnings.join(' ')).not.toMatch(/cálculo esperado/);
     });
-    it('un valor manual equivalente al cálculo no genera aviso (0.0052390 = 0.005239) y 0 manual en la exterior tampoco', () => {
+    it('un valor manual equivalente al cálculo (0.0052390 = 0.005239) y un 0 manual en la exterior se conservan tal como se escribieron', () => {
       const f = setFieldValue(setFieldValue(coexCon('0.3929'), 'lbVciInterior', '0.0052390'), 'lbVciExterior', '0');
-      expect(validar(f).warnings.join(' ')).not.toMatch(/cálculo esperado/);
+      expect(f.fields.lbVciInterior.value).toBe('0.0052390');
+      expect(f.fields.lbVciExterior.value).toBe('0');
     });
-    it('un valor manual en la capa exterior distinto de cero avisa', () => {
+    it('un valor manual en la capa exterior distinto de cero lo reporta el backend (COEX_EXTERIOR), no el formulario', () => {
       const f = setFieldValue(coexCon('0.3929'), 'lbVciExterior', '0.1');
-      expect(validar(f).warnings.join(' ')).toMatch(/capa exterior \(0\.1\).*\(0\.000000 lb/);
+      expect(validar(f).incidencias.some((i) => i.codigo === 'COEX_VCI' || i.codigo === 'COEX_EXTERIOR')).toBe(false);
     });
     it('el valor vacío escrito por el usuario no se sobrescribe al recalcular', () => {
       const f = setFieldValue(setFieldValue(coexCon('0.3929'), 'lbVciInterior', ''), 'pesoLb', '0.7540');

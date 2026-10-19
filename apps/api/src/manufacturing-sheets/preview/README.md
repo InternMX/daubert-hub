@@ -56,3 +56,12 @@ Persistir especificaciones o PostgreSQL, firmar o aprobar, emitir hojas definiti
 - **Niveles de validación:** `completo`/`faltantes` = datos técnicos de la familia (el cliente NO cuenta); `pendientesEmision` lista lo que exigirá una emisión futura (hoy, el cliente identificado). Una modalidad sin variante gráfica autorizada devuelve `bloqueado` y no genera documento.
 - Fuelles: `fuelle_derecho` y `fuelle_izquierdo`; el color de las flechas internas sigue al color elegido (datos aprobados: blanco sobre azul, `#4A7EBB` sobre verde, negro en Bolsa Natural).
 - Bolsa Natural: composición fija PMG = NA, ESD = NA, Natural = X; sin formulación VCI automática.
+
+## Incidencias (modelo único de advertencias)
+
+Todo problema técnico o dato pendiente se expresa con `Incidencia` (`incidencias.ts`; es el `TechnicalNotice` ampliado): `id` estable de la **causa** (`CODIGO` o `CODIGO:campo`, no el texto), `codigo`, `nivel` (`INFORMACION` · `PENDIENTE` · `CONTRADICCION` · `ERROR`), `campos`, `seccion`, `mensaje`, `resumen` breve, `origen`, `afectaVistaPrevia` y `reconocible`.
+
+- La respuesta de `POST /previews` trae **una** lista `incidencias` (sin ids repetidos): datos faltantes (`FALTANTE:campo`), valores no válidos (`VALOR_INVALIDO:campo`), coherencia técnica, modalidad no autorizada y cliente vacío (informativo). `faltantes`, `advertencias` y `pendientesEmision` son proyecciones de esa lista, solo por compatibilidad.
+- Las advertencias de los parsers de Title y Code se clasifican en `bind-product-interpreter/advertencias-catalogo.ts` (severidad, id, campos del formulario, sección); una tabla decide qué solo *explica* un dato faltante y qué es redundante (producto de papel ⊂ material de papel sin plantilla).
+- Misma causa → mismo id en todas las fuentes (p. ej. `TITLE_CODE:composicion` en el intérprete y en la coherencia), de modo que el frontend la cuenta una vez. El backend es la autoridad; React solo consolida, ubica y resume.
+- Solo las contradicciones (y avisos de revisión explícitos como `TEXTO_EXTENSO`) son `reconocible`; un error o un dato faltante nunca se reconoce. El reconocimiento lo guarda el navegador con una huella de los datos que originaron la incidencia y caduca si cambian.

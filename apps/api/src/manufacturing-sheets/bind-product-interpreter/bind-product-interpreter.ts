@@ -1,4 +1,5 @@
-import type { Advertencia, BindProductInput, Campo, FamiliaPosible, ResultadoInterpretacion } from './bind-product.types';
+import { clasificarAdvertencias } from './advertencias-catalogo';
+import type { AdvertenciaBase, BindProductInput, Campo, FamiliaPosible, ResultadoInterpretacion } from './bind-product.types';
 import { interpretarCodigo } from './code-parser';
 import { conciliarConCodigo } from './code-reconciliation';
 import { interpretarTitulo } from './title-parser';
@@ -12,7 +13,7 @@ function fechaIso(valor: BindProductInput['CreationDate']): string | null {
   return Number.isNaN(fecha.getTime()) ? null : fecha.toISOString();
 }
 
-function interpretarPeso(peso: BindProductInput['Weight'], advertencias: Advertencia[]): Campo<number> {
+function interpretarPeso(peso: BindProductInput['Weight'], advertencias: AdvertenciaBase[]): Campo<number> {
   if (peso === undefined || peso === null || (typeof peso === 'string' && peso.trim() === '')) {
     advertencias.push({ codigo: 'PESO_AUSENTE', mensaje: 'BIND no entrega el peso del producto.', campos: ['pesoLb'] });
     return { valor: null, origen: 'PENDIENTE', fuente: null, nota: 'Sin peso en BIND.' };
@@ -40,7 +41,7 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
   const code = (Code ?? '').trim();
   const titulo = interpretarTitulo(Title ?? '');
   const codigo = interpretarCodigo(code);
-  const advertencias: Advertencia[] = [...titulo.advertencias];
+  const advertencias: AdvertenciaBase[] = [...titulo.advertencias];
   const peso = interpretarPeso(Weight, advertencias);
   // Conciliación Title ↔ Code: el título manda; el código solo sugiere cuando el título omite el dato (con su procedencia) y las contradicciones se advierten.
   const conciliado = conciliarConCodigo(titulo, codigo, code, Title ?? '', advertencias);
@@ -61,7 +62,7 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
   const posibles: FamiliaPosible[] = conciliado.tipo.valor === 'BOLSA' ? ['BOLSA_PLANA_1'] : conciliado.tipo.valor === 'HOJA' ? ['HOJA_PAQ'] : [];
   advertencias.push({
     codigo: 'FAMILIA_NO_CONFIRMADA',
-    mensaje: 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario (una bolsa de dos dimensiones no es necesariamente Bolsa Plana 1).',
+    mensaje: 'La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.',
     campos: ['familia']
   });
 
@@ -91,7 +92,7 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
     codigo,
     familia: { valor: null, estado: 'PENDIENTE_CONFIRMACION', posiblesEstaFase: posibles },
     pendientes,
-    advertencias
+    advertencias: clasificarAdvertencias(advertencias)
   };
 }
 

@@ -1,4 +1,4 @@
-import type { Advertencia, Campo, CodigoInterpretado, MaterialTipo, Resina, TipoProducto } from './bind-product.types';
+import type { AdvertenciaBase, Campo, CodigoInterpretado, MaterialTipo, Resina, TipoProducto } from './bind-product.types';
 import type { TituloInterpretado } from './title-parser';
 import { normalizarTitulo } from './title-parser';
 
@@ -21,7 +21,7 @@ const CLAVE_PAPEL_EN_TITULO = /\bPW\d{2}\b/;
 
 const pendiente = <T,>(nota: string, procedencia?: Campo<T>['procedencia']): Campo<T> => ({ valor: null, origen: 'PENDIENTE', fuente: null, nota, ...(procedencia ? { procedencia } : {}) });
 
-export function conciliarConCodigo(titulo: TituloInterpretado, codigo: CodigoInterpretado, code: string, tituloOriginal: string, advertencias: Advertencia[]): Conciliacion {
+export function conciliarConCodigo(titulo: TituloInterpretado, codigo: CodigoInterpretado, code: string, tituloOriginal: string, advertencias: AdvertenciaBase[]): Conciliacion {
   const t = normalizarTitulo(tituloOriginal);
   const usable = codigo.interpretable;
   let { tipo, resina } = titulo;

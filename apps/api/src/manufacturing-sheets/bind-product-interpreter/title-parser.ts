@@ -1,4 +1,4 @@
-import type { Advertencia, CalibreOriginal, CantidadPiezas, Campo, CodigoAdvertencia, Presentacion, Resina, TipoProducto, UnidadDimension } from './bind-product.types';
+import type { AdvertenciaBase, CalibreOriginal, CantidadPiezas, Campo, CodigoAdvertencia, Presentacion, Resina, TipoProducto, UnidadDimension } from './bind-product.types';
 
 /** Resultado de interpretar el título (descripción comercial) de un producto de BIND. */
 export interface TituloInterpretado {
@@ -13,7 +13,7 @@ export interface TituloInterpretado {
   calibre: Campo<CalibreOriginal>;
   presentacion: Campo<Presentacion>;
   cantidad: Campo<CantidadPiezas>;
-  advertencias: Advertencia[];
+  advertencias: AdvertenciaBase[];
 }
 
 const pendiente = <T>(nota?: string, valor: T | null = null, fuente: string | null = null): Campo<T> => ({ valor, origen: 'PENDIENTE', fuente, ...(nota ? { nota } : {}) });
@@ -254,7 +254,7 @@ function interpretarCantidad(t: string, tipo: TipoProducto | null, adv: (c: Codi
 /** Interpreta el título de un producto de BIND. No convierte unidades ni asume la familia de manufactura. */
 export function interpretarTitulo(titulo: string): TituloInterpretado {
   const t = normalizarTitulo(titulo ?? '');
-  const advertencias: Advertencia[] = [];
+  const advertencias: AdvertenciaBase[] = [];
   const adv = (codigo: CodigoAdvertencia, mensaje: string, campos: string[]): void => {
     advertencias.push({ codigo, mensaje, campos });
   };
