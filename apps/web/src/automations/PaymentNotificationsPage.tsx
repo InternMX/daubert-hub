@@ -44,7 +44,7 @@ function LatestExecutionCard({ execution }: { execution: PaymentNotificationExec
         </Stack>
         <Typography sx={{ mt: 2.5 }}>{execution.totalResults} {execution.totalResults === 1 ? 'resultado' : 'resultados'}</Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>{resultCountsSummary(execution)}</Typography>
-        {execution.fileErrors > 0 && <Typography color="warning.main" sx={{ mt: 0.5 }}>{fileErrorsSummary(execution.fileErrors)}</Typography>}
+        {execution.fileErrors > 0 && <Typography color="text.secondary" sx={{ mt: 0.5 }}>{fileErrorsSummary(execution.fileErrors)}</Typography>}
         <Typography sx={{ mt: 2 }} color={execution.summarySent ? 'success.main' : 'text.secondary'}>
           {execution.summarySent ? 'Resumen enviado ✓' : 'Resumen no enviado'}
         </Typography>
@@ -120,8 +120,8 @@ function AttentionSection({ executionId }: { executionId: string }) {
       {!loading && !error && detail && hasFileErrors && (
         <Box sx={{ mt: attentionItems.length > 0 ? 3 : 2 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="body2" color="warning.main">{fileErrorsSummary(detail.fileErrors)}</Typography>
-            <Button component={Link} to={`/automations/payment-notifications/${executionId}`} sx={{ mt: 0.5 }}>Ver archivos en el detalle</Button>
+            <Typography variant="body2" color="text.secondary">{fileErrorsSummary(detail.fileErrors)}</Typography>
+            <Button component={Link} color="inherit" to={`/automations/payment-notifications/${executionId}`} sx={{ mt: 0.5 }}>Ver archivos en el detalle</Button>
           </Paper>
         </Box>
       )}

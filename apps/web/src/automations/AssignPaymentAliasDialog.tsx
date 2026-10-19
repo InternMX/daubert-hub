@@ -92,7 +92,7 @@ export function AssignPaymentAliasDialog({ fileError, resolution, unavailable, i
       <Typography fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>{fileError.fileName}</Typography>
       <Typography variant="body2">Alias detectado: {fileError.detail ?? 'No disponible'}</Typography>
       <Typography variant="body2" color="text.secondary">Error histórico reportado por n8n: {fileError.errorCode}. No determina la asignación actual del catálogo.</Typography>
-      {unavailable && <Alert severity="warning" action={<Button disabled={saving} onClick={() => void onSaved().catch(() => undefined)}>Actualizar</Button>}>Consulta el estado actual antes de gestionar el alias.</Alert>}
+      {unavailable && <Alert severity="warning" action={<Button color="inherit" disabled={saving} onClick={() => void onSaved().catch(() => undefined)}>Actualizar</Button>}>Consulta el estado actual antes de gestionar el alias.</Alert>}
       {!unavailable && mode === 'DETAIL' && <>
         <Typography>Empresa asignada: {resolution?.company?.name ?? 'Ninguna'}</Typography>
         {active && <Typography color="info.main">Alias asignado · pendiente de reproceso</Typography>}
@@ -101,13 +101,13 @@ export function AssignPaymentAliasDialog({ fileError, resolution, unavailable, i
         {resolution?.state === 'NAME_ONLY' && <Alert severity="info">La empresa se reconoce por su nombre comercial, no por un alias independiente. Ese nombre no se cambia ni se desactiva desde aquí.</Alert>}
         {active && <Stack direction="row" spacing={1}>
           <Button variant="outlined" onClick={() => start('REASSIGN')}>Cambiar empresa</Button>
-          <Button color="warning" onClick={() => start('DEACTIVATE')}>Desactivar alias</Button>
+          <Button color="error" sx={{ color: (theme) => theme.palette.mode === 'dark' ? theme.palette.error.light : theme.palette.error.dark }} onClick={() => start('DEACTIVATE')}>Desactivar alias</Button>
         </Stack>}
         {resolution && (inactive || resolution.state === 'UNASSIGNED') && <Button variant="outlined" onClick={() => start('ASSIGN')}>Asignar alias</Button>}
       </>}
       {mode === 'REASSIGN' && <Typography>Asignación actual: {snapshot?.alias} → {snapshot?.companyName}</Typography>}
       {mode === 'DEACTIVATE' && <Alert severity="warning">Se conservará el registro y su auditoría con estatus INACTIVO. n8n dejará de utilizar este alias activo; los nombres comerciales y otros aliases de la empresa conservan sus propias reglas.</Alert>}
-      {mode === 'ASSIGN' && <TextField label="Alias permanente" value={alias} disabled={saving} inputProps={{ maxLength: 300 }} onChange={(event) => {
+      {mode === 'ASSIGN' && <TextField label="Alias permanente" value={alias} disabled={saving} inputProps={{ maxLength: 300 }} sx={{ '& .MuiInputLabel-root.Mui-focused': { color: 'text.primary' } }} onChange={(event) => {
         setAlias(event.target.value); setConfirmed(false); setNeedsConfirmation(false); setError(null);
       }} />}
       {searchEnabled && <Autocomplete options={options} value={company} inputValue={search} loading={loading} disabled={saving} filterOptions={(items) => items}
@@ -115,19 +115,21 @@ export function AssignPaymentAliasDialog({ fileError, resolution, unavailable, i
         onInputChange={(_, value, reason) => { if (reason === 'input' || reason === 'clear') { setSearch(value); setCompany(null); setConfirmed(false); } }}
         onChange={(_, value) => { setCompany(value); setSearch(value ? companyLabel(value) : ''); setConfirmed(false); }}
         noOptionsText={search.trim().length < 2 ? 'Escribe al menos 2 caracteres' : 'No se encontraron empresas'} loadingText="Buscando empresas…"
-        renderInput={(params) => <TextField {...params} label="Empresa existente" />} />}
+        renderInput={(params) => <TextField {...params} label="Empresa existente" sx={{ '& .MuiInputLabel-root.Mui-focused': { color: 'text.primary' } }} />} />}
       {searchError && <Alert severity="error">No fue posible buscar empresas. Vuelve a escribir para reintentar.</Alert>}
       {mode !== 'DETAIL' && <Typography variant="body2" color="text.secondary">Este cambio es permanente. No modifica procesamientos históricos ni ejecuta reprocesos.</Typography>}
       {needsConfirmation && <Alert severity="warning">Este alias parece un número de documento o identificador temporal.</Alert>}
       {(mode === 'REASSIGN' || mode === 'DEACTIVATE' || needsConfirmation) && <FormControlLabel
-        control={<Checkbox checked={confirmed} disabled={saving} onChange={(_, value) => setConfirmed(value)} />} label={confirmation} />}
+        control={<Checkbox color="default" checked={confirmed} disabled={saving} onChange={(_, value) => setConfirmed(value)} />} label={confirmation} />}
       {saved && !error && <Alert severity="success">Cambio guardado.</Alert>}
       {error && <Alert severity="error">{error}</Alert>}
     </Stack></DialogContent>
     <DialogActions>
-      {mode === 'DETAIL' ? <Button disabled={saving} onClick={onClose}>Cerrar</Button> : <>
-        <Button disabled={saving} onClick={() => start('DETAIL')}>Cancelar</Button>
-        <Button variant="contained" color={mode === 'DEACTIVATE' ? 'warning' : 'primary'} disabled={saving || unavailable || !canSave} onClick={() => void save()}>
+      {mode === 'DETAIL' ? <Button color="inherit" disabled={saving} onClick={onClose}>Cerrar</Button> : <>
+        <Button color="inherit" disabled={saving} onClick={() => start('DETAIL')}>Cancelar</Button>
+        <Button variant="contained" color={mode === 'DEACTIVATE' ? 'error' : 'primary'}
+          sx={mode === 'DEACTIVATE' ? { bgcolor: 'error.dark', color: 'common.white', '&:hover': { bgcolor: 'error.dark' } } : undefined}
+          disabled={saving || unavailable || !canSave} onClick={() => void save()}>
           {saving ? 'Guardando…' : mode === 'DEACTIVATE' ? 'Confirmar desactivación' : mode === 'REASSIGN' ? 'Confirmar cambio' : 'Guardar alias'}
         </Button>
       </>}

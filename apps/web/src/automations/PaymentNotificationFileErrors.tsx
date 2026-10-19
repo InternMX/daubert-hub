@@ -48,7 +48,7 @@ export function PaymentNotificationFileErrors({ fileErrors, titleId, unavailable
               {assigned && <Typography variant="caption" color="text.secondary">Pendiente de reproceso</Typography>}
               {resolution?.state === 'INACTIVE' && <Typography variant="caption">Alias desactivado</Typography>}
             </Stack></TableCell>
-            <TableCell><Button size="small" onClick={() => setSelectedKey(item.fileHash + item.fileName)}>
+            <TableCell><Button size="small" color="inherit" onClick={() => setSelectedKey(item.fileHash + item.fileName)}>
               {unavailable ? 'Ver detalle' : assigned ? 'Gestionar alias' : assignable ? 'Asignar alias' : 'Ver detalle'}
             </Button></TableCell>
           </TableRow>;
