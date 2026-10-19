@@ -32,6 +32,20 @@ export async function getCompanyAliases(companyId: string): Promise<CompanyAlias
   return (await request<CompanyAliasesData>(`/companies/${encodeURIComponent(companyId)}/aliases`)).data;
 }
 
+export interface PermanentAliasAssignment {
+  companyId: string;
+  companyName: string;
+  alias: string;
+  normalizedAlias: string;
+  alreadyAssigned: boolean;
+}
+
+export async function assignPaymentAlias(companyId: string, alias: string, confirmPermanent: boolean): Promise<PermanentAliasAssignment> {
+  return (await request<PermanentAliasAssignment>(`/companies/${encodeURIComponent(companyId)}/aliases/payment-notifications`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alias, confirmPermanent })
+  })).data;
+}
+
 export async function updateCompanyAliases(companyId: string, aliases: string[]): Promise<{ aliases: CompanyAliasesData; requestId: string | null }> {
   const result = await request<CompanyAliasesData>(`/companies/${encodeURIComponent(companyId)}/aliases`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ aliases }) });
   return { aliases: result.data, requestId: result.requestId };

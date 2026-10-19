@@ -2,6 +2,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { AliasesController } from '../src/aliases/aliases.controller';
 
 describe('AliasesController', () => {
+  it('forwards permanent assignment and server-derived audit identity without losing bigint precision', async () => {
+    const createPaymentAlias = vi.fn();
+    const controller = new AliasesController({ createPaymentAlias } as never);
+    const input = { alias: '1800006184145', confirmPermanent: true };
+    await controller.createPaymentAlias('9007199254740993', input, { requestId: 'r', user: { id: '42', email: 'user@example.test' } } as never);
+    expect(createPaymentAlias).toHaveBeenCalledWith('9007199254740993', input, 'r', { userId: '42', userEmail: 'user@example.test' });
+  });
+
+  it.each(['0', '-1', '01', '1.0', 'abc', '9223372036854775808'])('rejects invalid company ID %s on permanent assignment', (id) => {
+    const createPaymentAlias = vi.fn();
+    const controller = new AliasesController({ createPaymentAlias } as never);
+    expect(() => controller.createPaymentAlias(id, { alias: 'Acme' }, { requestId: 'r' } as never)).toThrow(expect.objectContaining({ status: 400 }));
+    expect(createPaymentAlias).not.toHaveBeenCalled();
+  });
+
   it('passes exact bigint company id strings and nullable identity independently per request', async () => {
     const replace = vi.fn().mockResolvedValue({ data: { aliases: ['BMASC'], otherAliases: [] } });
     const controller = new AliasesController({ replace } as never);

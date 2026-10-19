@@ -58,3 +58,21 @@ Comportamiento del Hub:
 - Se muestran por separado: columna **"Errores archivo"** en el listado y sección **"Archivos que requieren atención"** en el detalle. El hash es un dato técnico y no se muestra.
 - Si `detalle_error` trae varios registros (por salto de línea o inline separados por `" | "`), cada uno con un `HASH=` válido se parsea individualmente; lo que no cumple el formato se omite.
 - n8n sigue siendo dueño del reproceso selectivo por `correo_id`/hash; este contrato no cambió.
+
+### Asignar un alias permanente desde un error
+
+Los errores `ALIAS_NO_CATALOGADO` incluyen **Asignar alias**. El modal precarga el detalle detectado, permite revisarlo y busca empresas mediante `GET /api/companies/search`. Al guardar utiliza el módulo existente de aliases:
+
+- `POST /api/companies/:companyId/aliases/payment-notifications`, cuerpo `{ alias, confirmPermanent?: boolean }`.
+- Requiere sesión válida; admite `GENERAL` y `ADMIN`, como el CRUD actual. Aplica las protecciones globales de sesión, cambio obligatorio de contraseña y origen CSRF.
+- Inserta exclusivamente en `core.alias_empresa`, con `tipo_alias = NOMBRE_ARCHIVO`, `estatus = ACTIVO`, conservando otros aliases y el contexto de auditoría.
+- NestJS calcula `alias_normalizado` con la misma función de `Clasificar con catalogo`: trim → NFD → eliminar diacríticos → mayúsculas → sustituir grupos no alfanuméricos por espacio → compactar espacios → trim. No vuelve a interpretar el nombre del PDF.
+- Compara esa clave con todos los aliases activos y nombres comerciales. Una coincidencia en otra empresa devuelve `409 ALIAS_ALREADY_ASSOCIATED`; un alias equivalente ya activo en la misma empresa devuelve éxito con `alreadyAssigned = true`, sin otra inserción.
+- Un identificador numérico, una secuencia larga de dígitos, UUID o términos de documento/temporal requiere `confirmPermanent = true`; de otro modo devuelve `400 PERMANENT_ALIAS_CONFIRMATION_REQUIRED` y el modal solicita confirmación adicional. Editar el alias o cambiar la empresa reinicia la confirmación.
+- La comprobación y el alta son una transacción auditada corta con bloqueos `SHARE ROW EXCLUSIVE` sobre `core.empresas` y `core.alias_empresa`, en ese orden, para evitar escrituras concurrentes durante la evaluación del catálogo. No hay llamadas externas dentro de la transacción.
+
+Tras guardar, la sección muestra la empresa elegida y conserva el error original. El usuario puede utilizar el botón de reproceso existente. La confirmación visual corresponde a la sesión de la pantalla; el alias permanente se conserva en PostgreSQL y se consulta también desde los aliases de la empresa. No existe una asignación puntual por archivo/hash.
+
+Guardar no cambia el estado del correo, los resultados, su `detalle_error`, los destinatarios ni la configuración de la empresa. La vista `core.vw_catalogo_notificacion_pago_n8n` sigue exponiendo el alias según sus filtros existentes (incluido `procesa_comprobantes_pago`); el alta no activa esa configuración. No requiere migraciones ni modificaciones del workflow o webhook.
+
+Verificación: `npm run test:integration:aliases --workspace=@daubert/api` cubre sesión requerida, alta con usuario GENERAL, persistencia, idempotencia, colisiones canónicas y con nombres comerciales, concurrencia y visibilidad en el catálogo. Pruebas unitarias: `payment-alias.spec.ts`, `aliases.repository.spec.ts`; formulario: `AssignPaymentAliasDialog.test.tsx`.

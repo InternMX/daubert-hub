@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
 import { replaceCompanyAliases } from '../companies/company-aliases.repository';
 import { DatabaseService } from '../database/database.service';
+import { normalizePaymentAlias } from './payment-alias';
 
 export interface AuditIdentity {
   userId: string | null;
@@ -32,6 +33,32 @@ function group(rows: CompanyAliasRow[]): CompanyAliases {
 @Injectable()
 export class AliasesRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async createPaymentAlias(companyId: string, alias: string, normalizedAlias: string, requestId: string, identity: AuditIdentity) {
+    return this.transaction(requestId, identity, async (client) => {
+      // Serialize with all catalog writers, including the existing replace CRUD.
+      // Name changes must not race the ambiguity check either.
+      await client.query('LOCK TABLE core.empresas IN SHARE ROW EXCLUSIVE MODE');
+      await client.query('LOCK TABLE core.alias_empresa IN SHARE ROW EXCLUSIVE MODE');
+      const company = (await client.query<{ name: string }>('SELECT nombre_comercial AS name FROM core.empresas WHERE empresa_id = $1', [companyId])).rows[0];
+      if (!company) return null;
+      const candidates = await client.query<{ company_id: string; alias: string; stored_alias: boolean }>(`
+        SELECT empresa_id::text AS company_id, alias, TRUE AS stored_alias
+        FROM core.alias_empresa WHERE estatus = 'ACTIVO'
+        UNION ALL
+        SELECT empresa_id::text, nombre_comercial, FALSE FROM core.empresas`);
+      const matches = candidates.rows.filter((row) => normalizePaymentAlias(row.alias) === normalizedAlias);
+      if (matches.some((row) => row.company_id !== companyId)) {
+        throw Object.assign(new Error('ALIAS_ALREADY_ASSOCIATED'), { code: 'ALIAS_ALREADY_ASSOCIATED' });
+      }
+      const alreadyAssigned = matches.some((row) => row.stored_alias);
+      if (!alreadyAssigned) {
+        await client.query(`INSERT INTO core.alias_empresa (empresa_id, alias, alias_normalizado, tipo_alias, estatus)
+          VALUES ($1, $2, $3, 'NOMBRE_ARCHIVO', 'ACTIVO')`, [companyId, alias, normalizedAlias]);
+      }
+      return { companyId, companyName: company.name, alias, normalizedAlias, alreadyAssigned };
+    });
+  }
 
   async list(companyId: string): Promise<CompanyAliases | null> {
     const company = await this.database.query<{ exists: boolean }>('SELECT TRUE AS exists FROM core.empresas WHERE empresa_id = $1', [companyId]);

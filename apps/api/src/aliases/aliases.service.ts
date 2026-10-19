@@ -1,12 +1,30 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { normalizeAliasList } from '../companies/company-aliases.repository';
 import { AliasesRepository, type AuditIdentity, type CompanyAliases } from './aliases.repository';
+import { normalizePaymentAlias, requiresPermanentAliasConfirmation } from './payment-alias';
+import type { CreatePaymentAliasDto } from './dto/create-payment-alias.dto';
 
 interface PostgreSqlError { code?: string; constraint?: string }
 
 @Injectable()
 export class AliasesService {
   constructor(private readonly repository: AliasesRepository) {}
+
+  async createPaymentAlias(companyId: string, input: CreatePaymentAliasDto, requestId: string, identity: AuditIdentity) {
+    const normalizedAlias = normalizePaymentAlias(input.alias);
+    if (!normalizedAlias) throw new BadRequestException('El alias debe contener letras o números.');
+    if (requiresPermanentAliasConfirmation(normalizedAlias) && input.confirmPermanent !== true) {
+      throw new BadRequestException({ code: 'PERMANENT_ALIAS_CONFIRMATION_REQUIRED', message: 'Confirma que este identificador debe reconocer permanentemente a la empresa.' });
+    }
+    try {
+      const result = await this.repository.createPaymentAlias(companyId, input.alias.trim(), normalizedAlias, requestId, identity);
+      if (!result) throw new NotFoundException('Empresa no encontrada.');
+      return { data: result };
+    } catch (error) {
+      this.throwKnown(error);
+      throw error;
+    }
+  }
 
   async list(companyId: string): Promise<{ data: CompanyAliases }> {
     const result = await this.repository.list(companyId);
