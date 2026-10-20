@@ -21,7 +21,7 @@ export interface PaymentFileAssignmentState {
   identityState: string | null;
   operationalState: string | null;
   assignment: PointAssignment | null;
-  n8nReady: false;
+  n8nReady: boolean;
 }
 
 export interface RegisteredPaymentFile {
@@ -83,23 +83,36 @@ export class PaymentFileAssignmentsRepository {
     return row?.available === true;
   }
 
-  async describe(correoId: string, errors: PaymentNotificationFileError[], enabled: boolean, inspect = true): Promise<PaymentFileAssignmentState[]> {
+  async describe(correoId: string, errors: PaymentNotificationFileError[], enabled: boolean, inspect = true, n8nReady = false): Promise<PaymentFileAssignmentState[]> {
     const disabledReason = 'Asignación puntual deshabilitada. Disponible exclusivamente para validación en TEST.';
     if (!inspect) return errors.map(() => emptyPointState(disabledReason, false));
     if (!await this.schemaAvailable()) return errors.map(() => emptyPointState(enabled ? 'El registro de archivos aún no está instalado en TEST.' : disabledReason, enabled));
     const records = await this.database.query<RegisteredPaymentFile>(selectFiles, [correoId]);
     return errors.map((file) => {
       const state = describePointFile(file, errors, records);
-      return { ...state, enabled, canManage: enabled && state.canManage, blockedReason: enabled ? state.blockedReason : disabledReason };
+      return { ...state, enabled, n8nReady: enabled && n8nReady, canManage: enabled && state.canManage, blockedReason: enabled ? state.blockedReason : disabledReason };
     });
   }
 
-  async activeCorreoIds(ids: string[]): Promise<string[]> {
+  // Correos whose reprocess must stay blocked because of active point assignments. Without the n8n integration any active
+  // assignment blocks. With it (TEST only) the database decides (migration 014); a failing/missing function blocks as well.
+  async reprocessBlockedCorreoIds(ids: string[], useEligibility = false): Promise<string[]> {
     if (!ids.length || !await this.schemaAvailable()) return [];
-    const rows = await this.database.query<{ id: string }>(`SELECT DISTINCT f.correo_id::text AS id
+    const anyActive = async () => (await this.database.query<{ id: string }>(`SELECT DISTINCT f.correo_id::text AS id
       FROM core.archivos_notificacion_pago f JOIN core.asignaciones_archivo_notificacion_pago a USING (archivo_id)
-      WHERE a.estatus = 'ACTIVA' AND f.correo_id = ANY($1::bigint[])`, [ids]);
-    return rows.map((row) => row.id);
+      WHERE a.estatus = 'ACTIVA' AND f.correo_id = ANY($1::bigint[])`, [ids])).map((row) => row.id);
+    if (!useEligibility) return anyActive();
+    try {
+      const rows = await this.database.query<{ id: string }>(`SELECT c.correo_id::text AS id
+        FROM (SELECT DISTINCT f.correo_id FROM core.archivos_notificacion_pago f
+              JOIN core.asignaciones_archivo_notificacion_pago a ON a.archivo_id = f.archivo_id
+              WHERE a.estatus = 'ACTIVA' AND f.correo_id = ANY($1::bigint[])) c
+        CROSS JOIN LATERAL core.fn_reproceso_asignaciones_puntuales(c.correo_id) e
+        WHERE e.elegible IS NOT TRUE`, [ids]);
+      return rows.map((row) => row.id);
+    } catch {
+      return anyActive();
+    }
   }
 
   private async context(client: PoolClient, requestId: string, identity: AuditIdentity) {
@@ -149,16 +162,32 @@ export class PaymentFileAssignmentsRepository {
     finally { client.release(); }
   }
 
-  async protectReprocess<T>(correoId: string, requestId: string, identity: AuditIdentity, dispatch: () => Promise<T>): Promise<T> {
+  async protectReprocess<T>(correoId: string, requestId: string, identity: AuditIdentity, dispatch: () => Promise<T>, useEligibility = false): Promise<T> {
     if (!await this.schemaAvailable()) return dispatch();
     const client = await this.database.connect();
     try {
       await client.query('BEGIN');
       await this.context(client, requestId, identity);
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('PAYMENT_FILE:' || $1::bigint::text, 0))", [correoId]);
-      const active = await client.query(`SELECT 1 FROM core.asignaciones_archivo_notificacion_pago a
-        JOIN core.archivos_notificacion_pago f USING (archivo_id) WHERE f.correo_id = $1 AND a.estatus = 'ACTIVA' LIMIT 1`, [correoId]);
-      if (active.rows.length) throw new ConflictException({ code: 'POINT_FILE_N8N_NOT_READY', message: 'Este correo tiene asignaciones puntuales activas. La integración n8n aún no está habilitada.' });
+      if (useEligibility) {
+        // The database owns the rule (migration 014, same criteria as the n8n consumer). A failure, a missing function,
+        // an unexpected shape or a "not eligible" answer keeps the reprocess blocked.
+        let verdict: { elegible: boolean | null } | undefined;
+        try {
+          await client.query('SAVEPOINT point_eligibility');
+          verdict = (await client.query<{ elegible: boolean | null }>('SELECT elegible FROM core.fn_reproceso_asignaciones_puntuales($1::bigint)', [correoId])).rows[0];
+        } catch {
+          await client.query('ROLLBACK TO SAVEPOINT point_eligibility').catch(() => undefined);
+          throw new ConflictException({ code: 'POINT_FILE_ELIGIBILITY_UNAVAILABLE', message: 'No se pudo verificar la seguridad del reproceso con asignaciones puntuales. El reproceso permanece bloqueado.' });
+        }
+        if (verdict?.elegible !== true) {
+          throw new ConflictException({ code: 'POINT_FILE_REPROCESS_BLOCKED', message: 'Este correo tiene asignaciones puntuales cuyo estado no permite reprocesar con seguridad. Revisa el detalle de los archivos.' });
+        }
+      } else {
+        const active = await client.query(`SELECT 1 FROM core.asignaciones_archivo_notificacion_pago a
+          JOIN core.archivos_notificacion_pago f USING (archivo_id) WHERE f.correo_id = $1 AND a.estatus = 'ACTIVA' LIMIT 1`, [correoId]);
+        if (active.rows.length) throw new ConflictException({ code: 'POINT_FILE_N8N_NOT_READY', message: 'Este correo tiene asignaciones puntuales activas. La integración n8n aún no está habilitada.' });
+      }
       await client.query('SELECT core.fn_bloquear_archivos_reproceso_pago($1)', [correoId]);
       // Commit the freeze BEFORE contacting n8n: even an uncertain/throwing upstream cannot
       // reopen a window for assignment after a potentially accepted processing request.

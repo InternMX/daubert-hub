@@ -102,7 +102,7 @@ describe('compatibility with a database without migration 012 (PROD)', () => {
   it.each([['daubert_global', false], ['daubert_global', true]])('never queries or connects to the new tables in %s (flag=%s)', async (database, flag) => {
     const { db, service } = build(database, flag);
     await expect(service.describe('1', [file])).resolves.toEqual([expect.objectContaining({ enabled: false, canManage: false, assignment: null })]);
-    await expect(service.activeCorreoIds(['1'])).resolves.toEqual([]);
+    await expect(service.reprocessBlockedCorreoIds(['1'])).resolves.toEqual([]);
     const dispatch = vi.fn().mockResolvedValue('ok');
     await expect(service.protectReprocess('1', 'r', identity, dispatch)).resolves.toBe('ok');
     expect(db.query).not.toHaveBeenCalled();

@@ -35,7 +35,7 @@ export function PaymentNotificationFileErrors({ fileErrors, titleId, executionId
   return <Box component="section" aria-labelledby={titleId}>
     <Typography id={titleId} variant="h2">Archivos que requieren atención</Typography>
     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Asignación actual del catálogo. El error reportado por n8n se consulta en el detalle de cada archivo.</Typography>
-    {fileErrors.some((file) => file.fileAssignment?.assignment?.status === 'ACTIVA') && <Alert severity="info" sx={{ mt: 1 }}>La integración n8n de asignaciones puntuales está pendiente. El reproceso de este correo está bloqueado mientras existan asignaciones puntuales activas.</Alert>}
+    {fileErrors.some((file) => file.fileAssignment?.assignment?.status === 'ACTIVA') && <Alert severity="info" sx={{ mt: 1 }}>{fileErrors.some((file) => file.fileAssignment?.n8nReady) ? 'Las asignaciones puntuales se aplican al reprocesar este correo solo si todos los archivos asignados son seguros.' : 'La integración n8n de asignaciones puntuales está pendiente. El reproceso de este correo está bloqueado mientras existan asignaciones puntuales activas.'}</Alert>}
     {unavailable && <Alert severity="warning" sx={{ mt: 1 }} action={<Button color="inherit" onClick={() => void onRefresh().catch(() => undefined)}>Actualizar</Button>}>Actualiza el detalle para confirmar la asignación vigente.</Alert>}
     <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
       <Table size="small" aria-label="Archivos y asignación actual de aliases">

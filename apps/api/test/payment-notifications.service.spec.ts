@@ -7,7 +7,7 @@ import type { PaymentNotificationFileError } from '../src/automations/payment-no
 
 function fakeFileAssignments() {
   return {
-    activeCorreoIds: vi.fn().mockResolvedValue([]),
+    reprocessBlockedCorreoIds: vi.fn().mockResolvedValue([]),
     describe: vi.fn(async (_id: string, errors: PaymentNotificationFileError[]) => errors.map(() => emptyPointState('Disabled in test mock', false))),
     protectReprocess: vi.fn(async (...args: unknown[]) => (args[3] as () => Promise<{ status: 'TRIGGERED' | 'UPSTREAM_ERROR' }>)())
   };
