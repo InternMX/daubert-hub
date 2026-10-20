@@ -263,3 +263,28 @@ Sigue siendo **solo TEST**: nada de esto está habilitado ni instalado en PRODUC
   Un fallo, una función ausente o un veredicto no afirmativo mantienen el bloqueo (`POINT_FILE_ELIGIBILITY_UNAVAILABLE` /
   `POINT_FILE_REPROCESS_BLOCKED`). El aviso «pendiente de integración n8n» solo desaparece cuando el estado de cada archivo
   informa `n8nReady=true`.
+
+### Workflow n8n: validado en la instancia aislada vs. workflow real de TEST
+
+| | Workflow validado (n8n aislado, 127.0.0.1:5690) | Workflow real de TEST (`Test Notificacion de pagos a Proveedores`) |
+| --- | --- | --- |
+| Estado | Validado E2E (Hub TEST → n8n aislado → `daubert_hub_test`) con Outlook y Dropbox **simulados** | **No está listo para ejecutarse**: no se ha importado ni probado con la integración |
+| Credencial PostgreSQL | Solo `n8n_app_test` | `Postgres pruebas` = rol compartido `n8n_app`, **sin EXECUTE** sobre `fn_consultar_archivo_notificacion_pago` (013): fallaría y bloquearía cada archivo (fail-closed) |
+| Outlook / Dropbox | Stubs sin efectos | Credenciales y carpetas reales |
+| Webhook | `/webhook/daubert-hub-test-aislado/notificaciones-pago/reprocesar`, token propio | Misma ruta y credencial que el n8n productivo (instancia compartida) |
+| `fflate` | Permitido en el contenedor aislado | Requiere `NODE_FUNCTION_ALLOW_EXTERNAL=fflate` en la instancia compartida con PRODUCCIÓN (reinicio) |
+
+El export con la integración (registro **después** de clasificar y **antes** de cualquier efecto en la ingesta inicial, con el
+código de la incidencia que el Hub correlaciona; registro previo solo en reprocesos; consulta/toma estructuradas con la 013) se
+genera fuera del repositorio y no se versiona aquí. Antes de usarlo en el n8n compartido hay que decidir la credencial
+(`n8n_app_test` o un permiso explícito para `n8n_app`), el `fflate` y la ruta/credencial del webhook.
+
+### Antes de PRODUCCIÓN (nada de esto está hecho)
+
+- Las migraciones 013 y 014 son **exclusivas de `daubert_hub_test`** (cada archivo aborta en cualquier otra base); no hay
+  despliegue ni imagen que las ejecute o las incluya. Un equivalente productivo requeriría una migración nueva, revisada y con
+  su propio plan de reversa.
+- `PAYMENT_FILE_ASSIGNMENTS_N8N_READY` y `PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN` no están en `compose*.yaml` ni en los
+  ejemplos de despliegue; sin ellas el comportamiento es el anterior (se bloquea cualquier asignación activa).
+- Falta validar con Outlook y Dropbox reales, definir la credencial del workflow real y decidir `fflate`/reinicio de la instancia
+  compartida.
