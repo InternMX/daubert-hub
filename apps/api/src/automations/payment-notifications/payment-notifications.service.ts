@@ -102,7 +102,7 @@ export class PaymentNotificationsService {
       this.findLatestReviewWorthyExecution()
     ]);
     const currentProblemStatus = currentProblem ? await this.resolveCurrentProblemStatus(currentProblem.executionId) : null;
-    const pointBlocked = new Set(await this.fileAssignments.activeCorreoIds(executions.map((row) => row.execution_id)));
+    const pointBlocked = new Set(await this.fileAssignments.reprocessBlockedCorreoIds(executions.map((row) => row.execution_id)));
     return {
       data: executions.map((execution) => {
         const summary = this.mapSummary(execution, currentProblem?.executionId, currentProblemStatus);
@@ -123,7 +123,7 @@ export class PaymentNotificationsService {
     const resolutions = detectableAliases.length ? (await this.aliases.resolvePaymentAliases(detectableAliases)).data : [];
     const byAlias = new Map(resolutions.map((resolution) => [resolution.alias, resolution]));
     const points = await this.fileAssignments.describe(executionId, fileErrors);
-    const pointBlocked = (await this.fileAssignments.activeCorreoIds([executionId])).length > 0;
+    const pointBlocked = (await this.fileAssignments.reprocessBlockedCorreoIds([executionId])).length > 0;
     const files = fileErrors.map((file, index) => ({ ...file, aliasResolution: byAlias.get(file.detail ?? '') ?? null, fileAssignment: points[index]! }));
     const assignedPending = files.filter((file) => file.fileAssignment.assignment?.status === 'ACTIVA' || ['ACTIVE', 'NAME_ONLY'].includes(file.aliasResolution?.state ?? '')).length;
     const summary = this.mapSummary(execution);
