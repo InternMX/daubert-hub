@@ -2,6 +2,16 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { PaymentNotificationsService } from '../src/automations/payment-notifications/payment-notifications.service';
 import type { PaymentAliasResolution } from '../src/aliases/payment-alias-resolution';
+import { emptyPointState } from '../src/automations/payment-notifications/payment-file-assignments.repository';
+import type { PaymentNotificationFileError } from '../src/automations/payment-notifications/payment-notification-file-errors';
+
+function fakeFileAssignments() {
+  return {
+    activeCorreoIds: vi.fn().mockResolvedValue([]),
+    describe: vi.fn(async (_id: string, errors: PaymentNotificationFileError[]) => errors.map(() => emptyPointState('Disabled in test mock', false))),
+    protectReprocess: vi.fn(async (...args: unknown[]) => (args[3] as () => Promise<{ status: 'TRIGGERED' | 'UPSTREAM_ERROR' }>)())
+  };
+}
 
 function execution(overrides: Partial<{
   execution_id: string; created_at: string; processed_at: string | null; processing_status: 'PENDIENTE' | 'PROCESADO' | 'ERROR';
@@ -53,7 +63,7 @@ function setup(options: {
   };
   const triggerRequests = { record: options.recordImplementation ? vi.fn().mockImplementation(options.recordImplementation) : vi.fn().mockResolvedValue(undefined) };
   const aliases = { resolvePaymentAliases: vi.fn(async (values: string[]): Promise<{ data: PaymentAliasResolution[] }> => ({ data: values.map((alias) => ({ alias, normalizedAlias: alias, state: 'UNASSIGNED', assignment: null, company: null })) })) };
-  const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, aliases as never);
+  const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, aliases as never, fakeFileAssignments() as never);
   return { service, repository, reviewAcknowledgements, webhookClient, triggerRequests, aliases };
 }
 
@@ -457,7 +467,7 @@ describe('PaymentNotificationsService', () => {
       const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
       const repository = { list: vi.fn(), findExecutionById: vi.fn(), findResultsByExecutionId: vi.fn(), listRecent: vi.fn(), findReprocessableCorreoByExecutionId: lookup };
       const reviewAcknowledgements = { findLatest: vi.fn() };
-      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, {} as never);
+      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, {} as never, fakeFileAssignments() as never);
 
       const result = await service.reprocess('exec-A', 'req-A', identity);
 
@@ -479,7 +489,7 @@ describe('PaymentNotificationsService', () => {
       const triggerRequests = { record: vi.fn().mockResolvedValue(undefined) };
       const repository = { list: vi.fn(), findExecutionById: vi.fn(), findResultsByExecutionId: vi.fn(), listRecent: vi.fn(), findReprocessableCorreoByExecutionId: lookup };
       const reviewAcknowledgements = { findLatest: vi.fn() };
-      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, {} as never);
+      const service = new PaymentNotificationsService(repository as never, reviewAcknowledgements as never, webhookClient as never, triggerRequests as never, {} as never, fakeFileAssignments() as never);
 
       const result = await service.reprocess('exec-B', 'req-B', identity);
 
