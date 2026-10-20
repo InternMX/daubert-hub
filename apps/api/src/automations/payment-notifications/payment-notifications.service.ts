@@ -11,6 +11,9 @@ import { PaymentNotificationsRepository, type PaymentNotificationExecutionRow, t
 import { PaymentNotificationsWebhookClient } from './payment-notifications-webhook.client';
 import { AliasesService } from '../../aliases/aliases.service';
 import type { PaymentAliasResolution } from '../../aliases/payment-alias-resolution';
+import { PaymentFileAssignmentsService } from './payment-file-assignments.service';
+import type { PaymentFileAssignmentDto } from './dto/payment-file-assignment.dto';
+import type { PaymentFileAssignmentState } from './payment-file-assignments.repository';
 
 const AUTOMATION_CODE = 'PAYMENT_NOTIFICATIONS';
 
@@ -66,7 +69,8 @@ export interface PaymentNotificationProviderResult {
 
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
   results: PaymentNotificationProviderResult[];
-  fileErrorDetails: Array<PaymentNotificationFileError & { aliasResolution: PaymentAliasResolution | null }>;
+  fileErrorDetails: Array<PaymentNotificationFileError & { aliasResolution: PaymentAliasResolution | null; fileAssignment: PaymentFileAssignmentState }>;
+  fileAttentionSummary: { total: number; assignedPending: number; unassigned: number; pointPending: number };
 }
 
 export interface PaymentNotificationExecutionDetailResponse {
@@ -88,7 +92,8 @@ export class PaymentNotificationsService {
     private readonly reviewAcknowledgements: ReviewAcknowledgementsRepository,
     private readonly webhookClient: PaymentNotificationsWebhookClient,
     private readonly triggerRequests: AutomationTriggerRequestsRepository,
-    private readonly aliases: AliasesService
+    private readonly aliases: AliasesService,
+    private readonly fileAssignments: PaymentFileAssignmentsService
   ) {}
 
   async list(input: ListPaymentNotificationsDto): Promise<ListPaymentNotificationsResponse> {
@@ -97,8 +102,12 @@ export class PaymentNotificationsService {
       this.findLatestReviewWorthyExecution()
     ]);
     const currentProblemStatus = currentProblem ? await this.resolveCurrentProblemStatus(currentProblem.executionId) : null;
+    const pointBlocked = new Set(await this.fileAssignments.activeCorreoIds(executions.map((row) => row.execution_id)));
     return {
-      data: executions.map((execution) => this.mapSummary(execution, currentProblem?.executionId, currentProblemStatus)),
+      data: executions.map((execution) => {
+        const summary = this.mapSummary(execution, currentProblem?.executionId, currentProblemStatus);
+        return { ...summary, reprocessAvailable: !pointBlocked.has(execution.execution_id) && summary.reprocessAvailable };
+      }),
       meta: { page: input.page, pageSize: input.pageSize, total, totalPages: Math.ceil(total / input.pageSize) }
     };
   }
@@ -113,13 +122,25 @@ export class PaymentNotificationsService {
     // and n8n normalization as mutations. Historical error text and counts remain untouched.
     const resolutions = detectableAliases.length ? (await this.aliases.resolvePaymentAliases(detectableAliases)).data : [];
     const byAlias = new Map(resolutions.map((resolution) => [resolution.alias, resolution]));
+    const points = await this.fileAssignments.describe(executionId, fileErrors);
+    const pointBlocked = (await this.fileAssignments.activeCorreoIds([executionId])).length > 0;
+    const files = fileErrors.map((file, index) => ({ ...file, aliasResolution: byAlias.get(file.detail ?? '') ?? null, fileAssignment: points[index]! }));
+    const assignedPending = files.filter((file) => file.fileAssignment.assignment?.status === 'ACTIVA' || ['ACTIVE', 'NAME_ONLY'].includes(file.aliasResolution?.state ?? '')).length;
+    const summary = this.mapSummary(execution);
     return {
       data: {
-        ...this.mapSummary(execution),
+        ...summary,
+        reprocessAvailable: !pointBlocked && summary.reprocessAvailable,
         results: results.map((result) => this.mapResult(result)),
-        fileErrorDetails: fileErrors.map((file) => ({ ...file, aliasResolution: byAlias.get(file.detail ?? '') ?? null }))
+        fileErrorDetails: files,
+        fileAttentionSummary: { total: files.length, assignedPending, unassigned: files.length - assignedPending,
+          pointPending: files.filter((file) => file.fileAssignment.assignment?.status === 'ACTIVA').length }
       }
     };
+  }
+
+  assignFile(executionId: string, fileId: string, input: PaymentFileAssignmentDto, requestId: string, identity: AuditIdentity) {
+    return this.fileAssignments.mutate(executionId, fileId, input, requestId, identity);
   }
 
   // Reused by ReviewAcknowledgementsService (automations/review) instead of that module
@@ -158,10 +179,12 @@ export class PaymentNotificationsService {
       return { status: 'NOT_ELIGIBLE' };
     }
 
-    const outcome = await this.webhookClient.triggerReprocess(lookup.correoId);
-    const status = outcome === 'ACCEPTED' ? 'TRIGGERED' : 'UPSTREAM_ERROR';
-    await this.recordTriggerRequestSafely(status, requestId, identity, lookup.correoId);
-    return { status };
+    return this.fileAssignments.protectReprocess(executionId, requestId, identity, async () => {
+      const outcome = await this.webhookClient.triggerReprocess(lookup.correoId);
+      const status = outcome === 'ACCEPTED' ? 'TRIGGERED' : 'UPSTREAM_ERROR';
+      await this.recordTriggerRequestSafely(status, requestId, identity, lookup.correoId);
+      return { status };
+    });
   }
 
   private assertIdentity(identity: AuditIdentity): void {

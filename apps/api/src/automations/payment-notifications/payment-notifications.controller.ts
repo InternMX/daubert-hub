@@ -1,7 +1,8 @@
-import { BadGatewayException, BadRequestException, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { identityFromRequest, type AuthenticatedRequest } from '../../common/authenticated-request';
 import { ListPaymentNotificationsDto } from './dto/list-payment-notifications.dto';
 import { PaymentNotificationsService, type ListPaymentNotificationsResponse, type PaymentNotificationExecutionDetailResponse } from './payment-notifications.service';
+import { PaymentFileAssignmentDto } from './dto/payment-file-assignment.dto';
 
 // No @Roles(...): this is an operational module (read-only listing plus the "Reprocesar" manual
 // control, PN1.2) open to both GENERAL and ADMIN, same as every other route in this app with no
@@ -15,6 +16,14 @@ import { PaymentNotificationsService, type ListPaymentNotificationsResponse, typ
 @Controller('automations/payment-notifications')
 export class PaymentNotificationsController {
   constructor(private readonly service: PaymentNotificationsService) {}
+
+  @Patch(':executionId/files/:fileId/assignment')
+  assignFile(@Param('executionId') executionId: string, @Param('fileId') fileId: string, @Body() input: PaymentFileAssignmentDto, @Req() request: AuthenticatedRequest) {
+    this.assertExecutionId(executionId);
+    this.assertExecutionId(fileId);
+    if (input.companyId !== undefined) this.assertExecutionId(input.companyId);
+    return this.service.assignFile(executionId, fileId, input, request.requestId, identityFromRequest(request));
+  }
 
   @Get()
   list(@Query() input: ListPaymentNotificationsDto): Promise<ListPaymentNotificationsResponse> {

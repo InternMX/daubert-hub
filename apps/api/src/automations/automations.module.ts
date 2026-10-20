@@ -12,6 +12,8 @@ import { PaymentNotificationsController } from './payment-notifications/payment-
 import { PaymentNotificationsRepository } from './payment-notifications/payment-notifications.repository';
 import { PaymentNotificationsService } from './payment-notifications/payment-notifications.service';
 import { PaymentNotificationsWebhookClient } from './payment-notifications/payment-notifications-webhook.client';
+import { PaymentFileAssignmentsRepository } from './payment-notifications/payment-file-assignments.repository';
+import { PaymentFileAssignmentsService } from './payment-notifications/payment-file-assignments.service';
 import { AudiExecutionsController } from './remisiones-audi/audi-executions.controller';
 import { AudiExecutionsRepository } from './remisiones-audi/audi-executions.repository';
 import { AudiExecutionsService } from './remisiones-audi/audi-executions.service';
@@ -32,6 +34,7 @@ import { AutomationTriggerRequestsRepository } from './trigger-requests/automati
   providers: [
     AutomationsService, DocumentSeriesRepository,
     PaymentNotificationsService, PaymentNotificationsRepository, PaymentNotificationsWebhookClient,
+    PaymentFileAssignmentsRepository, PaymentFileAssignmentsService,
     AutomationsOverviewService, AutomationsOverviewRepository,
     AudiExecutionsService, AudiExecutionsRepository,
     CaterpillarExecutionsService, CaterpillarExecutionsRepository, CaterpillarReprocessWebhookClient,

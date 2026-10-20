@@ -119,9 +119,23 @@ function AttentionSection({ executionId }: { executionId: string }) {
       )}
       {!loading && !error && detail && hasFileErrors && (
         <Box sx={{ mt: attentionItems.length > 0 ? 3 : 2 }}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="body2" color="text.secondary">{fileErrorsSummary(detail.fileErrors)}</Typography>
-            <Button component={Link} color="inherit" to={`/automations/payment-notifications/${executionId}`} sx={{ mt: 0.5 }}>Ver archivos en el detalle</Button>
+          <Paper variant="outlined" sx={{ p: 2, borderLeft: 4, borderLeftColor: 'warning.main' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} justifyContent="space-between">
+              <Box>
+                <Typography variant="h3" sx={{ fontSize: '1rem', fontWeight: 700 }}>Archivos que requieren atención</Typography>
+                {detail.fileAttentionSummary ? <>
+                  <Typography sx={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.2 }}>
+                    {detail.fileAttentionSummary.total} {detail.fileAttentionSummary.total === 1 ? 'archivo con incidencia' : 'archivos con incidencias'}
+                  </Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.25, sm: 3 }} sx={{ mt: 0.5 }}>
+                    <Typography variant="body2">{detail.fileAttentionSummary.assignedPending} asignados · pendientes de reproceso</Typography>
+                    <Typography variant="body2">{detail.fileAttentionSummary.unassigned} sin asignación</Typography>
+                  </Stack>
+                </> : <Typography variant="body2" color="text.secondary">{fileErrorsSummary(detail.fileErrors)}</Typography>}
+                {(detail.fileAttentionSummary?.pointPending ?? 0) > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.</Typography>}
+              </Box>
+              <Button variant="outlined" component={Link} to={`/automations/payment-notifications/${executionId}`} sx={{ flexShrink: 0 }}>Ver archivos</Button>
+            </Stack>
           </Paper>
         </Box>
       )}

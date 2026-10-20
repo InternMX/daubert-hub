@@ -115,7 +115,7 @@ export function PaymentNotificationExecutionDetailPage() {
           )}
         </Box>
         {execution.fileErrors > 0 && <PaymentNotificationFileErrors fileErrors={execution.fileErrorDetails} titleId="payment-notification-file-errors-title"
-          unavailable={refreshingFiles || fileRefreshError} onRefresh={refreshFiles} />}
+          executionId={execution.executionId} unavailable={refreshingFiles || fileRefreshError} onRefresh={refreshFiles} />}
       </Stack>
     </>
   );

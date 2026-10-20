@@ -1,4 +1,5 @@
 export interface EnvironmentConfig {
+  paymentFileAssignmentsTestEnabled?: boolean;
   apiPort: number;
   database: {
     host: string;
@@ -91,6 +92,7 @@ const UNKNOWN_BUILD_METADATA = 'unknown';
 
 export function validateEnvironment(env: Record<string, string | undefined>): EnvironmentConfig {
   return {
+    paymentFileAssignmentsTestEnabled: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED, 'PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED', false),
     apiPort: port(env.API_PORT, 'API_PORT', 3000),
     database: {
       host: required(env.DB_HOST, 'DB_HOST'),
