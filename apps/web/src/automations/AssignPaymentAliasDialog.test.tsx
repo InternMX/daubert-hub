@@ -4,24 +4,25 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { searchCompanies } from '../services/companies';
 import { assignPaymentAlias, managePaymentAlias, CompanyAliasApiError, type PaymentAliasResolution, type PaymentAliasRecord } from '../services/companyAliases';
-import { getPaymentNotificationExecution, type PaymentNotificationExecutionDetail } from '../services/paymentNotifications';
+import { assignPaymentFile, getPaymentNotificationExecution, type PaymentNotificationExecutionDetail, type PaymentFileAssignmentState } from '../services/paymentNotifications';
 import { PaymentNotificationExecutionDetailPage } from './PaymentNotificationExecutionDetailPage';
 
 vi.mock('../services/companies', () => ({ searchCompanies: vi.fn() }));
 vi.mock('../services/companyAliases', async (original) => ({
   ...(await original<typeof import('../services/companyAliases')>()), assignPaymentAlias: vi.fn(), managePaymentAlias: vi.fn()
 }));
-vi.mock('../services/paymentNotifications', async (original) => ({ ...(await original<typeof import('../services/paymentNotifications')>()), getPaymentNotificationExecution: vi.fn() }));
+vi.mock('../services/paymentNotifications', async (original) => ({ ...(await original<typeof import('../services/paymentNotifications')>()), getPaymentNotificationExecution: vi.fn(), assignPaymentFile: vi.fn() }));
 
 const fileError = { fileName: 'comprobante-prueba.pdf', detail: 'TEST ALIAS', errorCode: 'ALIAS_NO_CATALOGADO', fileHash: 'a'.repeat(64) };
 const company = { id: '122', commercialName: 'Empresa B', companyType: 'PROVEEDOR' as const, legalName: null, rfc: 'AAA010101AAA', matchedAlias: null };
 const record: PaymentAliasRecord = { aliasId: '5', companyId: '121', companyName: 'Empresa A', alias: 'TEST ALIAS', normalizedAlias: 'TEST ALIAS', status: 'ACTIVO', type: 'NOMBRE_ARCHIVO', updatedAt: '2026-10-19 10:00:00.123456+00' };
 let current: PaymentAliasResolution;
+let currentPoint: PaymentFileAssignmentState | undefined;
 function assigned(value = record): PaymentAliasResolution { return { alias: fileError.detail, normalizedAlias: 'TEST ALIAS', state: 'ACTIVE', assignment: value, company: { id: value.companyId, name: value.companyName } }; }
 function detail(): PaymentNotificationExecutionDetail {
   return { executionId: '32', createdAt: '2026-10-19T10:00:00Z', processedAt: null, processingStatus: 'ERROR', outcomeStatus: 'FAILED',
     totalResults: 0, readyCount: 0, manualCount: 0, errorCount: 0, omittedCount: 0, fileErrors: 1, summarySent: false, summarySentAt: null,
-    reviewStatus: null, reprocessAvailable: true, results: [], fileErrorDetails: [{ ...fileError, aliasResolution: current }] };
+    reviewStatus: null, reprocessAvailable: !currentPoint?.assignment || currentPoint.assignment.status !== 'ACTIVA', results: [], fileErrorDetails: [{ ...fileError, aliasResolution: current, fileAssignment: currentPoint }] };
 }
 function renderFiles() { return render(<MemoryRouter initialEntries={['/automations/payment-notifications/32']}><Routes>
   <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
@@ -40,6 +41,7 @@ describe('compact file alias management', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     current = { alias: fileError.detail, normalizedAlias: 'TEST ALIAS', state: 'UNASSIGNED', assignment: null, company: null };
+    currentPoint = undefined;
     vi.mocked(searchCompanies).mockResolvedValue([company]);
     vi.mocked(getPaymentNotificationExecution).mockImplementation(async () => detail());
   });
@@ -179,5 +181,61 @@ describe('compact file alias management', () => {
     expect(screen.queryByText(fileError.fileHash)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Asignar alias' }));
     expect(within(screen.getByRole('dialog')).getByText('<b>file</b>.pdf')).toBeInTheDocument();
+  });
+
+  function pointState(): PaymentFileAssignmentState {
+    return { fileId: '501', enabled: true, canManage: true, blockedReason: null, identityState: 'VERIFICADA', operationalState: 'SIN_EFECTOS', assignment: null, n8nReady: false };
+  }
+
+  it('offers both scopes but blocks legacy or ambiguous occurrences with an explanation', async () => {
+    currentPoint = { ...pointState(), fileId: null, canManage: false, blockedReason: 'Identidad individual no registrada.' };
+    renderFiles(); fireEvent.click(await screen.findByRole('button', { name: 'Asignar empresa' }));
+    expect(screen.getByRole('button', { name: 'Asignar solo este archivo' })).toBeDisabled();
+    expect(screen.getByText('Identidad individual no registrada.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Asignar alias permanente' })).toBeEnabled();
+    expect(assignPaymentFile).not.toHaveBeenCalled();
+  });
+
+  it('assigns only a trusted file, shares the company search and refreshes persisted scope on reopening', async () => {
+    currentPoint = pointState();
+    vi.mocked(assignPaymentFile).mockImplementationOnce(async () => {
+      currentPoint = { ...currentPoint!, assignment: { companyId: '122', companyName: 'Empresa B', version: 1, status: 'ACTIVA', updatedAt: 'v1' } };
+    });
+    const view = renderFiles(); fireEvent.click(await screen.findByRole('button', { name: 'Asignar empresa' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Asignar solo este archivo' }));
+    expect(screen.getAllByRole('combobox')).toHaveLength(1);
+    await selectCompany();
+    expect(screen.getByRole('button', { name: 'Guardar asignación puntual' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar asignación puntual' }));
+    expect(await screen.findByText('Cambio guardado.')).toBeInTheDocument();
+    expect(assignPaymentFile).toHaveBeenCalledWith('32', '501', 'ASSIGN', 0, '122');
+    expect(assignPaymentAlias).not.toHaveBeenCalled(); expect(managePaymentAlias).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(screen.getByText('Asignado solo a este archivo')).toBeInTheDocument();
+    expect(screen.getByText(/El reproceso de este correo está bloqueado/)).toBeInTheDocument();
+    view.unmount(); renderFiles();
+    expect(await screen.findByText('Asignado solo a este archivo')).toBeInTheDocument();
+    expect(screen.getByText('Empresa B')).toBeInTheDocument();
+  });
+
+  it('changes and revokes only the point assignment using its current version', async () => {
+    currentPoint = { ...pointState(), assignment: { companyId: '121', companyName: 'Empresa A', status: 'ACTIVA', version: 1, updatedAt: 'v1' } };
+    vi.mocked(assignPaymentFile).mockImplementation(async (_correo, _file, action) => {
+      currentPoint = { ...currentPoint!, assignment: { ...currentPoint!.assignment!, companyId: '122', companyName: 'Empresa B', status: action === 'REVOKE' ? 'REVOCADA' : 'ACTIVA', version: currentPoint!.assignment!.version + 1 } };
+    });
+    renderFiles(); fireEvent.click(await screen.findByRole('button', { name: 'Gestionar asignación' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar empresa de este archivo' })); await selectCompany();
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Guardar asignación puntual' }));
+    expect(await screen.findByText('Cambio guardado.')).toBeInTheDocument();
+    expect(assignPaymentFile).toHaveBeenLastCalledWith('32', '501', 'CHANGE', 1, '122');
+    fireEvent.click(screen.getByRole('button', { name: 'Revocar asignación puntual' }));
+    expect(screen.getByRole('button', { name: 'Confirmar revocación' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: 'Confirmar revocación' }));
+    expect(await screen.findByText('Cambio guardado.')).toBeInTheDocument();
+    expect(assignPaymentFile).toHaveBeenLastCalledWith('32', '501', 'REVOKE', 2, undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(screen.getByText('Asignación puntual revocada')).toBeInTheDocument();
+    expect(managePaymentAlias).not.toHaveBeenCalled();
   });
 });

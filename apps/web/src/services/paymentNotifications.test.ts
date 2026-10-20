@@ -1,7 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getPaymentNotificationExecution, listPaymentNotificationExecutions, PaymentNotificationApiError, reprocessPaymentNotifications } from './paymentNotifications';
+import { assignPaymentFile, getPaymentNotificationExecution, listPaymentNotificationExecutions, PaymentNotificationApiError, reprocessPaymentNotifications } from './paymentNotifications';
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('assignPaymentFile', () => {
+  it('sends only trusted IDs, action, reviewed version and confirmation; never an invented hash', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await assignPaymentFile('9007199254740993', '9007199254740994', 'ASSIGN', 0, '121');
+    expect(fetchMock).toHaveBeenCalledWith('/api/automations/payment-notifications/9007199254740993/files/9007199254740994/assignment', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'ASSIGN', expectedVersion: 0, confirmed: true, companyId: '121' })
+    });
+  });
+  it('preserves a safe conflict code for refreshing a stale detail', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'POINT_ASSIGNMENT_CHANGED', message: 'internal detail' }), { status: 409 })));
+    await expect(assignPaymentFile('1', '2', 'REVOKE', 1)).rejects.toMatchObject({ status: 409, code: 'POINT_ASSIGNMENT_CHANGED' });
+  });
+});
 
 const summary = {
   executionId: '32',
