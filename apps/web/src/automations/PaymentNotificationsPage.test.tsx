@@ -727,6 +727,17 @@ describe('PaymentNotificationsPage', () => {
       expect(screen.getByText('Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.')).toBeInTheDocument();
     });
 
+    it('drops the "n8n pending" summary text only when the persisted file states report n8n ready', async () => {
+      listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
+      const ready = { fileId: '501', enabled: true, canManage: false, blockedReason: null, identityState: 'VERIFICADA', operationalState: 'REPROCESO_SOLICITADO', n8nReady: true,
+        assignment: { companyId: '121', companyName: 'Empresa A', status: 'ACTIVA' as const, version: 1, updatedAt: 'v1' } };
+      detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails: fileErrorDetails.map((file, index) => (index === 0 ? { ...file, fileAssignment: ready } : file)),
+        fileAttentionSummary: { total: 2, assignedPending: 1, unassigned: 1, pointPending: 1 } }));
+      renderPage();
+      expect(await screen.findByText('Asignaciones puntuales activas; se aplican al reprocesar cuando es seguro.')).toBeInTheDocument();
+      expect(screen.queryByText('Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.')).not.toBeInTheDocument();
+    });
+
     it('renders no file-errors section, and keeps the healthy message, when fileErrors = 0 (also for a historical row without details)', async () => {
       listMock.mockResolvedValue(listResponse([summary({ outcomeStatus: 'COMPLETED', totalResults: 5, readyCount: 5, manualCount: 0 })]));
       detailMock.mockResolvedValue(detail({ outcomeStatus: 'COMPLETED', totalResults: 5, readyCount: 5, manualCount: 0, results: [{ companyId: '1', companyName: 'A', status: 'LISTO', attentionReason: null }] }));

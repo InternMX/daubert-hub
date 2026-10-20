@@ -196,6 +196,21 @@ describe('compact file alias management', () => {
     expect(assignPaymentFile).not.toHaveBeenCalled();
   });
 
+  it('keeps the "n8n pending" notice when the Hub does not report n8n ready', async () => {
+    currentPoint = pointState();
+    renderFiles(); fireEvent.click(await screen.findByRole('button', { name: 'Asignar empresa' }));
+    expect(screen.getByText(/integración con n8n está pendiente/)).toBeInTheDocument();
+    expect(screen.queryByText(/se aplica al reprocesar el correo solo si todos los archivos asignados son seguros/)).not.toBeInTheDocument();
+  });
+
+  it('replaces the "n8n pending" notice with the short TEST notice only when the Hub reports n8n ready', async () => {
+    currentPoint = { ...pointState(), n8nReady: true };
+    renderFiles(); fireEvent.click(await screen.findByRole('button', { name: 'Asignar empresa' }));
+    expect(screen.getByText(/se aplica al reprocesar el correo solo si todos los archivos asignados son seguros/)).toBeInTheDocument();
+    expect(screen.queryByText(/integración con n8n está pendiente/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Asignar solo este archivo' })).toBeEnabled();
+  });
+
   it('assigns only a trusted file, shares the company search and refreshes persisted scope on reopening', async () => {
     currentPoint = pointState();
     vi.mocked(assignPaymentFile).mockImplementationOnce(async () => {

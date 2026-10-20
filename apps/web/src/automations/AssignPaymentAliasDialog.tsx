@@ -128,7 +128,7 @@ export function AssignPaymentAliasDialog({ fileError, resolution, executionId, u
         </Stack>}
         {!pointActive && resolution && (inactive || resolution.state === 'UNASSIGNED') && <Button variant="outlined" onClick={() => start('ASSIGN')}>{point?.enabled ? 'Asignar alias permanente' : 'Asignar alias'}</Button>}
       </>}
-      {pointMode || mode === 'DETAIL' ? point?.enabled && !unavailable && <Alert severity="info">La asignación puntual se guarda en PostgreSQL TEST y todavía no puede usarse para reprocesar: la integración con n8n está pendiente.</Alert> : null}
+      {pointMode || mode === 'DETAIL' ? point?.enabled && !unavailable && <Alert severity="info">{point.n8nReady ? 'La asignación puntual se guarda en PostgreSQL TEST y se aplica al reprocesar el correo solo si todos los archivos asignados son seguros.' : 'La asignación puntual se guarda en PostgreSQL TEST y todavía no puede usarse para reprocesar: la integración con n8n está pendiente.'}</Alert> : null}
       {mode === 'REASSIGN' && <Typography>Asignación actual: {snapshot?.alias} → {snapshot?.companyName}</Typography>}
       {mode === 'DEACTIVATE' && <Alert severity="warning">Se conservará el registro y su auditoría con estatus INACTIVO. n8n dejará de utilizar este alias activo; los nombres comerciales y otros aliases de la empresa conservan sus propias reglas.</Alert>}
       {mode === 'ASSIGN' && <TextField label="Alias permanente" value={alias} disabled={saving} inputProps={{ maxLength: 300 }} sx={{ '& .MuiInputLabel-root.Mui-focused': { color: 'text.primary' } }} onChange={(event) => {

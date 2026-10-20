@@ -241,3 +241,25 @@ registro confiable en la extracción, la preservación de procedencia/archivo_id
 el consumo prioritario y la toma antes de efectos en el pipeline existente,
 validar rutas/destinatarios/configuración por empresa y pruebas de idempotencia
 en todas las entradas, incluidas las manuales. No basta con cambiar un indicador.
+
+## Integración n8n TEST (migraciones 013 y 014) y habilitación del reproceso puntual
+
+Estado: el workflow de n8n TEST aislado ya registra la identidad por archivo, consulta la asignación puntual antes del
+catálogo permanente y toma el archivo antes del primer efecto (ver `n8n-test-aislado/REPORTE.md`, fuera del repositorio).
+Sigue siendo **solo TEST**: nada de esto está habilitado ni instalado en PRODUCCIÓN.
+
+- **013** (`20261020_013_*`): `core.fn_consultar_archivo_notificacion_pago`, consulta/toma con resultado estructurado
+  (`PROCESABLE_ASIGNADO`, `PROCESABLE_SIN_ASIGNACION`, `REINTENTO_ASIGNADO`, `COMPLETADO`, `YA_TOMADO`, `EFECTOS_INCIERTOS`,
+  `IDENTIDAD_AMBIGUA`, `IDENTIDAD_NO_VERIFICADA`, `CONFLICTO_IDENTIDAD`, `CONFLICTO_VERSION`). EXECUTE solo para `n8n_app_test`.
+- **014** (`20261021_014_*`): evaluador interno compartido (`fn_evaluar_archivo_notificacion_pago`, sin permisos para ningún
+  rol) y `core.fn_reproceso_asignaciones_puntuales(correo_id)`, **solo lectura** (`STABLE`), con EXECUTE solo para
+  `daubert_hub_test_user`. Evalúa todos los archivos con asignación activa con las mismas reglas de la 013 y devuelve
+  `elegible`, `asignaciones_activas` y `bloqueos`. Sin asignaciones activas el correo es elegible. El Hub no recibe permisos de
+  registro ni de toma.
+- **Hub**: con `PAYMENT_FILE_ASSIGNMENTS_N8N_READY=true` el despacho y `reprocessAvailable` usan esa función en lugar de bloquear
+  cualquier asignación activa. La integración solo es efectiva si TAMBIÉN se cumplen: base `daubert_hub_test`,
+  `PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED=true` y que `PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL` tenga el mismo origen que
+  `PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN` (loopback, con puerto explícito distinto de 5678 y ruta distinta de la productiva).
+  Un fallo, una función ausente o un veredicto no afirmativo mantienen el bloqueo (`POINT_FILE_ELIGIBILITY_UNAVAILABLE` /
+  `POINT_FILE_REPROCESS_BLOCKED`). El aviso «pendiente de integración n8n» solo desaparece cuando el estado de cada archivo
+  informa `n8nReady=true`.

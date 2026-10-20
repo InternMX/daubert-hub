@@ -55,7 +55,7 @@ export interface PointAssignment {
 
 export interface PaymentFileAssignmentState {
   fileId: string | null; enabled: boolean; canManage: boolean; blockedReason: string | null;
-  identityState: string | null; operationalState: string | null; assignment: PointAssignment | null; n8nReady: false;
+  identityState: string | null; operationalState: string | null; assignment: PointAssignment | null; n8nReady: boolean;
 }
 
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
@@ -169,7 +169,7 @@ function isFileAssignment(value: unknown): value is PaymentFileAssignmentState {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
   if (!isNullableString(item.fileId) || typeof item.enabled !== 'boolean' || typeof item.canManage !== 'boolean'
-    || !isNullableString(item.blockedReason) || !isNullableString(item.identityState) || !isNullableString(item.operationalState) || item.n8nReady !== false) return false;
+    || !isNullableString(item.blockedReason) || !isNullableString(item.identityState) || !isNullableString(item.operationalState) || typeof item.n8nReady !== 'boolean') return false;
   if (item.assignment === null) return true;
   if (typeof item.assignment !== 'object') return false;
   const assignment = item.assignment as Record<string, unknown>;

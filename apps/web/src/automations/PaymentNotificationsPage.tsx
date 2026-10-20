@@ -132,7 +132,7 @@ function AttentionSection({ executionId }: { executionId: string }) {
                     <Typography variant="body2">{detail.fileAttentionSummary.unassigned} sin asignación</Typography>
                   </Stack>
                 </> : <Typography variant="body2" color="text.secondary">{fileErrorsSummary(detail.fileErrors)}</Typography>}
-                {(detail.fileAttentionSummary?.pointPending ?? 0) > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.</Typography>}
+                {(detail.fileAttentionSummary?.pointPending ?? 0) > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{detail.fileErrorDetails?.some((file) => file.fileAssignment?.n8nReady) ? 'Asignaciones puntuales activas; se aplican al reprocesar cuando es seguro.' : 'Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.'}</Typography>}
               </Box>
               <Button variant="outlined" component={Link} to={`/automations/payment-notifications/${executionId}`} sx={{ flexShrink: 0 }}>Ver archivos</Button>
             </Stack>
