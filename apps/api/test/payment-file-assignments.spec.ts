@@ -91,3 +91,27 @@ describe('reprocess protection', () => {
     expect(query).not.toHaveBeenCalledWith('ROLLBACK');
   });
 });
+
+describe('compatibility with a database without migration 012 (PROD)', () => {
+  const build = (database: string, flag: boolean) => {
+    const db = { query: vi.fn().mockRejectedValue(new Error('no query expected')), connect: vi.fn() };
+    const repo = new PaymentFileAssignmentsRepository(db as never);
+    const config = { get: (key: string) => key === 'database' ? { name: database } : flag };
+    return { db, service: new PaymentFileAssignmentsService(repo, config as never) };
+  };
+  it.each([['daubert_global', false], ['daubert_global', true]])('never queries or connects to the new tables in %s (flag=%s)', async (database, flag) => {
+    const { db, service } = build(database, flag);
+    await expect(service.describe('1', [file])).resolves.toEqual([expect.objectContaining({ enabled: false, canManage: false, assignment: null })]);
+    await expect(service.activeCorreoIds(['1'])).resolves.toEqual([]);
+    const dispatch = vi.fn().mockResolvedValue('ok');
+    await expect(service.protectReprocess('1', 'r', identity, dispatch)).resolves.toBe('ok');
+    expect(db.query).not.toHaveBeenCalled();
+    expect(db.connect).not.toHaveBeenCalled();
+  });
+  it('still tolerates missing tables in TEST with the flag off', async () => {
+    const db = { query: vi.fn().mockResolvedValue([{ available: false }]), connect: vi.fn() };
+    const config = { get: (key: string) => key === 'database' ? { name: 'daubert_hub_test' } : false };
+    const service = new PaymentFileAssignmentsService(new PaymentFileAssignmentsRepository(db as never), config as never);
+    await expect(service.describe('1', [file])).resolves.toEqual([expect.objectContaining({ enabled: false, canManage: false })]);
+  });
+});

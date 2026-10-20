@@ -83,8 +83,9 @@ export class PaymentFileAssignmentsRepository {
     return row?.available === true;
   }
 
-  async describe(correoId: string, errors: PaymentNotificationFileError[], enabled: boolean): Promise<PaymentFileAssignmentState[]> {
+  async describe(correoId: string, errors: PaymentNotificationFileError[], enabled: boolean, inspect = true): Promise<PaymentFileAssignmentState[]> {
     const disabledReason = 'Asignación puntual deshabilitada. Disponible exclusivamente para validación en TEST.';
+    if (!inspect) return errors.map(() => emptyPointState(disabledReason, false));
     if (!await this.schemaAvailable()) return errors.map(() => emptyPointState(enabled ? 'El registro de archivos aún no está instalado en TEST.' : disabledReason, enabled));
     const records = await this.database.query<RegisteredPaymentFile>(selectFiles, [correoId]);
     return errors.map((file) => {
