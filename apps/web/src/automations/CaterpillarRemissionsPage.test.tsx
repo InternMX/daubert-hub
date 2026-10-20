@@ -6,6 +6,7 @@ import { adjustDocumentSeries, AutomationApiError, type AutomationSeriesConfigur
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import {
   CaterpillarReprocessApiError,
+  cancelCaterpillarRemission,
   getCaterpillarExecution,
   listCaterpillarExecutions,
   listCaterpillarSeries,
@@ -32,7 +33,8 @@ vi.mock('../services/caterpillarRemissions', async (importOriginal) => ({
   listCaterpillarSeries: vi.fn(),
   listCaterpillarExecutions: vi.fn(),
   getCaterpillarExecution: vi.fn(),
-  reprocessCaterpillarExecution: vi.fn()
+  reprocessCaterpillarExecution: vi.fn(),
+  cancelCaterpillarRemission: vi.fn()
 }));
 
 const overviewMock = vi.mocked(listAutomationsOverview);
@@ -41,6 +43,7 @@ const executionsMock = vi.mocked(listCaterpillarExecutions);
 const detailMock = vi.mocked(getCaterpillarExecution);
 const adjustMock = vi.mocked(adjustDocumentSeries);
 const reprocessMock = vi.mocked(reprocessCaterpillarExecution);
+const cancelMock = vi.mocked(cancelCaterpillarRemission);
 
 function caterpillarOverview(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
   return {
@@ -154,6 +157,53 @@ describe('CaterpillarRemissionsPage', () => {
   it('renders the page heading', async () => {
     renderPage();
     expect(await screen.findByRole('heading', { level: 1, name: 'Remisiones Caterpillar' })).toBeInTheDocument();
+  });
+
+  describe('individual cancellation', () => {
+    const revision = '2026-10-20T12:00:00.123456Z';
+    function cancellableDetail() {
+      const detail = executionDetail();
+      detail.remittances[0] = { ...detail.remittances[0]!, revision, processLabel: 'P2' };
+      detail.remittances.push({ ...detail.remittances[0]!, remissionId: '101', folio: '86', pdfPath: 'other.pdf' });
+      return detail;
+    }
+    beforeEach(() => {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary()]));
+      detailMock.mockResolvedValue(cancellableDetail());
+    });
+    it.each(['GENERAL', 'PROCESSING', 'CANCELADA'] as const)('does not offer cancellation for %s', async (mode) => {
+      const detail = cancellableDetail();
+      if (mode === 'PROCESSING') detail.outcome = 'PROCESSING';
+      if (mode === 'CANCELADA') detail.remittances.forEach((item) => { item.status = 'CANCELADA'; });
+      detailMock.mockResolvedValue(detail);
+      const user = userEvent.setup(); renderPage(mode === 'GENERAL' ? testGeneralUser : testAdminUser);
+      await user.click(await screen.findByRole('button', { name: /Ver detalle de ejecución Caterpillar/ }));
+      expect(await screen.findByText(/Folio 85/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancelar remisión 85' })).not.toBeInTheDocument();
+    });
+    it('ADMIN cancels only after confirmation, refetches detail and shows original audit while preserving siblings', async () => {
+      const detail = cancellableDetail();
+      const audit = { cancellationId: '1', userId: '1', userEmail: 'admin@example.invalid', userDisplayName: 'Admin histórico', cancelledAt: revision, requestId: 'req' };
+      detail.remittances[0] = { ...detail.remittances[0]!, status: 'CANCELADA', cancellationReason: 'Incidencia documental', cancellation: audit };
+      const user = userEvent.setup(); renderPage();
+      await user.click(await screen.findByRole('button', { name: /Ver detalle de ejecución Caterpillar/ }));
+      await user.click(await screen.findByRole('button', { name: 'Cancelar remisión 85' }));
+      const dialog = screen.getByRole('dialog', { name: 'Cancelar remisión Caterpillar' });
+      expect(cancelMock).not.toHaveBeenCalled();
+      detailMock.mockResolvedValue(detail);
+      cancelMock.mockResolvedValue({ status: 'CANCELLED', remissionId: '100', cancellationReason: 'Incidencia documental', cancellation: audit });
+      await user.type(within(dialog).getByRole('textbox'), 'Incidencia documental');
+      await user.click(within(dialog).getByRole('button', { name: 'Confirmar cancelación' }));
+      expect(await screen.findByText('Incidencia documental')).toBeInTheDocument();
+      expect(await screen.findByText('Admin histórico (admin@example.invalid)')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancelar remisión 86' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancelar remisión 85' })).not.toBeInTheDocument();
+      expect(screen.getByText('/dropbox/cat/p2/85.pdf')).toBeInTheDocument();
+      expect(screen.getByText('other.pdf')).toBeInTheDocument();
+      expect(detailMock).toHaveBeenCalledTimes(2);
+      expect(cancelMock).toHaveBeenCalledWith('9007199254740993', '100', 'Incidencia documental', revision);
+      expect(screen.getByText('La remisión fue cancelada. No se recuperaron folios.')).toBeInTheDocument();
+    });
   });
 
   it('shows a loading state before data resolves', () => {

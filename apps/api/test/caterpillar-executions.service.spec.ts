@@ -29,7 +29,8 @@ function setup(options: {
     findById: vi.fn().mockResolvedValue(options.findByIdResult ?? null),
     findReservationsByExecutionId: vi.fn().mockResolvedValue(options.reservations ?? []),
     findRemissionsByExecutionId: vi.fn().mockResolvedValue(options.remissions ?? []),
-    findDetailsByRemisionIds: vi.fn().mockResolvedValue(options.details ?? [])
+    findDetailsByRemisionIds: vi.fn().mockResolvedValue(options.details ?? []),
+    findCancellationAuditsByExecutionId: vi.fn().mockResolvedValue([])
   };
   const routing = { listRoutes: vi.fn().mockResolvedValue(options.routes ?? [p2Route, torreonRoute, torreonPlanta2Route]) };
   const webhookClient = { triggerReprocess: vi.fn().mockResolvedValue(options.webhookResult ?? { kind: 'NOT_CONFIGURED' }) };
@@ -167,6 +168,22 @@ describe('CaterpillarExecutionsService', () => {
       const { data } = await service.getDetail('5');
       expect(typeof data.remittances[0]?.pdfPath).toBe('string');
     });
+
+    it('exposes exact revision and historical cancellation while never guessing a shared Torreon process', async () => {
+      const { service, repository } = setup({
+        findByIdResult: { ejecucion_id: '14', execution_state: 'COMPLETADA', started_at: '2026-10-20T12:00:00Z', finished_at: null, documento_id: '55' },
+        remissions: [{ remision_id: '100', serie_id: '9', serie_codigo: 'REMISION_CAT_TORREON', folio: '128', fecha_documento: '2026-10-20', estatus: 'CANCELADA',
+          revision: '2026-10-20T12:00:00.123456Z', motivo_cancelacion: 'Original' }]
+      });
+      repository.findCancellationAuditsByExecutionId.mockResolvedValue([{
+        remision_id: '100', motivo: 'Original', cancelacion_id: '1', usuario_id: null, usuario_email: 'historic@example.invalid', usuario_nombre: 'Nombre original',
+        cancelada_en: '2026-10-20T12:01:00.123456Z', request_id: 'req'
+      }]);
+      const { data } = await service.getDetail('14');
+      expect(data.outcome).toBe('COMPLETED');
+      expect(data.remittances[0]).toMatchObject({ revision: '2026-10-20T12:00:00.123456Z', processLabel: null, cancellationReason: 'Original',
+        cancellation: { userId: null, userDisplayName: 'Nombre original', userEmail: 'historic@example.invalid' } });
+    });
   });
 
   describe('reprocess', () => {
@@ -196,6 +213,8 @@ describe('CaterpillarExecutionsService', () => {
     it.each([
       ['NOT_FOUND'],
       ['NOT_ELIGIBLE_STATE'],
+      ['SOURCE_DOCUMENT_MISSING'],
+      ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'],
       ['SOURCE_FILE_MISSING'],
       ['OUTSIDE_TEST_SCOPE'],
       ['OUTSIDE_ALLOWED_SCOPE']

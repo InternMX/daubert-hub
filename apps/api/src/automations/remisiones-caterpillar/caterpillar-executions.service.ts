@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { AuditIdentity } from '../../common/authenticated-request';
 import { mapAudiExecutionState, type AudiProcessingOutcome } from '../audi-processing-status';
 import { AutomationTriggerRequestsRepository } from '../trigger-requests/automation-trigger-requests.repository';
@@ -6,12 +6,14 @@ import { CaterpillarReprocessWebhookClient } from './caterpillar-reprocess-webho
 import type { ListCaterpillarExecutionsDto } from './dto/list-caterpillar-executions.dto';
 import {
   CaterpillarExecutionsRepository,
+  type CaterpillarCancellationRow,
   type CaterpillarExecutionDetailRow,
   type CaterpillarExecutionRow,
   type CaterpillarRemissionDetailRow,
   type CaterpillarRemissionRow,
   type CaterpillarReservationRow
 } from './caterpillar-executions.repository';
+import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
 import { CaterpillarRoutingService, resolveCaterpillarProcessLabel, type CaterpillarProcessRoute } from './caterpillar-routing.service';
 
 const AUTOMATION_CODE = 'REMISIONES_CATERPILLAR';
@@ -26,6 +28,8 @@ export type CaterpillarReprocessOutcome =
   | 'ALREADY_REPROCESSED'
   | 'NOT_FOUND'
   | 'NOT_ELIGIBLE_STATE'
+  | 'SOURCE_DOCUMENT_MISSING'
+  | 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'
   | 'SOURCE_FILE_MISSING'
   | 'OUTSIDE_TEST_SCOPE'
   | 'OUTSIDE_ALLOWED_SCOPE'
@@ -102,7 +106,20 @@ export interface CaterpillarRemittance {
   // Plain text only — never resolved to a file/URL, no filesystem or Dropbox access (Phase 12A.3 §D).
   pdfPath: string | null;
   status: string;
+  revision: string | null;
+  processLabel: string | null;
+  cancellationReason: string | null;
+  cancellation: CaterpillarCancellation | null;
   details: CaterpillarRemittanceDetail[];
+}
+
+export interface CaterpillarCancellation {
+  cancellationId: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  cancelledAt: string;
+  requestId: string | null;
 }
 
 export interface CaterpillarExecutionDetail {
@@ -156,9 +173,11 @@ export class CaterpillarExecutionsService {
     const execution = await this.repository.findById(executionId);
     if (!execution) throw new NotFoundException('Ejecución de Caterpillar no encontrada.');
 
-    const [reservations, remissions] = await Promise.all([
+    const [reservations, remissions, audits, routes] = await Promise.all([
       this.repository.findReservationsByExecutionId(executionId),
-      this.repository.findRemissionsByExecutionId(executionId)
+      this.repository.findRemissionsByExecutionId(executionId),
+      this.repository.findCancellationAuditsByExecutionId(executionId),
+      this.routing.listRoutes()
     ]);
     const details = remissions.length > 0
       ? await this.repository.findDetailsByRemisionIds(remissions.map((remission) => remission.remision_id))
@@ -178,9 +197,40 @@ export class CaterpillarExecutionsService {
         reprocessOfExecutionId: execution.reproceso_de_id,
         sourceDocument: this.mapSourceDocument(execution),
         reservations: reservations.map((reservation) => this.mapReservation(reservation)),
-        remittances: remissions.map((remission) => this.mapRemittance(remission, details))
+        remittances: remissions.map((remission) => ({
+          ...this.mapRemittance(remission, details),
+          processLabel: resolveCaterpillarProcessLabel(routes, [remission.serie_id]),
+          cancellation: this.mapCancellation(audits.find((audit) => audit.remision_id === remission.remision_id))
+        }))
       }
     };
+  }
+
+  async cancelRemission(executionId: string, remissionId: string, input: CancelCaterpillarRemissionDto, requestId: string, identity: AuditIdentity) {
+    if (!identity.userId || !identity.userEmail) throw new BadRequestException('No se pudo determinar el usuario autenticado.');
+    try {
+      const row = await this.repository.cancelRemission(executionId, remissionId, input, identity.userId, requestId);
+      return { data: { status: row.resultado, remissionId: row.remision_id, cancellationReason: row.motivo, cancellation: this.mapCancellation(row) } };
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'PCA01') throw new NotFoundException('Remisión de Caterpillar no encontrada en esta ejecución.');
+      if (code === 'PCA05') throw new ForbiddenException('No tienes permisos para cancelar esta remisión.');
+      const messages: Record<string, string> = {
+        PCA02: 'No se pueden cancelar remisiones mientras la ejecución está procesando.',
+        PCA03: 'La remisión no está en un estado elegible para cancelación.',
+        PCA04: 'La remisión cambió. Actualiza el detalle antes de confirmar.'
+      };
+      if (code && messages[code]) throw new ConflictException({ code: code === 'PCA04' ? 'CATERPILLAR_REMISSION_STALE' : 'CATERPILLAR_CANCEL_NOT_ELIGIBLE', message: messages[code] });
+      if (code === '22023') throw new BadRequestException('Solicitud de cancelación no válida.');
+      if (code === '42883' || code === '42P01') throw new ServiceUnavailableException('Cancelación no disponible.');
+      // Do not return raw SQL, function names, paths or upstream details, including outside HTTP.
+      throw new ServiceUnavailableException('No fue posible confirmar la cancelación. Actualiza el detalle antes de reintentar.');
+    }
+  }
+
+  private mapCancellation(row?: CaterpillarCancellationRow): CaterpillarCancellation | null {
+    if (!row?.cancelacion_id) return null;
+    return { cancellationId: row.cancelacion_id, userId: row.usuario_id, userEmail: row.usuario_email!, userDisplayName: row.usuario_nombre!, cancelledAt: row.cancelada_en!, requestId: row.request_id };
   }
 
   // Phase 12C: React never calls n8n directly — this is the one path from an authenticated ADMIN
@@ -204,7 +254,7 @@ export class CaterpillarExecutionsService {
     }
 
     if (webhookResult.kind === 'REJECTED') {
-      // webhookResult.reason is exactly one of the four known domain rejections here — the
+      // webhookResult.reason is exactly one of the known domain rejections here — the
       // webhook client itself refuses to construct a REJECTED with anything else (an
       // unrecognized error code is INVALID_RESPONSE, handled below, never a fabricated domain
       // rejection). No further mapping/fallback needed.
@@ -308,6 +358,10 @@ export class CaterpillarExecutionsService {
       documentDate: this.formatDate(remission.fecha_documento),
       pdfPath: remission.pdf_path,
       status: remission.estatus,
+      revision: remission.revision ?? null,
+      processLabel: null,
+      cancellationReason: remission.motivo_cancelacion ?? null,
+      cancellation: null,
       details: allDetails
         .filter((detail) => detail.remision_id === remission.remision_id)
         .map((detail) => ({

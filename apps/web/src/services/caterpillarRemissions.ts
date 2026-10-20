@@ -91,7 +91,20 @@ export interface CaterpillarRemittance {
   // (Phase 12A.4: no "Abrir PDF" yet).
   pdfPath: string | null;
   status: string;
+  revision?: string | null;
+  processLabel?: string | null;
+  cancellationReason?: string | null;
+  cancellation?: CaterpillarCancellation | null;
   details: CaterpillarRemittanceDetail[];
+}
+
+export interface CaterpillarCancellation {
+  cancellationId: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  cancelledAt: string;
+  requestId: string | null;
 }
 
 export interface CaterpillarExecutionDetail {
@@ -248,7 +261,55 @@ function isRemittance(value: unknown): value is CaterpillarRemittance {
     && isIsoDateString(item.documentDate)
     && isNullableString(item.pdfPath)
     && isNonEmptyString(item.status)
+    && (item.revision === undefined || item.revision === null || isRevision(item.revision))
+    && (item.processLabel === undefined || isNullableString(item.processLabel))
+    && (item.cancellationReason === undefined || isNullableString(item.cancellationReason))
+    && (item.cancellation === undefined || item.cancellation === null || isCancellation(item.cancellation))
     && Array.isArray(item.details) && item.details.every(isRemittanceDetail);
+}
+
+function isRevision(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value);
+}
+
+function isCancellation(value: unknown): value is CaterpillarCancellation {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return isNonEmptyString(item.cancellationId) && isNullableString(item.userId)
+    && isNonEmptyString(item.userEmail) && isNonEmptyString(item.userDisplayName)
+    && isIsoDateString(item.cancelledAt) && isNullableString(item.requestId);
+}
+
+export class CaterpillarCancellationApiError extends Error {
+  constructor(public readonly status: number) { super('Caterpillar cancellation request failed'); }
+}
+
+export interface CaterpillarCancelResult {
+  status: 'CANCELLED' | 'ALREADY_CANCELLED';
+  remissionId: string;
+  cancellationReason: string | null;
+  cancellation: CaterpillarCancellation | null;
+}
+
+export async function cancelCaterpillarRemission(executionId: string, remissionId: string, reason: string, expectedRevision: string): Promise<CaterpillarCancelResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/automations/remissions/caterpillar/executions/${encodeURIComponent(executionId)}/remittances/${encodeURIComponent(remissionId)}/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason, expectedRevision })
+    });
+  } catch { throw new CaterpillarCancellationApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new CaterpillarCancellationApiError(response.status);
+  const data = typeof body === 'object' && body !== null && 'data' in body ? body.data : null;
+  if (typeof data !== 'object' || data === null || !('status' in data) || !('remissionId' in data)
+    || !('cancellationReason' in data) || !('cancellation' in data)
+    || typeof data.status !== 'string' || !['CANCELLED', 'ALREADY_CANCELLED'].includes(data.status) || data.remissionId !== remissionId
+    || !isNullableString(data.cancellationReason) || (data.cancellation !== null && !isCancellation(data.cancellation))
+    || (data.status === 'CANCELLED' && (data.cancellation === null || !isNonEmptyString(data.cancellationReason)))) {
+    throw new CaterpillarCancellationApiError(response.status);
+  }
+  return { status: data.status as CaterpillarCancelResult['status'], remissionId, cancellationReason: data.cancellationReason,
+    cancellation: data.cancellation as CaterpillarCancellation | null };
 }
 
 function isExecutionDetail(value: unknown): value is CaterpillarExecutionDetail {

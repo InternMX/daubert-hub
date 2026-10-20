@@ -15,6 +15,8 @@ export type CaterpillarReprocessAcceptedStatus = 'REPROCESS_CREATED' | 'ALREADY_
 export type CaterpillarReprocessRejectionReason =
   | 'NOT_FOUND'
   | 'NOT_ELIGIBLE_STATE'
+  | 'SOURCE_DOCUMENT_MISSING'
+  | 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'
   | 'SOURCE_FILE_MISSING'
   | 'OUTSIDE_TEST_SCOPE'
   | 'OUTSIDE_ALLOWED_SCOPE';
@@ -31,7 +33,9 @@ const WEBHOOK_TIMEOUT_MS = 10_000;
 const WEBHOOK_HEADER_NAME = 'X-Daubert-Automation-Token';
 
 const ACCEPTED_STATUSES = new Set<string>(['REPROCESS_CREATED', 'ALREADY_PROCESSING', 'ALREADY_REPROCESSED']);
-const KNOWN_REJECTION_REASONS = new Set<string>(['NOT_FOUND', 'NOT_ELIGIBLE_STATE', 'SOURCE_FILE_MISSING', 'OUTSIDE_TEST_SCOPE', 'OUTSIDE_ALLOWED_SCOPE']);
+// Includes the explicit 409/422 branches in both versioned Caterpillar workflows.
+// Unknown codes still fail closed; live TEST parity must be checked before promotion.
+const KNOWN_REJECTION_REASONS = new Set<string>(['NOT_FOUND', 'NOT_ELIGIBLE_STATE', 'SOURCE_DOCUMENT_MISSING', 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING', 'SOURCE_FILE_MISSING', 'OUTSIDE_TEST_SCOPE', 'OUTSIDE_ALLOWED_SCOPE']);
 
 @Injectable()
 export class CaterpillarReprocessWebhookClient {
@@ -46,24 +50,30 @@ export class CaterpillarReprocessWebhookClient {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-    let response: Response;
     try {
-      response = await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', [WEBHOOK_HEADER_NAME]: token },
         body: JSON.stringify({ executionId, reason }),
         signal: controller.signal
       });
+      // Await the body parser inside the same deadline. fetch resolves at headers; aborting
+      // its signal also interrupts response.json(). A body-read abort must remain a TIMEOUT,
+      // even though readJson deliberately sanitizes parse/read failures to null.
+      const result = await this.parseResponse(response);
+      return controller.signal.aborted ? { kind: 'TIMEOUT' } : result;
     } catch {
       // Sanitized by design: network error, DNS failure, TLS failure, or an aborted (timed-out)
       // request all land here — never expose the underlying error, the webhook URL, or the token
       // to the caller. Distinguish only the one case the Hub API should report differently
       // (timeout vs. any other network-level failure).
-      clearTimeout(timeout);
       return controller.signal.aborted ? { kind: 'TIMEOUT' } : { kind: 'NETWORK_ERROR' };
+    } finally {
+      clearTimeout(timeout);
     }
-    clearTimeout(timeout);
+  }
 
+  private async parseResponse(response: Response): Promise<CaterpillarReprocessWebhookResult> {
     // The n8n HTTP status is used only to pick which parser to run — it is NOT itself the domain
     // contract, and this client never requires a specific 2xx code for a given domain status
     // (e.g. it does not require 202 for REPROCESS_CREATED). n8n's actual "accepted" response node

@@ -58,15 +58,16 @@ describe('CaterpillarController', () => {
 
   // Phase 12A.3 §E, refined by Phase 12C: the three original GET routes remain read-only; the one
   // new write route (POST executions/:executionId/reprocess) is the sole exception, and is ADMIN-only.
-  it('exposes exactly one write route (POST reprocess); every other declared route handler is GET', () => {
+  it('exposes two ADMIN-only POST routes and keeps consultation GET-only', () => {
     const proto = CaterpillarController.prototype as unknown as Record<string, object>;
     const routeHandlers = Object.getOwnPropertyNames(proto)
       .filter((name) => name !== 'constructor')
       .filter((name) => Reflect.getMetadata(METHOD_METADATA, proto[name]!) !== undefined);
-    expect(routeHandlers.sort()).toEqual(['getExecutionDetail', 'listExecutions', 'listSeries', 'reprocess'].sort());
+    expect(routeHandlers.sort()).toEqual(['getExecutionDetail', 'listExecutions', 'listSeries', 'reprocess', 'cancelRemission'].sort());
     for (const name of routeHandlers) {
-      const expected = name === 'reprocess' ? RequestMethod.POST : RequestMethod.GET;
+      const expected = name === 'reprocess' || name === 'cancelRemission' ? RequestMethod.POST : RequestMethod.GET;
       expect(Reflect.getMetadata(METHOD_METADATA, proto[name]!)).toBe(expected);
+      if (expected === RequestMethod.POST) expect(Reflect.getMetadata(ROLES_KEY, proto[name]!)).toEqual(['ADMIN']);
     }
   });
 
@@ -119,6 +120,8 @@ describe('CaterpillarController', () => {
 
     it.each([
       ['NOT_ELIGIBLE_STATE'],
+      ['SOURCE_DOCUMENT_MISSING'],
+      ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'],
       ['SOURCE_FILE_MISSING'],
       ['OUTSIDE_TEST_SCOPE'],
       ['OUTSIDE_ALLOWED_SCOPE']
@@ -134,6 +137,15 @@ describe('CaterpillarController', () => {
       const rejection = controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never);
       await expect(rejection).rejects.toMatchObject({ status: 409, message: 'La ejecución no pertenece al ámbito permitido para este entorno.' });
       await expect(rejection).rejects.not.toThrow(/SCOPE|TEST|n8n|webhook/i);
+    });
+
+    it.each([
+      ['SOURCE_DOCUMENT_MISSING', 'El documento origen no tiene la información necesaria para reprocesar.'],
+      ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING', 'El archivo origen no está disponible o no se puede clasificar para reprocesar.']
+    ] as const)('sanitizes the documented %s rejection as an operational conflict', async (outcome, message) => {
+      const reprocess = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '153', executionId: null });
+      const controller = new CaterpillarController({} as never, { reprocess } as never);
+      await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 409, message });
     });
 
     it('throws GatewayTimeoutException (504) for UPSTREAM_TIMEOUT', async () => {

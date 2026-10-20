@@ -1,6 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import type { QueryResultRow } from 'pg';
 import { DatabaseService } from '../../database/database.service';
+import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
+
+export interface CaterpillarCancellationRow extends QueryResultRow {
+  remision_id: string;
+  motivo: string | null;
+  cancelacion_id: string | null;
+  usuario_id: string | null;
+  usuario_email: string | null;
+  usuario_nombre: string | null;
+  cancelada_en: string | null;
+  request_id: string | null;
+}
+
+export interface CaterpillarCancelResultRow extends CaterpillarCancellationRow {
+  resultado: 'CANCELLED' | 'ALREADY_CANCELLED';
+}
 
 export interface CaterpillarExecutionRow extends QueryResultRow {
   ejecucion_id: string;
@@ -64,6 +80,8 @@ export interface CaterpillarRemissionRow extends QueryResultRow {
   fecha_documento: Date | string;
   pdf_path: string | null;
   estatus: string;
+  revision: string;
+  motivo_cancelacion: string | null;
 }
 
 export interface CaterpillarRemissionDetailRow extends QueryResultRow {
@@ -190,11 +208,41 @@ export class CaterpillarExecutionsRepository {
         remision.folio::text AS folio,
         remision.fecha_documento AS fecha_documento,
         remision.pdf_path AS pdf_path,
-        remision.estatus AS estatus
+        remision.estatus AS estatus,
+        remision.motivo_cancelacion,
+        to_char(remision.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS revision
       FROM operacion.remisiones remision
       JOIN operacion.series_documentales serie ON serie.serie_id = remision.serie_id
       WHERE remision.ejecucion_id = $1::bigint
       ORDER BY remision.remision_id`, [executionId]);
+  }
+
+  async findCancellationAuditsByExecutionId(executionId: string): Promise<CaterpillarCancellationRow[]> {
+    // Preserve read-only details/reprocess before migration 013. Never cache absence across requests.
+    const [schema] = await this.database.query<{ available: boolean }>(
+      "SELECT to_regclass('operacion.cancelaciones_remisiones') IS NOT NULL AS available");
+    if (!schema?.available) return [];
+    return this.database.query<CaterpillarCancellationRow>(`
+      SELECT c.remision_id::text, c.motivo, c.cancelacion_id::text, c.usuario_id::text,
+        c.usuario_email, c.usuario_nombre,
+        to_char(c.cancelada_en AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cancelada_en,
+        c.request_id
+      FROM operacion.cancelaciones_remisiones c
+      JOIN operacion.remisiones r ON r.remision_id = c.remision_id
+      JOIN ops.ejecuciones_automatizacion e ON e.ejecucion_id = r.ejecucion_id
+      JOIN ops.automatizaciones a ON a.automatizacion_id = e.automatizacion_id
+      WHERE e.ejecucion_id = $1::bigint AND a.codigo = 'REMISIONES_CATERPILLAR'`, [executionId]);
+  }
+
+  async cancelRemission(executionId: string, remissionId: string, input: CancelCaterpillarRemissionDto, userId: string, requestId: string): Promise<CaterpillarCancelResultRow> {
+    // One statement = one transaction. The definer function owns locks, UPDATE and mandatory audit.
+    const [row] = await this.database.query<CaterpillarCancelResultRow>(`
+      SELECT resultado, remision_id::text, motivo, cancelacion_id::text, usuario_id::text,
+        usuario_email, usuario_nombre, cancelada_en, request_id
+      FROM operacion.fn_cancelar_remision_caterpillar($1::bigint, $2::bigint, $3::text, $4::text, $5::bigint, $6::text)`,
+    [executionId, remissionId, input.expectedRevision, input.reason, userId, requestId]);
+    if (!row) throw new Error('Missing cancellation result');
+    return row;
   }
 
   // remisionIds bound as a single parameterized bigint[] array (= ANY($1::bigint[])), never
