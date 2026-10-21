@@ -259,7 +259,7 @@ Sigue siendo **solo TEST**: nada de esto está habilitado ni instalado en PRODUC
 - **Hub**: con `PAYMENT_FILE_ASSIGNMENTS_N8N_READY=true` el despacho y `reprocessAvailable` usan esa función en lugar de bloquear
   cualquier asignación activa. La integración solo es efectiva si TAMBIÉN se cumplen: base `daubert_hub_test`,
   `PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED=true` y que `PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL` tenga el mismo origen que
-  `PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN` (loopback, con puerto explícito distinto de 5678 y ruta distinta de la productiva).
+  `PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN`, y el destino sea uno de una lista cerrada de destinos TEST (host, puerto y ruta exactos, `http`, sin credenciales ni query): `host.docker.internal` (Hub en Docker), `127.0.0.1` o `localhost` (Hub como proceso de Windows) en el puerto 5678 con la ruta `/webhook/daubert-hub-test/notificaciones-pago/reprocesar`, y temporalmente la instancia aislada 5690. El webhook productivo se rechaza siempre. Además debe existir el token del webhook.
   Un fallo, una función ausente o un veredicto no afirmativo mantienen el bloqueo (`POINT_FILE_ELIGIBILITY_UNAVAILABLE` /
   `POINT_FILE_REPROCESS_BLOCKED`). El aviso «pendiente de integración n8n» solo desaparece cuando el estado de cada archivo
   informa `n8nReady=true`.

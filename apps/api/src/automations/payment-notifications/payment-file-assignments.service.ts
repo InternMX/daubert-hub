@@ -24,8 +24,10 @@ export class PaymentFileAssignmentsService {
   // (migration 014) is still consulted on every dispatch; this only decides whether it may authorize a reprocess.
   isN8nReady(): boolean {
     if (!this.isEnabled() || this.config.get('paymentFileAssignmentsN8nReady', { infer: true }) !== true) return false;
-    const webhook = this.config.get('paymentNotificationsWebhooks', { infer: true })?.reprocessWebhookUrl;
-    return isIsolatedN8nTestTarget(webhook, this.config.get('paymentFileAssignmentsN8nTestOrigin', { infer: true }));
+    const webhooks = this.config.get('paymentNotificationsWebhooks', { infer: true });
+    // The existing server-to-server token must be configured as well: without it the dispatch could not authenticate.
+    if (!webhooks?.webhookToken) return false;
+    return isIsolatedN8nTestTarget(webhooks.reprocessWebhookUrl, this.config.get('paymentFileAssignmentsN8nTestOrigin', { infer: true }));
   }
 
   async describe(correoId: string, errors: PaymentNotificationFileError[]) {
