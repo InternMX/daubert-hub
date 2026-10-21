@@ -1,0 +1,942 @@
+{
+  "description": "Pure original node bodies from the reviewed TEST export; synthetic tests only.",
+  "sourceSha256": "273dbd1b94e36be1a698a38558469fd72f60c73489de9b4ee8d115e48a70b517",
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Detectar archivos CAT1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar archivos nuevos": {
+      "main": [
+        [
+          {
+            "node": "Filtrar solo pruebas locales1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar copia en entrada": {
+      "main": [
+        [
+          {
+            "node": "Leer copia en entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer copia en entrada": {
+      "main": [
+        [
+          {
+            "node": "Extraccion de informacion de excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer archivo detectado": {
+      "main": [
+        [
+          {
+            "node": "Guardar copia en entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraccion de informacion de excel": {
+      "main": [
+        [
+          {
+            "node": "Normalizar datos CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar datos CAT": {
+      "main": [
+        [
+          {
+            "node": "Preparar reserva folios PG",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Renderizar HTML": {
+      "main": [
+        [
+          {
+            "node": "Guardar HTML temporal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar HTML temporal": {
+      "main": [
+        [
+          {
+            "node": "Preparar conversión PDF CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar conversión PDF CAT": {
+      "main": [
+        [
+          {
+            "node": "Convertir PDF CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convertir PDF CAT": {
+      "main": [
+        [
+          {
+            "node": "Preparar registro remisiones PG",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar error CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eliminar HTML temporal CAT": {
+      "main": [
+        [
+          {
+            "node": "Preparar finalización PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer catálogo Caterpillar": {
+      "main": [
+        [
+          {
+            "node": "Extraer productos catálogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar productos catálogo CAT": {
+      "main": [
+        [
+          {
+            "node": "Leer catálogo Caterpillar clientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer productos catálogo": {
+      "main": [
+        [
+          {
+            "node": "Preparar productos catálogo CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer catálogo Caterpillar clientes": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Preparar catálogo CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar catálogo CAT": {
+      "main": [
+        [
+          {
+            "node": "Leer archivo detectado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Preparar archivo CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Detectar archivos CAT1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar solo pruebas locales1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpiar HTML temporal por error CAT": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver documento origen PG": {
+      "main": [
+        [
+          {
+            "node": "Propagar documento origen PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propagar documento origen PG": {
+      "main": [
+        [
+          {
+            "node": "Crear o recuperar ejecución PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear o recuperar ejecución PG": {
+      "main": [
+        [
+          {
+            "node": "Propagar ejecución PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propagar ejecución PG": {
+      "main": [
+        [
+          {
+            "node": "¿Es reproceso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar reserva folios PG": {
+      "main": [
+        [
+          {
+            "node": "Reservar folios PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asignar folios PG CAT": {
+      "main": [
+        [
+          {
+            "node": "Renderizar HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar folios PG": {
+      "main": [
+        [
+          {
+            "node": "Asignar folios PG CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar registro remisiones PG": {
+      "main": [
+        [
+          {
+            "node": "Registrar remisión PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar archivos CAT1": {
+      "main": [
+        [
+          {
+            "node": "Filtrar archivos nuevos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar remisión PG": {
+      "main": [
+        [
+          {
+            "node": "Eliminar HTML temporal CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar finalización PG": {
+      "main": [
+        [
+          {
+            "node": "Finalizar ejecución PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalizar ejecución PG": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar log error CAT": {
+      "main": [
+        [
+          {
+            "node": "Limpiar HTML temporal por error CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar archivo CAT": {
+      "main": [
+        [
+          {
+            "node": "Resolver documento origen PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Procesar según PG?": {
+      "main": [
+        [
+          {
+            "node": "Leer catálogo Caterpillar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar error CAT": {
+      "main": [
+        [
+          {
+            "node": "Registrar fallo PG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo PG": {
+      "main": [
+        [
+          {
+            "node": "Registrar log error CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Reproceso CAT (TEST)": {
+      "main": [
+        [
+          {
+            "node": "Normalizar y validar entrada reproceso CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar y validar entrada reproceso CAT": {
+      "main": [
+        [
+          {
+            "node": "¿Entrada reproceso válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Entrada reproceso válida?": {
+      "main": [
+        [
+          {
+            "node": "Resolver ejecución original PG",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder entrada inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver ejecución original PG": {
+      "main": [
+        [
+          {
+            "node": "Validar elegibilidad reproceso CAT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder reproceso error interno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar elegibilidad reproceso CAT": {
+      "main": [
+        [
+          {
+            "node": "¿Reproceso elegible?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reproceso elegible?": {
+      "main": [
+        [
+          {
+            "node": "Detectar archivo REPROCESS CAT1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder reproceso rechazado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detectar archivo REPROCESS CAT1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder reproceso error de archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es reproceso?": {
+      "main": [
+        [
+          {
+            "node": "Mapear resultado creación reproceso CAT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Procesar según PG?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder reproceso aceptado": {
+      "main": [
+        [
+          {
+            "node": "¿Procesar según PG?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear resultado creación reproceso CAT": {
+      "main": [
+        [
+          {
+            "node": "¿Estado de reproceso reconocido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Estado de reproceso reconocido?": {
+      "main": [
+        [
+          {
+            "node": "Responder reproceso aceptado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder reproceso estado inesperado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodeStructure": [
+    [
+      "e5bd76cc-9828-4796-aa6f-9656f2542def",
+      "Filtrar solo pruebas locales1",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "99ccbdc9-5b23-4ba4-9018-673d25f646e8",
+      "Schedule Trigger",
+      "n8n-nodes-base.scheduleTrigger"
+    ],
+    [
+      "8338db56-335f-4abc-9a19-bd698d9dbd17",
+      "Filtrar archivos nuevos",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "41a35ec0-e1ee-4573-b347-d7d3e29f1670",
+      "Guardar copia en entrada",
+      "n8n-nodes-base.readWriteFile"
+    ],
+    [
+      "56eb8c71-e7d3-4a05-8af1-aed60acc9508",
+      "Leer copia en entrada",
+      "n8n-nodes-base.readWriteFile"
+    ],
+    [
+      "270b4b54-6995-4dac-bc50-5625bcbbb7b3",
+      "Leer archivo detectado",
+      "n8n-nodes-base.readWriteFile"
+    ],
+    [
+      "db9a8e26-e9c0-4972-8d82-a78dba2a6771",
+      "Extraccion de informacion de excel",
+      "n8n-nodes-base.extractFromFile"
+    ],
+    [
+      "a695c284-e658-4fd0-b914-c94d7bd61152",
+      "Normalizar datos CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "51e7e478-3b7d-42c2-892a-2ebba8a2f9ed",
+      "Renderizar HTML",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "1d2a9abb-a49e-46e2-91a4-28246787ffd8",
+      "Guardar HTML temporal",
+      "n8n-nodes-base.readWriteFile"
+    ],
+    [
+      "32913602-d8ef-496c-ac58-1a45fbc0e05e",
+      "Preparar conversión PDF CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "516b5ec8-7f5f-4498-ae85-cf66440b7308",
+      "Convertir PDF CAT",
+      "n8n-nodes-base.executeCommand"
+    ],
+    [
+      "e09a6409-73b3-42ae-9161-396ce2d6bd00",
+      "Eliminar HTML temporal CAT",
+      "n8n-nodes-base.executeCommand"
+    ],
+    [
+      "4ad6dda3-01aa-4ce7-a70d-f8bcf3b8550b",
+      "Leer catálogo Caterpillar",
+      "n8n-nodes-base.readWriteFile"
+    ],
+    [
+      "0a463c03-2d10-4267-9974-318388722867",
+      "Preparar productos catálogo CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "4d9e4b29-fff8-4d2d-b3b4-1e626f5bf1d0",
+      "Extraer productos catálogo",
+      "n8n-nodes-base.extractFromFile"
+    ],
+    [
+      "4666c9c8-2bdd-4960-a2c1-4d8fd362b434",
+      "Leer catálogo Caterpillar clientes",
+      "n8n-nodes-base.readWriteFile"
+    ],
+    [
+      "ac4f7c97-26f5-4953-9e05-24189e15c377",
+      "Extract from File",
+      "n8n-nodes-base.extractFromFile"
+    ],
+    [
+      "9528d9b2-fbdf-4e97-96d1-22d1bca62dad",
+      "Preparar catálogo CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "5c779cea-0916-44aa-9370-e956558b56ce",
+      "Loop Over Items",
+      "n8n-nodes-base.splitInBatches"
+    ],
+    [
+      "de86f468-24ba-4246-af20-ff2b8ecb32e9",
+      "Sticky Note",
+      "n8n-nodes-base.stickyNote"
+    ],
+    [
+      "380cc615-471b-4e55-acc9-742804a2634c",
+      "Sticky Note1",
+      "n8n-nodes-base.stickyNote"
+    ],
+    [
+      "9651c0c3-ec67-49e4-8149-cc7d7fc3a058",
+      "Sticky Note3",
+      "n8n-nodes-base.stickyNote"
+    ],
+    [
+      "26a8c43b-7819-4c42-8a88-778d1a20baaa",
+      "When clicking ‘Execute workflow’",
+      "n8n-nodes-base.manualTrigger"
+    ],
+    [
+      "71386d72-0f84-4185-9cf9-c8124122ce05",
+      "Execute a SQL query",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "c1ab7e49-29f2-4fd3-b79a-dee77d00ffc3",
+      "Limpiar HTML temporal por error CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "adc465b4-500e-4979-a4b1-497aeaea549b",
+      "Resolver documento origen PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "05b28dd5-56f3-4084-9a2c-5bf9a9e8bd39",
+      "Propagar documento origen PG",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "2cff1d91-879c-4b70-bac2-34805b5c4004",
+      "Crear o recuperar ejecución PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "d74cc711-0d8d-4263-8128-b8acda9df1d0",
+      "Propagar ejecución PG",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "4d20ee6f-4312-4f55-b152-855a92980c27",
+      "Preparar reserva folios PG",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "7d975d30-d8e4-4e5e-89b8-f8a5af7f2fbc",
+      "Reservar folios PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "800ce544-2ebe-49da-a4dc-c2e6f40d396c",
+      "Asignar folios PG CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "7e596c37-8fe5-43e0-b404-741d53abaac6",
+      "Preparar registro remisiones PG",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "377c16b5-d12b-4248-b4f3-5bdaea21c787",
+      "Registrar remisión PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "9b3101b9-b280-4a1a-a231-154ab273f34b",
+      "Detectar archivos CAT1",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "bb565ac8-3554-4b91-8a93-81db568e2cbb",
+      "Preparar finalización PG",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "40e11b9d-6721-4a5b-ada8-c3ccabb2edff",
+      "Finalizar ejecución PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "721dae63-c7c4-471e-be59-8b6d30526255",
+      "Registrar log error CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "4fc415ba-505a-4f2d-a8a1-99769b34938e",
+      "Preparar archivo CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "5b1402ae-5284-4f3f-994c-041b03aaf96a",
+      "¿Procesar según PG?",
+      "n8n-nodes-base.if"
+    ],
+    [
+      "65e3494a-ff4e-48e7-94fc-2a5a0f0a34c6",
+      "Preparar error CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "be7f7fef-52a0-41aa-bddb-b2738d3ba4b0",
+      "Registrar fallo PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "efe9f72a-9653-4fe2-8f38-804c30490abe",
+      "Webhook Reproceso CAT (TEST)",
+      "n8n-nodes-base.webhook"
+    ],
+    [
+      "4a6ee533-6566-4018-baf1-3166d351add8",
+      "Normalizar y validar entrada reproceso CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "074b2efd-e72c-4594-9474-5e98ee74f871",
+      "¿Entrada reproceso válida?",
+      "n8n-nodes-base.if"
+    ],
+    [
+      "3b1ab012-704b-46b3-a664-d3c43193bd93",
+      "Responder entrada inválida",
+      "n8n-nodes-base.respondToWebhook"
+    ],
+    [
+      "895803f0-3331-4f05-8967-e5bf5de5087c",
+      "Resolver ejecución original PG",
+      "n8n-nodes-base.postgres"
+    ],
+    [
+      "a5d26840-39b5-41a4-972c-7671264ed629",
+      "Validar elegibilidad reproceso CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "4ae335ae-82eb-4ddd-9cfd-f4c424182caf",
+      "¿Reproceso elegible?",
+      "n8n-nodes-base.if"
+    ],
+    [
+      "2ae94ba0-6c32-46b3-9d7c-10f681f923fe",
+      "Responder reproceso rechazado",
+      "n8n-nodes-base.respondToWebhook"
+    ],
+    [
+      "81427347-1d3a-4f56-9456-7c74d9501660",
+      "Detectar archivo REPROCESS CAT1",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "0f08f1f3-e39e-4443-a6ca-c147e76258c9",
+      "Responder reproceso error de archivo",
+      "n8n-nodes-base.respondToWebhook"
+    ],
+    [
+      "f7246472-47aa-479f-8445-7edceb1825da",
+      "¿Es reproceso?",
+      "n8n-nodes-base.if"
+    ],
+    [
+      "847c176b-05ac-4bb8-9d31-0f76764952f1",
+      "Responder reproceso aceptado",
+      "n8n-nodes-base.respondToWebhook"
+    ],
+    [
+      "69d75238-4c78-400d-b739-26beabc64ba9",
+      "Sticky Note Reprocess",
+      "n8n-nodes-base.stickyNote"
+    ],
+    [
+      "47a83b37-ba7f-46de-961a-b25847cab623",
+      "Responder reproceso error interno",
+      "n8n-nodes-base.respondToWebhook"
+    ],
+    [
+      "b5dc9dcd-ebb5-4d8e-b120-62d004977549",
+      "Mapear resultado creación reproceso CAT",
+      "n8n-nodes-base.code"
+    ],
+    [
+      "5e2bca9d-733b-425e-9976-4c682b021594",
+      "¿Estado de reproceso reconocido?",
+      "n8n-nodes-base.if"
+    ],
+    [
+      "0c819e21-aa23-4158-b7ce-81739726f49e",
+      "Responder reproceso estado inesperado",
+      "n8n-nodes-base.respondToWebhook"
+    ]
+  ],
+  "nodes": [
+    {
+      "name": "Normalizar datos CAT",
+      "parameters": {
+        "jsCode": "const path = require(\"path\");\n\n// =========================================================\n// NORMALIZAR DATOS CAT\n// Compatible con:\n// - CAT normal: 1 remisión por artículo\n// - CAT Torreón: 1 remisión por OC, con varios artículos\n// =========================================================\n\nconst MODO_ESTRICTO_CATALOGO = true;\nconst MODO_ESTRICTO_TORREON_FINANZAS = false;\nconst IVA_TORREON = 0.16;\n\n// =========================================================\n// FUNCIONES GENERALES\n// =========================================================\n\nfunction cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction cleanMultiline(value) {\n  return cleanText(value)\n    .replace(/\\r\\n/g, \"\\n\")\n    .replace(/\\r/g, \"\\n\")\n    .replace(/[ \\t]+\\n/g, \"\\n\")\n    .replace(/\\n[ \\t]+/g, \"\\n\")\n    .trim();\n}\n\nfunction normalizeText(value) {\n  return cleanText(value)\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")\n    .toUpperCase()\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction normalizeCompact(value) {\n  return normalizeText(value).replace(/[^A-Z0-9]/g, \"\");\n}\n\nfunction normalizeCode(value) {\n  return cleanText(value)\n    .toUpperCase()\n    .replace(/\\s+/g, \"\")\n    .trim();\n}\n\nfunction normalizeTipoEmpaque(value) {\n  return normalizeText(value)\n    .replace(/\\s+POR\\s+/g, \"_\")\n    .replace(/[\\/\\-\\s]+/g, \"_\")\n    .replace(/_+/g, \"_\")\n    .replace(/^_+|_+$/g, \"\");\n}\n\nfunction getFirstExisting(...values) {\n  for (const value of values) {\n    const text = cleanText(value);\n\n    if (text !== \"\") {\n      return value;\n    }\n  }\n\n  return \"\";\n}\n\nfunction rowToArray(json) {\n  if (Array.isArray(json)) return json;\n  if (Array.isArray(json.row)) return json.row;\n  if (Array.isArray(json.data)) return json.data;\n\n  const keys = Object.keys(json);\n\n  const numericKeys = keys\n    .filter(key => /^\\d+$/.test(key))\n    .sort((a, b) => Number(a) - Number(b));\n\n  if (numericKeys.length > 0) {\n    return numericKeys.map(key => json[key]);\n  }\n\n  const emptyKeys = keys\n    .filter(key => key === \"__EMPTY\" || /^__EMPTY_\\d+$/.test(key))\n    .sort((a, b) => {\n      const getIndex = key => {\n        if (key === \"__EMPTY\") return 0;\n        return Number(key.replace(\"__EMPTY_\", \"\"));\n      };\n\n      return getIndex(a) - getIndex(b);\n    });\n\n  if (emptyKeys.length > 0) {\n    return emptyKeys.map(key => json[key]);\n  }\n\n  return Object.values(json);\n}\n\nfunction makeKey(...parts) {\n  return parts.map(part => normalizeText(part)).join(\"|\");\n}\n\nfunction makeKeyRaw(...parts) {\n  return parts.map(part => cleanText(part)).join(\"|\");\n}\n\nfunction makeProductKey(clienteGrupo, plantaCodigo, subplantaCodigo, codigoExcel) {\n  return makeKey(clienteGrupo, plantaCodigo, subplantaCodigo, codigoExcel);\n}\n\nfunction makeProductKeyRaw(clienteGrupo, plantaCodigo, subplantaCodigo, codigoExcel) {\n  return makeKeyRaw(clienteGrupo, plantaCodigo, subplantaCodigo, codigoExcel);\n}\n\nfunction isNo(value) {\n  const text = normalizeText(value);\n  return text === \"NO\" || text === \"N\";\n}\n\nfunction esEtiquetaNoProducto(codigo, descripcion, row = []) {\n  const textoCodigo = normalizeCompact(codigo);\n  const textoDescripcion = normalizeCompact(descripcion);\n  const textoBase = normalizeCompact(`${codigo} ${descripcion}`);\n  const textoFila = normalizeCompact(Array.isArray(row) ? row.join(\" \") : \"\");\n\n  if (!textoFila) return true;\n\n  const etiquetasCompactas = [\n    \"CODIGO\",\n    \"DESCRIPCION\",\n    \"TOTAL\",\n    \"SUBTOTAL\",\n    \"CONSOLIDAR\",\n    \"FECHADEENTREGA\",\n    \"TRANSPORTE\",\n    \"SOLICITADOPOR\",\n    \"VALORDEVENTA\",\n    \"VALORFACTURA\",\n    \"METODODEPAGO\",\n    \"FORMADEPAGO\",\n    \"LUGARDEEXPEDICION\",\n    \"IMPORTECONLETRA\",\n    \"MONEDA\",\n    \"TIPODECAMBIO\",\n    \"TASADECONVERSION\",\n    \"TC\",\n    \"OBSERVACIONES\",\n    \"NOTAS\"\n  ];\n\n  const textosARevisar = [\n    textoCodigo,\n    textoDescripcion,\n    textoBase,\n    textoFila\n  ];\n\n  return textosARevisar.some(texto =>\n    etiquetasCompactas.some(etiqueta =>\n      texto === etiqueta ||\n      texto.startsWith(etiqueta)\n    )\n  );\n}\n\n// =========================================================\n// FECHAS Y NÚMEROS\n// =========================================================\n\nfunction excelDateToString(value) {\n  if (value === undefined || value === null) return \"\";\n\n  if (value instanceof Date && !isNaN(value.getTime())) {\n    const dd = String(value.getDate()).padStart(2, \"0\");\n    const mm = String(value.getMonth() + 1).padStart(2, \"0\");\n    const yyyy = value.getFullYear();\n\n    return `${dd}/${mm}/${yyyy}`;\n  }\n\n  const text = cleanText(value);\n\n  if (text === \"\") return \"\";\n  if (text === \"0\") return \"\";\n\n  const numberValue = Number(text);\n\n  if (!isNaN(numberValue) && numberValue > 20000 && numberValue < 70000) {\n    const excelEpoch = new Date(Date.UTC(1899, 11, 30));\n    const date = new Date(excelEpoch.getTime() + numberValue * 86400000);\n\n    const dd = String(date.getUTCDate()).padStart(2, \"0\");\n    const mm = String(date.getUTCMonth() + 1).padStart(2, \"0\");\n    const yyyy = date.getUTCFullYear();\n\n    return `${dd}/${mm}/${yyyy}`;\n  }\n\n  return text;\n}\n\nfunction todayDdMmYyyyDash() {\n  const now = new Date();\n\n  const dd = String(now.getDate()).padStart(2, \"0\");\n  const mm = String(now.getMonth() + 1).padStart(2, \"0\");\n  const yyyy = now.getFullYear();\n\n  return `${dd}-${mm}-${yyyy}`;\n}\n\nfunction parseNumber(value) {\n  if (value === undefined || value === null) return null;\n\n  let text = cleanText(value);\n\n  if (text === \"\") return null;\n  if (text === \"-\") return null;\n\n  text = text\n    .replace(/\\$/g, \"\")\n    .replace(/USD/gi, \"\")\n    .replace(/MXN/gi, \"\")\n    .replace(/\\s+/g, \"\")\n    .replace(/,/g, \"\");\n\n  const numberValue = Number(text);\n\n  if (isNaN(numberValue)) return null;\n\n  return numberValue;\n}\n\nfunction buscarValorPorEtiqueta(rows, etiquetas) {\n  const etiquetasNorm = etiquetas.map(etiqueta => normalizeCompact(etiqueta));\n\n  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {\n    const row = rows[rowIndex];\n\n    for (let col = 0; col < row.length; col++) {\n      const cellRaw = cleanText(row[col]);\n      const cellNorm = normalizeCompact(cellRaw);\n\n      if (!cellNorm) continue;\n\n      for (const etiqueta of etiquetasNorm) {\n        if (cellNorm === etiqueta || cellNorm.startsWith(etiqueta)) {\n          const despuesDeDosPuntos = cellRaw.split(\":\").slice(1).join(\":\").trim();\n\n          if (despuesDeDosPuntos && parseNumber(despuesDeDosPuntos) !== null) {\n            return despuesDeDosPuntos;\n          }\n\n          for (let offset = 1; offset <= 4; offset++) {\n            const posibleValorDerecha = cleanText(row[col + offset]);\n\n            if (posibleValorDerecha && parseNumber(posibleValorDerecha) !== null) {\n              return posibleValorDerecha;\n            }\n          }\n\n          for (let rowOffset = 1; rowOffset <= 4; rowOffset++) {\n            const rowAbajo = rows[rowIndex + rowOffset];\n\n            if (!rowAbajo) continue;\n\n            const posibleValorAbajo = cleanText(rowAbajo[col]);\n\n            if (posibleValorAbajo && parseNumber(posibleValorAbajo) !== null) {\n              return posibleValorAbajo;\n            }\n\n            for (let colOffset = 1; colOffset <= 3; colOffset++) {\n              const posibleValorDiagonal = cleanText(rowAbajo[col + colOffset]);\n\n              if (posibleValorDiagonal && parseNumber(posibleValorDiagonal) !== null) {\n                return posibleValorDiagonal;\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n\n  return \"\";\n}\n\nfunction hasCantidad(value) {\n  const numberValue = parseNumber(value);\n\n  if (numberValue === null) return false;\n  if (numberValue <= 0) return false;\n\n  return true;\n}\n\nfunction parseCantidad(value) {\n  const numberValue = parseNumber(value);\n\n  if (numberValue === null || numberValue <= 0) {\n    return null;\n  }\n\n  return numberValue;\n}\n\nfunction formatQuantity(value) {\n  const numberValue = Number(value);\n\n  if (isNaN(numberValue)) return \"\";\n\n  if (Number.isInteger(numberValue)) {\n    return String(numberValue);\n  }\n\n  return String(numberValue).replace(/\\.?0+$/, \"\");\n}\n\nfunction formatQuantityTorreon(value) {\n  const numberValue = Number(value);\n\n  if (isNaN(numberValue)) return \"\";\n\n  return numberValue.toLocaleString(\"en-US\", {\n    minimumFractionDigits: 4,\n    maximumFractionDigits: 4\n  });\n}\n\nfunction formatNumber(value, decimals = 2) {\n  if (value === undefined || value === null || isNaN(Number(value))) return \"\";\n\n  return Number(value).toLocaleString(\"en-US\", {\n    minimumFractionDigits: decimals,\n    maximumFractionDigits: decimals\n  });\n}\n\nfunction formatCurrency(value, decimals = 2) {\n  if (value === undefined || value === null || isNaN(Number(value))) return \"\";\n\n  return `$${formatNumber(value, decimals)}`;\n}\n\nfunction formatTipoCambio(value) {\n  const numberValue = parseNumber(value);\n\n  if (numberValue === null) return \"\";\n\n  return `$${numberValue.toLocaleString(\"en-US\", {\n    minimumFractionDigits: 4,\n    maximumFractionDigits: 4\n  })}`;\n}\n\n// =========================================================\n// UNIDADES / EMPAQUE\n// =========================================================\n\nfunction canonicalUnidadRemision(value) {\n  const key = normalizeText(value);\n\n  const map = {\n    BOLSA: \"BOLSAS\",\n    BOLSAS: \"BOLSAS\",\n\n    HOJA: \"HOJAS\",\n    HOJAS: \"HOJAS\",\n\n    ROLLO: \"ROLLOS\",\n    ROLLOS: \"ROLLOS\",\n\n    PAQUETE: \"PAQUETES\",\n    PAQUETES: \"PAQUETES\",\n\n    PIEZA: \"PIEZAS\",\n    PIEZAS: \"PIEZAS\",\n\n    UNIDAD: \"PIEZAS\",\n    UNIDADES: \"PIEZAS\"\n  };\n\n  return map[key] || key;\n}\n\nfunction getUnidadLabel(unidadRemision) {\n  const key = canonicalUnidadRemision(unidadRemision);\n\n  const map = {\n    BOLSAS: \"bolsas\",\n    HOJAS: \"hojas\",\n    ROLLOS: \"rollos\",\n    PAQUETES: \"paquetes\",\n    PIEZAS: \"piezas\"\n  };\n\n  return map[key] || cleanText(unidadRemision).toLowerCase();\n}\n\nfunction getTipoEmpaqueInfo(tipoEmpaque) {\n  const key = normalizeTipoEmpaque(tipoEmpaque);\n\n  const map = {\n    BOLSAS_ROLLO: {\n      leyenda: \"bolsas por rollo\",\n      tipo: \"rollo\",\n      encabezado: \"Cantidad por rollo\"\n    },\n    BOLSAS_PAQUETE: {\n      leyenda: \"bolsas por paquete\",\n      tipo: \"paquete\",\n      encabezado: \"Cantidad por paquete\"\n    },\n    BOLSAS_CAJA: {\n      leyenda: \"bolsas por caja\",\n      tipo: \"caja\",\n      encabezado: \"Cantidad por caja\"\n    },\n    HOJAS_ROLLO: {\n      leyenda: \"hojas por rollo\",\n      tipo: \"rollo\",\n      encabezado: \"Cantidad por rollo\"\n    },\n    HOJAS_PAQUETE: {\n      leyenda: \"hojas por paquete\",\n      tipo: \"paquete\",\n      encabezado: \"Cantidad por paquete\"\n    },\n    PIEZAS_CAJA: {\n      leyenda: \"piezas por caja\",\n      tipo: \"caja\",\n      encabezado: \"Cantidad por caja\"\n    },\n    PIEZAS_PAQUETE: {\n      leyenda: \"piezas por paquete\",\n      tipo: \"paquete\",\n      encabezado: \"Cantidad por paquete\"\n    },\n    ROLLOS_CAJA: {\n      leyenda: \"rollos por caja\",\n      tipo: \"caja\",\n      encabezado: \"Cantidad por caja\"\n    },\n    PAQUETES_CAJA: {\n      leyenda: \"paquetes por caja\",\n      tipo: \"caja\",\n      encabezado: \"Cantidad por caja\"\n    },\n    NA: {\n      leyenda: \"\",\n      tipo: \"empaque\",\n      encabezado: \"Cantidad por empaque\"\n    },\n    N_A: {\n      leyenda: \"\",\n      tipo: \"empaque\",\n      encabezado: \"Cantidad por empaque\"\n    },\n    SIN_EMPAQUE: {\n      leyenda: \"\",\n      tipo: \"empaque\",\n      encabezado: \"Cantidad por empaque\"\n    }\n  };\n\n  if (map[key]) return map[key];\n\n  if (key.includes(\"_\")) {\n    const parts = key.split(\"_\").filter(Boolean);\n\n    if (parts.length >= 2) {\n      const unidad = parts[0].toLowerCase();\n      const tipoRaw = parts.slice(1).join(\"_\").toLowerCase();\n\n      const tipo = tipoRaw\n        .replace(/s$/, \"\")\n        .replace(/_/g, \" \");\n\n      return {\n        leyenda: `${unidad} por ${tipo}`,\n        tipo,\n        encabezado: `Cantidad por ${tipo}`\n      };\n    }\n  }\n\n  return {\n    leyenda: \"\",\n    tipo: \"empaque\",\n    encabezado: \"Cantidad por empaque\"\n  };\n}\n\nfunction construirCantidadPorEmpaque(producto) {\n  const cantidadPorEmpaque = cleanText(\n    getFirstExisting(\n      producto.cantidad_por_empaque,\n      producto.cantidad_por_rollo,\n      producto.cantidad_por_rollo_empaque,\n      producto.cantidad_por_paquete,\n      producto.qty_per_packaging_default\n    )\n  );\n\n  const tipoEmpaqueRaw = cleanText(producto.tipo_empaque);\n  const info = getTipoEmpaqueInfo(tipoEmpaqueRaw);\n\n  if (!cantidadPorEmpaque || !info.leyenda) {\n    return {\n      cantidad_por_empaque_valor: cantidadPorEmpaque,\n      tipo_empaque_codigo: normalizeTipoEmpaque(tipoEmpaqueRaw),\n      tipo_empaque_label: info.tipo,\n      encabezado_cantidad_por_empaque: info.encabezado,\n      cantidad_por_empaque_texto: \"\"\n    };\n  }\n\n  return {\n    cantidad_por_empaque_valor: cantidadPorEmpaque,\n    tipo_empaque_codigo: normalizeTipoEmpaque(tipoEmpaqueRaw),\n    tipo_empaque_label: info.tipo,\n    encabezado_cantidad_por_empaque: info.encabezado,\n    cantidad_por_empaque_texto: `${cantidadPorEmpaque} ${info.leyenda}`\n  };\n}\n\n// =========================================================\n// IMPORTE EN LETRA SIMPLE PARA USD\n// =========================================================\n\nfunction unidades(n) {\n  const map = [\n    \"\",\n    \"UNO\",\n    \"DOS\",\n    \"TRES\",\n    \"CUATRO\",\n    \"CINCO\",\n    \"SEIS\",\n    \"SIETE\",\n    \"OCHO\",\n    \"NUEVE\",\n    \"DIEZ\",\n    \"ONCE\",\n    \"DOCE\",\n    \"TRECE\",\n    \"CATORCE\",\n    \"QUINCE\",\n    \"DIECISÉIS\",\n    \"DIECISIETE\",\n    \"DIECIOCHO\",\n    \"DIECINUEVE\"\n  ];\n\n  return map[n] || \"\";\n}\n\nfunction decenas(n) {\n  if (n < 20) return unidades(n);\n\n  const d = Math.floor(n / 10);\n  const u = n % 10;\n\n  const map = {\n    2: \"VEINTE\",\n    3: \"TREINTA\",\n    4: \"CUARENTA\",\n    5: \"CINCUENTA\",\n    6: \"SESENTA\",\n    7: \"SETENTA\",\n    8: \"OCHENTA\",\n    9: \"NOVENTA\"\n  };\n\n  if (d === 2 && u > 0) {\n    return `VEINTI${unidades(u).toLowerCase()}`.toUpperCase();\n  }\n\n  if (u === 0) return map[d];\n\n  return `${map[d]} Y ${unidades(u)}`;\n}\n\nfunction centenas(n) {\n  if (n < 100) return decenas(n);\n\n  const c = Math.floor(n / 100);\n  const r = n % 100;\n\n  if (n === 100) return \"CIEN\";\n\n  const map = {\n    1: \"CIENTO\",\n    2: \"DOSCIENTOS\",\n    3: \"TRESCIENTOS\",\n    4: \"CUATROCIENTOS\",\n    5: \"QUINIENTOS\",\n    6: \"SEISCIENTOS\",\n    7: \"SETECIENTOS\",\n    8: \"OCHOCIENTOS\",\n    9: \"NOVECIENTOS\"\n  };\n\n  if (r === 0) return map[c];\n\n  return `${map[c]} ${decenas(r)}`;\n}\n\nfunction enteroALetras(n) {\n  n = Math.floor(Number(n));\n\n  if (n === 0) return \"CERO\";\n  if (n < 1000) return centenas(n);\n\n  if (n < 1000000) {\n    const miles = Math.floor(n / 1000);\n    const resto = n % 1000;\n\n    let textoMiles = \"\";\n\n    if (miles === 1) {\n      textoMiles = \"MIL\";\n    } else {\n      textoMiles = `${centenas(miles)} MIL`;\n    }\n\n    if (resto === 0) return textoMiles;\n\n    return `${textoMiles} ${centenas(resto)}`;\n  }\n\n  const millones = Math.floor(n / 1000000);\n  const resto = n % 1000000;\n\n  let textoMillones = \"\";\n\n  if (millones === 1) {\n    textoMillones = \"UN MILLÓN\";\n  } else {\n    textoMillones = `${enteroALetras(millones)} MILLONES`;\n  }\n\n  if (resto === 0) return textoMillones;\n\n  return `${textoMillones} ${enteroALetras(resto)}`;\n}\n\nfunction importeUsdALetras(value) {\n  if (value === undefined || value === null || isNaN(Number(value))) return \"\";\n\n  const total = Number(value);\n  const entero = Math.floor(total);\n  const centavos = Math.round((total - entero) * 100);\n  const centavosText = String(centavos).padStart(2, \"0\");\n\n  return `${enteroALetras(entero)} DÓLARES ${centavosText}/100 USD`;\n}\n\n// =========================================================\n// VALIDACIONES DE PLANTILLA\n// =========================================================\n\nfunction getCell(rows, rowIndex, colIndex) {\n  return cleanText(rows[rowIndex]?.[colIndex]);\n}\n\nfunction validarPlantillaBase(rows) {\n  const checks = [\n    {\n      cell: \"A7\",\n      row: 6,\n      col: 0,\n      expected: \"CODIGO\"\n    },\n    {\n      cell: \"D7\",\n      row: 6,\n      col: 3,\n      expected: \"DESCRIPCION\"\n    },\n    {\n      cell: \"I7\",\n      row: 6,\n      col: 8,\n      expected: \"CANTIDAD BOLSAS/HOJAS\"\n    },\n    {\n      cell: \"J7\",\n      row: 6,\n      col: 9,\n      expected: \"CANTIDAD ROLLOS/PAQUETE\"\n    },\n    {\n      cell: \"K7\",\n      row: 6,\n      col: 10,\n      expected: \"OC CLIENTE\"\n    }\n  ];\n\n  const errores = [];\n\n  for (const check of checks) {\n    const actual = normalizeText(getCell(rows, check.row, check.col));\n    const expected = normalizeText(check.expected);\n\n    if (actual !== expected) {\n      errores.push(\n        `${check.cell}: se esperaba \"${check.expected}\" y se encontró \"${getCell(rows, check.row, check.col)}\".`\n      );\n    }\n  }\n\n  if (errores.length > 0) {\n    throw new Error(\n      \"La plantilla no tiene la estructura esperada.\\n\\n\" +\n      errores.join(\"\\n\")\n    );\n  }\n}\n\nfunction validarVersionPlantilla(rows) {\n  const version = cleanText(rows[3]?.[7]);\n\n  if (version !== \"CAT_REMISION_V1\") {\n    throw new Error(\n      `La versión de plantilla no es válida. En H4 se esperaba \"CAT_REMISION_V1\" y se encontró \"${version}\".`\n    );\n  }\n}\n\n// =========================================================\n// CATÁLOGOS\n// =========================================================\n\nfunction objectValuesSafe(value) {\n  if (!value || typeof value !== \"object\") return [];\n  if (Array.isArray(value)) return value;\n  return Object.values(value);\n}\n\nfunction buscarEnMapa(mapa, keys) {\n  if (!mapa || typeof mapa !== \"object\") return null;\n\n  for (const key of keys) {\n    if (mapa[key]) return mapa[key];\n  }\n\n  return null;\n}\n\nfunction buscarProducto(productosMap, contexto, codigoExcel) {\n  const clienteGrupo = contexto.cliente_grupo;\n  const plantaCodigo = contexto.planta_codigo;\n  const subplantaCodigo = contexto.subplanta_codigo || \"\";\n\n  const keys = [\n    makeProductKey(clienteGrupo, plantaCodigo, subplantaCodigo, codigoExcel),\n    makeProductKeyRaw(clienteGrupo, plantaCodigo, subplantaCodigo, codigoExcel),\n\n    makeProductKey(clienteGrupo, plantaCodigo, \"\", codigoExcel),\n    makeProductKeyRaw(clienteGrupo, plantaCodigo, \"\", codigoExcel)\n  ];\n\n  const exacto = buscarEnMapa(productosMap, keys);\n\n  if (exacto) return exacto;\n\n  const candidatos = objectValuesSafe(productosMap).filter(producto => {\n    const mismoCliente =\n      normalizeText(producto.cliente_grupo) === normalizeText(clienteGrupo);\n\n    const mismaPlanta =\n      normalizeText(producto.planta_codigo) === normalizeText(plantaCodigo);\n\n    const mismoCodigo =\n      normalizeCode(producto.codigo_excel) === normalizeCode(codigoExcel);\n\n    const subProducto = normalizeText(producto.subplanta_codigo || \"\");\n    const subContexto = normalizeText(subplantaCodigo || \"\");\n\n    const mismaSubplanta =\n      subContexto === \"\" ||\n      subProducto === subContexto ||\n      subProducto === \"\";\n\n    return mismoCliente && mismaPlanta && mismoCodigo && mismaSubplanta;\n  });\n\n  if (candidatos.length === 1) return candidatos[0];\n\n  if (candidatos.length > 1) {\n    throw new Error(\n      `Catálogo ambiguo para el código ${codigoExcel}. Hay más de un producto posible para ${clienteGrupo} / ${plantaCodigo} / ${subplantaCodigo}.`\n    );\n  }\n\n  return null;\n}\n\nfunction buscarCliente(clientesMap, contexto) {\n  const clienteGrupo = contexto.cliente_grupo;\n  const plantaCodigo = contexto.planta_codigo;\n  const subplantaCodigo = contexto.subplanta_codigo || \"\";\n\n  const keys = [\n    makeKey(clienteGrupo, plantaCodigo, subplantaCodigo),\n    makeKeyRaw(clienteGrupo, plantaCodigo, subplantaCodigo),\n\n    makeKey(clienteGrupo, plantaCodigo, \"\"),\n    makeKeyRaw(clienteGrupo, plantaCodigo, \"\")\n  ];\n\n  const exacto = buscarEnMapa(clientesMap, keys);\n\n  if (exacto) return exacto;\n\n  const candidatos = objectValuesSafe(clientesMap).filter(cliente => {\n    const mismoCliente =\n      normalizeText(cliente.cliente_grupo) === normalizeText(clienteGrupo);\n\n    const mismaPlanta =\n      normalizeText(cliente.planta_codigo) === normalizeText(plantaCodigo);\n\n    const subCliente = normalizeText(cliente.subplanta_codigo || \"\");\n    const subContexto = normalizeText(subplantaCodigo || \"\");\n\n    const mismaSubplanta =\n      subContexto === \"\" ||\n      subCliente === subContexto ||\n      subCliente === \"\";\n\n    return mismoCliente && mismaPlanta && mismaSubplanta;\n  });\n\n  if (candidatos.length === 1) return candidatos[0];\n\n  if (candidatos.length > 1) {\n    const conSubplanta = candidatos.find(cliente =>\n      normalizeText(cliente.subplanta_codigo || \"\") === normalizeText(subplantaCodigo || \"\")\n    );\n\n    if (conSubplanta) return conSubplanta;\n  }\n\n  return null;\n}\n\n// =========================================================\n// PRECIOS / TORREÓN\n// =========================================================\n\nfunction getPrecioUnitario(row, producto) {\n  const desdeCatalogo = getFirstExisting(\n    producto.precio_unitario_usd,\n    producto.precio_unitario,\n    producto.precio_usd,\n    producto.precio\n  );\n\n  const precioCatalogo = parseNumber(desdeCatalogo);\n\n  if (precioCatalogo !== null) {\n    return precioCatalogo;\n  }\n\n  const posiblesValores = [];\n\n  for (let col = 11; col <= 17; col++) {\n    const numero = parseNumber(row[col]);\n\n    if (numero !== null && numero > 0) {\n      posiblesValores.push(numero);\n    }\n  }\n\n  if (posiblesValores.length === 0) {\n    return null;\n  }\n\n  return posiblesValores[0];\n}\n\nfunction calcularImporteTorreon(cantidad, precioUnitario) {\n  if (cantidad === null || precioUnitario === null) {\n    return null;\n  }\n\n  return Number(cantidad) * Number(precioUnitario);\n}\n\nfunction agruparTorreonPorOC(items) {\n  const grupos = new Map();\n\n  for (const item of items) {\n    const data = item.json;\n    const oc = cleanText(data.orden_compra || \"SIN_OC\");\n\n    if (!grupos.has(oc)) {\n      grupos.set(oc, []);\n    }\n\n    grupos.get(oc).push(data);\n  }\n\n  const salidaAgrupada = [];\n  let index = 0;\n\n  for (const [oc, articulosGrupo] of grupos.entries()) {\n    index += 1;\n\n    const base = articulosGrupo[0];\n\n    let subtotalRaw = 0;\n\n    const articulos = articulosGrupo.map(articulo => {\n      const importeRaw = parseNumber(articulo.importe);\n\n      if (importeRaw !== null) {\n        subtotalRaw += importeRaw;\n      }\n\n      return {\n        codigo: articulo.codigo,\n        cantidad_torreon: articulo.cantidad_torreon,\n        unidad_torreon: articulo.unidad_torreon,\n        descripcion: articulo.descripcion,\n        iva_linea: articulo.iva_linea || \"002 IVA | Tipo Factor: Tasa | Tasa: 0.1600\",\n        precio_unitario: articulo.precio_unitario,\n        importe: articulo.importe\n      };\n    });\n\n    const ivaRaw = subtotalRaw * IVA_TORREON;\n    const totalRaw = subtotalRaw + ivaRaw;\n\n    salidaAgrupada.push({\n      json: {\n        ...base,\n\n        articulo_index: index,\n\n        codigo: `OC_${oc}`,\n        numero_parte: `OC_${oc}`,\n\n        orden_compra: oc,\n\n        es_remision_torreon_agrupada: true,\n        total_articulos_torreon: articulos.length,\n        articulos,\n\n        subtotal: formatCurrency(subtotalRaw, 2),\n        descuento: \"$0.00\",\n        iva: formatCurrency(ivaRaw, 2),\n        total: formatCurrency(totalRaw, 2),\n        importe_letra: importeUsdALetras(totalRaw)\n      }\n    });\n  }\n\n  return salidaAgrupada;\n}\n\n// =========================================================\n// ENTRADAS DESDE N8N\n// =========================================================\n\n// Propagar ejecución PG ya conserva el contexto original de\n// Preparar archivo CAT e incorpora documento_origen_id y ejecucion_id.\nconst contexto = $(\"Propagar ejecución PG\").first().json;\n\nif (!contexto.documento_origen_id || !contexto.ejecucion_id) {\n  throw new Error(\n    \"Normalizar datos CAT no recibió documento_origen_id o ejecucion_id desde PostgreSQL.\"\n  );\n}\n\nconst catalogo = $(\"Preparar catálogo CAT\").first().json;\n\nconst archivoActual =\n  contexto.file_name ||\n  contexto.source_base_name ||\n  \"archivo no identificado\";\n\nconst productosMap =\n  catalogo.productos_map ||\n  catalogo.productosMap ||\n  catalogo.productos ||\n  {};\n\nconst clientesMap =\n  catalogo.clientes_map ||\n  catalogo.clientesMap ||\n  catalogo.clientes ||\n  {};\n\nconst rows = $input.all().map(item => rowToArray(item.json));\n\nif (rows.length === 0) {\n  throw new Error(\"No se recibieron filas del Excel en Normalizar datos CAT.\");\n}\n\ntry {\n  validarPlantillaBase(rows);\n  validarVersionPlantilla(rows);\n} catch (error) {\n  throw new Error(`Error en archivo: ${archivoActual}\\n\\n${error.message}`);\n}\n\n// =========================================================\n// CONSTANTES DE LECTURA DE EXCEL\n// =========================================================\n\nconst FECHA_ENTREGA_ROW = 3; // F4\nconst FECHA_ENTREGA_COL = 5;\n\nconst START_ROW = 7; // Excel row 8\n\nconst COL_CODIGO = 0;       // A\nconst COL_DESCRIPCION = 3;  // D\nconst COL_CANTIDAD_BH = 8;  // I\nconst COL_CANTIDAD_RP = 9;  // J\nconst COL_OC_CLIENTE = 10;  // K\n\nconst fechaEntrega = excelDateToString(rows[FECHA_ENTREGA_ROW]?.[FECHA_ENTREGA_COL]);\n\nif (!fechaEntrega) {\n  throw new Error(\n    `Error en archivo: ${archivoActual}\\n\\nLa fecha de entrega oficial no está capturada en F4.`\n  );\n}\n\nconst clienteCatalogo = buscarCliente(clientesMap, contexto);\n\nif (!clienteCatalogo && MODO_ESTRICTO_CATALOGO) {\n  throw new Error(\n    `Error en archivo: ${archivoActual}\\n\\nNo se encontró cliente/planta en catálogo para: ${contexto.cliente_grupo} | ${contexto.planta_codigo} | ${contexto.subplanta_codigo || \"\"}`\n  );\n}\n\nconst esTorreonContexto = contexto.cliente_grupo === \"CAT_TORREON\";\n\n// =========================================================\n// PROCESAMIENTO DE FILAS\n// =========================================================\n\nconst salida = [];\nconst errores = [];\n\nfor (let rowIndex = START_ROW; rowIndex < rows.length; rowIndex++) {\n  const row = rows[rowIndex];\n\n  const descripcionExcel = cleanMultiline(row[COL_DESCRIPCION]);\n\n  if (esEtiquetaNoProducto(row[COL_CODIGO], descripcionExcel, row)) {\n    continue;\n  }\n\n  const codigo = normalizeCode(row[COL_CODIGO]);\n  const cantidadBolsasHojas = row[COL_CANTIDAD_BH];\n  const cantidadRollosPaquetes = row[COL_CANTIDAD_RP];\n  const ordenCompra = cleanText(row[COL_OC_CLIENTE]);\n\n  const excelRowNumber = rowIndex + 1;\n\n  if (!codigo) {\n    if (hasCantidad(cantidadBolsasHojas) || hasCantidad(cantidadRollosPaquetes)) {\n      errores.push(\n        `Fila ${excelRowNumber}: hay cantidad capturada, pero falta código.`\n      );\n    }\n\n    continue;\n  }\n\n  const producto = buscarProducto(productosMap, contexto, codigo);\n\n  if (!producto) {\n    if (MODO_ESTRICTO_CATALOGO) {\n      errores.push(\n        `Fila ${excelRowNumber}, código ${codigo}: no existe en el catálogo para ${contexto.cliente_grupo} | ${contexto.planta_codigo} | ${contexto.subplanta_codigo || \"\"}.`\n      );\n    }\n\n    continue;\n  }\n\n  if (isNo(producto.activo)) {\n    errores.push(\n      `Fila ${excelRowNumber}, código ${codigo}: el producto está marcado como activo = NO en el catálogo.`\n    );\n\n    continue;\n  }\n\n  const unidadRemisionOriginal = normalizeText(producto.unidad_remision);\n  const unidadRemision = canonicalUnidadRemision(unidadRemisionOriginal);\n  const unidadRemisionLabel = getUnidadLabel(unidadRemision);\n\n  let cantidadBase = \"\";\n  let columnaCantidadUsada = \"\";\n\n  const tieneCantidadBolsasHojas = hasCantidad(cantidadBolsasHojas);\n  const tieneCantidadRollosPaquetes = hasCantidad(cantidadRollosPaquetes);\n\n  if (\n    unidadRemision === \"BOLSAS\" ||\n    unidadRemision === \"HOJAS\" ||\n    unidadRemision === \"PIEZAS\"\n  ) {\n    cantidadBase = cantidadBolsasHojas;\n    columnaCantidadUsada = \"Cantidad bolsas/hojas\";\n  } else if (\n    unidadRemision === \"ROLLOS\" ||\n    unidadRemision === \"PAQUETES\"\n  ) {\n    cantidadBase = cantidadRollosPaquetes;\n    columnaCantidadUsada = \"Cantidad Rollos/paquete\";\n  } else {\n    errores.push(\n      `Fila ${excelRowNumber}, código ${codigo}: unidad_remision inválida en catálogo: \"${producto.unidad_remision}\". Debe ser BOLSA(S), HOJA(S), ROLLO(S), PAQUETE(S) o PIEZA(S).`\n    );\n\n    continue;\n  }\n\n  if (esTorreonContexto && !hasCantidad(cantidadBase)) {\n    if (tieneCantidadBolsasHojas) {\n      cantidadBase = cantidadBolsasHojas;\n      columnaCantidadUsada = \"Cantidad bolsas/hojas\";\n    } else if (tieneCantidadRollosPaquetes) {\n      cantidadBase = cantidadRollosPaquetes;\n      columnaCantidadUsada = \"Cantidad Rollos/paquete\";\n    }\n  }\n\n  if (!hasCantidad(cantidadBase)) {\n    continue;\n  }\n\n  if (!ordenCompra) {\n    errores.push(\n      `Fila ${excelRowNumber}, código ${codigo}: falta OC cliente.`\n    );\n\n    continue;\n  }\n\n  const cantidadNumerica = parseCantidad(cantidadBase);\n\n  if (!cantidadNumerica) {\n    errores.push(\n      `Fila ${excelRowNumber}, código ${codigo}: falta cantidad válida en \"${columnaCantidadUsada}\".`\n    );\n\n    continue;\n  }\n\n  const descripcionCatalogo = getFirstExisting(\n    producto.descripcion_catalogo,\n    producto.descripcion,\n    producto.descripcion_producto\n  );\n\n  const descripcionFinal = cleanMultiline(\n    getFirstExisting(\n      descripcionCatalogo,\n      descripcionExcel\n    )\n  );\n\n  const numeroParte = cleanText(\n    getFirstExisting(\n      producto.numero_parte,\n      producto.part_number,\n      producto.no_parte\n    )\n  );\n\n  const empaqueInfo = construirCantidadPorEmpaque(producto);\n\n  const cantidadEntregar =\n    `${formatQuantity(cantidadNumerica)} ${unidadRemisionLabel}`;\n\n  const cantidadPorEmpaqueTexto = empaqueInfo.cantidad_por_empaque_texto;\n\n  const clienteRemision = cleanText(\n    getFirstExisting(\n      clienteCatalogo?.cliente_remision,\n      clienteCatalogo?.nombre_cliente,\n      clienteCatalogo?.cliente,\n      clienteCatalogo?.razon_social,\n      contexto.cliente_grupo\n    )\n  );\n\n  const razonSocial = cleanText(\n    getFirstExisting(\n      clienteCatalogo?.razon_social,\n      clienteCatalogo?.cliente,\n      \"\"\n    )\n  );\n\n  const rfc = cleanText(\n    getFirstExisting(\n      clienteCatalogo?.rfc,\n      clienteCatalogo?.RFC,\n      \"\"\n    )\n  );\n\n  const domicilio = cleanMultiline(\n    getFirstExisting(\n      clienteCatalogo?.domicilio,\n      clienteCatalogo?.direccion,\n      clienteCatalogo?.dirección,\n      \"\"\n    )\n  );\n\n  const telefono = cleanText(\n    getFirstExisting(\n      clienteCatalogo?.telefono_default,\n      clienteCatalogo?.telefono,\n      clienteCatalogo?.tel,\n      \"\"\n    )\n  );\n\n  const atencion = cleanText(\n    getFirstExisting(\n      clienteCatalogo?.atencion_default,\n      clienteCatalogo?.atencion,\n      clienteCatalogo?.atención,\n      \"\"\n    )\n  );\n\n  const numeroProveedor = cleanText(\n    getFirstExisting(\n      clienteCatalogo?.numero_proveedor,\n      clienteCatalogo?.proveedor,\n      \"D8599K0\"\n    )\n  );\n\n  let camposTorreon = {};\n\n  if (esTorreonContexto) {\n    const precioUnitario = getPrecioUnitario(row, producto);\n    const importe = calcularImporteTorreon(cantidadNumerica, precioUnitario);\n\n    const subtotal = importe;\n    const iva = subtotal !== null ? subtotal * IVA_TORREON : null;\n    const total = subtotal !== null ? subtotal + iva : null;\n\n    const tipoCambioExcel = buscarValorPorEtiqueta(rows, [\n      \"T.C.\",\n      \"TC\",\n      \"T C\",\n      \"TIPO DE CAMBIO\",\n      \"TIPO CAMBIO\",\n      \"TASA DE CONVERSION\",\n      \"TASA DE CONVERSIÓN\"\n    ]);\n\n    const tipoCambioRaw = cleanText(\n      getFirstExisting(\n        tipoCambioExcel,\n        clienteCatalogo?.tipo_cambio_default,\n        clienteCatalogo?.tipo_cambio,\n        producto.tipo_cambio_default,\n        producto.tipo_cambio,\n        \"\"\n      )\n    );\n\n    const tipoCambio = formatTipoCambio(tipoCambioRaw);\n\n    const pendientesTorreon = [];\n\n    if (precioUnitario === null) {\n      pendientesTorreon.push(\"precio_unitario\");\n    }\n\n    if (importe === null) {\n      pendientesTorreon.push(\"importe/subtotal\");\n    }\n\n    if (total === null) {\n      pendientesTorreon.push(\"total\");\n    }\n\n    if (pendientesTorreon.length > 0 && MODO_ESTRICTO_TORREON_FINANZAS) {\n      errores.push(\n        `Fila ${excelRowNumber}, código ${codigo}: faltan datos financieros para Torreón: ${pendientesTorreon.join(\", \")}.`\n      );\n\n      continue;\n    }\n\n    camposTorreon = {\n      fecha_creacion: todayDdMmYyyyDash(),\n\n      almacen: cleanText(\n        getFirstExisting(\n          clienteCatalogo?.almacen,\n          clienteCatalogo?.almacén,\n          \"DCMX Almacén Principal\"\n        )\n      ),\n\n      metodo_pago: cleanText(\n        getFirstExisting(\n          clienteCatalogo?.metodo_pago,\n          clienteCatalogo?.método_pago,\n          \"Por Definir\"\n        )\n      ),\n\n      forma_pago: cleanText(\n        getFirstExisting(\n          clienteCatalogo?.forma_pago,\n          \"PPD\"\n        )\n      ),\n\n      lugar_expedicion: cleanText(\n        getFirstExisting(\n          clienteCatalogo?.lugar_expedicion,\n          clienteCatalogo?.lugar_expedición,\n          \"Aguascalientes, Aguascalientes\"\n        )\n      ),\n\n      moneda: cleanText(\n        getFirstExisting(\n          clienteCatalogo?.moneda,\n          producto.moneda,\n          \"USD\"\n        )\n      ),\n\n      tipo_cambio: tipoCambio,\n\n      cantidad_torreon: formatQuantityTorreon(cantidadNumerica),\n\n      unidad_torreon: cleanText(\n        getFirstExisting(\n          producto.unidad_torreon,\n          producto.unidad_cfdi,\n          producto.unidad_sat,\n          \"PIEZA\"\n        )\n      ),\n\n      iva_linea: \"002 IVA | Tipo Factor: Tasa | Tasa: 0.1600\",\n\n      precio_unitario: precioUnitario !== null ? formatNumber(precioUnitario, 4) : \"\",\n      importe: importe !== null ? formatNumber(importe, 4) : \"\",\n\n      subtotal: subtotal !== null ? formatCurrency(subtotal, 2) : \"\",\n      descuento: \"$0.00\",\n      iva: iva !== null ? formatCurrency(iva, 2) : \"\",\n      total: total !== null ? formatCurrency(total, 2) : \"\",\n\n      importe_letra: total !== null ? importeUsdALetras(total) : \"\",\n\n      torreon_pendiente_finanzas: pendientesTorreon.length > 0,\n      torreon_campos_pendientes: pendientesTorreon.join(\", \")\n    };\n  }\n\n  salida.push({\n    json: {\n      ...contexto,\n\n      output_dir: contexto.carpeta_salida_pruebas || contexto.output_dir,\n      temp_dir: contexto.temp_dir,\n      templates_dir: contexto.templates_dir,\n      scripts_dir: contexto.scripts_dir,\n      copy_dir: contexto.copy_dir,\n\n      pdf_script_path:\n        contexto.pdf_script_path ||\n        path.join(contexto.scripts_dir || \"\", \"html-to-pdf-cat.ps1\"),\n\n      clean_script_path:\n        contexto.clean_script_path ||\n        path.join(contexto.scripts_dir || \"\", \"limpiar-html-temporal-cat.ps1\"),\n\n      articulo_index: salida.length + 1,\n      excel_row_number: excelRowNumber,\n\n      fecha: fechaEntrega,\n      fecha_entrega: fechaEntrega,\n\n      orden_compra: ordenCompra,\n      numero_proveedor: numeroProveedor,\n\n      cliente: clienteRemision,\n      razon_social: razonSocial,\n      rfc,\n      domicilio,\n      telefono,\n      atencion,\n\n      codigo,\n      descripcion: descripcionFinal,\n      numero_parte: numeroParte,\n\n      cantidad_entregar: cantidadEntregar,\n\n      cantidad_por_rollo: cantidadPorEmpaqueTexto,\n\n      cantidad_por_empaque: cantidadPorEmpaqueTexto,\n      cantidad_por_empaque_texto: cantidadPorEmpaqueTexto,\n      cantidad_por_empaque_valor: empaqueInfo.cantidad_por_empaque_valor,\n      tipo_empaque_codigo: empaqueInfo.tipo_empaque_codigo,\n      tipo_empaque_label: empaqueInfo.tipo_empaque_label,\n      encabezado_cantidad_por_empaque: empaqueInfo.encabezado_cantidad_por_empaque,\n\n      unidad_remision: unidadRemision,\n      unidad_remision_original: unidadRemisionOriginal,\n      unidad_remision_label: unidadRemisionLabel,\n      cantidad_numerica: cantidadNumerica,\n      columna_cantidad_usada: columnaCantidadUsada,\n\n      producto_catalogo_encontrado: true,\n\n      ...camposTorreon\n    }\n  });\n}\n\nif (errores.length > 0) {\n  throw new Error(\n    `Error en archivo: ${archivoActual}\\n\\n` +\n    errores.join(\"\\n\")\n  );\n}\n\nconst salidaFinal =\n  esTorreonContexto\n    ? agruparTorreonPorOC(salida)\n    : salida;\n\nif (salidaFinal.length === 0) {\n  throw new Error(\n    `Error en archivo: ${archivoActual}\\n\\nNo se encontraron artículos válidos para generar remisión.`\n  );\n}\n\nreturn salidaFinal;"
+      }
+    },
+    {
+      "name": "Preparar reserva folios PG",
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  throw new Error(\"No hay remisiones para reservar folios.\");\n}\n\nconst base = items[0].json;\n\nif (!base.ejecucion_id) {\n  throw new Error(\"No existe ejecucion_id para reservar folios.\");\n}\n\nconst planta = String(base.planta_codigo || \"\")\n  .trim()\n  .toUpperCase();\n\nconst subplanta = String(base.subplanta_codigo || \"\")\n  .trim()\n  .toUpperCase();\n\nlet serieCodigo = \"\";\n\nif (planta === \"P2\") {\n  serieCodigo = \"REMISION_CAT_P2\";\n\n} else if (planta === \"P3\") {\n  serieCodigo = \"REMISION_CAT_P3\";\n\n} else if (planta === \"P4\") {\n  serieCodigo = \"REMISION_CAT_P4\";\n\n} else if (planta === \"P5\") {\n  serieCodigo = \"REMISION_CAT_P5\";\n\n} else if (planta === \"P6\") {\n  serieCodigo = \"REMISION_CAT_P6\";\n\n} else if (\n  planta === \"NL\" ||\n  planta === \"NUEVO_LAREDO\"\n) {\n  if (\n    subplanta === \"FINSA_1\" ||\n    subplanta === \"FINSA1\"\n  ) {\n    serieCodigo = \"REMISION_CAT_NL_FINSA_1\";\n\n  } else if (\n    subplanta === \"FINSA_3\" ||\n    subplanta === \"FINSA3\"\n  ) {\n    serieCodigo = \"REMISION_CAT_NL_FINSA_3\";\n\n  } else {\n    throw new Error(\n      `Subplanta de Nuevo Laredo no configurada: ${subplanta || \"VACÍA\"}.`\n    );\n  }\n\n} else if (\n  planta === \"TORREON\" ||\n  planta === \"TORREÓN\" ||\n  planta === \"TORREON_P2\" ||\n  planta === \"TORREON_PLANTA2\"\n) {\n  serieCodigo = \"REMISION_CAT_TORREON\";\n\n} else {\n  throw new Error(\n    `Serie de remisión no configurada para planta ${planta || \"VACÍA\"}`\n  );\n}\n\nreturn [\n  {\n    json: {\n      ejecucion_id: String(base.ejecucion_id),\n      serie_codigo: serieCodigo,\n      cantidad: items.length\n    }\n  }\n];"
+      }
+    },
+    {
+      "name": "Asignar folios PG CAT",
+      "parameters": {
+        "jsCode": "function cleanText(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction padRemision(value) {\n  return String(value).padStart(4, \"0\");\n}\n\nfunction safeFileText(value) {\n  return cleanText(value)\n    .replace(/[<>:\"/\\\\|?*]+/g, \"_\")\n    .replace(/\\s+/g, \"_\");\n}\n\nconst reserva = $input.first()?.json || {};\nconst remisiones = $(\"Normalizar datos CAT\").all();\nconst preparacion = $(\"Preparar reserva folios PG\").first()?.json || {};\n\nif (remisiones.length === 0) {\n  throw new Error(\"No hay remisiones normalizadas para asignar folios.\");\n}\n\nconst reservaId = reserva.reserva_id;\nconst folioInicial = Number(reserva.folio_inicial);\nconst folioFinal = Number(reserva.folio_final);\nconst cantidadReservada = Number(reserva.cantidad);\nconst serieCodigo = preparacion.serie_codigo;\n\nif (!reservaId) {\n  throw new Error(\"La reserva PostgreSQL no devolvió reserva_id.\");\n}\n\nif (\n  !Number.isInteger(folioInicial) ||\n  !Number.isInteger(folioFinal) ||\n  !Number.isInteger(cantidadReservada)\n) {\n  throw new Error(\"La reserva PostgreSQL devolvió folios o cantidad inválidos.\");\n}\n\nif (!serieCodigo) {\n  throw new Error(\"No se pudo recuperar serie_codigo.\");\n}\n\nif (cantidadReservada !== remisiones.length) {\n  throw new Error(\n    `La reserva contiene ${cantidadReservada} folios, pero existen ${remisiones.length} remisiones.`\n  );\n}\n\nif (folioFinal - folioInicial + 1 !== cantidadReservada) {\n  throw new Error(\n    `El rango reservado ${folioInicial}-${folioFinal} no coincide con la cantidad ${cantidadReservada}.`\n  );\n}\n\nreturn remisiones.map((item, index) => {\n  const data = item.json;\n  const folio = folioInicial + index;\n  const remisionNo = padRemision(folio);\n\n  const nombreBase =\n    data.numero_parte ||\n    data.codigo ||\n    `ARTICULO_${data.articulo_index || index + 1}`;\n\n  return {\n    json: {\n      ...data,\n\n      reserva_id: String(reservaId),\n      serie_codigo: serieCodigo,\n      folio_numero: String(folio),\n      remision_no: remisionNo,\n\n      output_file_name: `REM ${remisionNo} ${safeFileText(nombreBase)}.pdf`,\n      html_file_name: `REM ${remisionNo} ${safeFileText(nombreBase)}.html`,\n\n      folio_asignado: true\n    }\n  };\n});"
+      }
+    }
+  ]
+}
