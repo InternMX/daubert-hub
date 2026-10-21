@@ -4,6 +4,11 @@ export interface EnvironmentConfig {
   // the assignment feature and an n8n reprocess webhook whose origin equals paymentFileAssignmentsN8nTestOrigin (never PROD n8n).
   paymentFileAssignmentsN8nReady?: boolean;
   paymentFileAssignmentsN8nTestOrigin?: string | null;
+  // PRODUCTION: independent of every TEST flag above. Effective only on the production database (daubert_global); a TEST flag never
+  // enables it and these never enable TEST. READY additionally requires an exact production webhook target (see payment-file-n8n-target.ts).
+  paymentFileAssignmentsProdEnabled?: boolean;
+  paymentFileAssignmentsProdN8nReady?: boolean;
+  paymentFileAssignmentsProdN8nOrigin?: string | null;
   apiPort: number;
   database: {
     host: string;
@@ -99,6 +104,9 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
     paymentFileAssignmentsTestEnabled: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED, 'PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED', false),
     paymentFileAssignmentsN8nReady: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_N8N_READY, 'PAYMENT_FILE_ASSIGNMENTS_N8N_READY', false),
     paymentFileAssignmentsN8nTestOrigin: env.PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN?.trim() || null,
+    paymentFileAssignmentsProdEnabled: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED, 'PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED', false),
+    paymentFileAssignmentsProdN8nReady: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY, 'PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY', false),
+    paymentFileAssignmentsProdN8nOrigin: env.PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN?.trim() || null,
     apiPort: port(env.API_PORT, 'API_PORT', 3000),
     database: {
       host: required(env.DB_HOST, 'DB_HOST'),

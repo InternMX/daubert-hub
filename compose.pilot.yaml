@@ -34,6 +34,14 @@ services:
       # only from the untracked env file passed via --env-file — never committed.
       N8N_HEALTH_WEBHOOK_URL: "${N8N_HEALTH_WEBHOOK_URL:-}"
       N8N_HEALTH_WEBHOOK_TOKEN: "${N8N_HEALTH_WEBHOOK_TOKEN:-}"
+      # Notificaciones de pago: reproceso Hub -> n8n y asignacion puntual por archivo. Todo opcional y APAGADO por defecto: con estas
+      # variables vacias el Hub se comporta exactamente como antes. PRODUCCION usa sus propias banderas (PAYMENT_FILE_ASSIGNMENTS_PROD_*);
+      # las banderas *_TEST_* no se pasan a este contenedor y jamas activan produccion. Ver docs/automations/payment-notifications/production-rollout.md.
+      PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL: "${PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL:-}"
+      PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN: "${PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN:-}"
+      PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED: "${PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED:-false}"
+      PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY: "${PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY:-false}"
+      PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN: "${PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN:-}"
     expose:
       - "3000"
     extra_hosts:

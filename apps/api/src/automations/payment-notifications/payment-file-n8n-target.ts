@@ -20,6 +20,12 @@ export const AUTHORIZED_N8N_TEST_TARGETS: readonly N8nTestTarget[] = [
 
 const PRODUCTION_WEBHOOK_PATH = '/daubert-hub/notificaciones-pago/reprocesar';
 
+// PRODUCTION target: the shared Windows n8n that already runs Pagos PROD. Closed list as well (exact host, port and path); the TEST
+// paths are never acceptable here and the production path is never acceptable in isIsolatedN8nTestTarget().
+export const AUTHORIZED_N8N_PRODUCTION_TARGETS: readonly N8nTestTarget[] = [
+  { hosts: HOST_PRESENTATIONS, port: '5678', path: '/webhook' + PRODUCTION_WEBHOOK_PATH }
+];
+
 function parse(value: string | null | undefined): URL | null {
   if (!value) return null;
   try {
@@ -42,4 +48,15 @@ export function isIsolatedN8nTestTarget(reprocessWebhookUrl: string | null | und
   // The production webhook is never acceptable, whatever the host or port.
   if (webhook.pathname.includes(PRODUCTION_WEBHOOK_PATH)) return false;
   return AUTHORIZED_N8N_TEST_TARGETS.some((target) => target.port === webhook.port && target.hosts.includes(webhook.hostname) && target.path === webhook.pathname);
+}
+
+export function isProductionN8nTarget(reprocessWebhookUrl: string | null | undefined, productionOrigin: string | null | undefined): boolean {
+  const webhook = parse(reprocessWebhookUrl);
+  const origin = parse(productionOrigin);
+  if (!webhook || !origin) return false;
+  if (webhook.protocol !== 'http:' || origin.protocol !== 'http:') return false;
+  if (webhook.username || webhook.password || webhook.search || webhook.hash) return false;
+  if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') return false;
+  if (webhook.origin !== origin.origin) return false;
+  return AUTHORIZED_N8N_PRODUCTION_TARGETS.some((target) => target.port === webhook.port && target.hosts.includes(webhook.hostname) && target.path === webhook.pathname);
 }

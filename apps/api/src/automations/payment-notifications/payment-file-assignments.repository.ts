@@ -84,9 +84,9 @@ export class PaymentFileAssignmentsRepository {
   }
 
   async describe(correoId: string, errors: PaymentNotificationFileError[], enabled: boolean, inspect = true, n8nReady = false): Promise<PaymentFileAssignmentState[]> {
-    const disabledReason = 'Asignación puntual deshabilitada. Disponible exclusivamente para validación en TEST.';
+    const disabledReason = 'Asignación puntual deshabilitada en este entorno.';
     if (!inspect) return errors.map(() => emptyPointState(disabledReason, false));
-    if (!await this.schemaAvailable()) return errors.map(() => emptyPointState(enabled ? 'El registro de archivos aún no está instalado en TEST.' : disabledReason, enabled));
+    if (!await this.schemaAvailable()) return errors.map(() => emptyPointState(enabled ? 'El registro de archivos aún no está instalado en este entorno.' : disabledReason, enabled));
     const records = await this.database.query<RegisteredPaymentFile>(selectFiles, [correoId]);
     return errors.map((file) => {
       const state = describePointFile(file, errors, records);
@@ -124,7 +124,7 @@ export class PaymentFileAssignmentsRepository {
     try {
       await client.query('BEGIN');
       const live = await client.query<{ name: string }>('SELECT current_database() AS name');
-      if (live.rows[0]?.name !== 'daubert_hub_test') throw new ForbiddenException('Las asignaciones puntuales solo están habilitadas en TEST.');
+      if (!['daubert_hub_test', 'daubert_global'].includes(live.rows[0]?.name ?? '')) throw new ForbiddenException('Las asignaciones puntuales no están habilitadas en esta base.');
       await this.context(client, requestId, identity);
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended('PAYMENT_FILE:' || $1::bigint::text, 0))", [correoId]);
       const mail = (await client.query<{ detail: string | null }>('SELECT detalle_error AS detail FROM core.correos_notificacion_pago WHERE correo_id = $1', [correoId])).rows[0];
