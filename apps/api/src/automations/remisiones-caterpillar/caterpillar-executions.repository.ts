@@ -2,13 +2,49 @@ import { Injectable } from '@nestjs/common';
 import type { QueryResultRow } from 'pg';
 import { DatabaseService } from '../../database/database.service';
 import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
-import type { CaterpillarAdmissionHistoryEntry } from './caterpillar-automatic-admission';
+import { createCaterpillarAdmissionCandidate, createCaterpillarAdmissionSnapshot, readCaterpillarAdmissionSnapshot,
+  type CaterpillarAdmissionHistoryEntry, type CaterpillarAdmissionSnapshot } from './caterpillar-automatic-admission';
 
 export interface CaterpillarAdmissionHistoryRow extends QueryResultRow {
   database_name: string;
   snapshot_storage_ready: boolean;
   entries: CaterpillarAdmissionHistoryEntry[];
 }
+export interface CaterpillarSnapshotDocument {
+  documentId: string;
+  sourceCompanyId: string;
+  fileName: string;
+  writable: boolean;
+}
+export interface CaterpillarSnapshotReadResult {
+  status: 'UNAVAILABLE' | 'NOT_FOUND' | 'EMPTY' | 'FOUND' | 'INVALID';
+  document: CaterpillarSnapshotDocument | null;
+  snapshot: CaterpillarAdmissionSnapshot | null;
+}
+export interface CaterpillarSnapshotWriteResult {
+  status: 'STORED' | 'ALREADY_STORED' | 'CONFLICT' | 'UNAVAILABLE' | 'NOT_FOUND' | 'HISTORICAL_LOCKED';
+  snapshot: CaterpillarAdmissionSnapshot | null;
+}
+interface CaterpillarSnapshotRow extends QueryResultRow {
+  document_id: string;
+  source_company_id: string;
+  file_name: string;
+  snapshot: unknown;
+  is_empty: boolean;
+  writable: boolean;
+}
+
+// Used in both read and compare-and-set: no snapshot backfill after terminal attempts/folios.
+const SNAPSHOT_WRITABLE = `NOT EXISTS (
+  SELECT 1 FROM ops.ejecuciones_automatizacion e WHERE e.documento_origen_id=d.documento_id
+    AND (e.estado<>'PROCESANDO'
+      OR EXISTS(SELECT 1 FROM operacion.remisiones r WHERE r.ejecucion_id=e.ejecucion_id)
+      OR EXISTS(SELECT 1 FROM operacion.reservas_folios f WHERE f.ejecucion_id=e.ejecucion_id))
+)`;
+const SNAPSHOT_DOCUMENT_SCOPE = `current_database()='daubert_hub_test'
+  AND d.documento_id=$1::bigint AND d.empresa_id=$2::bigint AND d.tipo_documento='PROGRAMACION_ENTREGA'
+  AND NOT EXISTS(SELECT 1 FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones a USING(automatizacion_id)
+    WHERE e.documento_origen_id=d.documento_id AND a.codigo<>'REMISIONES_CATERPILLAR')`;
 
 export interface CaterpillarCancellationRow extends QueryResultRow {
   remision_id: string;
@@ -114,6 +150,50 @@ const EXECUTION_COLUMNS = `
 @Injectable()
 export class CaterpillarExecutionsRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  async findAdmissionSnapshot(documentId: string, sourceCompanyId: string): Promise<CaterpillarSnapshotReadResult> {
+    const [storage] = await this.database.query<{ database_name: string; ready: boolean }>(`
+      SELECT current_database() AS database_name, EXISTS(SELECT 1 FROM pg_catalog.pg_attribute
+        WHERE attrelid='core.documentos'::regclass AND attname='caterpillar_admission'
+          AND atttypid='jsonb'::regtype AND NOT attisdropped) AS ready`);
+    if (storage?.database_name !== 'daubert_hub_test' || !storage.ready) return { status: 'UNAVAILABLE', document: null, snapshot: null };
+    const [row] = await this.database.query<CaterpillarSnapshotRow>(`
+      SELECT d.documento_id::text AS document_id,d.empresa_id::text AS source_company_id,
+        d.nombre_archivo AS file_name,d.caterpillar_admission AS snapshot,
+        d.caterpillar_admission IS NULL AS is_empty, ${SNAPSHOT_WRITABLE} AS writable
+      FROM core.documentos d WHERE ${SNAPSHOT_DOCUMENT_SCOPE}`, [documentId, sourceCompanyId]);
+    if (!row) return { status: 'NOT_FOUND', document: null, snapshot: null };
+    const document = { documentId: row.document_id, sourceCompanyId: row.source_company_id, fileName: row.file_name, writable: row.writable };
+    if (row.is_empty) return { status: 'EMPTY', document, snapshot: null };
+    const snapshot = readCaterpillarAdmissionSnapshot(row.snapshot, row.source_company_id, row.file_name);
+    return { status: snapshot ? 'FOUND' : 'INVALID', document, snapshot };
+  }
+
+  // Prepared only: no route/workflow calls this method. Capture before reservations/emission.
+  // The SQL compare-and-set protects snapshot immutability, NOT admission/reservation concurrency.
+  async storeAdmissionSnapshot(documentId: string, sourceCompanyId: string, normalizedItems: unknown): Promise<CaterpillarSnapshotWriteResult> {
+    const current = await this.findAdmissionSnapshot(documentId, sourceCompanyId);
+    if (current.status === 'UNAVAILABLE' || current.status === 'NOT_FOUND') return { status: current.status, snapshot: null };
+    if (current.status === 'INVALID' || !current.document) return { status: 'CONFLICT', snapshot: null };
+    const desired = createCaterpillarAdmissionSnapshot(createCaterpillarAdmissionCandidate({
+      sourceCompanyId: current.document.sourceCompanyId, fileName: current.document.fileName, normalizedItems
+    }));
+    const same = (other: CaterpillarAdmissionSnapshot | null) => other?.version === desired.version &&
+      other.programmingKey === desired.programmingKey && other.manifestCanonical === desired.manifestCanonical;
+    if (current.status === 'FOUND') return { status: same(current.snapshot) ? 'ALREADY_STORED' : 'CONFLICT', snapshot: current.snapshot };
+    if (!current.document.writable) return { status: 'HISTORICAL_LOCKED', snapshot: null };
+    const stored = await this.database.query<{ snapshot: CaterpillarAdmissionSnapshot }>(`
+      UPDATE core.documentos d SET caterpillar_admission=$3::jsonb
+      WHERE ${SNAPSHOT_DOCUMENT_SCOPE} AND d.nombre_archivo=$4::text
+        AND d.caterpillar_admission IS NULL AND ${SNAPSHOT_WRITABLE}
+      RETURNING d.caterpillar_admission AS snapshot`, [documentId, sourceCompanyId, JSON.stringify(desired), current.document.fileName]);
+    if (stored.length) return { status: 'STORED', snapshot: desired };
+    // A changed snapshot/document is never overwritten, including a competing initial capture.
+    const after = await this.findAdmissionSnapshot(documentId, sourceCompanyId);
+    if (after.status === 'UNAVAILABLE' || after.status === 'NOT_FOUND') return { status: after.status, snapshot: null };
+    if (after.status === 'FOUND') return { status: same(after.snapshot) ? 'ALREADY_STORED' : 'CONFLICT', snapshot: after.snapshot };
+    return { status: after.document?.writable === false ? 'HISTORICAL_LOCKED' : 'CONFLICT', snapshot: null };
+  }
 
   // Read only, all versions/hashes and all Caterpillar attempts. No pagination/latest-row shortcut.
   // to_jsonb avoids referencing an uninstalled column; absent storage is explicitly NOT readiness.

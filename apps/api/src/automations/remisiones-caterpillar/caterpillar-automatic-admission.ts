@@ -12,6 +12,11 @@ export interface CaterpillarAdmissionCandidate {
   scopeKey: string;
   manifestCanonical: string;
 }
+export interface CaterpillarAdmissionSnapshot {
+  version: 'CAT_ADMISSION_V1';
+  programmingKey: string;
+  manifestCanonical: string;
+}
 export interface CaterpillarAdmissionHistoryEntry {
   documentId: string;
   sourceCompanyId: string;
@@ -63,8 +68,18 @@ export function createCaterpillarAdmissionCandidate(input: CaterpillarAdmissionI
   const { manifest } = adaptCaterpillarNormalizedItems(input.normalizedItems);
   return { sourceCompanyId: companyId(input.sourceCompanyId), ...keys(input.sourceCompanyId, input.fileName, manifest.scope), manifestCanonical: JSON.stringify(manifest) };
 }
-export function createCaterpillarAdmissionSnapshot(candidate: CaterpillarAdmissionCandidate) {
+export function createCaterpillarAdmissionSnapshot(candidate: CaterpillarAdmissionCandidate): CaterpillarAdmissionSnapshot {
   return { version: snapshotVersion, programmingKey: candidate.programmingKey, manifestCanonical: candidate.manifestCanonical };
+}
+
+export function readCaterpillarAdmissionSnapshot(value: unknown, sourceCompanyId: string, fileName: string): CaterpillarAdmissionSnapshot | null {
+  if (!record(value) || value.version !== snapshotVersion || typeof value.programmingKey !== 'string' || typeof value.manifestCanonical !== 'string') return null;
+  const scope = historicalScope(value.manifestCanonical);
+  if (!scope) return null;
+  try {
+    if (value.programmingKey !== keys(sourceCompanyId, fileName, scope).programmingKey) return null;
+    return { version: snapshotVersion, programmingKey: value.programmingKey, manifestCanonical: value.manifestCanonical };
+  } catch { return null; }
 }
 
 // Reuse V1 to validate persisted canonical JSON. Never invent historical OC/unit/numeric quantities.

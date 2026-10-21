@@ -62,6 +62,10 @@ No se propone tabla nueva ni unicidad del manifest. El helper `createCaterpillar
 prepara el objeto, pero no lo escribe. El servidor comprueba versión, clave y canonicalización V1
 del snapshot histórico: metadata manipulada, incompleta o incoherente no se trata como ausencia.
 
+La fase 5A prepara migración y métodos explícitos de persistencia sin sobrescritura en el repositorio;
+no los invoca en Daubert ni los conecta al workflow. Estado, históricos y límites de arranque:
+[admission-persistence-test](admission-persistence-test.md).
+
 Antes de conectar el workflow TEST: autorizar y revisar ese cambio, su escritura restringida y la
 captura del ámbito/manifest preagrupación por cada versión física. Los históricos relevantes deben
 tener evidencia verificable; si no puede recuperarse, permanecen pendientes de revisión. No inventar
