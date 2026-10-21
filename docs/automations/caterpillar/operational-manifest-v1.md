@@ -76,6 +76,43 @@ también el manifest de un ejemplo real autorizado contra la salida TEST viva, a
 
 ## Integración futura, no conectada
 
+### Adaptador preparado (fase 3A)
+
+`apps/api/src/automations/remisiones-caterpillar/caterpillar-operational-manifest.adapter.ts`
+expone `adaptCaterpillarNormalizedItems(input: unknown)` → `{ manifest, deliveryIdentity: 'UNCONFIRMED' }`.
+Es puro y delega al canonicalizador V1 sin cambiar su algoritmo. Acepta el array n8n
+`[{ json: { ...campos normalizados } }]` construido en `salida`, no filas Excel ni catálogos crudos.
+Proyecta exclusivamente los diez textos del contrato y `cantidad_numerica` numérica. Exige presencia
+explícita incluso de subplanta/RFC/parte vacíos; no sustituye ausencias por cadenas vacías ni usa `fecha`
+o la fecha física como fallback de F4. No convierte cantidades formateadas ni aplica otra normalización.
+
+Evidencia provisional del código local de `Normalizar datos CAT`:
+
+- `salida.push` (líneas 1381–1440 del jsCode decodificado): cada item conserva contexto, F4 en
+  `fecha_entrega`, cliente/RFC resueltos y una ocurrencia de producto, parte, OC, cantidad y unidad.
+- `agruparTorreonPorOC` (898–968): agrupa por OC y propaga `...base` de la primera partida; cambia
+  `codigo`/`numero_parte` a `OC_<oc>` y añade `es_remision_torreon_agrupada`, `total_articulos_torreon`
+  y `articulos`. Cada artículo ya no contiene parte, unidad canónica ni cantidad numérica original:
+  lleva cantidad de impresión a cuatro decimales y unidad Torreón. Los valores heredados de la primera
+  partida no describen al grupo. El adaptador rechaza marcadores agrupados/ambiguos y cualquier
+  `articulos`/`total_articulos_torreon`; no intenta reconstruir partidas desde esa estructura.
+- La rama normal devuelve `salida`; Torreón devuelve `agruparTorreonPorOC(salida)` (1450–1461).
+
+Fixtures sintéticos representativos: `apps/api/test/fixtures/caterpillar-normalized-items.json`.
+Regresiones: `apps/api/test/caterpillar-operational-manifest.adapter.spec.ts`. No ejecutan el workflow.
+
+Para conectarlo se necesita export vivo TEST fechado/versionado, jsCode y conexiones confirmados,
+ejemplos autorizados de `salida` preagrupación normal/Torreón (incluyendo subplanta y vacíos), catálogos
+y procedencia efectiva de F4/cantidad/unidad; además, reglas de selección NUEVOS/ULTIMO_GLOBAL y
+una clave confiable de ocurrencia de entrega. El adaptador no puede verificar esas procedencias por
+sí solo ni convierte equivalencia de contenido en identidad o autorización.
+
+Punto exacto futuro: después de comprobar `errores.length` y completar `salida`, **antes de**
+`const salidaFinal = ... agruparTorreonPorOC(salida)`. El manifest debe conservarse/transportarse
+sin perderlo al agrupar. Su validación posterior irá antes de `Preparar reserva folios PG`, nodo que
+actualmente recibe la salida del normalizador y la reduce a ejecución/serie/`items.length`.
+No se conecta el adaptador, no se modifica ningún export y no se activa deduplicación en esta fase.
+
 Construir antes de agrupar; validar después de normalizar y **antes de Preparar reserva folios PG**,
 que reduce el contexto a ejecución/serie/cantidad. Resolver IDs cliente/ruta en servidor.
 Registro lógico de versiones/decisiones + claim transaccional único y reserva autorizada, no SELECT
