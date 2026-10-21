@@ -60,6 +60,9 @@ Las rutas de archivos (carpetas Dropbox de origen y destino de PDFs) son configu
 | `N8N_HEALTH_WEBHOOK_TOKEN` | Opcional | Valor del header `X-Daubert-Automation-Token` de la credencial Header Auth de n8n (secreto; sólo en el env file sin versionar) |
 | `PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL` | Opcional | Webhook n8n de reproceso de Notificaciones de pago. **`compose.pilot.yaml` no la pasa al contenedor** (inconsistencia #13) |
 | `PAYMENT_NOTIFICATIONS_WEBHOOK_TOKEN` | Opcional | Token de ese webhook (secreto). Ídem |
+| `PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED` | No (`false`) | **PRODUCCION.** Habilita la asignacion puntual por archivo solo en `daubert_global` (requiere migraciones 015-017). Independiente de `PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED` (que solo aplica a `daubert_hub_test`). Con `false` el Hub no consulta las tablas nuevas |
+| `PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY` | No (`false`) | **PRODUCCION.** Declara que el workflow de n8n ya consume las asignaciones. Efectiva solo si ademas el webhook es exactamente `http://<host>:5678/webhook/daubert-hub/notificaciones-pago/reprocesar` y su origen coincide con la variable siguiente |
+| `PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN` | No | Origen (sin ruta) del n8n productivo, p. ej. `http://host.docker.internal:5678` |
 | `TEST_DATABASE_URL` (+ `_ADMIN_URL`, `_MIGRATOR`, `_N8N_CAT_TEST`) | Sólo pruebas de integración / dev | Deben apuntar a `daubert_hub_test` |
 | `EXPECTED_DATABASE_NAME` | La fija el launcher de dev | Guard de base viva |
 
