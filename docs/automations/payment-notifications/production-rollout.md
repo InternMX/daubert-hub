@@ -1,6 +1,6 @@
 # Asignación puntual de archivos — puesta en PRODUCCIÓN (preparación, NO ejecutada)
 
-Estado: **candidata preparada y verificada de forma estática; nada se ha aplicado en `daubert_global`, en el n8n productivo ni en el Hub desplegado.**
+Estado: **migraciones 015–017 ya aplicadas manualmente en `daubert_global` (21/10/2026, ver sección 7); workflow candidato y Hub (banderas apagadas) pendientes: no se han importado ni desplegado.**
 La funcionalidad quedó validada en TEST (PostgreSQL `daubert_hub_test`, n8n Windows 5678, Hub TEST): ingesta ZIP/PDF con `fflate`, asignación puntual de un PDF
 con alias desconocido, reproceso, otro PDF con el mismo alias intacto, catálogo de aliases sin cambios, sin duplicados.
 
@@ -128,3 +128,11 @@ Caterpillar y Audi no se modifican en ningún paso (solo comparten el rol `n8n_a
 - Las 198 rutas del catálogo, expandidas con la fecha actual, son aceptadas por la política de zona (0 bloqueadas, 0 enlaces, 0 caracteres inválidos; todas las carpetas de proveedor existen).
 - Solo `n8n_app` (y `postgres`) tienen INSERT en `correos/borradores/resultados`: evidencia de que la credencial de Pagos PROD usa `n8n_app`; falta confirmar el campo «User» en la ficha de la credencial.
 - Correo histórico (sin archivos registrados) reprocesado en un PostgreSQL desechable: `EFECTOS_INCIERTOS` sin asignación → `LEGACY_SIN_ASIGNACION` → sigue por catálogo sin tomar el archivo; la misma respuesta en una ingesta inicial bloquea.
+
+## 7. Migraciones 015–017 aplicadas en `daubert_global` (21/10/2026)
+
+Aplicadas manualmente por el administrador (precheck → up → postcheck, una por una; 017 postcheck A OK y humo `CONFLICTO_IDENTIDAD / ARCHIVO_NO_REGISTRADO`).
+Verificación posterior en solo lectura: 2 tablas nuevas vacías con 2 triggers de auditoría; 6 funciones `SECURITY DEFINER`; `n8n_app` con `EXECUTE` solo en registrar y consultar (4 funciones de `core` en total, antes 2) y sin permisos sobre las tablas;
+`daubert_hub_app` con `SELECT` en archivos, `SELECT/INSERT/UPDATE` en asignaciones y `EXECUTE` en asignable, bloquear y reproceso; `PUBLIC` sin privilegios; ningún otro rol con `EXECUTE`;
+datos operativos iguales a la línea base (20 correos, 115 resultados, 145 borradores, 144 alias, 198 filas de catálogo) y 63/63 ejecuciones de n8n en `success` en la última hora.
+El Hub de este PR **no habilita nada por sí mismo**: las tres banderas `PAYMENT_FILE_ASSIGNMENTS_PROD_*` son `false` por defecto.
