@@ -34,7 +34,8 @@ describe('trusted file mapping', () => {
 describe('point assignment backend enablement', () => {
   it.each([['daubert_global', true], ['other_database', true], ['daubert_hub_test', false]])('refuses mutations in %s (flag=%s)', async (database, flag) => {
     const repository = { mutate: vi.fn() };
-    const config = { get: (key: string) => key === 'database' ? { name: database } : flag };
+    // `flag` representa las banderas TEST (y READY): en daubert_global solo cuentan las banderas PROD propias, que aqui estan apagadas.
+    const config = { get: (key: string) => key === 'database' ? { name: database } : (key.includes('Prod') ? false : flag) };
     const service = new PaymentFileAssignmentsService(repository as never, config as never);
     await expect(service.mutate('1', '2', { action: 'ASSIGN', companyId: '3', confirmed: true, expectedVersion: 0 }, 'req', identity)).rejects.toMatchObject({ status: 403 });
     expect(repository.mutate).not.toHaveBeenCalled();
@@ -96,7 +97,7 @@ describe('compatibility with a database without migration 012 (PROD)', () => {
   const build = (database: string, flag: boolean) => {
     const db = { query: vi.fn().mockRejectedValue(new Error('no query expected')), connect: vi.fn() };
     const repo = new PaymentFileAssignmentsRepository(db as never);
-    const config = { get: (key: string) => key === 'database' ? { name: database } : flag };
+    const config = { get: (key: string) => key === 'database' ? { name: database } : (key.includes('Prod') ? false : flag) };
     return { db, service: new PaymentFileAssignmentsService(repo, config as never) };
   };
   it.each([['daubert_global', false], ['daubert_global', true]])('never queries or connects to the new tables in %s (flag=%s)', async (database, flag) => {
