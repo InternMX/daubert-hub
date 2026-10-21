@@ -15,6 +15,7 @@ import {
 } from './caterpillar-executions.repository';
 import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
 import { CaterpillarRoutingService, resolveCaterpillarProcessLabel, type CaterpillarProcessRoute } from './caterpillar-routing.service';
+import { createCaterpillarAdmissionCandidate, decideCaterpillarAutomaticAdmission, type CaterpillarAdmissionInput } from './caterpillar-automatic-admission';
 
 const AUTOMATION_CODE = 'REMISIONES_CATERPILLAR';
 
@@ -152,6 +153,18 @@ export class CaterpillarExecutionsService {
     private readonly webhookClient: CaterpillarReprocessWebhookClient,
     private readonly triggerRequests: AutomationTriggerRequestsRepository
   ) {}
+
+  // Internal advisory entry point only. Not exposed as HTTP or connected to a workflow/reserver.
+  async assessAutomaticAdmission(input: CaterpillarAdmissionInput) {
+    let candidate;
+    try { candidate = createCaterpillarAdmissionCandidate(input); }
+    catch { throw new BadRequestException('La programación normalizada no es válida para admisión.'); }
+    const history = await this.repository.findAutomaticAdmissionHistory(candidate.sourceCompanyId);
+    return decideCaterpillarAutomaticAdmission(candidate, {
+      complete: history?.database_name === 'daubert_hub_test' && history.snapshot_storage_ready,
+      entries: history?.entries ?? []
+    });
+  }
 
   // Zero Caterpillar executions in production today is a normal, valid state (Phase 12A.3 §C) —
   // this returns an ordinary empty data array with a correct meta block, never an error.

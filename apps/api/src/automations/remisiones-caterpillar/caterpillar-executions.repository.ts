@@ -2,6 +2,13 @@ import { Injectable } from '@nestjs/common';
 import type { QueryResultRow } from 'pg';
 import { DatabaseService } from '../../database/database.service';
 import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
+import type { CaterpillarAdmissionHistoryEntry } from './caterpillar-automatic-admission';
+
+export interface CaterpillarAdmissionHistoryRow extends QueryResultRow {
+  database_name: string;
+  snapshot_storage_ready: boolean;
+  entries: CaterpillarAdmissionHistoryEntry[];
+}
 
 export interface CaterpillarCancellationRow extends QueryResultRow {
   remision_id: string;
@@ -107,6 +114,41 @@ const EXECUTION_COLUMNS = `
 @Injectable()
 export class CaterpillarExecutionsRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  // Read only, all versions/hashes and all Caterpillar attempts. No pagination/latest-row shortcut.
+  // to_jsonb avoids referencing an uninstalled column; absent storage is explicitly NOT readiness.
+  async findAutomaticAdmissionHistory(sourceCompanyId: string): Promise<CaterpillarAdmissionHistoryRow | null> {
+    const [row] = await this.database.query<CaterpillarAdmissionHistoryRow>(`
+      WITH history AS (
+        SELECT d.documento_id, e.ejecucion_id,
+          jsonb_build_object(
+            'documentId', d.documento_id::text, 'sourceCompanyId', d.empresa_id::text,
+            'fileName', d.nombre_archivo, 'executionId', e.ejecucion_id::text,
+            'executionState', e.estado, 'generatedCount', counts.generated_count,
+            'cancelledCount', counts.cancelled_count, 'pendingCount', counts.pending_count,
+            'admissionSnapshot', to_jsonb(d)->'caterpillar_admission'
+          ) AS entry
+        FROM core.documentos d
+        LEFT JOIN ops.ejecuciones_automatizacion e
+          ON e.documento_origen_id = d.documento_id
+         AND EXISTS (SELECT 1 FROM ops.automatizaciones a
+           WHERE a.automatizacion_id = e.automatizacion_id AND a.codigo = 'REMISIONES_CATERPILLAR')
+        LEFT JOIN LATERAL (
+          SELECT count(*) FILTER (WHERE r.estatus='GENERADA')::int AS generated_count,
+            count(*) FILTER (WHERE r.estatus='CANCELADA')::int AS cancelled_count,
+            count(*) FILTER (WHERE r.estatus='PENDIENTE')::int AS pending_count
+          FROM operacion.remisiones r WHERE r.ejecucion_id=e.ejecucion_id
+        ) counts ON true
+        WHERE current_database()='daubert_hub_test' AND d.empresa_id=$1::bigint
+          AND (e.ejecucion_id IS NOT NULL OR NULLIF(to_jsonb(d)->'caterpillar_admission','null'::jsonb) IS NOT NULL)
+      )
+      SELECT current_database() AS database_name,
+        EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+          WHERE attrelid='core.documentos'::regclass AND attname='caterpillar_admission'
+            AND atttypid='jsonb'::regtype AND NOT attisdropped) AS snapshot_storage_ready,
+        COALESCE((SELECT jsonb_agg(entry ORDER BY documento_id,ejecucion_id) FROM history),'[]'::jsonb) AS entries`, [sourceCompanyId]);
+    return row ?? null;
+  }
 
   async list(page: number, pageSize: number): Promise<ListedCaterpillarExecutions> {
     const [totalRow] = await this.database.query<{ total: number }>(`
