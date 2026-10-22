@@ -292,3 +292,21 @@ No se instaló ni modificó nada. No se probó la escritura real (requiere ejecu
 | P5/P6 | Excel P5 y P6 | series y cantidades como validado | pendiente |
 | Timeout del Hub | n8n lento | Hub informa timeout, nunca éxito; reintento idempotente | pendiente |
 | Worker interrumpido | cortar ejecución tras la reserva | conciliar con la sección 6 sin duplicar | pendiente |
+
+## 10. Resultado real del corte 015 en `daubert_hub_test` (2026-10-22)
+
+- **Compuertas**: worktree/commit `461170c`; workflow anterior despublicado y `cat_test` exclusiva de ese workflow (confirmado por el usuario en la UI de n8n; la IA no tiene API key de n8n);
+  0 ejecuciones PROCESANDO y 0 backends de `n8n_cat_test`; respaldo `daubert_hub_test_pre015_20261022-155448.dump` con SHA-256 validado. **No verificado**: que otra credencial de n8n distinta de `cat_test` use `n8n_cat_test` (sin acceso de solo lectura); una credencial así dejaría de funcionar para las cinco funciones legado.
+- **Aplicación**: `apply-caterpillar-015-test.ps1 -Apply` => `PRECHECK_015_PASS`, `UP applied`, `POSTCHECK_015_PASS`. 015 quedó **APLICADA Y VALIDADA (SQL)** en TEST.
+- **Permisos reales**: `n8n_cat_test` sin EXECUTE en las 5 funciones legado; EXECUTE solo en admitir, reprocesar, guardar snapshot, registrar, finalizar y fallo (los helpers `_015` no son ejecutables); `daubert_hub_test_user` y PUBLIC sin EXECUTE; sin DML directo sobre las tablas protegidas.
+  El worker conserva `fn_crear_o_resolver_documento`, `fn_resolver_ejecucion_para_reproceso` y `fn_resolver_ruta_automatizacion` (lectura/metadatos) y dos funciones de trigger.
+- **`caterpillar-015-verify.cjs`**: `TEST_015_VERIFY_PASS`. Su línea base por defecto es `--since 169` (mayor ejecución en el corte): las filas anteriores incluyen fixtures históricos `*_SERIE_OVERLAP` (reservas solapadas deliberadas, 58/59 y 66/67) y ejecuciones sin snapshot previas a 014; no son defectos de 015.
+  `readonly-check` ya no sirve como precheck tras el corte (su precheck falla a propósito: el contrato legado desapareció).
+- **Pruebas SQL reales** (`apps/api/test/caterpillar-015-real.test-runner.cjs`; usa la conexión `postgres` con `SET LOCAL ROLE n8n_cat_test`): `TEST_015_REAL_PASS`, 42 comprobaciones.
+  Fase A (todo en ROLLBACK, nada persiste): captura inicial / repetida / conflicto / documento inexistente / manifest inválido / histórico 214 protegido; gate sin snapshot no reserva; admisión con propietario y rango; reintento del mismo worker; segundo worker sin derecho;
+  cantidad y serie incorrectas; registro y finalización solo del propietario e idempotentes; programa emitido no se reemite; nombre distinto con contenido V1 idéntico => `MANIFEST_MATCH_REVIEW` sin folios; nombre nuevo con contenido distinto admitido;
+  reproceso de COMPLETADA rechazado, de ERROR crea un hijo con folios nuevos, repetido no emite, histórico sin snapshot rechazado; bypass con funciones legado, DML directo y rol Hub denegados.
+  Fase B (dos backends reales): B queda esperando `Lock/advisory`; si A hace ROLLBACK, B adquiere. Fase C (con COMMIT): B ve `PROGRAM_IN_PROGRESS` con propietario A, queda una sola ejecución y una sola reserva; el fixture se cerró como ERROR por el wrapper del propietario (reserva ABANDONADA).
+- **Datos de prueba que quedaron en TEST** (identificables, no operativos): 3 documentos `HUB_TEST_015_*` con snapshot, sus 3 series `HUB_TEST_015_B…/B…/C…` con ruta, y 1 ejecución fixture (192, ERROR, reserva 900000-900001 ABANDONADA). Los 209 documentos originales, las series operativas y la ejecución 117 no se tocaron.
+  Los identity de ejecuciones avanzaron por las fases con ROLLBACK (comportamiento normal de PostgreSQL).
+- **n8n**: no se importó nada (sin API key). Pendiente importar `INSPECT` y luego `FULL` con la UI, según la sección 9.

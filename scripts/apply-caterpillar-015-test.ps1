@@ -15,7 +15,7 @@ $dir = Join-Path $PSScriptRoot '..\database\migrations\daubert_global'
 $stem = '20261022_015_caterpillar_atomic_admission_test'
 $uri = [Uri]$env:TEST_DATABASE_URL_MIGRATOR
 if ($uri.AbsolutePath -ne '/daubert_hub_test' -or [Uri]::UnescapeDataString($uri.UserInfo.Split(':')[0]) -ne 'postgres' -or $uri.Query) { throw 'Only postgres@daubert_hub_test with no query parameters is allowed' }
-if (-not $OldWorkflowDeactivated) { throw 'Confirm the previous TEST workflow is deactivated with no running executions (-OldWorkflowDeactivated)' }
+if ($Apply -and -not $OldWorkflowDeactivated) { throw 'Confirm the previous TEST workflow is deactivated with no running executions (-OldWorkflowDeactivated) before -Apply' }
 if (-not (Test-Path -LiteralPath $BackupFile)) { throw 'Backup file not found' }
 if ((Get-FileHash -LiteralPath $BackupFile -Algorithm SHA256).Hash -ne $BackupSha256.ToUpper()) { throw 'Backup SHA-256 mismatch' }
 $env:PGPASSWORD = [Uri]::UnescapeDataString($uri.UserInfo.Substring($uri.UserInfo.IndexOf(':') + 1))
