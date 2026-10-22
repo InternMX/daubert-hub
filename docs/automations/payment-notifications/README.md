@@ -9,7 +9,7 @@ Documentado en la Fase D2 **a partir de los exports reales**. Los JSON **no est�
 | Workflow TEST | `Test Notificacion de pagos a Proveedores` — inactivo al exportar, 100 nodos |
 | Disparos | **Automático:** `Schedule Trigger` → `Obtener correos Outlook` (sondeo del buzón; intervalo sin valor explícito en el export) · **Manual:** `Reprocesar correo manual` · **Hub:** webhook `POST daubert-hub/notificaciones-pago/reprocesar` |
 | Credenciales | `Postgres produccion` / `Postgres pruebas`; `Outlook LOGIN OAUT2` (**la misma en TEST y PROD**); `Daubert Hub - n8n PROD` / `… TEST` (Header Auth del webhook) |
-| Error Workflow | PROD: referencia un workflow **sin export** (dependencia ausente). TEST: ninguno |
+| Error Workflow | PROD: `ERROR - NOTIFICACIONES DE PAGO`, **activo en PRODUCCIÓN**; el workflow de Pagos lo referencia por ID. Pendiente real: su exportación **no está versionada** en el repositorio. TEST: ninguno |
 | Hub | Dashboard, detalle, **reproceso** (`POST /api/automations/payment-notifications/:executionId/reprocess`, sin restricción de rol), acuses de revisión y **configuración por empresa** ([company-configuration](company-configuration.md)) |
 
 ## Propósito

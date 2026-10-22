@@ -16,7 +16,7 @@
 | `automations` (series, overview, review, trigger-requests) | `/api/automations/*` | [hub/automations.md](../hub/automations.md) |
 | `automations/remisiones-caterpillar` | `/api/automations/remissions/caterpillar/*` | [automations/caterpillar](../automations/caterpillar/README.md) |
 | `automations/remisiones-audi` | `/api/automations/remissions/audi/executions` | [automations/audi](../automations/audi/README.md) |
-| `automations/payment-notifications` | `/api/automations/payment-notifications/*` | [automations/payment-notifications](../automations/payment-notifications/README.md) |
+| `automations/payment-notifications` | `/api/automations/payment-notifications/*` (incluye `PATCH …/:executionId/files/:fileId/assignment`, asignación puntual) | [automations/payment-notifications](../automations/payment-notifications/README.md) · [production-rollout](../automations/payment-notifications/production-rollout.md) |
 
 ## Rutas de la Web (`apps/web/src/App.tsx`)
 

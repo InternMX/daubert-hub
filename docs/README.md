@@ -22,6 +22,7 @@ Este directorio es la **fuente de verdad documental** de Daubert Hub y de las au
 | Diagnosticar o configurar el servidor (incluye el supervisor de n8n) | [diagnose-daubert-server](operations/diagnose-daubert-server.md) · [configure-daubert-server](operations/configure-daubert-server.md) |
 | Saber por qué algo se diseñó así | [decisions/README.md](decisions/README.md) |
 | Ver qué se promovió a PROD y cuándo | [deployments/](deployments/) |
+| Ver el estado actual del proyecto, módulos, riesgos y qué no tocar a mano | [00-overview/project-status.md](00-overview/project-status.md) |
 
 ## Mapa documental
 
@@ -32,6 +33,7 @@ docs/
 │   ├── README.md
 │   ├── architecture.md           diagrama de arquitectura general (Mermaid)
 │   ├── environments.md           TEST vs PROD
+│   ├── project-status.md         estado actual, módulos, pendientes, riesgos y guía de mantenimiento
 │   └── system-map.md             módulos, rutas, tablas, roles
 ├── hub/                          aplicación Hub (API NestJS + Web React)
 │   ├── README.md · architecture.md · api.md
@@ -51,7 +53,8 @@ docs/
 ├── architecture/                 arquitectura self-hosted V1 (LAN, servidor Windows, diagramas)
 ├── operations/                   runbooks generales
 │   └── README.md · deployment.md · deployment-checklist.md · diagnose/configure-daubert-server.md
-│       · backup-restore.md · database-backup-restore.md · troubleshooting.md
+│       · backup-restore.md · database-backup-restore.md · postgresql-backup-automation.md
+│       · n8n-backup-automation.md · troubleshooting.md
 ├── decisions/                    ADRs
 │   └── README.md · ADR-001 … ADR-005
 └── deployments/                  notas de despliegue puntuales (existentes)
@@ -83,11 +86,13 @@ Leyenda de fuentes usada en todo el árbol:
 ## Pendientes transversales (candidatos a Fase D3 y posteriores)
 
 - ~~**D3:** documentar PostgreSQL objeto por objeto~~ — hecho en la Fase D3 ([database/README.md](database/README.md)); quedan los pendientes listados allí (snapshots, datos de configuración, políticas de backup/retención).
-- Decidir el versionado de los exports de Notificaciones de pago ([n8n/security-notes](../n8n/security-notes.md)) y localizar el Error Workflow ausente.
-- Versionar en el repo el resto de migraciones de `daubert_global` (hoy sólo la 009 está en `database/migrations/daubert_global/`).
-- Políticas de backup/restore de PostgreSQL (procedimiento recomendado en [operations/database-backup-restore.md](operations/database-backup-restore.md); ubicación, retención y PITR siguen PENDIENTE).
+- Decidir el versionado de los exports de Notificaciones de pago ([n8n/security-notes](../n8n/security-notes.md)) y versionar la exportación del workflow `ERROR - NOTIFICACIONES DE PAGO` (activo en PROD; hoy solo su ID está referenciado por el workflow de Pagos y su export no está en el repositorio).
+- Versionado parcial de las migraciones de `daubert_global`: **versionadas en el repo** la 009–011 (PROD), las 012–014 (TEST-only) y las 015–017 (PROD, asignación puntual de Pagos); **siguen fuera del repositorio** (directorio externo de Dropbox) los paquetes históricos anteriores (`20260827`, `20260910`, `20260911`, `20260921`, `20260922` y los scripts `20260918`), de los que depende gran parte del esquema actual: PENDIENTE versionarlos o fijar formalmente su referencia ([database/migrations](database/migrations.md)).
+- Backup/restore: automatizados y con restore drill validado ([postgresql-backup-automation](operations/postgresql-backup-automation.md), [n8n-backup-automation](operations/n8n-backup-automation.md), índice en [backup-restore](operations/backup-restore.md)); siguen PENDIENTES el restore drill con la clave privada en otra estación y PITR/WAL.
 - Corregir las discrepancias Hub ↔ n8n y el drift detectados en D2 ([n8n-test-prod-drift](automations/n8n-test-prod-drift.md), [caterpillar/reprocessing](automations/caterpillar/reprocessing.md#discrepancias-hub--n8n-verificadas-en-d2)).
 - Resolver las inconsistencias listadas en [00-overview/environments.md](00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración).
+
+> Estado vigente del proyecto, pendientes y riesgos: [00-overview/project-status.md](00-overview/project-status.md).
 
 ## Regla de mantenimiento
 

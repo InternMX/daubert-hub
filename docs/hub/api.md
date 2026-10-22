@@ -70,7 +70,8 @@ Prefijo global: `/api`. Fuente: decoradores de `apps/api/src/**/*.controller.ts`
 | POST | `/api/automations/remissions/caterpillar/executions/:executionId/reprocess` | **ADMIN** | Reproceso manual — [reprocessing](../automations/caterpillar/reprocessing.md) |
 | GET | `/api/automations/payment-notifications` | Auth | Listado |
 | GET | `/api/automations/payment-notifications/:executionId` | Auth | Detalle |
-| POST | `/api/automations/payment-notifications/:executionId/reprocess` | Auth (**sin** restricción de rol) | Reproceso de Notificaciones de pago |
+| POST | `/api/automations/payment-notifications/:executionId/reprocess` | Auth (**sin** restricción de rol) | Reproceso de Notificaciones de pago (con asignaciones puntuales, solo si la elegibilidad por archivo lo permite) |
+| PATCH | `/api/automations/payment-notifications/:executionId/files/:fileId/assignment` | Auth (**sin** restricción de rol) | Asignación puntual de un archivo a una empresa (`ASSIGN`/`CHANGE`/`REVOKE`, con `expectedVersion`); requiere `PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED` — [production-rollout](../automations/payment-notifications/production-rollout.md) |
 
 ### Contrato HTTP del reproceso Caterpillar (resumen)
 
