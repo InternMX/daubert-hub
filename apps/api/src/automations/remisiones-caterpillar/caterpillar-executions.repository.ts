@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { QueryResultRow } from 'pg';
 import { DatabaseService } from '../../database/database.service';
 import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
+import { assertAtomicAdmissionInput, assertAtomicAdmissionResult, type CaterpillarAtomicAdmissionInput,
+  type CaterpillarAtomicAdmissionRow } from './caterpillar-atomic-admission';
 import { createCaterpillarAdmissionCandidate, createCaterpillarAdmissionSnapshot, readCaterpillarAdmissionSnapshot,
   type CaterpillarAdmissionHistoryEntry, type CaterpillarAdmissionSnapshot } from './caterpillar-automatic-admission';
 
@@ -150,6 +152,18 @@ const EXECUTION_COLUMNS = `
 @Injectable()
 export class CaterpillarExecutionsRepository {
   constructor(private readonly database: DatabaseService) {}
+
+  // Worker-only prepared contract (015 not applied). Hub runtime is deliberately NOT granted EXECUTE.
+  // No controller calls this. It is a single statement, never advisory SELECT + independent reserve.
+  async claimAdmissionAndReserve(input: CaterpillarAtomicAdmissionInput): Promise<CaterpillarAtomicAdmissionRow> {
+    assertAtomicAdmissionInput(input);
+    const [row] = await this.database.query<CaterpillarAtomicAdmissionRow>(`
+      SELECT decision,reason,can_emit,worker_id,ejecucion_id::text,reserva_id::text,
+        folio_inicial::text,folio_final::text,cantidad,legacy_unverified
+      FROM ops.fn_admitir_reservar_caterpillar_test($1::bigint,$2::text,$3::text,$4::integer)`,
+    [input.documentId,input.workerId,input.seriesCode,input.quantity]);
+    return assertAtomicAdmissionResult(row,input);
+  }
 
   async findAdmissionSnapshot(documentId: string, sourceCompanyId: string): Promise<CaterpillarSnapshotReadResult> {
     const [storage] = await this.database.query<{ database_name: string; ready: boolean }>(`

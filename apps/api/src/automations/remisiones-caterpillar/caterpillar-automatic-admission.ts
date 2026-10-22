@@ -8,6 +8,7 @@ export interface CaterpillarAdmissionInput {
 }
 export interface CaterpillarAdmissionCandidate {
   sourceCompanyId: string;
+  normalizedName: string;
   programmingKey: string;
   scopeKey: string;
   manifestCanonical: string;
@@ -33,7 +34,7 @@ export interface CaterpillarAdmissionHistory {
   entries: readonly CaterpillarAdmissionHistoryEntry[];
 }
 export type CaterpillarAdmissionReason = 'NEW_NAME_AND_CONTENT' | 'PROGRAM_IN_PROGRESS' | 'PROGRAM_ALREADY_EMITTED'
-  | 'REGENERATION_AUTHORIZATION_REQUIRED' | 'MANUAL_REPROCESS_REQUIRED' | 'MANIFEST_MATCH_REVIEW' | 'HISTORY_UNAVAILABLE';
+  | 'REGENERATION_AUTHORIZATION_REQUIRED' | 'MANUAL_REPROCESS_REQUIRED' | 'MANIFEST_MATCH_REVIEW' | 'HISTORY_UNAVAILABLE' | 'LEGACY_NAME_MATCH';
 export interface CaterpillarAdmissionDecision {
   decision: 'ADMIT' | 'BLOCK' | 'REVIEW';
   reason: CaterpillarAdmissionReason;
@@ -44,6 +45,7 @@ export interface CaterpillarAdmissionDecision {
   canReserveFolios: false;
   requiresAtomicDatabaseCheck: true;
   deliveryIdentity: 'UNCONFIRMED';
+  legacyContentUnverifiedDocumentIds: string[];
 }
 const snapshotVersion = 'CAT_ADMISSION_V1';
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,7 +68,8 @@ function keys(sourceCompanyId: string, fileName: string, scope: readonly string[
 }
 export function createCaterpillarAdmissionCandidate(input: CaterpillarAdmissionInput): CaterpillarAdmissionCandidate {
   const { manifest } = adaptCaterpillarNormalizedItems(input.normalizedItems);
-  return { sourceCompanyId: companyId(input.sourceCompanyId), ...keys(input.sourceCompanyId, input.fileName, manifest.scope), manifestCanonical: JSON.stringify(manifest) };
+  return { sourceCompanyId: companyId(input.sourceCompanyId), normalizedName: normalizeCaterpillarProgrammingName(input.fileName),
+    ...keys(input.sourceCompanyId, input.fileName, manifest.scope), manifestCanonical: JSON.stringify(manifest) };
 }
 export function createCaterpillarAdmissionSnapshot(candidate: CaterpillarAdmissionCandidate): CaterpillarAdmissionSnapshot {
   return { version: snapshotVersion, programmingKey: candidate.programmingKey, manifestCanonical: candidate.manifestCanonical };
@@ -107,21 +110,31 @@ function historicalScope(canonical: unknown): readonly string[] | null {
 }
 
 export function decideCaterpillarAutomaticAdmission(candidate: CaterpillarAdmissionCandidate, history: CaterpillarAdmissionHistory): CaterpillarAdmissionDecision {
+  const legacyIds = new Set<string>();
   const result = (decision: CaterpillarAdmissionDecision['decision'], reason: CaterpillarAdmissionReason,
     matches: readonly CaterpillarAdmissionHistoryEntry[] = []): CaterpillarAdmissionDecision => ({
     decision, reason, programmingKey: candidate.programmingKey,
     matchingDocumentIds: [...new Set(matches.map(row => row.documentId))],
     matchingExecutionIds: [...new Set(matches.flatMap(row => row.executionId ? [row.executionId] : []))],
-    canReserveFolios: false, requiresAtomicDatabaseCheck: true, deliveryIdentity: 'UNCONFIRMED'
+    canReserveFolios: false, requiresAtomicDatabaseCheck: true, deliveryIdentity: 'UNCONFIRMED',
+    legacyContentUnverifiedDocumentIds: [...legacyIds]
   });
   if (!history.complete) return result('REVIEW', 'HISTORY_UNAVAILABLE');
   const relevant: Array<{ row: CaterpillarAdmissionHistoryEntry; programmingKey: string; manifestCanonical: string }> = [];
+  const legacyNameMatches: CaterpillarAdmissionHistoryEntry[] = [];
   for (const row of history.entries) {
     if (row.sourceCompanyId !== candidate.sourceCompanyId) continue;
     if (![row.generatedCount, row.cancelledCount, row.pendingCount].every(n => Number.isInteger(n) && n >= 0) ||
       (row.executionId === null ? row.executionState !== null || row.generatedCount + row.cancelledCount + row.pendingCount > 0 :
         !['PROCESANDO', 'COMPLETADA', 'ERROR', 'CANCELADA'].includes(row.executionState ?? ''))) return result('REVIEW', 'HISTORY_UNAVAILABLE');
     const snapshot = row.admissionSnapshot;
+    if (snapshot === null && row.executionId !== null) {
+      legacyIds.add(row.documentId);
+      let oldName;
+      try { oldName = normalizeCaterpillarProgrammingName(row.fileName); } catch { return result('REVIEW', 'HISTORY_UNAVAILABLE'); }
+      if (oldName === candidate.normalizedName) legacyNameMatches.push(row);
+      continue; // Protect name across the company; NEVER infer a historical plant/manifest.
+    }
     const scope = record(snapshot) ? historicalScope(snapshot.manifestCanonical) : null;
     if (!record(snapshot) || snapshot.version !== snapshotVersion || !scope) return result('REVIEW', 'HISTORY_UNAVAILABLE');
     let historicalKeys;
@@ -129,6 +142,7 @@ export function decideCaterpillarAutomaticAdmission(candidate: CaterpillarAdmiss
     if (snapshot.programmingKey !== historicalKeys.programmingKey) return result('REVIEW', 'HISTORY_UNAVAILABLE');
     if (historicalKeys.scopeKey === candidate.scopeKey) relevant.push({ row, programmingKey: historicalKeys.programmingKey, manifestCanonical: snapshot.manifestCanonical as string });
   }
+  if (legacyNameMatches.length) return result('REVIEW', 'LEGACY_NAME_MATCH', legacyNameMatches);
   const sameName = relevant.filter(entry => entry.programmingKey === candidate.programmingKey).map(entry => entry.row);
   const running = sameName.filter(row => row.executionState === 'PROCESANDO');
   if (running.length) return result('BLOCK', 'PROGRAM_IN_PROGRESS', running);

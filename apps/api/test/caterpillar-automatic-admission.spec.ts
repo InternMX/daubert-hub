@@ -114,10 +114,18 @@ describe('Caterpillar automatic admission — pure policy, no DB or emission', (
   it('an analyzed document without execution/emission does not itself count as processed', () => {
     expect(assess(input(), [history(input(), { executionId: null, executionState: null, generatedCount: 0 })]).decision).toBe('ADMIT');
   });
-  it.each([null, {}, { version: 'OLD' }, { version: 'CAT_ADMISSION_V1', programmingKey: 'spoofed', manifestCanonical: candidate(input()).manifestCanonical },
+  it.each([{}, { version: 'OLD' }, { version: 'CAT_ADMISSION_V1', programmingKey: 'spoofed', manifestCanonical: candidate(input()).manifestCanonical },
     { ...snapshot(candidate(input())), manifestCanonical: '{bad-json' }])('fails closed for absent/unreliable historical metadata %j', admissionSnapshot => {
     expect(assess(input('NEW.xlsx', { cantidad_numerica: 9 }), [history(input(), { admissionSnapshot })]))
       .toMatchObject({ decision: 'REVIEW', reason: 'HISTORY_UNAVAILABLE' });
+  });
+  it('legacy NULL snapshots protect matching names without assigning a historical scope', () => {
+    expect(assess(input('PROGRAMACION 001.xlsx',{planta_codigo:'P6'}),[history(input(),{admissionSnapshot:null})]))
+      .toMatchObject({decision:'REVIEW',reason:'LEGACY_NAME_MATCH',legacyContentUnverifiedDocumentIds:['10']});
+  });
+  it('new names can be considered prospectively while legacy content remains explicitly unverified', () => {
+    expect(assess(input('NEW.xlsx',{cantidad_numerica:99}),[history(input(),{admissionSnapshot:null})]))
+      .toMatchObject({decision:'ADMIT',legacyContentUnverifiedDocumentIds:['10'],canReserveFolios:false});
   });
   it('does not treat missing storage/coverage as an empty history', () => {
     expect(decide(candidate(input()), { complete: false, entries: [] })).toMatchObject({ decision: 'REVIEW', reason: 'HISTORY_UNAVAILABLE' });

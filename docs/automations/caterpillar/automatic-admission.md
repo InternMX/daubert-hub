@@ -25,7 +25,9 @@ no de un ámbito editable por el navegador. No se añade un endpoint para acepta
 | Mismo nombre COMPLETADA o con remisiones GENERADA | BLOCK / PROGRAM_ALREADY_EMITTED |
 | Mismo nombre ERROR o con remisiones PENDIENTE | BLOCK / MANUAL_REPROCESS_REQUIRED |
 | Otro nombre con el mismo contenido emitido, históricamente cancelado o en proceso | REVIEW / MANIFEST_MATCH_REVIEW |
-| Falta cobertura, snapshot fiable o almacenamiento preparado | REVIEW / HISTORY_UNAVAILABLE |
+| Snapshot NULL legacy con nombre coincidente (ámbito desconocido) | REVIEW / LEGACY_NAME_MATCH |
+| Snapshot NULL legacy con otro nombre | No veto global; cobertura incompleta explícita |
+| Snapshot no NULL inválido o almacenamiento no preparado | REVIEW / HISTORY_UNAVAILABLE |
 
 Todos los resultados incluyen `canReserveFolios:false`, `requiresAtomicDatabaseCheck:true` y
 `deliveryIdentity:'UNCONFIRMED'`. Son resultados de evaluación, no nuevos estados de la base.
@@ -42,10 +44,10 @@ Torreón comparte serie entre subplantas. Los datos actuales de detalle tampoco 
 La consulta usa `to_jsonb(d)->'caterpillar_admission'`, que devuelve NULL si la columna no existe;
 consulta además `pg_attribute` para comprobar su presencia y tipo JSONB. No referencia directamente
 una columna futura. Fuera de `daubert_hub_test` no recoge antecedentes y el servicio devuelve REVIEW.
-Con el esquema documentado actual, sin esa persistencia, la integración queda pendiente y **no admite**.
-No se ha conectado a PostgreSQL para comprobar su estructura ni se ha aplicado cambio alguno.
+Sin persistencia disponible, la integración no admite. El operador confirmó aplicación de 014 y prueba
+real de persistencia en 5C; 5D no realiza nuevas conexiones ni cambios operativos.
 
-## Cambio mínimo propuesto, NO aplicado
+## Persistencia mínima — 014 aplicada según evidencia del operador
 
 Una columna nullable `core.documentos.caterpillar_admission jsonb`, exclusivamente para snapshots
 Caterpillar, con este contrato:
@@ -66,11 +68,10 @@ La fase 5A prepara migración y métodos explícitos de persistencia sin sobresc
 no los invoca en Daubert ni los conecta al workflow. Estado, históricos y límites de arranque:
 [admission-persistence-test](admission-persistence-test.md).
 
-Antes de conectar el workflow TEST: autorizar y revisar ese cambio, su escritura restringida y la
-captura del ámbito/manifest preagrupación por cada versión física. Los históricos relevantes deben
-tener evidencia verificable; si no puede recuperarse, permanecen pendientes de revisión. No inventar
-snapshots a partir de cantidades de presentación, no excluir históricos para forzar ADMIT y no
-sobrescribir silenciosamente el snapshot aceptado si cambia el catálogo o normalizador.
+Antes de conectar TEST: revisar captura restringida preagrupación y aceptar el alcance prospectivo
+explicado en [atomic-admission-test](atomic-admission-test.md). Los históricos NULL protegen sus nombres
+sin que se les invente un ámbito; un nombre distinto no prueba ausencia de coincidencia V1 antigua.
+No inventar snapshots, no excluir por fecha y no sobrescribir silenciosamente el snapshot aceptado.
 
 ## Concurrencia: protección pendiente de conexión
 
@@ -92,6 +93,7 @@ reconocer también ese caso como corrección, hace falta otra referencia de prog
 manual; el código no lo deduce de la ruta o la fecha. Un nombre reutilizado para una entrega legítima
 nueva seguirá bloqueado: también es parte de esta política por nombre.
 
-La existencia de historias sin ámbito/manifest fiables impide garantizar una comparación completa.
-Se falla cerrado, incluso si el candidato tiene otro nombre. No cambia cancelación, reproceso,
-ajuste de folios, workflows o producción. Las pruebas son unitarias con persistencia mock, no E2E.
+La existencia de historias sin ámbito/manifest fiables impide garantizar comparación retrospectiva
+completa. 5D protege coincidencias legacy por nombre y deja visible la cobertura de contenido faltante;
+no declara esa ausencia como comprobación de entrega nueva. El gate preparado y su validación real
+pendiente se documentan por separado. No se cambia cancelación, ajuste de folios, workflows o PROD.
