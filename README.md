@@ -146,6 +146,8 @@ Los respaldos de PostgreSQL y de n8n están en [`docs/operations/README.md`](doc
 
 ## Estado actual
 
+Estado detallado de módulos, pendientes y riesgos: [`docs/00-overview/project-status.md`](docs/00-overview/project-status.md).
+
 - **Hub PROD operativo**, orientado a uso interno en la LAN (V1).
 - Web y API desplegadas mediante Docker.
 - PostgreSQL corre como servicio de Windows; n8n corre en Windows.

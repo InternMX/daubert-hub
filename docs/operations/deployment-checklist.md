@@ -2,11 +2,13 @@
 
 Complementa a [deployment](deployment.md) (orden, trampas) y a [`deploy/README.md`](../../deploy/README.md) (comandos genéricos). Este documento fija el **procedimiento de PROD tal como corre hoy** (proyecto `daubert-hub`, `compose.pilot.yaml` + `compose.prod-temp.yaml`, puerto `8082`; ver [nota 2026-10-01](../deployments/2026-10-01-hub-v1-prod.md)). **Sin secretos.**
 
-> **Estado: preparado, no ejecutado.** Solo el preflight y `Deploy-DaubertHub.ps1 -Preflight` / `-WhatIf` (modos de solo lectura) se han ejecutado contra PROD. **`-Deploy` no se ha ejecutado nunca**, ni el ancla de rollback, ni el rollback: el script de deploy se probó únicamente con pruebas automatizadas que simulan Docker (no ejecutan ningún deploy), y los comandos de rollback solo se revisaron estáticamente.
+> **Estado (actualizado 2026-10-22): en uso.** `Deploy-DaubertHub.ps1 -Deploy` (con su ancla de rollback) se usó en los releases de 2026-10-07 (v1.0.1), 2026-10-09 (v1.0.5) y 2026-10-12 (v1.0.6); ver [deployments](../deployments/README.md). El release de 2026-10-21 (`6370753`, asignación puntual de Pagos) incluía migraciones ya aplicadas a mano y el script **bloquea siempre** los releases con migraciones, por lo que se desplegó con los **comandos manuales** de este documento ([nota](../deployments/2026-10-22-payment-file-assignments-prod.md)). El **rollback por imagen no se ha ejecutado nunca en PROD**: está preparado (anclas y `docker save`) y sus comandos solo se revisaron estáticamente.
 >
-> **Existe `scripts/deploy/Deploy-DaubertHub.ps1`** (modos `-Preflight`, `-WhatIf`, `-Deploy`; ver [abajo](#script-de-deployment-deploy-dauberthubps1)). **No existe un modo `-Rollback`**: el rollback sigue siendo manual (comandos de la sección ROLLBACK). Todavía **no hay una versión nueva del Hub para desplegar**: este mecanismo está listo pero sin usar.
+> **Existe `scripts/deploy/Deploy-DaubertHub.ps1`** (modos `-Preflight`, `-WhatIf`, `-Deploy`; ver [abajo](#script-de-deployment-deploy-dauberthubps1)). **No existe un modo `-Rollback`**: el rollback sigue siendo manual (comandos de la sección ROLLBACK). Los cambios solo de configuración del Hub (p. ej. banderas) se aplican editando `deploy/pilot.prod.env` (con copia previa) y recreando solo el `api`: `docker compose … up -d --no-build api`.
 
-## Referencia (2026-10-02)
+## Referencia (2026-10-02, histórica)
+
+> Instantánea de un preflight anterior, conservada como ejemplo del formato. **Estado vigente (2026-10-22):** Hub en PROD `6370753` (`1.0.6`); `main` solo difiere por documentación; migraciones aplicadas hasta la `20261022_017`; workflow de Pagos `pagosProdAsignaciones01`.
 
 | Elemento | Valor |
 | --- | --- |
