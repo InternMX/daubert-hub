@@ -112,3 +112,7 @@ Un correo con errores queda `ERROR` en PostgreSQL y puede **reprocesarse** (Hub 
 | **Sin notificación** | `NOTIFICACION_DESACTIVADA` → resultado `OMITIDO`; otras condiciones → `MANUAL` con motivo. |
 | **Cierre** | `Evaluar cierre del correo` compara resultados con los esperados; `Finalizar correo procesado` → `PROCESADO` (sin errores) o `ERROR`. |
 | **Resumen** | Un correo resumen a destinatarios internos (PARA + CC en PROD) con el resultado por proveedor y motivos; `resumen_enviado` evita duplicarlo. |
+
+## Versión v2 (asignación puntual) — 2026-10-22
+
+El workflow activo `pagosProdAsignaciones01` (108 nodos) conserva el flujo anterior y añade, **por archivo**: (1) en `Preparar metadatos ZIP` el SHA-256 del ZIP, el ID del adjunto y el inventario real del directorio central (`fflate`); (2) en `Separar archivos descomprimidos` / `Calcular identidad PDF` la identidad individual de cada PDF; (3) tras clasificar y **antes de cualquier efecto**, el registro del archivo con el código de la incidencia (`Registrar archivo (incidencia)`); (4) en reprocesos, la consulta de la asignación (`Resolver asignacion puntual`), que tiene prioridad sobre el catálogo y bloquea si el estado no es seguro; (5) la toma del archivo (`Tomar archivo (inicio de procesamiento)`) antes de copiar o crear borradores. Un correo histórico sin archivos registrados sigue por el catálogo (`LEGACY_SIN_ASIGNACION`). Detalle y estado de validación: [production-rollout](production-rollout.md).

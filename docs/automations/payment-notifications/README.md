@@ -5,7 +5,7 @@ Documentado en la Fase D2 **a partir de los exports reales**. Los JSON **no est�
 | | |
 | --- | --- |
 | Código de automatización | `PAYMENT_NOTIFICATIONS` |
-| Workflow PROD | `Produccion Notificacion de pagos a Proveedores` — activo, 100 nodos |
+| Workflow PROD | **`pagosProdAsignaciones01`** (v2, 108 nodos) — activo desde 2026-10-22; el anterior `3Dh72JJYROHtaw1X` (`Produccion Notificacion de pagos a Proveedores`, 100 nodos, versión `887c122b`) queda inactivo como rollback. El resto de este documento describe el export original de 100 nodos; el delta v2 está en [production-rollout](production-rollout.md) |
 | Workflow TEST | `Test Notificacion de pagos a Proveedores` — inactivo al exportar, 100 nodos |
 | Disparos | **Automático:** `Schedule Trigger` → `Obtener correos Outlook` (sondeo del buzón; intervalo sin valor explícito en el export) · **Manual:** `Reprocesar correo manual` · **Hub:** webhook `POST daubert-hub/notificaciones-pago/reprocesar` |
 | Credenciales | `Postgres produccion` / `Postgres pruebas`; `Outlook LOGIN OAUT2` (**la misma en TEST y PROD**); `Daubert Hub - n8n PROD` / `… TEST` (Header Auth del webhook) |
@@ -33,6 +33,8 @@ Lee correos de Outlook que traen **comprobantes de pago en un ZIP** (del adminis
 | [database-contract.md](database-contract.md) | Contrato PostgreSQL |
 | [reprocessing.md](reprocessing.md) | Reproceso, contrato con el Hub, **seguridad** |
 | [testing.md](testing.md) | Pruebas y promoción |
+| [file-assignment-contract.md](file-assignment-contract.md) | **Asignación puntual de archivos**: identidad individual, contrato PostgreSQL/n8n, API e interfaz |
+| [production-rollout.md](production-rollout.md) | **Puesta en producción de la asignación puntual** (resumen, implementación, despliegue/rollback, validación y pendientes) |
 | [production-runbook.md](production-runbook.md) | Operación en PROD |
 | [troubleshooting.md](troubleshooting.md) | Guía de fallos |
 | Comparación TEST/PROD | [n8n-test-prod-drift](../n8n-test-prod-drift.md#notificaciones-de-pago) |

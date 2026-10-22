@@ -112,6 +112,8 @@ Migraciones conocidas relacionadas con automatizaciones (directorio externo; las
 | `20260921` (paquete `000…013`) | Cutover Caterpillar PROD (modelo, seed, finalización, persistencia, integridad, hash de documentos, último estado terminal, reintentos) |
 | `20260922_001…004` | Permisos de lectura Hub Caterpillar, piso de folio ajustable, seed del piso, mapeo Audi en `automatizacion_series_proceso` |
 | `20260923_009` | Reproceso manual Caterpillar (PROD, versionada en el repo) |
+| `20261019_012` … `20261021_014` | Asignación puntual de archivos de Notificaciones de pago — **solo `daubert_hub_test`** (cada archivo aborta en otra base) |
+| `20261022_015` … `20261022_017` (`_prod`) | Asignación puntual de archivos — **PROD**, aplicadas a `daubert_global` el 2026-10-21 (tablas de archivos y asignaciones, funciones de registro/consulta/elegibilidad, permisos mínimos). Ver [production-rollout](../automations/payment-notifications/production-rollout.md) |
 
 ## Comparación con la base real (D3)
 

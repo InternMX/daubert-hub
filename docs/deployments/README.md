@@ -4,6 +4,7 @@ Registro puntual de promociones a PROD (qué se promovió, verificación, pendie
 
 | Fecha | Nota | Tema |
 | --- | --- | --- |
+| 2026-10-22 | [payment-file-assignments-prod](2026-10-22-payment-file-assignments-prod.md) | Asignación puntual de archivos de Notificaciones de pago: migraciones PROD 015–017, Hub `6370753` (PR #14), workflow de Pagos v2 (108 nodos) y fases A/B; primer ZIP real pendiente |
 | 2026-10-12 | [hub-v1.0.6-prod](2026-10-12-hub-v1.0.6-prod.md) | Daubert Hub v1.0.6 (commit `f182c2a`): reproceso de Notificaciones de Pago para `OMITIDO` reactivado y `HASH=` pendiente, y dependencias de producción de la API actualizadas; solo la API se recreó (Web sin cambios efectivos), con `-AcknowledgeN8nAlreadyApplied`; sin migraciones ni cambios en n8n |
 | 2026-10-09 | [hub-v1.0.5-prod](2026-10-09-hub-v1.0.5-prod.md) | Daubert Hub v1.0.5 (commit `909c37e`): Fase 1 de Auditoría administrativa (solo ADMIN) en Hub API + Web desde `main` con `-AcknowledgeN8nAlreadyApplied`; sin migraciones ni cambios en n8n |
 | 2026-10-07 | [hub-v1.0.1-prod](2026-10-07-hub-v1.0.1-prod.md) | Daubert Hub v1.0.1 (commit `0814e94`): Hub API + Web desde `main` con `-AcknowledgeN8nAlreadyApplied`; sin migraciones ni cambios en n8n; `APP_VERSION` sigue en `0.9.0-pilot.2` |

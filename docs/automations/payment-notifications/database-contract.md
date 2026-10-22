@@ -84,3 +84,7 @@ Contenido de correos/contactos/resultados, número de correos `PENDIENTE` sin ce
 ## Configuración administrada desde el Hub (2026-09-25)
 
 Posterior a D3: el Hub escribe `core.empresas_notificacion_pago` (upsert, sin `DELETE`), `core.empresas.ruta_dropbox` y `recibe_notificacion_pago`/`tipo_destinatario_pago`/`es_principal` de `core.medios_contacto`. **El contrato de lectura de n8n no cambió**: sigue leyendo `core.vw_catalogo_notificacion_pago_n8n`, cuya definición no se modificó. Reglas (readiness, invariante del último PARA, `ruta_destino`), endpoints y migración 011: [company-configuration](company-configuration.md).
+
+## Objetos de la asignación puntual (migraciones PROD 015–017, 2026-10-21)
+
+El workflow v2 sí llama funciones `SECURITY DEFINER` (a diferencia del v1): `core.fn_registrar_archivo_notificacion_pago` y `core.fn_consultar_archivo_notificacion_pago` (únicas con `EXECUTE` para `n8n_app`). Tablas nuevas: `core.archivos_notificacion_pago` (identidad individual por PDF; escrita solo por la función de registro/toma) y `core.asignaciones_archivo_notificacion_pago` (`ACTIVA`/`REVOCADA`, `version`; escrita por el Hub). Funciones solo del Hub: `fn_archivo_notificacion_asignable`, `fn_bloquear_archivos_reproceso_pago`, `fn_reproceso_asignaciones_puntuales`. Internas: `fn_resolver_archivo_notificacion_pago`, `fn_evaluar_archivo_notificacion_pago`. Permisos y detalle: [production-rollout §B](production-rollout.md#b-implementación-técnica).
