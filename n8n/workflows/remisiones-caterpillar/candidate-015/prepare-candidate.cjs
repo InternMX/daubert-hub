@@ -102,8 +102,11 @@ const RAZON_A_STATUS = {
 const status = RAZON_A_STATUS[razon] ?? null;
 const hija = json.puede_emitir === true ? json.ejecucion_id : json.ejecucion_ajena_id;
 const valido = status !== null && Boolean(hija) && (status === "PROCESSING") === (json.puede_emitir === true);
+// Gate refusals are domain rules for the Hub (409), never an "accepted" answer and never a technical error.
+const rechazo = valido ? null : razon === "PARENT_NOT_REPROCESSABLE" ? "NOT_ELIGIBLE_STATE"
+  : json.puede_emitir === false && ["BLOCK", "REVIEW"].includes(json.admision_decision) ? "ADMISSION_REJECTED" : "UNEXPECTED_EXECUTION_STATE";
 return [{ json: { ...json, reproceso_status: valido ? status : null, reproceso_status_valido: valido,
-  reproceso_status_motivo_crudo: razon, reproceso_ejecucion_hija_id: valido ? String(hija) : null } }];`;
+  reproceso_status_motivo_crudo: razon, reproceso_ejecucion_hija_id: valido ? String(hija) : null, reproceso_motivo_rechazo: rechazo } }];`;
 
 function ifBoolean(id, expression) {
   return { conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 3 },
@@ -184,6 +187,9 @@ if (!contexto.documento_origen_id) {
   mapear.parameters.jsCode = MAP_REPROCESS;
   aceptado.parameters.responseBody = '={{ {\n  accepted: true,\n  originalExecutionId: $json.reproceso_de_id,\n  executionId: $json.reproceso_ejecucion_hija_id,\n  status: $json.reproceso_status\n} }}';
   aceptado.notes = 'BLOQUEADO hasta medir: la respuesta ahora ocurre despues de leer Excel y del gate (timeout Hub 10 s).';
+  // Not-accepted reprocess answers all go through the rejection responder (known Hub codes); the unreachable "estado inesperado" node is dropped.
+  connections['¿Estado de reproceso reconocido?'].main[1] = [{ node: 'Responder reproceso rechazado', type: 'main', index: 0 }];
+  c.nodes = c.nodes.filter(n => n.name !== 'Responder reproceso estado inesperado');
   procesar.name = '¿Puede emitir CAT?';
   procesar.parameters = ifBoolean('cat015-can-emit-0001', '={{ $json.puede_emitir === true }}');
   const rename = (from, to) => { connections[to] = connections[from]; delete connections[from];

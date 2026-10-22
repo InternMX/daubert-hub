@@ -74,7 +74,8 @@ describe('CaterpillarReprocessWebhookClient', () => {
       ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING', 422],
       ['SOURCE_FILE_MISSING', 409],
       ['OUTSIDE_TEST_SCOPE', 409],
-      ['OUTSIDE_ALLOWED_SCOPE', 409]
+      ['OUTSIDE_ALLOWED_SCOPE', 409],
+      ['ADMISSION_REJECTED', 409]
     ] as const)('parses a rejected %s response at HTTP %d', async (reason, status) => {
       global.fetch = vi.fn().mockResolvedValue(jsonResponse(status, { accepted: false, error: reason })) as never;
       const client = new CaterpillarReprocessWebhookClient(configWith() as never);

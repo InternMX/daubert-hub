@@ -908,7 +908,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Traduce la decision del gate 015 a un status sanitizado para el webhook. Falla cerrado ante cualquier razon desconocida.\nconst json = $input.first()?.json || {};\nconst razon = String(json.admision_reason ?? \"\").trim();\nconst RAZON_A_STATUS = {\n  REPROCESS_ACQUIRED: \"PROCESSING\",\n  OWNED_RETRY: \"PROCESSING\",\n  REPROCESS_IN_PROGRESS: \"ALREADY_PROCESSING\",\n  ALREADY_REPROCESSED: \"ALREADY_REPROCESSED\"\n};\nconst status = RAZON_A_STATUS[razon] ?? null;\nconst hija = json.puede_emitir === true ? json.ejecucion_id : json.ejecucion_ajena_id;\nconst valido = status !== null && Boolean(hija) && (status === \"PROCESSING\") === (json.puede_emitir === true);\nreturn [{ json: { ...json, reproceso_status: valido ? status : null, reproceso_status_valido: valido,\n  reproceso_status_motivo_crudo: razon, reproceso_ejecucion_hija_id: valido ? String(hija) : null } }];"
+        "jsCode": "// Traduce la decision del gate 015 a un status sanitizado para el webhook. Falla cerrado ante cualquier razon desconocida.\nconst json = $input.first()?.json || {};\nconst razon = String(json.admision_reason ?? \"\").trim();\nconst RAZON_A_STATUS = {\n  REPROCESS_ACQUIRED: \"PROCESSING\",\n  OWNED_RETRY: \"PROCESSING\",\n  REPROCESS_IN_PROGRESS: \"ALREADY_PROCESSING\",\n  ALREADY_REPROCESSED: \"ALREADY_REPROCESSED\"\n};\nconst status = RAZON_A_STATUS[razon] ?? null;\nconst hija = json.puede_emitir === true ? json.ejecucion_id : json.ejecucion_ajena_id;\nconst valido = status !== null && Boolean(hija) && (status === \"PROCESSING\") === (json.puede_emitir === true);\n// Gate refusals are domain rules for the Hub (409), never an \"accepted\" answer and never a technical error.\nconst rechazo = valido ? null : razon === \"PARENT_NOT_REPROCESSABLE\" ? \"NOT_ELIGIBLE_STATE\"\n  : json.puede_emitir === false && [\"BLOCK\", \"REVIEW\"].includes(json.admision_decision) ? \"ADMISSION_REJECTED\" : \"UNEXPECTED_EXECUTION_STATE\";\nreturn [{ json: { ...json, reproceso_status: valido ? status : null, reproceso_status_valido: valido,\n  reproceso_status_motivo_crudo: razon, reproceso_ejecucion_hija_id: valido ? String(hija) : null, reproceso_motivo_rechazo: rechazo } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -952,23 +952,6 @@
       ],
       "id": "5e2bca9d-733b-425e-9976-4c682b021594",
       "name": "¿Estado de reproceso reconocido?"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { accepted: false, error: 'UNEXPECTED_EXECUTION_STATE' } }}",
-        "options": {
-          "responseCode": 500
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.4,
-      "position": [
-        6832,
-        1984
-      ],
-      "id": "0c819e21-aa23-4158-b7ce-81739726f49e",
-      "name": "Responder reproceso estado inesperado"
     },
     {
       "id": "cat015-snapshot-0001",
@@ -1633,7 +1616,7 @@
         ],
         [
           {
-            "node": "Responder reproceso estado inesperado",
+            "node": "Responder reproceso rechazado",
             "type": "main",
             "index": 0
           }

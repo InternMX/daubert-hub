@@ -111,6 +111,7 @@ export class CaterpillarController {
     if (outcome === 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING') throw new ConflictException('El archivo origen no está disponible o no se puede clasificar para reprocesar.');
     if (outcome === 'SOURCE_FILE_MISSING') throw new ConflictException('El archivo origen ya no está disponible para reprocesar.');
     if (outcome === 'OUTSIDE_TEST_SCOPE' || outcome === 'OUTSIDE_ALLOWED_SCOPE') throw new ConflictException('La ejecución no pertenece al ámbito permitido para este entorno.');
+    if (outcome === 'ADMISSION_REJECTED') throw new ConflictException('El reproceso fue rechazado por las protecciones de folios: la ejecución tiene remisiones vigentes sin conciliar, carece de snapshot o hay un conflicto de programación.');
     if (outcome === 'UPSTREAM_TIMEOUT') throw new GatewayTimeoutException('El servicio de automatización no respondió a tiempo.');
     if (outcome === 'UPSTREAM_UNAVAILABLE' || outcome === 'UPSTREAM_INVALID_RESPONSE') throw new BadGatewayException('No se pudo iniciar el reproceso en este momento.');
   }

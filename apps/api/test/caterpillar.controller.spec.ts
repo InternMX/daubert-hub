@@ -124,7 +124,8 @@ describe('CaterpillarController', () => {
       ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'],
       ['SOURCE_FILE_MISSING'],
       ['OUTSIDE_TEST_SCOPE'],
-      ['OUTSIDE_ALLOWED_SCOPE']
+      ['OUTSIDE_ALLOWED_SCOPE'],
+      ['ADMISSION_REJECTED']
     ] as const)('throws ConflictException (409) for %s', async (outcome) => {
       const reprocess = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '153', executionId: null });
       const controller = new CaterpillarController({} as never, { reprocess } as never);

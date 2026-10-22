@@ -148,7 +148,9 @@ describe('015 candidate — pure node bodies against synthetic data (no n8n, no 
   it.each(['REPROCESS_SNAPSHOT_REQUIRED', 'PARENT_NOT_REPROCESSABLE', 'PARENT_HAS_ACTIVE_REMISSIONS', 'OTHER_DOCUMENT_CONFLICT_REVIEW'])('reprocess rejection %s fails closed (never "accepted")', reason => {
     const out = admit(gateRow({ decision: 'REVIEW', reason, can_emit: false, worker_id: null, ejecucion_id: '12', reserva_id: null, folio_inicial: null, folio_final: null, cantidad: null }),
       { ...preparation(), mode: 'REPROCESS', reproceso_de_id: '12' });
-    expect(run('Mapear resultado creación reproceso CAT', [{ json: out }])[0]!.json).toMatchObject({ reproceso_status: null, reproceso_status_valido: false });
+    const expected = reason === 'PARENT_NOT_REPROCESSABLE' ? 'NOT_ELIGIBLE_STATE' : 'ADMISSION_REJECTED';
+    expect(run('Mapear resultado creación reproceso CAT', [{ json: out }])[0]!.json).toMatchObject({ reproceso_status: null, reproceso_status_valido: false, reproceso_motivo_rechazo: expected });
+    expect(workflow.connections['¿Estado de reproceso reconocido?']!.main[1]).toEqual([{ node: 'Responder reproceso rechazado', type: 'main', index: 0 }]);
   });
   it('assignment requires the proven right and carries the gate execution into registration', () => {
     const lookups = { 'Normalizar datos CAT': { json: {} }, 'Preparar reserva folios PG': { json: {} } };

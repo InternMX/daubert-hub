@@ -19,7 +19,8 @@ export type CaterpillarReprocessRejectionReason =
   | 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'
   | 'SOURCE_FILE_MISSING'
   | 'OUTSIDE_TEST_SCOPE'
-  | 'OUTSIDE_ALLOWED_SCOPE';
+  | 'OUTSIDE_ALLOWED_SCOPE'
+  | 'ADMISSION_REJECTED'; // 015 gate refusal (live remissions, missing snapshot, programming conflict): a domain rule, not a technical failure
 
 export type CaterpillarReprocessWebhookResult =
   | { kind: 'ACCEPTED'; status: CaterpillarReprocessAcceptedStatus; originalExecutionId: string; executionId: string }
@@ -35,7 +36,7 @@ const WEBHOOK_HEADER_NAME = 'X-Daubert-Automation-Token';
 const ACCEPTED_STATUSES = new Set<string>(['REPROCESS_CREATED', 'ALREADY_PROCESSING', 'ALREADY_REPROCESSED']);
 // Includes the explicit 409/422 branches in both versioned Caterpillar workflows.
 // Unknown codes still fail closed; live TEST parity must be checked before promotion.
-const KNOWN_REJECTION_REASONS = new Set<string>(['NOT_FOUND', 'NOT_ELIGIBLE_STATE', 'SOURCE_DOCUMENT_MISSING', 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING', 'SOURCE_FILE_MISSING', 'OUTSIDE_TEST_SCOPE', 'OUTSIDE_ALLOWED_SCOPE']);
+const KNOWN_REJECTION_REASONS = new Set<string>(['NOT_FOUND', 'NOT_ELIGIBLE_STATE', 'SOURCE_DOCUMENT_MISSING', 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING', 'SOURCE_FILE_MISSING', 'OUTSIDE_TEST_SCOPE', 'OUTSIDE_ALLOWED_SCOPE', 'ADMISSION_REJECTED']);
 
 @Injectable()
 export class CaterpillarReprocessWebhookClient {

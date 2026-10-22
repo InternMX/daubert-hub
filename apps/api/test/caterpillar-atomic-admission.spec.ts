@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { createHash } from 'node:crypto';
@@ -380,5 +381,14 @@ describe('015 atomic admission SQL — isolated contract tests, not real concurr
     expect(await capture(1)).toBe('STORED');
     expect(await gate(1)).toMatchObject({ can_emit: true, reason: 'ACQUIRED' });
     expect(await capture(1)).toBe('ALREADY_STORED'); // a reprocess re-read of the same file is idempotent
+  });
+  it('the read-only verification queries run on the contract schema and detect a forged duplicate folio', async () => {
+    const { QUERIES } = createRequire(__filename)('../scripts/caterpillar-015-verify.cjs') as { QUERIES: Record<string, string> };
+    await document(1, 'NEW.xlsx'); const a = await gate(1);
+    const run = async () => ({ executions: (await db.query(QUERIES.executions!, [0])).rows, violations: (await db.query(QUERIES.violations!, [0])).rows,
+      legacy: (await db.query(QUERIES.workerLegacyExecute!)).rows });
+    expect(await run()).toMatchObject({ executions: [{ ejecucion_id: a.ejecucion_id, has_snapshot: true }], violations: [] });
+    await db.exec(`INSERT INTO operacion.remisiones(ejecucion_id,serie_id,folio,estatus) VALUES(${a.ejecucion_id},1,1000,'GENERADA'),(${a.ejecucion_id},1,1000,'GENERADA')`);
+    expect((await run()).violations).toEqual([{ rule: 'DUPLICATE_FOLIO', detail: '1:1000' }]);
   });
 });

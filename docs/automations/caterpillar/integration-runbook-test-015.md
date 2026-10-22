@@ -245,3 +245,50 @@ Concurrencia: primero modo por defecto (todo ROLLBACK) con documento/serie fixtu
 
 ### Estado por capa
 Código preparado: sí. PostgreSQL real validado: solo 014 (snapshot); 015 no. n8n real validado: manifest V1 (sintético); candidato 015 no. Migración 015 aplicada: no. E2E demostrado: no.
+
+## 9. Integración y validación real en TEST — ejecución guiada
+
+**Estado al escribir esto:** la sesión de la IA no tiene `TEST_DATABASE_URL_MIGRATOR`, `TEST_DATABASE_URL` ni acceso autenticado a la API de n8n, por lo que **015 NO se aplicó y
+nada se importó ni se ejecutó**. Todo lo siguiente está preparado y probado offline; las tablas de resultados reales quedan por completar con la salida de los comandos.
+
+### 9.1 Piezas preparadas
+- `candidate-015/prepare-enabled.cjs` genera dos copias INACTIVAS derivadas del candidato bloqueado (sin `id`, por lo que n8n las importa como workflows NUEVOS):
+  - `caterpillar-test-015.INSPECT.INACTIVE.json` (Etapa 0): lee Excel, clasifica, normaliza y calcula el manifest V1; documento sintético; PostgreSQL, escritura de archivos y PowerShell siguen bloqueados; termina en *Preparar snapshot admisión CAT*.
+  - `caterpillar-test-015.FULL.INACTIVE.json`: todas las acciones habilitadas pero confinadas: rutas solo dentro de la raíz TEST (lectura en toda la raíz; escritura únicamente en `01_ENTRADA`, `02_SALIDAS`, `03_LOGS`, `04_ERRORES` y `06_ARCHIVOS TEMPORALES\cat-test-5678`; borrado solo de `.html` temporales),
+    PowerShell solo con los dos scripts fijos de TEST y argumentos sin metacaracteres, PostgreSQL solo con las entradas protegidas de 015 y la credencial `cat_test` (referencia por id `xK9CGscXx6kKLZTi`, sin secreto). Webhook deshabilitado y con ruta nueva `cat-test-reprocess-015`; Schedule deshabilitado; solo disparador manual.
+- `scripts/apply-caterpillar-015-test.ps1`: corte con compuertas (identidad `postgres@daubert_hub_test`, hash del respaldo, 0 PROCESANDO, precheck, up, postcheck). Sin `-Apply` es un ensayo que no cambia nada. Nunca ejecuta `down`.
+- `apps/api/scripts/caterpillar-015-verify.cjs`: verificación de solo lectura (folios duplicados, un hijo por padre, rangos solapados, COMPLETADA = reservas, snapshot presente, worker sin EXECUTE legado).
+- Hub: nuevo rechazo de dominio `ADMISSION_REJECTED` (HTTP 409 con mensaje claro) en vez de un 502 cuando el gate rechaza un reproceso. El candidato responde `NOT_ELIGIBLE_STATE` o `ADMISSION_REJECTED`; un error técnico (incluido un fallo de snapshot) sigue siendo error técnico, y un timeout del Hub se informa como timeout.
+
+### 9.2 Dependencias Windows (comprobadas en solo lectura el 2026-10-22)
+Presentes en `…\REMISIONES CAT`: `00_ARCHIVOS A PROCESAR`, `01_ENTRADA`, `02_SALIDAS`, `03_LOGS`, `04_ERRORES`, `05_ARCHIVOS AUXILIARES\{CATALOGO\Catalogo_Caterpillar.xlsx, SCRIPTS\convertir-cat-pdf.ps1, SCRIPTS\limpiar-temp-cat.ps1, TEMPLATES\*.html + fonts + images}`, `06_ARCHIVOS TEMPORALES`.
+Chrome (`C:\Program Files\Google\Chrome\Application\chrome.exe`) y Edge existen. `convertir-cat-pdf.ps1` exige que exista `-TempDir` (lo crea *Renderizar HTML* con `mkdirSync` confinado) y crea `-OutDir`.
+No se instaló ni modificó nada. No se probó la escritura real (requiere ejecutar el workflow). Observación: `detectar-archivos-cat.ps1` está vacío y no lo usa el flujo.
+
+### 9.3 Secuencia (en orden; cada paso depende del anterior)
+1. Variables y comprobaciones (sección 8): `idle-diagnosis` (`blockers: []`), `readonly-check` (precheck PASS, revisar `workerExecutableFunctions`). Revisión manual de credenciales n8n por usuario `n8n_cat_test`.
+2. En n8n (sin tocar PROD): exportar `MANUAL TEST REMISIONES CAT` (0hUrQ64tpD2yI2MZ); **desactivarlo**; confirmar 0 ejecuciones en curso. Importar `…INSPECT.INACTIVE.json` (Workflows → Import from file). Verificar que se creó un workflow NUEVO (otro id) y que PROD no cambió.
+3. **Etapa 0**: colocar un Excel de prueba en `00_ARCHIVOS A PROCESAR`, ejecutar manualmente. Esperado: item final de *Preparar snapshot admisión CAT* con `documento_origen_id: "0"` y `manifest_canonical` V1; sin filas nuevas en PostgreSQL ni archivos nuevos. Revisar clasificación P5/P6/Torreón y cantidades.
+4. `.\scripts\apply-caterpillar-015-test.ps1 -BackupFile <dump> -BackupSha256 <hash> -OldWorkflowDeactivated` (ensayo). Si da PASS, repetir con `-Apply`. Después `readonly-check` y `caterpillar-015-verify.cjs` (esperado `TEST_015_VERIFY_PASS`).
+5. Importar `…FULL.INACTIVE.json`; comprobar en la UI que los 7 nodos PostgreSQL muestran `cat_test`. Ejecutar manualmente un programa nuevo (**Etapa 1–3**) y verificar: snapshot `STORED`, ejecución COMPLETADA, reserva APLICADA = remisiones GENERADAS, PDFs en `02_SALIDAS`, HTML temporales borrados, `caterpillar-015-verify.cjs` PASS.
+6. **Etapa 4 (reproceso)**: asignar *Header Auth* al webhook en la UI, habilitarlo, apuntar `CATERPILLAR_REPROCESS_WEBHOOK_URL` de TEST del Hub a `/webhook/cat-test-reprocess-015` (cambio de configuración del Hub de TEST, no de n8n global) y reprocesar desde Hub una ejecución ERROR/CANCELADA creada con las pruebas.
+7. **Etapa 5 (concurrencia)**: con `TEST_DATABASE_URL_WORKER` (n8n_cat_test) y `TEST_DATABASE_URL_MIGRATOR`, ejecutar `caterpillar-015-concurrency.test-runner.cjs` en modo ROLLBACK sobre un documento con snapshot y una serie/ruta de pruebas DEDICADAS (crear esos fixtures requiere SQL de escritura contra el esquema real; no se incluye hasta confirmarlo). `--commit` solo con autorización aparte.
+8. Schedule: no habilitar hasta cerrar la tabla de abajo.
+
+### 9.4 Escenarios y verificación (completar con resultados reales)
+| Caso | Cómo | Esperado / verificación | Resultado real |
+|---|---|---|---|
+| Programación nueva | Excel nuevo en `00_…` | COMPLETADA; PDFs; `verify` PASS | pendiente |
+| Segunda ejecución idéntica | Reponer el mismo archivo | `BLOCK PROGRAM_ALREADY_EMITTED`; 0 folios nuevos | pendiente |
+| Mismo archivo modificado tras emitirse | Editar copia, mismo nombre | `CONFLICT` en snapshot (mismo documento) o `BLOCK` por nombre; sin emisión | pendiente |
+| Archivo nuevo, contenido distinto | Nombre y datos nuevos | `ADMIT` | pendiente |
+| Nombre distinto, contenido V1 equivalente | Renombrar copia | `REVIEW MANIFEST_MATCH_REVIEW` | pendiente |
+| Snapshot repetido / conflictivo | Releer / cambiar manifest | `ALREADY_STORED` / `CONFLICT`, sin folios | pendiente |
+| Histórico sin snapshot | Reproceso de los 17 históricos | `HISTORICAL_LOCKED`, error técnico controlado, sin escritura | pendiente |
+| Reproceso ERROR / CANCELADA / COMPLETADA | Desde Hub (ADMIN) | hijo único con folios nuevos / rechazo `NOT_ELIGIBLE_STATE` | pendiente |
+| Error antes / después de reservar | Excel inválido / forzar fallo de PDF | sin folios / reserva conservada, fallo del propietario | pendiente |
+| Dos workers | runner de concurrencia | un propietario, B espera `Lock/advisory` | pendiente |
+| Torreón con partidas repetidas | Excel Torreón | una remisión por OC; partidas completas en el manifest | pendiente |
+| P5/P6 | Excel P5 y P6 | series y cantidades como validado | pendiente |
+| Timeout del Hub | n8n lento | Hub informa timeout, nunca éxito; reintento idempotente | pendiente |
+| Worker interrumpido | cortar ejecución tras la reserva | conciliar con la sección 6 sin duplicar | pendiente |
