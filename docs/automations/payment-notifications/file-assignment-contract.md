@@ -2,6 +2,8 @@
 
 ## Alcance y estado de preparación
 
+> **Actualización 2026-10-22.** La funcionalidad está **desplegada y habilitada (fases A y B) en PRODUCCIÓN** mediante las migraciones PROD 015–017 y el Hub `6370753`; pendiente de validar con el primer ZIP real. Estado, despliegue, rollback y checklist: [production-rollout](production-rollout.md). El resto de este documento conserva el contrato y el historial de las migraciones TEST 012–014 y de la validación en TEST.
+
 Trabajo en `feat/payment-notification-file-assignment`, base `cbcb6f3`.
 La migración 012 está restringida a **daubert_hub_test**. No contiene backfill,
 no toca aliases permanentes ni tablas existentes y no modifica workflows.
@@ -279,12 +281,6 @@ código de la incidencia que el Hub correlaciona; registro previo solo en reproc
 genera fuera del repositorio y no se versiona aquí. Antes de usarlo en el n8n compartido hay que decidir la credencial
 (`n8n_app_test` o un permiso explícito para `n8n_app`), el `fflate` y la ruta/credencial del webhook.
 
-### Antes de PRODUCCIÓN (nada de esto está hecho)
+### Paso a PRODUCCIÓN (hecho el 2026-10-21/22)
 
-- Las migraciones 013 y 014 son **exclusivas de `daubert_hub_test`** (cada archivo aborta en cualquier otra base); no hay
-  despliegue ni imagen que las ejecute o las incluya. Un equivalente productivo requeriría una migración nueva, revisada y con
-  su propio plan de reversa.
-- `PAYMENT_FILE_ASSIGNMENTS_N8N_READY` y `PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN` no están en `compose*.yaml` ni en los
-  ejemplos de despliegue; sin ellas el comportamiento es el anterior (se bloquea cualquier asignación activa).
-- Falta validar con Outlook y Dropbox reales, definir la credencial del workflow real y decidir `fflate`/reinicio de la instancia
-  compartida.
+Las migraciones 012–014 siguen siendo exclusivas de `daubert_hub_test`. Sus equivalentes productivos son `20261022_015…017_*_prod` (guardadas para `daubert_global`, aplicadas manualmente), con permisos mínimos: `n8n_app` solo `EXECUTE` en registrar y consultar; el Hub con las funciones de lectura/bloqueo. El workflow de Pagos v2 (108 nodos) se construyó sobre el workflow vivo de PROD. Las banderas productivas (`PAYMENT_FILE_ASSIGNMENTS_PROD_*`) son independientes de las de TEST. Detalle, rollback y checklist del primer ZIP real: [production-rollout](production-rollout.md).
