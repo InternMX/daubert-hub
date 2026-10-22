@@ -24,4 +24,13 @@ describe('atomic admission client contract — no DB',()=>{
   it.each([{documentId:'0'}, {documentId:'9223372036854775808'}, {workerId:''}, {quantity:0}, {quantity:1.2}])('rejects invalid atomic request %j',change=>{
     expect(()=>assertAtomicAdmissionInput({...input,...change})).toThrow();
   });
+  it('reprocess uses its own protected single call and only accepts REPROCESS_ACQUIRED/OWNED_RETRY as emission',async()=>{
+    const query=vi.fn().mockResolvedValue([{...row,reason:'REPROCESS_ACQUIRED'}]);
+    const repo=new CaterpillarExecutionsRepository({query} as never);
+    expect((await repo.claimReprocessAndReserve({...input,documentId:'41'})).can_emit).toBe(true);
+    expect(query.mock.calls[0]?.[0]).toContain('ops.fn_reprocesar_reservar_caterpillar_test');
+    expect(query.mock.calls[0]?.[0]).not.toContain('operacion.reservar_folios_para_ejecucion');
+    query.mockResolvedValue([row]); // plain ACQUIRED is the first-emission gate's reason, never a reprocess right
+    await expect(repo.claimReprocessAndReserve({...input,documentId:'41'})).rejects.toThrow('Atomic emission right not proven');
+  });
 });

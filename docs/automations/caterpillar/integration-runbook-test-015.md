@@ -1,0 +1,247 @@
+# Fase 5E — compatibilidad 015 y runbook de integración coordinada en TEST (handoff)
+
+**015 NO APLICADA. Ningún workflow n8n, dato, PROD, Dropbox ni Notificaciones de Pago tocados.**
+Rama `feat/caterpillar-remission-controls`, base `da15d70`. Alcance 5E: revisión + preparación + lecturas autorizadas.
+
+## 1. Compatibilidad de 015 con el workflow TEST actual
+
+Fuente: export `MANUAL TEST REMISIONES CAT.json` (credencial Postgres única `cat_test`, id `xK9CGscXx6kKLZTi`; inactivo en el export).
+Es evidencia de un export local, **no** del inventario vivo de n8n.
+
+| Nodo / camino | Función usada | Efecto tras 015 |
+|---|---|---|
+| Resolver documento origen PG | `core.fn_crear_o_resolver_documento` | Sin cambio (015 no la toca) |
+| Crear o recuperar ejecución PG | `ops.fn_crear_ejecucion_automatizacion` | **Falla** (EXECUTE retirado a `n8n_cat_test`) |
+| Reservar folios PG | `operacion.reservar_folios_para_ejecucion` | **Falla** |
+| Registrar remisión PG | `operacion.fn_registrar_remision_generada` | **Falla** |
+| Finalizar ejecución PG | `ops.fn_finalizar_ejecucion_automatizacion` | **Falla** |
+| Registrar fallo PG | `ops.fn_registrar_fallo_ejecucion` | **Falla** |
+| Resolver ejecución original PG (reproceso) | `ops.fn_resolver_ejecucion_para_reproceso` | Sigue funcionando (no se revoca) |
+| `Execute a SQL query` | `pg_get_functiondef(finalizar)` (diagnóstico) | Funciona (catálogo, sin EXECUTE) |
+
+Hallazgos:
+
+1. **Aplicar 015 con el workflow actual lo rompe por completo** salvo el resolutor de documento y el de elegibilidad. Confirma la regla: sin aplicación aislada.
+2. **Reproceso manual (webhook `cat-test-reprocess`)**: reutiliza `Crear o recuperar ejecución PG` con `p_reproceso_de_id`. El gate `fn_admitir_reservar_caterpillar_test` llama a `fn_crear_ejecucion_automatizacion(..., NULL, NULL)`: **no soporta crear hija de reproceso**. Tras 015 el reproceso TEST queda inoperante hasta definir una entrada protegida (p. ej. extender el gate con `p_reproceso_de_id` validando que el original sea ERROR/CANCELADA y sin hijo; el índice único `uq_ejecuciones_automatizacion_reproceso_unico` ya limita a un hijo). **Es decisión pendiente; no se implementó** (regeneración excluida de 5E).
+3. **Recuperación de workers**: el owner es `n8n_execution_id` fijo; un worker muerto con ejecución `PROCESANDO` bloquea la programación (`PROGRAM_IN_PROGRESS`) para cualquier otro worker, sin expiración. Recuperación = conciliación manual administrativa (marcar la ejecución huérfana mediante `fn_fallo_caterpillar_test`/finalizar con el MISMO worker id, solo con ventana y evidencia). No reutilizar el ID desde otro workflow. Pendiente fase administrativa.
+4. **Consumidores del rol `n8n_cat_test`**: el repositorio solo prueba un consumidor (workflow TEST con credencial `cat_test`). Que `cat_test` use el usuario `n8n_cat_test` y que ningún otro workflow la comparta **no está verificado en vivo** (`liveCredentialUserVerified=false`, `liveCredentialExclusiveVerified=false`). Se verifica en n8n UI (Credentials → `cat_test` → usuario y "Used by"), sin leer secretos. El Hub/API no llama estas funciones con ese rol (los runners de integración usan roles de test propios).
+5. El precheck exige: sin `PROCESANDO`, sin snapshots previos, rol sin memberships/DML, grants directos legado intactos y huellas/contratos de resultado esperados.
+
+## 2. Runbook de integración coordinada (solo TEST, con autorización por paso)
+
+**Condiciones previas:** autorización explícita del operador para cada etapa B+; PowerShell con variables (ver §4); numeración 015 confirmada externamente.
+
+**A. Lecturas (sin escritura)** — autorizado en 5E
+1. `node apps/api/scripts/caterpillar-015-readonly-check.cjs` → debe dar `TEST_015_READONLY_COMPLETE_NOT_READY` con `precheck.pass=true`, rol sin memberships, `workerTablePrivileges.direct_mutation=false`, funciones `available` y `worker_direct_execute=true`.
+2. Contar `executions` / `snapshots` / `legacy_documents` (salen en el reporte). Esperado: 0 PROCESANDO.
+3. En n8n UI, verificar `cat_test` → usuario `n8n_cat_test` y que solo lo usa el workflow TEST. Confirmar instancia 5678 sin ejecuciones en curso y workflow inactivo/sin triggers.
+
+**B. Respaldo (requiere autorización)**
+1. `pg_dump -Fc` de `daubert_hub_test` hacia `C:\Users\06\Documents\Daubert\respaldos-postgres-test\` (nombre con fecha); verificar con `pg_restore --list`.
+2. Dump de definiciones: `pg_dump --schema-only -n core -n ops -n operacion` + export de ACL de las 5 funciones legado. Guardar hashes (`body_fingerprint` del reporte A).
+3. Exportar (archivo local, sin importar) el workflow TEST actual de n8n y la lista de credenciales.
+4. Probar restauración del respaldo en una base desechable, no en TEST.
+
+**C. Ventana** — sin ejecuciones TEST, workflow viejo desactivado y sin webhook activo; no detener la instancia 5678 ni cambiar opciones globales de PROD.
+
+**D. Adaptación n8n (copia, aún sin importar)** según la tabla de nodos de `atomic-admission-test.md`. Para esta ventana además: decidir y probar el camino de reproceso (hallazgo 2) y de recuperación (hallazgo 3). Validar la copia con `validate-candidate.cjs`/specs existentes. **No importar sin autorización.**
+
+**E. Aplicar 015** (autorizado explícitamente): `precheck` → `up` → `postcheck` por el runner de migración habitual con `postgres` en TEST. Verificar que el postcheck pasa.
+
+**F. Validación de permisos (lectura)** — repetir A; esperar `worker_effective_execute=false` en las 5 legado y `true` en las 4 entradas protegidas, `direct_mutation=false`. Con `n8n_cat_test`: `SELECT ops.fn_crear_ejecucion_automatizacion(...)` debe dar `permission denied`; PUBLIC/Hub sin EXECUTE.
+
+**G. Concurrencia real** (§3) con fixture aislado. Luego probar nombres equivalentes, fallo dentro de reserva, reintento tras respuesta perdida (mismo worker → `OWNED_RETRY`), bypass de permisos.
+
+**H. Importar el workflow adaptado** (autorizado aparte), ejecución manual de un fixture aislado, comparar con la corrida V1 previa. No activar triggers automáticamente.
+
+**Rollback:** `down.sql` solo con mantenimiento, lock exclusivo y sin ejecuciones respaldadas por snapshot; si no es posible, restaurar el dump de B en base nueva y reapuntar. Reimportar el workflow viejo desde el export de B.3.
+
+## 3. Prueba de concurrencia con dos conexiones reales
+
+Archivo: `apps/api/test/caterpillar-015-concurrency.test-runner.cjs`. Requiere 015 ya aplicada y un documento fixture aislado con snapshot válido, routing a una serie de pruebas y cantidad esperada (no folios operativos).
+
+```
+$env:TEST_DATABASE_URL_WORKER   = '<postgres://n8n_cat_test:...@host:5432/daubert_hub_test>'
+$env:TEST_DATABASE_URL_MIGRATOR = '<postgres://postgres:...@host:5432/daubert_hub_test>'
+cd apps/api
+node test/caterpillar-015-concurrency.test-runner.cjs --document <id> --series <serie> --quantity <n>
+```
+
+- Modo por defecto (sin escritura persistente): A adquiere sin commit, B se observa esperando `Lock/advisory` desde `pg_stat_activity`, A hace ROLLBACK, B adquiere; ambos revierten.
+- `--commit --allow-test-writes`: A hace COMMIT; B debe recibir `PROGRAM_IN_PROGRESS`, `can_emit=false`, y se verifica 1 ejecución PROCESANDO + 1 reserva. Deja la ejecución fixture que debe resolverse por §2-G (no se limpia sola).
+- Valida base `daubert_hub_test`, usuarios exactos y dos PIDs distintos; los errores crudos se suprimen.
+- Verificado hoy solo sintaxis y guardas (sin variables TEST no se conecta).
+
+## 4. Ejecutar las lecturas desde PowerShell configurada
+
+```
+$env:TEST_DATABASE_URL_MIGRATOR = '<postgres://postgres:...@host:5432/daubert_hub_test>'
+$env:TEST_DATABASE_URL          = '<postgres://daubert_hub_test_user:...@host:5432/daubert_hub_test>'
+cd C:\Users\06\Documents\Daubert\daubert-hub-caterpillar-remission-controls\apps\api
+node scripts\caterpillar-015-readonly-check.cjs
+```
+
+Solo `BEGIN READ ONLY`; el precheck corre y se revierte. Limitación: el script exige ambas URLs; no lee `.env`.
+
+## 5. Estado 5E
+
+- Hecho: revisión de compatibilidad, runbook, runner de concurrencia, ejecución del check (resultado hoy: `TEST_015_READONLY_BLOCKED`, `MISSING_AUTHORIZED_TEST_CONNECTIONS`; no hay variables TEST en esta sesión).
+- Archivos nuevos (sin commit): `apps/api/scripts/caterpillar-015-readonly-check.cjs`, `apps/api/test/caterpillar-015-concurrency.test-runner.cjs`, este documento.
+- Bloqueos: lecturas vivas sin variables; credencial `cat_test` sin verificar; reproceso y recuperación de workers sin entrada protegida; prueba de concurrencia no ejecutada (necesita 015 aplicada).
+- Siguiente paso: el operador ejecuta §4 y comparte el JSON; decidir diseño de reproceso/recuperación; luego autorizar B.
+
+## 6. Fase 5F — compatibilidad preparada (SIN aplicar, SIN importar)
+
+**Estado:** 015 sigue NO aplicada; el candidato `n8n/workflows/remisiones-caterpillar/candidate-015/` sigue BLOQUEADO.
+La ejecución 117 (documento 214, worker 4471, reserva 89 folios 81–84 RESERVADA, sin remisiones) no se tocó; el precheck 015 no se debilitó
+(no se modificó el archivo `.precheck.sql`; su hash fijado en `caterpillar-015-readonly-check.cjs` sigue vigente).
+
+### Entrada protegida de reproceso (añadida a 015)
+`ops.fn_reprocesar_reservar_caterpillar_test(p_parent bigint, p_worker text, p_series text, p_quantity integer)` — mismo contrato de
+columnas que el gate, SECURITY DEFINER, `search_path` fijo, READ COMMITTED, EXECUTE solo para `n8n_cat_test`. Se agregó a `up`, `down` y
+`postcheck` (huella `da2088a4bb82bffb90ccd632d6108dde`); el `precheck` no cambió.
+
+- Padre solo `ERROR`/`CANCELADA` (si no: `BLOCK PARENT_NOT_REPROCESSABLE`); COMPLETADA y PROCESANDO nunca se amplían.
+- El documento hijo es SIEMPRE el del padre (no se acepta uno del llamador). Sin snapshot V1 válido: `REVIEW REPROCESS_SNAPSHOT_REQUIRED`
+  (los históricos —17 legacy— quedan bloqueados explícitamente; no se inventan snapshots).
+- Padre con remisiones vivas (no CANCELADA) = emisión parcial: `REVIEW PARENT_HAS_ACTIVE_REMISSIONS`. **Restricción nueva** respecto
+  al reproceso actual (que no la tenía); se añadió para no duplicar emisión. Revisar si se acepta.
+- Reutiliza `ops.fn_crear_ejecucion_automatizacion(…, p_parent)` (conserva `reproceso_de_id`, un solo hijo directo y su idempotencia) y
+  `operacion.reservar_folios_para_ejecucion` (folios nuevos). Hijo existente: mismo worker → `OWNED_RETRY` (misma reserva); otro worker con hijo
+  PROCESANDO → `REPROCESS_IN_PROGRESS`; hijo terminado → `ALREADY_REPROCESSED`.
+- Conflictos con OTROS documentos (mismo nombre/clave, manifest equivalente, legacy por nombre, historial inválido) → `REVIEW`, misma política del gate.
+- Misma autoridad: ADMIN sigue en Hub/n8n; no se restauró ningún privilegio directo a `n8n_cat_test`.
+- Pregunta abierta: el gate llama `REGENERATION_AUTHORIZATION_REQUIRED` a un CANCELADA; el reproceso de un padre CANCELADA se conserva porque
+  el requerimiento lo pide, pero conviene confirmar que no equivale a regeneración comercial.
+
+Contrato TS preparado (no llamado por controladores): `CaterpillarExecutionsRepository.claimReprocessAndReserve` (acepta solo
+`REPROCESS_ACQUIRED`/`OWNED_RETRY` como derecho de emisión).
+
+### Recuperación manual de un worker con ejecución PROCESANDO (sin automatizar)
+1. Confirmar que no continúa: historial de n8n 5678 para `n8n_execution_id` (ejecución terminada/fallida/inexistente) y sin backends
+   `n8n_cat_test` activos. Si corre, esperar.
+2. Ejecutar `caterpillar-015-idle-diagnosis.cjs` (solo lectura) y clasificar por ejecución: reservas (estado/rango), remisiones, documento y snapshot.
+3. Clasificar: **sin remisiones** = fallo sin emisión; **remisiones parciales** = emisión parcial (conciliar PDFs/remisiones antes de nada);
+   **remisiones = reservas** = emisión completa sin finalizar.
+4. Con autorización expresa y SOLO con el mismo ID de worker mediante los wrappers existentes (no SQL manual): fallo sin emisión →
+   `fn_fallo_caterpillar_test` hasta ERROR terminal o `fn_finalizar_caterpillar_test(…,'ERROR')` (abandona la reserva, conserva fila y folios, sin reabrir);
+   emisión completa → `fn_finalizar_caterpillar_test(…,'COMPLETADA')` solo si la integridad lo permite; parcial → no cerrar hasta conciliar.
+5. Nunca: expirar por timeout, reasignar propietario, reutilizar el ID desde otro workflow, borrar filas, tocar secuencias/folios.
+6. Si la ejecución es anterior a 015 y no tiene snapshot (caso 117), los wrappers no aplican (`CAT_ATOMIC_SNAPSHOT_REQUIRED`): se cierra ANTES del
+   corte con las funciones legado existentes, mientras `n8n_cat_test` aún las tiene, o con el rol administrativo y autorización, y el precheck debe pasar sin cambios.
+
+### Candidato de workflow
+Ver `candidate-015/README.md`. Flujo: documento → normalización/manifest V1 → snapshot (BLOQUEADO) → serie/cantidad → gate atómico → derecho
+verificado → asignar/registrar/finalizar por wrappers; fallos previos a la admisión no tocan SQL; reproceso con camino explícito.
+
+### Pruebas (offline; NO son validación real de PostgreSQL ni de n8n)
+- `caterpillar-atomic-admission.spec.ts` (PGlite, un solo backend, dobles del contrato legado): 41 pruebas, 11 nuevas de reproceso.
+- `caterpillar-atomic-admission-contract.spec.ts`: 15 (incl. contrato TS de reproceso).
+- `caterpillar-015-candidate.spec.ts`: 19 (estructura inactiva/bloqueada, alcanzabilidad, cuerpos puros, Torreón, fallos previos/posteriores).
+- Suite completa de la API: 142 archivos / 2158 pruebas OK; `tsc --noEmit` y eslint de lo tocado limpios.
+
+### Sigue bloqueando aplicar 015
+1. Ejecución 117 PROCESANDO (más cualquier otra) — conciliar antes del corte.
+2. ~~Escritor de snapshot~~ (5G-A): entrada SQL `ops.fn_guardar_snapshot_caterpillar_test` en 015, huella `e8a39d9e2d9b64e40cc42f9fd9e979d0`, ya enlazada en el candidato; falta validarla contra PostgreSQL real tras aplicar 015.
+3. Credencial `cat_test` sin exclusividad verificada; instancia 5678 compartida con PROD.
+4. Prueba de concurrencia real con dos backends (runner listo, requiere 015 aplicada) y prueba real del reproceso (el runner actual solo cubre el gate de primera emisión).
+5. Respuesta de reproceso al Hub (10 s) y rechazos sin código conocido por el Hub.
+6. Aceptar por escrito la política legacy (17 históricos) y la restricción nueva de remisiones vivas.
+7. Respaldo, ventana sin ejecuciones TEST y autorización explícita (§2 B–E).
+
+### Siguiente validación concreta antes del corte
+Ejecutar (solo lectura) `caterpillar-015-idle-diagnosis.cjs` y `caterpillar-015-readonly-check.cjs`; verificar `cat_test` en n8n; decidir cómo se
+persiste el snapshot (servicio interno vs. otra vía revisada); con esa decisión reabrir el candidato, y recién entonces solicitar ventana y respaldo.
+
+## 7. Fase 5G-A — captura de snapshot (preparada, sin aplicar)
+
+- **Por qué SQL y no HTTP/NestJS**: no hay llamada autenticada n8n→Hub (los únicos tokens son Hub→n8n); un endpoint nuevo exigiría autenticación nueva.
+  La entrada SQL reutiliza la credencial `cat_test` (`n8n_cat_test`), sin UPDATE sobre `core.documentos` ni tablas nuevas, y vive en 015 (sin migración nueva).
+- **Qué hace** (`ops.fn_guardar_snapshot_caterpillar_test(p_document bigint, p_manifest text) → text`): TEST-only; bloquea la fila del documento;
+  empresa y nombre salen de ese documento; n8n solo envía `JSON.stringify(manifest)` ya calculado por V1 antes de agrupar Torreón; construye la clave
+  (texto idéntico al `JSON.stringify` de TypeScript, verificado en pruebas) y la valida con `fn_cat_snapshot_015`. Resultado: `STORED`,
+  `ALREADY_STORED`, `CONFLICT` (nunca sobrescribe) o `HISTORICAL_LOCKED` (documento con intentos terminales, remisiones o reservas: sin backfill).
+  Errores (`SOURCE_NOT_FOUND`, `SNAPSHOT_INVALID`) abortan.
+- **Workflow**: Normalizar → Preparar snapshot → Guardar snapshot (SQL) → Verificar snapshot (solo STORED/ALREADY_STORED; re-emite los items normalizados) →
+  Preparar reserva → gate. Sin snapshot no hay ejecución ni folios (el gate responde `HISTORY_UNAVAILABLE`).
+- **Reproceso**: el mismo documento ya tiene snapshot → `ALREADY_STORED`; contenido distinto → `CONFLICT`; histórico sin snapshot → `HISTORICAL_LOCKED`
+  (reproceso bloqueado explícitamente, sin manifests inventados).
+- **Límite**: un fallo de captura aborta la ejecución de n8n (no hay log por Preparar error) y, dentro de un lote, detiene los archivos siguientes.
+
+## 8. Preparación integral del corte (estado y procedimiento) — NO EJECUTAR sin autorización
+
+**Veredicto de preparación: NO LISTO para solicitar la autorización del corte.** Código preparado y probado offline; nada validado contra PostgreSQL real
+(015), ni n8n real, ni E2E. Faltan, en orden: (1) ejecutar las lecturas reales y el respaldo (comandos abajo; esta sesión no tiene variables TEST);
+(2) un procedimiento revisado para **desbloquear** el candidato por etapas (hoy todos los nodos PostgreSQL/archivo/comando tienen hold incondicional y no
+existe aún el generador de la copia habilitada, ni la revisión de sus dependencias Windows: scripts PowerShell, conversor PDF, temporales);
+(3) descartar manualmente que otra credencial n8n use `n8n_cat_test`; (4) prueba de restauración del respaldo en una base desechable.
+
+### Cambios de esta preparación
+- `precheck.sql` ahora también rechaza si ya existen `fn_reprocesar_reservar_caterpillar_test` y `fn_guardar_snapshot_caterpillar_test`
+  (SHA-256 normalizado nuevo `f0e7413d134a42e73c63e90efeb10d0f5695da5397bf563d8af162878c6d0253`, actualizado en `caterpillar-015-readonly-check.cjs`).
+  El PASS anterior del usuario fue contra el texto previo: **repetir el precheck**. No se debilitó ninguna condición.
+- `caterpillar-015-readonly-check.cjs` reporta además `workerExecutableFunctions` (toda función de core/ops/operacion que `n8n_cat_test` puede ejecutar hoy)
+  para revisar que no exista otro camino hacia folios fuera del gate. `scripts/backup-caterpillar-test-db.ps1` crea el respaldo.
+- Revisión de 015 final: up/down/postcheck/precheck listan las funciones nuevas (key_text, snapshot, worker, admitir, reprocesar, guardar y 3 wrappers) con huellas
+  vigentes; PUBLIC/otros roles sin EXECUTE sobre objetos nuevos; `n8n_cat_test` pierde EXECUTE directo de las 5 legado y se verifica que no lo recupere por membresía/PUBLIC.
+  Los wrappers de registro/finalización/fallo verifican propietario antes de delegar; reserva y reproceso solo existen dentro de sus entradas. Contratos SQL y consultas del
+  candidato revisados por pruebas (parámetros y columnas coinciden).
+- Revisión del candidato: la captura de snapshot es predecesor obligatorio del gate; fallos previos a la admisión no registran sobre ejecuciones ajenas (contexto del
+  documento actual); un timeout del Hub se informa como TIMEOUT (no como éxito) y un reintento posterior devuelve `ALREADY_PROCESSING`/`ALREADY_REPROCESSED`
+  (idempotente); el reproceso solo admite ERROR/CANCELADA, un hijo, sin remisiones vivas, folios nuevos, propietario exclusivo.
+
+### Comandos exactos para el usuario (PowerShell con variables TEST autorizadas)
+```
+cd C:\Users\06\Documents\Daubert\daubert-hub-caterpillar-remission-controls
+$env:TEST_DATABASE_URL_MIGRATOR = '<postgres://postgres:...@host:5432/daubert_hub_test>'
+$env:TEST_DATABASE_URL          = '<postgres://daubert_hub_test_user:...@host:5432/daubert_hub_test>'
+node apps\api\scripts\caterpillar-015-idle-diagnosis.cjs      # esperado: blockers: []
+node apps\api\scripts\caterpillar-015-readonly-check.cjs      # esperado: precheck.pass=true; revisar workerExecutableFunctions
+.\scripts\backup-caterpillar-test-db.ps1                      # crea daubert_hub_test_pre015_<fecha>.dump fuera de Git/Dropbox
+```
+El script de respaldo no sobrescribe, verifica código de salida, tamaño, SHA-256, `pg_restore --list` y que el archivo declare `daubert_hub_test`.
+`pg_restore --list` **no** prueba la restauración: antes del corte restaurar en una base desechable (`createdb daubert_restore_check`;
+`pg_restore -d daubert_restore_check <dump>`; comparar conteos; `dropdb`). Nunca restaurar sobre TEST ni PROD.
+
+Credenciales n8n (manual, sin ver contraseñas): en n8n → Credentials, abrir cada credencial Postgres y revisar solo Database/User; ninguna distinta de `cat_test`
+debe usar `n8n_cat_test`. Apoyo desde PostgreSQL: `SELECT application_name,count(*) FROM pg_stat_activity WHERE usename='n8n_cat_test' GROUP BY 1;` (no prueba exclusividad).
+
+### Antes del corte (todas deben cumplirse)
+1. Respaldo fresco verificado y restaurado en base desechable. 2. `cat_test`=`n8n_cat_test` y sin otra credencial con ese usuario.
+3. Idle diagnosis `blockers: []` y 0 ejecuciones Caterpillar PROCESANDO. 4. Precheck (texto nuevo) PASS. 5. `node candidate-015/prepare-candidate.cjs` reproduce el mismo SHA-256 y las pruebas pasan.
+6. Procedimiento de desbloqueo por etapas revisado (pendiente). 7. Ninguna ejecución PROD en curso; la instancia 5678 no se detiene ni se cambian opciones globales.
+
+### Durante el corte (documentado, NO ejecutar ahora)
+1. Desactivar el workflow `MANUAL TEST REMISIONES CAT` (0hUrQ64tpD2yI2MZ) y sus entradas; exportar copia de respaldo. 2. Esperar y comprobar 0 ejecuciones activas.
+3. Aplicar 015 solo en `daubert_hub_test` como `postgres` (precheck, up, postcheck). 4. Revisar `workerExecutableFunctions`: solo funciones protegidas y resolutores de lectura/documento.
+5. Importar como workflow NUEVO la copia habilitada por etapas, con la credencial `cat_test` y rutas TEST; nunca sobrescribir PROD ni el workflow anterior (el anterior falla por diseño con 015: sus llamadas directas pierden EXECUTE).
+6. Etapa 1: importar con todos los holds e inspeccionar. Etapa 2: quitar holds de PostgreSQL y validar snapshot+gate con un fixture aislado. Etapa 3: habilitar I/O de archivos solo en la raíz TEST. Etapa 4: ejecución manual de un programa. Sin schedule hasta el final.
+
+### Validación futura (criterios esperados)
+| Prueba | Esperado |
+|---|---|
+| Captura inicial | `STORED`; snapshot idéntico al de TypeScript |
+| Repetición | `ALREADY_STORED`, sin UPDATE |
+| Excel ya procesado modificado | nuevo hash = otro documento; mismo documento con otro manifest = `CONFLICT`, sin folios |
+| Nombre nuevo + contenido distinto | `ADMIT`, 1 ejecución, 1 reserva |
+| Nombre distinto, mismo manifest V1 | `REVIEW MANIFEST_MATCH_REVIEW`, sin folios |
+| Reproceso ADMIN de ERROR/CANCELADA | `REPROCESS_ACQUIRED`, hijo único, folios nuevos; repetido: `ALREADY_PROCESSING`/`ALREADY_REPROCESSED` |
+| Reproceso rechazado (COMPLETADA, remisiones vivas, histórico) | `PARENT_NOT_REPROCESSABLE` / `PARENT_HAS_ACTIVE_REMISSIONS` / `HISTORICAL_LOCKED`; sin escritura |
+| Error antes de reservar | sin ejecución ni reserva |
+| Error después de reservar | fallo registrado solo por el propietario; el mismo worker reintenta la misma reserva |
+| Dos workers | runner `caterpillar-015-concurrency.test-runner.cjs`: B espera `Lock/advisory`; un único propietario y rango |
+| Finalización | `COMPLETADA` solo con remisiones = reservas; sin duplicados |
+| Torreón | una reserva por documento OC; todas las partidas repetidas en el manifest |
+
+Concurrencia: primero modo por defecto (todo ROLLBACK) con documento/serie fixture aislados; `--commit` requiere autorización aparte y conciliación explícita; no usar series ni folios operativos.
+
+### Recuperación y rollback
+- **Falla `up`/postcheck**: `up` es una transacción; si falla, no queda nada. Si el postcheck falla tras COMMIT, no usar el workflow; corregir hacia adelante o aplicar `down` solo si no hay ejecuciones con snapshot.
+- **`down.sql` se niega** si existe cualquier ejecución Caterpillar cuyo documento tenga snapshot (evidencia). Tras un E2E con ejecuciones no hay `down`. Opciones:
+  (a) corregir hacia adelante; (b) emergencia, con firma: re-conceder a `n8n_cat_test` el EXECUTE legado SIN borrar 015 (reabre el bypass, solo para el workflow anterior y solo en TEST);
+  (c) restaurar el respaldo en una base nueva y decidir el cambio de base fuera de este alcance. Nunca borrar remisiones, retroceder contadores ni "limpiar" reservas.
+- **Falla la captura, reserva o reproceso en validación**: detener, no reintentar con otros IDs de worker; conciliar con el procedimiento de la sección 6 (mismo worker, wrappers).
+- **Falla el workflow candidato**: desactivar la copia; el anterior no sirve con 015 aplicada; volver a él solo reimportando el export de respaldo tras (b) con autorización.
+
+### Estado por capa
+Código preparado: sí. PostgreSQL real validado: solo 014 (snapshot); 015 no. n8n real validado: manifest V1 (sintético); candidato 015 no. Migración 015 aplicada: no. E2E demostrado: no.

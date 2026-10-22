@@ -21,6 +21,8 @@ BEGIN
     ('ops.fn_cat_snapshot_015(bigint,text,jsonb)','3a0d74e788c628bf6d8dd909abdcb172'),
     ('ops.fn_cat_worker_015(bigint,text)','e7ddda86d018f3e9dbef74c97745897f'),
     ('ops.fn_admitir_reservar_caterpillar_test(bigint,text,text,integer)','a3e178b623dd1a931dc3ce05785967b3'),
+    ('ops.fn_reprocesar_reservar_caterpillar_test(bigint,text,text,integer)','da2088a4bb82bffb90ccd632d6108dde'),
+    ('ops.fn_guardar_snapshot_caterpillar_test(bigint,text)','e8a39d9e2d9b64e40cc42f9fd9e979d0'),
     ('operacion.fn_registrar_remision_caterpillar_test(bigint,text,text,bigint,date,text,jsonb)','10f24f8a090a4b3246e708018ec9a432'),
     ('ops.fn_finalizar_caterpillar_test(bigint,text,text,text,text)','997d8d733d6849636cab0f282c1ef944'),
     ('ops.fn_fallo_caterpillar_test(bigint,text,text,text)','ea0fc6d1dee94b2eb8631c9453c514ef')
@@ -32,6 +34,8 @@ END $known$;
 DROP FUNCTION ops.fn_fallo_caterpillar_test(bigint,text,text,text);
 DROP FUNCTION ops.fn_finalizar_caterpillar_test(bigint,text,text,text,text);
 DROP FUNCTION operacion.fn_registrar_remision_caterpillar_test(bigint,text,text,bigint,date,text,jsonb);
+DROP FUNCTION ops.fn_guardar_snapshot_caterpillar_test(bigint,text);
+DROP FUNCTION ops.fn_reprocesar_reservar_caterpillar_test(bigint,text,text,integer);
 DROP FUNCTION ops.fn_admitir_reservar_caterpillar_test(bigint,text,text,integer);
 DROP FUNCTION ops.fn_cat_worker_015(bigint,text);
 DROP FUNCTION ops.fn_cat_snapshot_015(bigint,text,jsonb);

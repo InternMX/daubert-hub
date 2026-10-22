@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createCaterpillarAdmissionCandidate, createCaterpillarAdmissionSnapshot, normalizeCaterpillarProgrammingName } from '../src/automations/remisiones-caterpillar/caterpillar-automatic-admission';
+import { createCaterpillarAdmissionCandidate, createCaterpillarAdmissionSnapshot, normalizeCaterpillarProgrammingName, readCaterpillarAdmissionSnapshot } from '../src/automations/remisiones-caterpillar/caterpillar-automatic-admission';
+import { adaptCaterpillarNormalizedItems } from '../src/automations/remisiones-caterpillar/caterpillar-operational-manifest.adapter';
 
 // One in-memory backend, legacy contract doubles. NOT real two-backend concurrency/Daubert evidence.
 const dir = resolve(__dirname, '../../../database/migrations/daubert_global');
@@ -15,7 +16,7 @@ const bodies = up.split('CREATE FUNCTION ').slice(1).map(block => block.split('A
 const inMemory = (sql: string) => bodies.reduce((text,body) => text.replaceAll(md5(body),md5(databaseOnly(body))),databaseOnly(sql));
 const script = (phase: string) => readFileSync(resolve(dir,`20261022_015_caterpillar_atomic_admission_test.${phase}.sql`),'utf8');
 const fixture = JSON.parse(readFileSync(resolve(__dirname, 'fixtures/caterpillar-normalized-items.json'), 'utf8')) as { normal: Array<{ json: Record<string, unknown> }>; torreonBeforeGrouping: Array<{json: Record<string, unknown>}> };
-interface Gate { decision: string; reason: string; can_emit: boolean; worker_id: string | null; ejecucion_id: number; reserva_id: number; legacy_unverified: number }
+interface Gate { decision: string; reason: string; can_emit: boolean; worker_id: string | null; ejecucion_id: number; reserva_id: number; folio_inicial: number; legacy_unverified: number }
 describe('015 atomic admission SQL — isolated contract tests, not real concurrency', () => {
   let db: PGlite;
   beforeAll(async () => {
@@ -223,5 +224,161 @@ describe('015 atomic admission SQL — isolated contract tests, not real concurr
     await db.exec("UPDATE operacion.remisiones SET estatus='CANCELADA' WHERE folio=1000");
     expect(await gate(1)).toMatchObject({can_emit:false,reason:'REGENERATION_AUTHORIZATION_REQUIRED'});
     expect((await db.query('SELECT estado FROM ops.ejecuciones_automatizacion WHERE ejecucion_id=$1',[a.ejecucion_id])).rows[0]).toEqual({estado:'COMPLETADA'});
+  });
+  // ---- 5F: protected manual-reprocess entry. Same in-memory doubles; NOT real PostgreSQL concurrency evidence. ----
+  async function reprocess(parent: number, worker = 'worker-R', series = 'SYN_P5', quantity = 2) {
+    await db.exec('SET ROLE n8n_cat_test');
+    try { return (await db.query<Gate>(inMemory('SELECT * FROM ops.fn_reprocesar_reservar_caterpillar_test($1,$2,$3,$4)'), [parent,worker,series,quantity])).rows[0]!; }
+    finally { await db.exec('RESET ROLE'); }
+  }
+  async function failedParent(id = 1, state = 'ERROR') {
+    await document(id); const a = await gate(id);
+    await db.exec('SET ROLE n8n_cat_test');
+    if (state === 'ERROR') await db.query('SELECT * FROM ops.fn_finalizar_caterpillar_test($1,$2,$3)', [a.ejecucion_id,'worker-A','ERROR']);
+    await db.exec('RESET ROLE');
+    if (state !== 'ERROR') await db.query('UPDATE ops.ejecuciones_automatizacion SET estado=$1 WHERE ejecucion_id=$2', [state,a.ejecucion_id]);
+    return a;
+  }
+  it.each(['ERROR','CANCELADA'])('reprocess of %s parent creates exactly one child with NEW folios and an owner', async state => {
+    const parent = await failedParent(1, state);
+    const child = await reprocess(parent.ejecucion_id);
+    expect(child).toMatchObject({ decision: 'ADMIT', reason: 'REPROCESS_ACQUIRED', can_emit: true, worker_id: 'worker-R' });
+    expect(Number(child.ejecucion_id)).not.toBe(Number(parent.ejecucion_id));
+    expect(Number(child.reserva_id)).not.toBe(Number(parent.reserva_id));
+    const rows = (await db.query<{ ejecucion_id: number; estado: string; reproceso_de_id: number | null; documento_origen_id: number }>(
+      'SELECT ejecucion_id,estado,reproceso_de_id,documento_origen_id FROM ops.ejecuciones_automatizacion ORDER BY ejecucion_id')).rows;
+    expect(rows).toEqual([{ ejecucion_id: Number(parent.ejecucion_id), estado: state, reproceso_de_id: null, documento_origen_id: 1 },
+      { ejecucion_id: Number(child.ejecucion_id), estado: 'PROCESANDO', reproceso_de_id: Number(parent.ejecucion_id), documento_origen_id: 1 }]);
+    expect(Number((await counts())?.next)).toBe(1004);
+  });
+  it.each(['COMPLETADA','PROCESANDO'])('does not widen reprocess to a %s parent', async state => {
+    const parent = await failedParent(1, state);
+    expect(await reprocess(parent.ejecucion_id)).toMatchObject({ decision: 'BLOCK', reason: 'PARENT_NOT_REPROCESSABLE', can_emit: false });
+    expect((await counts())?.executions).toBe(1);
+  });
+  it('duplicate reprocess: same worker retries the same reservation, another worker and a finished child never emit', async () => {
+    const parent = await failedParent();
+    const first = await reprocess(parent.ejecucion_id);
+    expect(await reprocess(parent.ejecucion_id)).toMatchObject({ reason: 'OWNED_RETRY', can_emit: true, ejecucion_id: first.ejecucion_id, reserva_id: first.reserva_id });
+    expect(await reprocess(parent.ejecucion_id, 'worker-X')).toMatchObject({ reason: 'REPROCESS_IN_PROGRESS', can_emit: false, worker_id: 'worker-R' });
+    await db.exec('SET ROLE n8n_cat_test');
+    await db.query('SELECT * FROM ops.fn_finalizar_caterpillar_test($1,$2,$3)', [first.ejecucion_id,'worker-R','ERROR']);
+    await db.exec('RESET ROLE');
+    expect(await reprocess(parent.ejecucion_id)).toMatchObject({ reason: 'ALREADY_REPROCESSED', can_emit: false });
+    expect(await counts()).toMatchObject({ executions: 2, reservations: 2 });
+  });
+  it('historical parent without a V1 snapshot is explicitly refused and nothing is written', async () => {
+    await document(1, 'LEGACY.xlsx', {}, true);
+    await db.exec("INSERT INTO ops.ejecuciones_automatizacion(automatizacion_id,documento_origen_id,estado,n8n_execution_id) VALUES(1,1,'ERROR','old')");
+    const legacyId = (await db.query<{ ejecucion_id: number }>('SELECT ejecucion_id FROM ops.ejecuciones_automatizacion')).rows[0]!.ejecucion_id;
+    expect(await reprocess(legacyId)).toMatchObject({ decision: 'REVIEW', reason: 'REPROCESS_SNAPSHOT_REQUIRED', can_emit: false });
+    expect(await counts()).toMatchObject({ executions: 1, reservations: 0, next: 1000 });
+  });
+  it('a failed parent that already holds a live remission is a partial emission and cannot be reprocessed', async () => {
+    const parent = await failedParent();
+    await db.exec(`INSERT INTO operacion.remisiones(ejecucion_id,serie_id,folio,fecha_documento,pdf_path,detalles,estatus) VALUES(${parent.ejecucion_id},1,1000,'2026-10-21','E2E-NO-FILE/x.pdf','[]','GENERADA')`);
+    expect(await reprocess(parent.ejecucion_id)).toMatchObject({ reason: 'PARENT_HAS_ACTIVE_REMISSIONS', can_emit: false });
+    expect((await counts())?.executions).toBe(1);
+  });
+  it('reprocess never reuses the quantity/route checks of the caller: wrong quantity or series is rejected atomically', async () => {
+    const parent = await failedParent();
+    await expect(reprocess(parent.ejecucion_id, 'worker-R', 'SYN_P5', 1)).rejects.toThrow(/QUANTITY_MISMATCH/);
+    await expect(reprocess(parent.ejecucion_id, 'worker-R', 'SYN_TOR', 2)).rejects.toThrow(/ROUTE_NOT_ALLOWED/);
+    expect((await counts())?.executions).toBe(1);
+  });
+  it('child registration and finalization go through the owner wrappers; a different worker is refused', async () => {
+    const parent = await failedParent();
+    const child = await reprocess(parent.ejecucion_id);
+    const args = [child.ejecucion_id,'worker-R','SYN_P5',Number(child.folio_inicial),'2026-10-21','E2E-NO-FILE/r.pdf','[{"codigo_interno":"SYN","cantidad_texto":"1 pieza"}]'];
+    await db.exec('SET ROLE n8n_cat_test');
+    await expect(db.query('SELECT * FROM operacion.fn_registrar_remision_caterpillar_test($1,$2,$3,$4,$5,$6,$7)', [child.ejecucion_id,'worker-A',...args.slice(2)])).rejects.toMatchObject({ code: '42501' });
+    await db.query('SELECT * FROM operacion.fn_registrar_remision_caterpillar_test($1,$2,$3,$4,$5,$6,$7)', args);
+    await db.query('SELECT * FROM operacion.fn_registrar_remision_caterpillar_test($1,$2,$3,$4,$5,$6,$7)', [...args.slice(0,3),Number(child.folio_inicial)+1,...args.slice(4)]);
+    await db.query('SELECT * FROM ops.fn_finalizar_caterpillar_test($1,$2,$3)', [child.ejecucion_id,'worker-R','COMPLETADA']);
+    await db.exec('RESET ROLE');
+    expect((await db.query('SELECT estado FROM ops.ejecuciones_automatizacion WHERE ejecucion_id=$1', [child.ejecucion_id])).rows[0]).toEqual({ estado: 'COMPLETADA' });
+  });
+  it('a failure after the reprocess reservation keeps the child/reservation and records the fault for the owner only', async () => {
+    const parent = await failedParent();
+    const child = await reprocess(parent.ejecucion_id);
+    await db.exec('SET ROLE n8n_cat_test');
+    await expect(db.query('SELECT * FROM ops.fn_fallo_caterpillar_test($1,$2,$3,$4)', [child.ejecucion_id,'worker-X','n','e'])).rejects.toMatchObject({ code: '42501' });
+    await db.query('SELECT * FROM ops.fn_fallo_caterpillar_test($1,$2,$3,$4)', [child.ejecucion_id,'worker-R','synthetic','failure']);
+    await db.exec('RESET ROLE');
+    expect(await reprocess(parent.ejecucion_id)).toMatchObject({ reason: 'OWNED_RETRY', reserva_id: child.reserva_id });
+  });
+  it('workers cannot bypass the reprocess gate through the legacy creator; the Hub role has no EXECUTE', async () => {
+    const parent = await failedParent();
+    await db.exec('SET ROLE n8n_cat_test');
+    await expect(db.query("SELECT * FROM ops.fn_crear_ejecucion_automatizacion('REMISIONES_CATERPILLAR',1,'B',NULL,$1)", [parent.ejecucion_id])).rejects.toMatchObject({ code: '42501' });
+    await db.exec('RESET ROLE; SET ROLE daubert_hub_test_user');
+    await expect(db.query('SELECT * FROM ops.fn_reprocesar_reservar_caterpillar_test(1,$1,$2,2)', ['api','SYN_P5'])).rejects.toMatchObject({ code: '42501' });
+    await db.exec('RESET ROLE');
+  });
+  // ---- 5G-A: snapshot capture entry. In-memory doubles; NOT real PostgreSQL evidence. ----
+  const manifestText = (changes: Record<string, unknown> = {}) =>
+    JSON.stringify(adaptCaterpillarNormalizedItems(fixture.normal.map(item => ({ json: { ...item.json, ...changes } }))).manifest);
+  async function capture(id: number, manifest = manifestText()) {
+    await db.exec('SET ROLE n8n_cat_test');
+    try { return (await db.query<{ s: string }>(inMemory('SELECT ops.fn_guardar_snapshot_caterpillar_test($1,$2) AS s'), [id, manifest])).rows[0]!.s; }
+    finally { await db.exec('RESET ROLE'); }
+  }
+  const stored = async (id: number) => (await db.query<{ s: unknown }>('SELECT caterpillar_admission AS s FROM core.documentos WHERE documento_id=$1', [id])).rows[0]!.s;
+  it.each(['NEW.xlsx', '  programación\u00a0  001.xlsx  ', 'straße.xlsx', 'ﬁle.XLSM'])('captures a snapshot byte-identical to the TypeScript one for %s', async name => {
+    await document(1, name, {}, true);
+    expect(await capture(1)).toBe('STORED');
+    const expected = createCaterpillarAdmissionSnapshot(createCaterpillarAdmissionCandidate({ sourceCompanyId: '77', fileName: name,
+      normalizedItems: fixture.normal }));
+    expect(await stored(1)).toEqual(expected);
+    expect(readCaterpillarAdmissionSnapshot(await stored(1), '77', name)).toEqual(expected);
+  });
+  it('repeated identical capture is ALREADY_STORED; a different manifest is a CONFLICT and never overwrites', async () => {
+    await document(1, 'NEW.xlsx', {}, true);
+    expect(await capture(1)).toBe('STORED');
+    const first = await stored(1);
+    expect(await capture(1)).toBe('ALREADY_STORED');
+    expect(await capture(1, manifestText({ cantidad_numerica: 55 }))).toBe('CONFLICT');
+    expect(await stored(1)).toEqual(first);
+  });
+  it('rejects a missing document, another automation\'s document and a malformed or incoherent manifest', async () => {
+    await expect(capture(99)).rejects.toThrow(/SOURCE_NOT_FOUND/);
+    await document(1, 'NEW.xlsx', {}, true);
+    await db.exec("INSERT INTO ops.automatizaciones VALUES(2,'OTRA','ACTIVA'); INSERT INTO ops.ejecuciones_automatizacion(automatizacion_id,documento_origen_id,estado) VALUES(2,1,'PROCESANDO')");
+    try { await expect(capture(1)).rejects.toThrow(/SOURCE_NOT_FOUND/); }
+    finally { await db.exec('DELETE FROM ops.ejecuciones_automatizacion; DELETE FROM ops.automatizaciones WHERE automatizacion_id=2'); }
+    await expect(capture(1, 'not json')).rejects.toThrow(/SNAPSHOT_INVALID/);
+    await expect(capture(1, '{"scope":[]}')).rejects.toThrow(/SNAPSHOT_INVALID/);
+    await expect(capture(1, manifestText().replace('"version":"CAT_OPERATIONAL_CONTENT_V1"', '"version":"X"'))).rejects.toThrow(/SNAPSHOT_INVALID/);
+    expect(await stored(1)).toBeNull();
+  });
+  it('does not backfill a historical document with attempts, folios or remissions', async () => {
+    await document(1, 'OLD.xlsx', {}, true);
+    await db.exec("INSERT INTO ops.ejecuciones_automatizacion(automatizacion_id,documento_origen_id,estado,n8n_execution_id) VALUES(1,1,'ERROR','old')");
+    expect(await capture(1)).toBe('HISTORICAL_LOCKED');
+    await document(2, 'RESERVED.xlsx', {}, true);
+    const claim = (await db.query<{ ejecucion_id: number }>("INSERT INTO ops.ejecuciones_automatizacion(automatizacion_id,documento_origen_id,estado,n8n_execution_id) VALUES(1,2,'PROCESANDO','w') RETURNING ejecucion_id")).rows[0]!;
+    await db.query("INSERT INTO operacion.reservas_folios(ejecucion_id,serie_id,folio_inicial,folio_final,cantidad,estatus) VALUES($1,1,1,2,2,'RESERVADA')", [claim.ejecucion_id]);
+    expect(await capture(2)).toBe('HISTORICAL_LOCKED');
+    expect(await stored(1)).toBeNull();
+    expect(await stored(2)).toBeNull();
+  });
+  it('capture needs no table DML: the worker cannot update documents and the Hub role cannot capture', async () => {
+    await document(1, 'NEW.xlsx', {}, true);
+    await db.exec('SET ROLE n8n_cat_test');
+    await expect(db.query("UPDATE core.documentos SET caterpillar_admission='{}'::jsonb")).rejects.toMatchObject({ code: '42501' });
+    await db.exec('RESET ROLE; SET ROLE daubert_hub_test_user');
+    await expect(db.query("SELECT ops.fn_guardar_snapshot_caterpillar_test(1,'{}')")).rejects.toMatchObject({ code: '42501' });
+    await db.exec('RESET ROLE');
+    expect(await stored(1)).toBeNull();
+  });
+  it('capture failure or omission means NO folios: the gate refuses without a snapshot and admits right after capture', async () => {
+    await document(1, 'NEW.xlsx', {}, true);
+    expect(await gate(1)).toMatchObject({ can_emit: false, reason: 'HISTORY_UNAVAILABLE' });
+    await expect(capture(1, 'not json')).rejects.toThrow();
+    expect(await gate(1)).toMatchObject({ can_emit: false, reason: 'HISTORY_UNAVAILABLE' });
+    expect(await counts()).toEqual({ executions: 0, reservations: 0, remissions: 0, next: 1000 });
+    expect(await capture(1)).toBe('STORED');
+    expect(await gate(1)).toMatchObject({ can_emit: true, reason: 'ACQUIRED' });
+    expect(await capture(1)).toBe('ALREADY_STORED'); // a reprocess re-read of the same file is idempotent
   });
 });

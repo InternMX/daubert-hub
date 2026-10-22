@@ -29,11 +29,21 @@ CREATE FUNCTION ops.fn_crear_ejecucion_automatizacion(p_auto text,p_doc bigint,p
 RETURNS TABLE(ejecucion_id bigint,ya_existia boolean,motivo text) LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE e ops.ejecuciones_automatizacion%ROWTYPE;
 BEGIN
+  IF p_parent IS NULL THEN
   SELECT * INTO e FROM ops.ejecuciones_automatizacion x WHERE x.documento_origen_id=p_doc ORDER BY x.ejecucion_id DESC LIMIT 1;
   IF FOUND THEN RETURN QUERY SELECT e.ejecucion_id,true,CASE e.estado WHEN 'PROCESANDO' THEN 'ALREADY_PROCESSING' WHEN 'COMPLETADA' THEN 'ALREADY_COMPLETED' WHEN 'ERROR' THEN 'ALREADY_ERROR' ELSE 'ALREADY_CANCELLED' END; RETURN; END IF;
-  INSERT INTO ops.ejecuciones_automatizacion(automatizacion_id,documento_origen_id,estado,n8n_execution_id,reproceso_de_id)
-    VALUES(1,p_doc,'PROCESANDO',p_worker,p_parent) RETURNING * INTO e;
-  RETURN QUERY SELECT e.ejecucion_id,false,'CREATED'::text;
+  END IF;
+  -- Mirrors the real contract: reprocess skips the lookup; the unique indexes resolve duplicates idempotently.
+  BEGIN
+    INSERT INTO ops.ejecuciones_automatizacion(automatizacion_id,documento_origen_id,estado,n8n_execution_id,reproceso_de_id)
+      VALUES(1,p_doc,'PROCESANDO',p_worker,p_parent) RETURNING * INTO e;
+  EXCEPTION WHEN unique_violation THEN
+    SELECT * INTO e FROM ops.ejecuciones_automatizacion x WHERE x.documento_origen_id=p_doc AND x.estado='PROCESANDO';
+    IF FOUND THEN RETURN QUERY SELECT e.ejecucion_id,true,'ALREADY_PROCESSING'::text; RETURN; END IF;
+    SELECT * INTO e FROM ops.ejecuciones_automatizacion x WHERE x.reproceso_de_id=p_parent;
+    RETURN QUERY SELECT e.ejecucion_id,true,'ALREADY_REPROCESSED'::text; RETURN;
+  END;
+  RETURN QUERY SELECT e.ejecucion_id,false,CASE WHEN p_parent IS NULL THEN 'CREATED' ELSE 'REPROCESS_CREATED' END::text;
 END $$;
 CREATE FUNCTION operacion.reservar_folios_para_ejecucion(p_exec bigint,p_series text,p_quantity integer)
 RETURNS TABLE(reserva_id bigint,folio_inicial bigint,folio_final bigint,cantidad integer) LANGUAGE plpgsql SECURITY DEFINER AS $$

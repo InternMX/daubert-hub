@@ -29,7 +29,7 @@ BEGIN
   ) expected(signature,result_type) WHERE pg_get_function_result(to_regprocedure(expected.signature)) IS DISTINCT FROM expected.result_type) THEN
     RAISE EXCEPTION '015 legacy result contract drift'; END IF;
   IF EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('ops','operacion') AND p.proname=ANY(ARRAY[
-    'fn_cat_key_text_015','fn_cat_snapshot_015','fn_cat_worker_015','fn_admitir_reservar_caterpillar_test','fn_registrar_remision_caterpillar_test','fn_finalizar_caterpillar_test','fn_fallo_caterpillar_test'])) THEN RAISE EXCEPTION '015 objects already exist'; END IF;
+    'fn_cat_key_text_015','fn_cat_snapshot_015','fn_cat_worker_015','fn_admitir_reservar_caterpillar_test','fn_reprocesar_reservar_caterpillar_test','fn_guardar_snapshot_caterpillar_test','fn_registrar_remision_caterpillar_test','fn_finalizar_caterpillar_test','fn_fallo_caterpillar_test'])) THEN RAISE EXCEPTION '015 objects already exist'; END IF;
   IF EXISTS(SELECT 1 FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones a USING(automatizacion_id)
     JOIN core.documentos d ON d.documento_id=e.documento_origen_id WHERE a.codigo='REMISIONES_CATERPILLAR'
     AND(e.estado='PROCESANDO' OR d.caterpillar_admission IS NOT NULL)) THEN RAISE EXCEPTION '015 reviewed idle cutover required'; END IF;

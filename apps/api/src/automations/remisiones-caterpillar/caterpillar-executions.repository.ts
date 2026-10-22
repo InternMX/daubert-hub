@@ -165,6 +165,18 @@ export class CaterpillarExecutionsRepository {
     return assertAtomicAdmissionResult(row,input);
   }
 
+  // Manual reprocess of an ERROR/CANCELADA parent (ADMIN is enforced by Hub/n8n before this call). Same single-statement,
+  // worker-only contract: child creation and NEW folio reservation are atomic. Not called by any controller.
+  async claimReprocessAndReserve(input: CaterpillarAtomicAdmissionInput): Promise<CaterpillarAtomicAdmissionRow> {
+    assertAtomicAdmissionInput(input); // documentId carries the PARENT execution id here
+    const [row] = await this.database.query<CaterpillarAtomicAdmissionRow>(`
+      SELECT decision,reason,can_emit,worker_id,ejecucion_id::text,reserva_id::text,
+        folio_inicial::text,folio_final::text,cantidad,legacy_unverified
+      FROM ops.fn_reprocesar_reservar_caterpillar_test($1::bigint,$2::text,$3::text,$4::integer)`,
+    [input.documentId,input.workerId,input.seriesCode,input.quantity]);
+    return assertAtomicAdmissionResult(row,input,['REPROCESS_ACQUIRED','OWNED_RETRY']);
+  }
+
   async findAdmissionSnapshot(documentId: string, sourceCompanyId: string): Promise<CaterpillarSnapshotReadResult> {
     const [storage] = await this.database.query<{ database_name: string; ready: boolean }>(`
       SELECT current_database() AS database_name, EXISTS(SELECT 1 FROM pg_catalog.pg_attribute
