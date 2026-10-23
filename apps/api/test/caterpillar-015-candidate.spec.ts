@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CaterpillarReprocessWebhookClient } from '../src/automations/remisiones-caterpillar/caterpillar-reprocess-webhook.client';
 import { adaptCaterpillarNormalizedItems } from '../src/automations/remisiones-caterpillar/caterpillar-operational-manifest.adapter';
 
 // Offline structural/pure-body evidence for the 015 candidate. Nothing here imports, activates or executes an n8n workflow
@@ -138,7 +139,7 @@ describe('015 candidate — pure node bodies against synthetic data (no n8n, no 
     const rp = { ...preparation(), mode: 'REPROCESS', reproceso_de_id: '12' };
     const ok = admit(gateRow({ reason: 'REPROCESS_ACQUIRED' }), rp);
     expect(ok).toMatchObject({ puede_emitir: true, mode: 'REPROCESS', reproceso_de_id: '12' });
-    expect(run('Mapear resultado creación reproceso CAT', [{ json: ok }])[0]!.json).toMatchObject({ reproceso_status: 'PROCESSING', reproceso_status_valido: true, reproceso_ejecucion_hija_id: '900' });
+    expect(run('Mapear resultado creación reproceso CAT', [{ json: ok }])[0]!.json).toMatchObject({ reproceso_status: 'REPROCESS_CREATED', reproceso_status_valido: true, reproceso_ejecucion_hija_id: '900' });
     expect(() => admit(gateRow({ reason: 'ACQUIRED' }), rp)).toThrow('CAT_TEST_015_EMISSION_RIGHT_NOT_PROVEN');
     const duplicate = admit(gateRow({ decision: 'BLOCK', reason: 'REPROCESS_IN_PROGRESS', can_emit: false, worker_id: 'OTHER', ejecucion_id: '901', reserva_id: null, folio_inicial: null, folio_final: null, cantidad: null }), rp);
     expect(run('Mapear resultado creación reproceso CAT', [{ json: duplicate }])[0]!.json).toMatchObject({ reproceso_status: 'ALREADY_PROCESSING', reproceso_status_valido: true, reproceso_ejecucion_hija_id: '901', puede_emitir: false });
@@ -203,5 +204,27 @@ describe('015 candidate — pure node bodies against synthetic data (no n8n, no 
     expect(reach('Verificar snapshot CAT').has('Reservar folios PG')).toBe(false);
     expect(String(node('Reservar folios PG').parameters.query)).toContain('fn_reprocesar_reservar_caterpillar_test');
     expect(workflow.connections['¿Es reproceso?']!.main.map(o => o.map(t => t.node))).toEqual([['Mapear resultado creación reproceso CAT'], ['¿Puede emitir CAT?']]);
+  });
+});
+
+describe('reprocess webhook answer is accepted by the Hub client', () => {
+  const answered = (reason: string, row: Record<string, unknown>) => {
+    const mapped = run('Mapear resultado creación reproceso CAT', [{ json: { ...row, admision_reason: reason, reproceso_de_id: '12' } }])[0]!.json;
+    const expression = String(node('Responder reproceso aceptado').parameters.responseBody).replace(/^=\{\{/, '').replace(/\}\}$/, '');
+    return new Function('$json', `return ${expression}`)(mapped) as unknown;
+  };
+  it.each([
+    ['REPROCESS_ACQUIRED', { puede_emitir: true, ejecucion_id: '900' }, 'REPROCESS_CREATED'],
+    ['REPROCESS_IN_PROGRESS', { puede_emitir: false, ejecucion_ajena_id: '901', admision_decision: 'BLOCK' }, 'ALREADY_PROCESSING'],
+    ['ALREADY_REPROCESSED', { puede_emitir: false, ejecucion_ajena_id: '901', admision_decision: 'BLOCK' }, 'ALREADY_REPROCESSED']
+  ])('%s -> %s is ACCEPTED by CaterpillarReprocessWebhookClient', async (reason, row, status) => {
+    const body = answered(reason, row);
+    expect(body).toMatchObject({ accepted: true, status, originalExecutionId: '12' });
+    const original = global.fetch;
+    global.fetch = (async () => ({ status: 202, ok: true, json: async () => JSON.parse(JSON.stringify(body)) })) as never;
+    try {
+      const client = new CaterpillarReprocessWebhookClient({ get: () => ({ url: 'http://localhost:5678/x', token: 't' }) } as never);
+      expect(await client.triggerReprocess('12', 'motivo')).toMatchObject({ kind: 'ACCEPTED', status });
+    } finally { global.fetch = original; }
   });
 });

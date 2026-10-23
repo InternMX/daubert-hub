@@ -90,18 +90,18 @@ if (puedeEmitir) {
 }
 return [{ json: out }];`;
 
-const MAP_REPROCESS = `// Traduce la decision del gate 015 a un status sanitizado para el webhook. Falla cerrado ante cualquier razon desconocida.
+const MAP_REPROCESS = `// Traduce la decision del gate 015 al vocabulario que el Hub acepta (REPROCESS_CREATED / ALREADY_PROCESSING / ALREADY_REPROCESSED). Falla cerrado ante cualquier razon desconocida.
 const json = $input.first()?.json || {};
 const razon = String(json.admision_reason ?? "").trim();
 const RAZON_A_STATUS = {
-  REPROCESS_ACQUIRED: "PROCESSING",
-  OWNED_RETRY: "PROCESSING",
+  REPROCESS_ACQUIRED: "REPROCESS_CREATED",
+  OWNED_RETRY: "REPROCESS_CREATED",
   REPROCESS_IN_PROGRESS: "ALREADY_PROCESSING",
   ALREADY_REPROCESSED: "ALREADY_REPROCESSED"
 };
 const status = RAZON_A_STATUS[razon] ?? null;
 const hija = json.puede_emitir === true ? json.ejecucion_id : json.ejecucion_ajena_id;
-const valido = status !== null && Boolean(hija) && (status === "PROCESSING") === (json.puede_emitir === true);
+const valido = status !== null && Boolean(hija) && (status === "REPROCESS_CREATED") === (json.puede_emitir === true);
 // Gate refusals are domain rules for the Hub (409), never an "accepted" answer and never a technical error.
 const rechazo = valido ? null : razon === "PARENT_NOT_REPROCESSABLE" ? "NOT_ELIGIBLE_STATE"
   : json.puede_emitir === false && ["BLOCK", "REVIEW"].includes(json.admision_decision) ? "ADMISSION_REJECTED" : "UNEXPECTED_EXECUTION_STATE";
