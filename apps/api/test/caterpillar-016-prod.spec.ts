@@ -13,8 +13,8 @@ const generator = load('./generate-caterpillar-016-prod.cjs') as {
   P016: string; LEGACY_PINS: string[][];
 };
 const prodPrepare = createRequire(resolve(root, 'n8n/workflows/remisiones-caterpillar/candidate-016-prod/x.cjs'))('./prepare-prod.cjs') as {
-  build: (prod: Workflow, full: Workflow) => Workflow; rewriteConnections: (c: Connections) => Connections; sanitizeUser: (t: string) => string;
-  compareNodes: (a: Workflow, b: Workflow) => unknown[]; OUTPUT_FILE: string; PROD_FILE: string; FULL_FILE: string; LOGIC_FROM_FULL: string[]; NEW_FROM_FULL: string[];
+  build: (prod: Workflow, full: Workflow) => Workflow; rewriteConnections: (c: Connections) => Connections;
+  compareWorkflows: (a: Workflow, b: Workflow) => { parameters: unknown[]; connections: { onlyReference: string[]; onlyExported: string[] }; credentials: unknown[]; flags: unknown[] }; OUTPUT_FILE: string; PROD_FILE: string; FULL_FILE: string; LOGIC_FROM_FULL: string[]; NEW_FROM_FULL: string[];
   GATE_NODE: string; PROD_GATE_NODE: string; DROPPED_PROD_NODES: string[]; WORKER_CREDENTIAL: unknown;
 };
 const inspect = createRequire(resolve(root, 'apps/api/scripts/x.cjs'))('./caterpillar-016-prod-inspect.cjs') as {
@@ -127,7 +127,7 @@ describe('PROD workflow candidate', () => {
   });
   it('carries no TEST path, credential, sandbox, failure injection or test-only SQL', () => {
     const text = JSON.stringify(candidate);
-    for (const forbidden of [/Dropbox\\\\\\\\Pruebas\\\\\\\\REMISIONES/, /Users\\\\\\\\06\\\\\\\\/, /cat-test/i, /daubert_hub_test/, /_caterpillar_test/, /n8n_cat_test/, /CAT_TEST/, /HUB_TEST/, /CAT_FAILURE/, /exit 1/, /__catTest/, /catConfinedPath/, /IO_HOLD/, /NOT_APPROVED/, /\bFAILURE\b/])
+    for (const forbidden of [/Dropbox\\\\\\\\Pruebas\\\\\\\\REMISIONES/, /cat-test/i, /daubert_hub_test/, /_caterpillar_test/, /n8n_cat_test/, /CAT_TEST/, /HUB_TEST/, /CAT_FAILURE/, /exit 1/, /__catTest/, /catConfinedPath/, /IO_HOLD/, /NOT_APPROVED/, /\bFAILURE\b/])
       expect(text).not.toMatch(forbidden);
     expect(text).not.toMatch(/xK9CGscXx6kKLZTi|9Ngnrpi16b6GtOAX|0hUrQ64tpD2yI2MZ/);
     // Production resolves documents for its own source company (122), not the TEST one (1207).
@@ -234,5 +234,47 @@ describe('PROD inspection connection guard', () => {
     for (const sql of ["SELECT pg_advisory_lock(1)", "SELECT nextval('operacion.reservas_folios_reserva_id_seq')", "SELECT pg_terminate_backend(1)", "SELECT set_config('x','y',false)",
       "SELECT pg_read_file('x')", "SELECT lo_import('x')", "SELECT * FROM core.documentos FOR UPDATE", "SELECT * INTO t FROM core.documentos", "WITH x AS (DELETE FROM core.documentos RETURNING 1) SELECT * FROM x"])
       expect(() => inspect.assertReadOnly([{ name: 'bad', sql }]), sql).toThrow();
+  });
+});
+
+describe('PROD candidate built from the LIVE production export', () => {
+  const liveProd = readJson(prodPrepare.PROD_FILE);
+  const legacyCopy = readJson(resolve(root, 'n8n/workflows/remisiones-caterpillar/prod/workflow.json'));
+  const candidateText = JSON.stringify(candidate);
+
+  it('has the real production folders and routes and no placeholder left, so --require-live is satisfied', () => {
+    expect(candidateText).not.toContain('<WINDOWS_USER>');
+    expect(candidateText).toContain('HERRAMIENTAS AUTOMATIZACION');
+    expect(candidateText).toContain('SOLICITUD DE MATERIAL');
+    expect(String(node(candidate, 'Detectar archivos CAT1').parameters.jsCode)).toBe(String(node(liveProd, 'Detectar archivos CAT1').parameters.jsCode));
+  });
+  it('the live export matches the older sanitized copy node by node (so the five PROD "differences" of the first comparison were only the sanitizer)', () => {
+    // The sanitized copy only differs by the Windows user inside the paths; credential ids are ignored by the comparison.
+    const sep = String.fromCharCode(92).repeat(4); // the code text holds doubled backslashes and JSON doubles them again
+    const asSanitized = JSON.parse(JSON.stringify(liveProd).split(`C:${sep}Users${sep}06${sep}`).join(`C:${sep}Users${sep}<WINDOWS_USER>${sep}`)) as Workflow;
+    const comparison = prodPrepare.compareWorkflows(legacyCopy, asSanitized);
+    expect(comparison.parameters).toEqual([]);
+    expect(comparison.connections).toEqual({ onlyReference: [], onlyExported: [] });
+  });
+  it('keeps the live webhook (path, Header Auth reference), schedule and active flag semantics: inactive candidate, nothing automatic enabled, no workflow id, no node webhook id', () => {
+    const webhook = node(candidate, 'Webhook Reproceso CAT (PROD)');
+    expect(webhook.parameters.path).toBe('cat-reprocess');
+    expect(webhook.credentials).toEqual(node(liveProd, 'Webhook Reproceso CAT (PROD)').credentials);
+    expect(candidate.active).toBe(false);
+    expect(candidate).not.toHaveProperty('id');
+    expect(JSON.stringify(candidate)).not.toContain('webhookId');
+    expect(node(candidate, 'Schedule Trigger').parameters).toEqual(node(liveProd, 'Schedule Trigger').parameters);
+    expect(node(candidate, 'Schedule Trigger').disabled).toBe(true);
+    expect(webhook.disabled).toBe(true);
+  });
+  it('the comparison tool tells cosmetic editor rewrites apart from real changes, and sees edges, credential names and flags', () => {
+    const edited = JSON.parse(JSON.stringify(full)) as Workflow;
+    const reserve = node(edited, 'Reservar folios PG');
+    reserve.parameters.query = String(reserve.parameters.query).replace(/^=/, '').replace('SELECT * FROM', 'SELECT  *\n  FROM');
+    const real = node(edited, 'Finalizar ejecución PG');
+    real.parameters.query = String(real.parameters.query).replace('fn_finalizar_caterpillar_test', 'fn_finalizar_ejecucion_automatizacion');
+    const result = prodPrepare.compareWorkflows(full, edited) as unknown as { parameters: Array<{ node: string; kind: string }> };
+    expect(result.parameters.find(p => p.node === 'Reservar folios PG')?.kind).toMatch(/^cosmetic/);
+    expect(result.parameters.find(p => p.node === 'Finalizar ejecución PG')?.kind).toBe('parameters differ');
   });
 });
