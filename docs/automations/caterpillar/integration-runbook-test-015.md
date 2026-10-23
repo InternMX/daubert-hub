@@ -310,3 +310,9 @@ No se instaló ni modificó nada. No se probó la escritura real (requiere ejecu
 - **Datos de prueba que quedaron en TEST** (identificables, no operativos): 3 documentos `HUB_TEST_015_*` con snapshot, sus 3 series `HUB_TEST_015_B…/B…/C…` con ruta, y 1 ejecución fixture (192, ERROR, reserva 900000-900001 ABANDONADA). Los 209 documentos originales, las series operativas y la ejecución 117 no se tocaron.
   Los identity de ejecuciones avanzaron por las fases con ROLLBACK (comportamiento normal de PostgreSQL).
 - **n8n**: no se importó nada (sin API key). Pendiente importar `INSPECT` y luego `FULL` con la UI, según la sección 9.
+
+## 11. Prueba de fallo y recuperación (copia FAILURE TEST)
+
+- `candidate-015/caterpillar-test-015.FAILURE.INACTIVE.json` (generada por `prepare-enabled.cjs`) es FULL con tres diferencias: `Convertir PDF CAT` siempre termina con `exit 1` (tras reservar folios, antes de registrar remisiones); `Registrar fallo PG` finaliza la ejecución como `ERROR` terminal con `ops.fn_finalizar_caterpillar_test`; `Preparar error CAT` atribuye un fallo de PowerShell a `Convertir PDF CAT`. FULL e INSPECT no cambian. Solo manual; Schedule y webhook deshabilitados (ruta distinta de la de FULL).
+- Defecto encontrado en la rama de errores de FULL: `ops.fn_fallo_caterpillar_test` solo cuenta un intento (1 de 2) y deja la ejecución en `PROCESANDO`; bajo 015 ningún reintento puede volver a ser propietario (`PROGRAM_IN_PROGRESS`), por lo que la ejecución quedaría atascada. Un error controlado debe finalizar con `ERROR`. Pendiente de promover a FULL tras validar esta prueba.
+- Esperado: ejecución `ERROR`, reserva `ABANDONADA` (folios consumidos, no reutilizados), 0 remisiones, 0 PDFs, log en `04_ERRORES`, HTML temporal eliminado. Recuperación: reproceso con FULL normal.

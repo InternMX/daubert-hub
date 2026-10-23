@@ -8,7 +8,8 @@ const { createCaterpillarWindowsTestSafety } = require('../candidate-5678/runtim
 const { catConfinedPath, catCommandArg, createCaterpillarConfinedFs, WRITE_SUBTREES, TEMP_SUBTREE } = require('./confined-fs.cjs');
 
 const blockedFile = path.join(__dirname, 'caterpillar-test-015.PROPOSED.BLOCKED.json');
-const outputs = { INSPECT: path.join(__dirname, 'caterpillar-test-015.INSPECT.INACTIVE.json'), FULL: path.join(__dirname, 'caterpillar-test-015.FULL.INACTIVE.json') };
+const outputs = { INSPECT: path.join(__dirname, 'caterpillar-test-015.INSPECT.INACTIVE.json'), FULL: path.join(__dirname, 'caterpillar-test-015.FULL.INACTIVE.json'),
+  FAILURE: path.join(__dirname, 'caterpillar-test-015.FAILURE.INACTIVE.json') };
 const ROOT = 'C:\\Users\\06\\Documents\\Dropbox\\Pruebas\\REMISIONES CAT';
 const SCRIPTS = '05_ARCHIVOS AUXILIARES\\SCRIPTS';
 const CAT_TEST_CREDENTIAL = { postgres: { id: 'xK9CGscXx6kKLZTi', name: 'cat_test' } }; // reference only; the secret never leaves n8n
@@ -65,10 +66,10 @@ function stage(blocked, profile) {
   const byName = prefix => c.nodes.find(n => n.name.startsWith(prefix));
   c.name = `Caterpillar TEST 015 \u2014 ${profile} (INACTIVE, staged)`;
   c.active = false;
-  const full = profile === 'FULL';
+  const full = profile !== 'INSPECT'; // FAILURE = FULL + failure injection + terminal-ERROR finalization (patched below)
   for (const node of c.nodes) {
     if (node.type.endsWith('.manualTrigger')) { node.disabled = false; node.notes = 'Solo ejecucion manual en el editor.'; }
-    if (node.type.endsWith('.webhook')) { node.disabled = true; if (full) node.parameters.path = 'cat-test-reprocess-015'; node.notes = 'Mantener deshabilitado hasta la etapa de reproceso; asignar Header Auth en la UI.'; }
+    if (node.type.endsWith('.webhook')) { node.disabled = true; if (full) node.parameters.path = profile === 'FULL' ? 'cat-test-reprocess-015' : 'cat-test-failure-015-unused'; node.notes = 'Mantener deshabilitado hasta la etapa de reproceso; asignar Header Auth en la UI.'; }
     if (/\.code$/.test(node.type) && String(node.parameters.jsCode).includes('// CAT_TEST_IO_HOLD')) unlockCodeIo(node, full);
   }
   for (const name of ['Leer archivo detectado', 'Leer cat\u00E1logo Caterpillar', 'Leer cat\u00E1logo Caterpillar clientes']) unlockNative(c.nodes.find(n => n.name === name), ['']);
@@ -97,6 +98,24 @@ return 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + script + '" -Te
     node.credentials = structuredClone(CAT_TEST_CREDENTIAL);
     node.notes = 'cat_test (usuario n8n_cat_test). Solo entradas protegidas de 015 y resolutores.';
   }
+  return profile === 'FAILURE' ? injectFailure(c) : c;
+}
+
+// FAILURE TEST copy only. (1) The PDF conversion command always exits 1: after the folios are reserved, before any remission is registered.
+// (2) The error branch finalizes the execution as a terminal ERROR through the owner-checked protected entry: fn_fallo only counts an attempt and
+// leaves PROCESANDO, and under 015 no retry can own the execution again. (3) A failed PowerShell command is attributed to Convertir PDF CAT.
+function injectFailure(c) {
+  const byName = name => { const node = c.nodes.find(n => n.name === name); if (!node) throw new Error(`Missing node ${name}`); return node; };
+  c.name = 'Caterpillar TEST 015 — FAILURE TEST';
+  const convert = byName('Convertir PDF CAT');
+  convert.parameters.command = `powershell -NoProfile -Command "[Console]::Error.WriteLine('CAT_FAILURE_TEST_015: conversion PDF provocada'); exit 1"`;
+  convert.notes = 'FAILURE TEST: falla controlada (exit 1) tras reservar folios y antes de registrar remisiones. NO usar en el flujo operativo.';
+  const failure = byName('Registrar fallo PG');
+  failure.parameters.query = "SELECT f.ejecucion_id, f.ya_estaba_finalizada AS ya_registrado, f.estado_final AS estado_actual, (f.estado_final = 'ERROR') AS error_final,\n  f.reservas_aplicadas, f.reservas_abandonadas, $3::text AS nodo_error, $4::text AS error_mensaje\nFROM ops.fn_finalizar_caterpillar_test($1::bigint, $2::text, 'ERROR', $3::text, $4::text) AS f;";
+  failure.notes = 'FAILURE TEST: finalizacion ERROR terminal por la entrada protegida (propietario verificado). Reemplaza fn_fallo, que dejaba PROCESANDO.';
+  const prepare = byName('Preparar error CAT'), marker = 'current.total_html !== undefined ||';
+  if (!prepare.parameters.jsCode.includes(marker)) throw new Error('Unexpected error preparation shape');
+  prepare.parameters.jsCode = prepare.parameters.jsCode.replace(marker, `${marker}\n    /powershell|convertir-cat-pdf|CAT_FAILURE_TEST_015/i.test(errorMensaje) ||`);
   return c;
 }
 

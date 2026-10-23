@@ -124,3 +124,28 @@ describe('staged copies', () => {
     }
   });
 });
+
+describe('FAILURE TEST copy', () => {
+  const failure = read(outputs.FAILURE);
+  it('is regenerable, inactive and differs from FULL only in the failure injection and terminal ERROR finalization', () => {
+    expect(stage(blocked, 'FAILURE')).toEqual(failure);
+    expect(failure.name).toMatch(/FAILURE TEST$/);
+    expect(failure.active).toBe(false);
+    expect(node(failure, 'Schedule Trigger').disabled).toBe(true);
+    expect(node(failure, 'Webhook Reproceso').disabled).toBe(true);
+    expect(node(failure, 'Webhook Reproceso').parameters.path).not.toBe(node(full, 'Webhook Reproceso').parameters.path);
+    expect(failure.connections).toEqual(full.connections);
+    const changed = failure.nodes.filter(n => JSON.stringify(n) !== JSON.stringify(full.nodes.find(m => m.name === n.name))).map(n => n.name).sort();
+    expect(changed).toEqual(['Convertir PDF CAT', 'Preparar error CAT', 'Registrar fallo PG', 'Webhook Reproceso CAT (TEST)']);
+    expect(JSON.stringify(failure)).not.toMatch(/daubert_global|Postgres produccion|XBIHVwg46DQuJc5S|9Ngnrpi16b6GtOAX/);
+  });
+  it('fails the conversion with a non-zero exit through the existing error output, and finalizes through the owner-checked entry', () => {
+    const convert = node(failure, 'Convertir PDF CAT');
+    expect(String(convert.parameters.command)).toMatch(/exit 1/);
+    expect((convert as unknown as { onError: string }).onError).toBe('continueErrorOutput');
+    expect(failure.connections['Convertir PDF CAT']!.main[1]!.map(c => c.node)).toEqual(['Preparar error CAT']);
+    const query = String(node(failure, 'Registrar fallo PG').parameters.query);
+    expect(query).toMatch(/fn_finalizar_caterpillar_test\(\$1::bigint, \$2::text, 'ERROR', \$3::text, \$4::text\)/);
+    expect(query).not.toMatch(/fn_fallo|fn_registrar_fallo/);
+  });
+});
