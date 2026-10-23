@@ -1,0 +1,22 @@
+{
+  "status": "PREPARED_NOT_IMPORTED_OR_EXECUTED",
+  "capturedAt": "2026-10-23T21:00:21.787848+00:00",
+  "sourceWorkflowId": "pagosProdAsignaciones01",
+  "publishedVersionId": "38dcf262-fa5a-45c1-b79c-8f03d95f4cc1",
+  "draftVersionId": "488ece04-1c01-420d-90ca-fe519439a43f",
+  "businessDraftEqualsPublished": true,
+  "sourceNodes": 108,
+  "sourceSha256": "47e15801d582e1f00d866e3dd21575907b492e61170e84750aca1055806e6295",
+  "parentId": "pagosProdAsignaciones01",
+  "parentNodes": 111,
+  "originalParentNodesUnchanged": 108,
+  "childId": "pagosProdRecuperacion01",
+  "childNodes": 106,
+  "reroutedParentEdges": ["Seleccionar correo a reprocesar", "Preparar solicitud Hub reproceso"],
+  "parentSettingsAndStaticDataUnchanged": true,
+  "artifactsInactive": true,
+  "parentSha256": "e472624557987d4f0b42306cb074daa4f731e6b7fa64b3629e3ccec37af1d5f9",
+  "childSha256": "a63f2f4c291851d7f15fe5a27d0346a663f544f53feacae276032740fa592a9a",
+  "codeNodesCompiledWithoutExecution": 72,
+  "rawExportsVersioned": false
+}

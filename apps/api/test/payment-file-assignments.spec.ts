@@ -91,6 +91,17 @@ describe('reprocess protection', () => {
     expect(query).toHaveBeenCalledWith('SELECT core.fn_bloquear_archivos_reproceso_pago($1)', ['1']);
     expect(query).not.toHaveBeenCalledWith('ROLLBACK');
   });
+  it('reports an existing recovery owner as a conflict without dispatching', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('fn_bloquear_archivos_reproceso_pago')) throw Object.assign(new Error('busy'), { code: 'P4091' });
+      return { rows: [] };
+    });
+    const repo = new PaymentFileAssignmentsRepository({ query: vi.fn().mockResolvedValue([{ available: true }]), connect: vi.fn().mockResolvedValue({ query, release: vi.fn() }) } as never);
+    const dispatch = vi.fn();
+    await expect(repo.protectReprocess('1', 'r', identity, dispatch)).rejects.toMatchObject({ status: 409, response: { code: 'POINT_REPROCESS_BUSY' } });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
 });
 
 describe('compatibility with a database without migration 012 (PROD)', () => {
