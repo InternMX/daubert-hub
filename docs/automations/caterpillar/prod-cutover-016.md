@@ -85,8 +85,8 @@ Nodos de PROD que **no cambian**: todo lo demás (≈45): detección, filtros, l
 3. **Inspección de solo lectura de PROD** (sección 2). Condiciones para continuar: 0 `PROCESANDO`; `legacy_function_pins` todas `matches_test_validated = true`; `new_object_name_collisions` vacío; `n8n_cat_prod` inexistente; sin folios duplicados ni solapados; `names_the_gate_cannot_verify = 0`; discrepancias de series explicadas.
 4. **Respaldo y restauración comprobada:** `pg_dump -Fc daubert_global` fuera de Dropbox y de los worktrees, SHA-256, y restaurar en una base desechable. Ensayar 016 sobre esa copia: `node scripts\rehearse-caterpillar-016.cjs <respaldo-prod.dump>` (usa credenciales de TEST solo para crear/borrar la base y el rol temporales; no toca `daubert_global`).
 5. **Regenerar el candidato desde el export vivo:** `node …\prepare-prod.cjs --prod-export <prod-vivo.json> --require-live` (falla si queda `<WINDOWS_USER>`). Revisar que ninguna ruta TEST aparezca (los tests ya lo vigilan para la versión del repositorio).
-6. **Hub:** desplegar la versión con `ADMISSION_REJECTED` (commit `461170c` en adelante) y configurar `CATERPILLAR_REPROCESS_WEBHOOK_URL` / `…_TOKEN` (ya existentes para `cat-reprocess`). Solo despliegue normal del Hub, sin reiniciar nada más.
-7. **Inventario de archivos pendientes** en las carpetas de cliente (nombre, fecha, planta) y de ejecuciones en curso en n8n. Decidir con el negocio qué se espera emitir y qué debería salir como `REVIEW`.
+6. **Hub:** el Hub de PROD (contenedores `daubert-hub-api-1`/`daubert-hub-web-1`, commit `6370753`, v1.0.6) **no** incluye nada de esta rama (sección 13.3). Hay que integrar la rama a `main` (decisión y PR del responsable; un merge limpio con `origin/main` se comprobó en seco) y desplegarla con el procedimiento de [deployment-checklist](../../operations/deployment-checklist.md) (comandos manuales: el script bloquea los releases con migraciones). No requiere variables nuevas (`CATERPILLAR_REPROCESS_WEBHOOK_URL/TOKEN` ya existen). Solo `api` y `web`; no tocar PostgreSQL, n8n ni Pagos.
+7. **Inventario de archivos y ejecuciones:** `node scripts\inventory-caterpillar-prod-files.cjs --db` (solo lectura) y la revisión de n8n de la sección 13.2. Resultado de referencia: sección 13.1.
 8. **Confirmar con el operador:** credencial n8n nueva y su contraseña, ventana, responsable presente.
 
 ### 5.1 Ventana de corte (orden exacto)
@@ -101,7 +101,7 @@ Nodos de PROD que **no cambian**: todo lo demás (≈45): detección, filtros, l
 8. En n8n crear la credencial `Postgres produccion CAT (n8n_cat_prod)` (host, `daubert_global`, usuario `n8n_cat_prod`) y probar la conexión.
 9. Importar `caterpillar-prod-016.CANDIDATE.INACTIVE.json` como workflow **nuevo** (verificar otro id; el anterior no cambia). Asignar la credencial dedicada a los 7 nodos PostgreSQL y el Header Auth `Daubert Hub - n8n PROD` al webhook. Confirmar que el sticky note y los nodos no mencionan rutas de prueba.
 10. Validar nodos y llamadas SQL (sin ejecutar): cada consulta apunta a `*_caterpillar` o a los 2 resolvedores; ninguna a funciones antiguas.
-11. **Prueba controlada:** con el operador presente, ejecución manual **con los archivos pendientes del inventario 5.0.7**. Verificar con la inspección: snapshot guardado, ejecución `COMPLETADA`, reserva `APLICADA` = remisiones `GENERADA`, PDFs en la carpeta productiva, folios contiguos desde el `siguiente_folio` registrado, ningún duplicado. Un segundo run idéntico debe dar `BLOCK PROGRAM_ALREADY_EMITTED` sin folios.
+11. **Primera emisión real controlada, sin documentos ficticios** (sección 13.5): con el Schedule aún deshabilitado, esperar a que llegue una programación **real** de una planta habilitada (P2, P5 o P6) y ejecutar el workflow nuevo **manualmente** con el operador presente. Verificar con la inspección: snapshot guardado, ejecución `COMPLETADA`, reserva `APLICADA` = remisiones `GENERADA`, PDFs en la carpeta productiva, folios contiguos desde el `siguiente_folio` registrado, ningún duplicado. Un segundo run inmediato debe dar `BLOCK PROGRAM_ALREADY_EMITTED` sin folios.
 12. Si algo falla: sección 6; **no** continuar.
 13. Habilitar el webhook (`Webhook Reproceso CAT (PROD)`) y publicar el workflow nuevo. Probar el botón Reprocesar con una ejecución COMPLETADA (debe responder 409 `NOT_ELIGIBLE_STATE`, sin crear nada).
 14. Habilitar el Schedule (cada 10 min) solo cuando 11 y 13 estén verificados.
@@ -147,8 +147,11 @@ Cerrado y verificado (ya no son bloqueos): lectura de solo lectura de `daubert_g
 Pendiente, con la acción exacta:
 1. ~~Exports vivos de n8n~~ **Hecho** (2026-10-23): reconciliados en la sección 11.1; el candidato se regeneró con el export real de PROD (`--require-live`, 0 marcadores).
 2. ~~Respaldo de `daubert_global` restaurable y ensayo~~ **Hecho** (2026-10-23, sección 12). Se repite el respaldo y el ensayo justo antes de la ventana para validar el estado vigente.
-3. **Inventario de archivos pendientes** en las carpetas de cliente y de ejecuciones en curso en n8n (qué se espera emitir y qué debe salir `REVIEW`).
-4. **Compatibilidad final**: con los puntos 1–3, repetir la inspección de solo lectura (`caterpillar-016-prod-inspect.cjs`) justo antes de la ventana y confirmar que el Hub desplegado en PROD incluye `ADMISSION_REJECTED`, el endpoint `regenerate` y la UI.
+3. ~~Inventario de archivos pendientes y de ejecuciones en curso~~ **Hecho** (2026-10-23, sección 13): 0 archivos pendientes, 0 ejecuciones en curso, 0 sesiones bloqueantes.
+4. **Nuevos bloqueos reales** (sección 13.4):
+   - **B1 — el candidato no tolera releer los 11 archivos ya emitidos**: devuelve `HISTORICAL_LOCKED` y `Verificar snapshot CAT` lanza error, así que cada ciclo fallaría antes de llegar a un archivo nuevo. Requiere un ajuste del flujo y de su prueba antes de pedir autorización.
+   - **B2 — el Hub de PROD (`6370753`) no tiene la rama**: ni `ADMISSION_REJECTED`, ni cancelación formal, ni regeneración, ni botón. Requiere integrar a `main` y desplegar (decisión del responsable).
+   - **B3 — decisión del responsable de Pagos/Audi y de n8n**: confirmar que `Generación PDFs` y `Generación Hojas Identificación` no leen las carpetas Caterpillar (no se pudo comprobar sin la interfaz de n8n).
 5. Lo que solo puede verificarse con escritura (primera emisión real con el candidato, PDFs, reproceso y regeneración por botón en PROD, ciclo programado) queda para la ventana de corte, paso 11 de la sección 5.1.
 
 ## 10. Regeneración comercial (decisión B) — diseño, casos históricos, validación y efecto en el corte
@@ -253,4 +256,59 @@ Además, y solo como **entorno de TEST**: el webhook del FULL vivo tiene asignad
 - Qué cubre el rollback: 016 (columna de snapshot, funciones `*_caterpillar`, tabla de autorizaciones y ACL) y 013 (ledger y función de cancelación); el rol `n8n_cat_prod` y su credencial no se eliminan automáticamente (decisión manual).
 
 **Repetir el ensayo**: `node scripts\rehearse-caterpillar-prod-copy.cjs <respaldo.dump>` (cada corrida usa una carpeta nueva con marca de tiempo; limpiar carpetas viejas es una decisión manual y explícita).
+
+## 13. Inventario operativo, compatibilidad del Hub y preparación de la ventana (2026-10-23, solo lectura)
+
+Todo se obtuvo sin escribir en PostgreSQL PROD, n8n, Dropbox ni el Hub: lectura de carpetas (`scripts/inventory-caterpillar-prod-files.cjs`, hash SHA-256 por lectura), una transacción `READ ONLY` con `ROLLBACK`, el registro de eventos de texto de n8n (`n8nEventLog.log`; no se abrió su base SQLite ni su API) y `docker inspect`/`grep` sobre los contenedores del Hub.
+
+### 13.1 Archivos (detector real de `Remisiones CAT Produccion PG`)
+El detector solo mira `PROGRAMACION DE ENTREGA` `.xls*` en: P2 (`…\CATERPILLAR MEXICO - P2\SOLICITUD DE MATERIAL`), P3-P6 (`…\MAS INFORMACION\SOLICITUD DE MATERIAL\<año>`), Nuevo Laredo, Torreón y la carpeta legacy; procesa solo P2, P5 y P6 con fecha de modificación ≥ 22/09/2026 (`PROCESOS_HABILITADOS_PROD`). Las carpetas `00_ARCHIVOS A PROCESAR` y `04_ERRORES` **no existen** (la primera está desactivada en PROD; la segunda se crea al primer error) y `06_ARCHIVOS TEMPORALES` está vacía; `01_ENTRADA` guarda 154 copias de archivos ya leídos (histórico, no pendiente).
+
+| Planta | Antes del corte (histórico) | Candidatos del detector (≥ 22/09) | Pendientes (sin documento/ejecución en PG) |
+| --- | --- | --- | --- |
+| P2 | 27 | 6 (25/09, 02/10, 09/10, 12/10, 16/10, 23/10) | **0** |
+| P5 | 17 | 3 (22/09, 29/09, 20/10 `CORREGIDO`) | **0** |
+| P6 | 6 | 2 (22/09, 06/10) | **0** |
+| No habilitadas (Nuevo Laredo 52, Torreón 12, legacy 1) | — | no se procesan | — |
+
+Los 11 candidatos coinciden por **hash** con un documento con ejecución `COMPLETADA` (P2: 12, 15, 18, 19, 21, 24; P5: 10, 14, 22 y 23; P6: 11, 17). No hay duplicados por contenido dentro de las carpetas. El P5 `260929` en disco es la versión de 683 (ejecución 14), la anterior 431 (ejecución 13) ya no está; el P5 `261020 CORREGIDO` tiene los mismos bytes que `TEMPLATE` (ejecuciones 22 y 23), y `TEMPLATE` ya no está. **Lo pendiente hoy es nada; lo histórico son 11 archivos que el detector sigue releyendo en cada ciclo.** Ningún archivo `~$`.
+
+### 13.2 n8n PROD (solo lectura; faltan 3 comprobaciones de interfaz)
+- `Remisiones CAT Produccion PG` (`9Ngnrpi16b6GtOAX`): **activo**; Schedule cada **10 min** (`:x0:38`); webhook `cat-reprocess`. Desde el último arranque de n8n (10:18) el registro muestra 37 ejecuciones, **37 correctas**, duración ≈ 0,5–2 s, **ninguna sin fin**. PostgreSQL: 24 ejecuciones `COMPLETADA`, **0 `PROCESANDO`/`PENDIENTE`**.
+- Activos en la misma instancia: Audi, Pagos (`pagosProdAsignaciones01` y su manejador de errores), Health Check, `Generación PDFs`, `Generación Hojas Identificación`. Los workflows TEST de Caterpillar siguen **inactivos** (staged). Solo Audi y Pagos tienen carpetas propias conocidas; **no se pudo comprobar** si los dos de generación tocan carpetas Caterpillar.
+- **Comprobar en la interfaz de n8n** (no puedo leerlo sin su API): (a) *Executions* filtrado por `Remisiones CAT Produccion PG` justo antes de la ventana, sin ninguna en curso; (b) abrir `Generación PDFs` y `Generación Hojas Identificación` y confirmar que no apuntan a `SOLICITUD DE MATERIAL` de Caterpillar; (c) que el workflow nuevo se importa sin colisión del path `cat-reprocess` (n8n lo rechaza si el anterior sigue activo).
+
+### 13.3 Hub de PROD: qué está desplegado realmente
+La ruta de PROD es Caddy (`dauberthub…ts.net`, LAN) → `127.0.0.1:8082` → contenedor `daubert-hub-web-1` → `daubert-hub-api-1` (proyecto Compose `daubert-hub`, carpeta `daubert-hub-deploy-main`, base `daubert_global`, usuario `daubert_hub_app`). El `localhost:5173` y el API de `:3000` que corre desde el worktree de esta rama son TEST y no cuentan.
+
+| Elemento | Repositorio (rama) | Desplegado en PROD (`6370753`, v1.0.6, imagen del 21/10) |
+| --- | --- | --- |
+| `ADMISSION_REJECTED` (API) | sí | **no** |
+| Cancelación formal (`fn_cancelar_remision_caterpillar`, diálogo) | sí | **no** (tampoco la función en PG: 013 aún no se aplicó) |
+| Endpoint de reproceso | sí | **sí** (estado `REPROCESS_CREATED`, ruta `/webhook/cat-reprocess`, token configurado) |
+| Endpoint de regeneración y `fn_autorizar_regeneracion_caterpillar` | sí | **no** |
+| Botón y diálogo Regenerar (web) | sí | **no** |
+| Roles ADMIN/GENERAL | sí | solo lo anterior |
+| Variables nuevas | ninguna | no hacen falta |
+
+`main` está en `6370753` localmente y `origin/main` tiene 6 commits de documentación más; la rama tiene 24 commits propios y un merge de prueba con `origin/main` no produce conflictos (`git merge-tree`). **Orden seguro:** las migraciones 013 → 016/017 primero (el Hub viejo las ignora), luego el despliegue del Hub nuevo y recién entonces habilitar el candidato (que devuelve estados que solo el Hub nuevo traduce).
+
+### 13.4 Riesgos específicos y ajustes requeridos
+1. **B1 — releer un archivo ya emitido sin snapshot (los 11 de 13.1).** En la ventana el flujo nuevo ya no llama a `fn_crear_ejecucion_automatizacion`: por cada archivo hace `Resolver documento` → `Normalizar` → `fn_guardar_snapshot_caterpillar`. Para un documento con ejecución terminal sin snapshot la función devuelve `HISTORICAL_LOCKED` (verificado hoy en TEST con `ROLLBACK`) y `Verificar snapshot CAT` lanza `CAT_015_SNAPSHOT_NOT_STORED` en un nodo sin salida de error: la ejecución de n8n falla en el primer histórico y, como los candidatos se ordenan del más antiguo al más reciente, **un archivo nuevo quedaría sin procesar en cada ciclo**. No es seguro (no se emiten folios), pero deja el servicio parado. El runbook anterior (sección 4, punto 5) suponía `REVIEW`; ese supuesto es incorrecto. **Ajuste necesario antes de pedir autorización:** en el candidato, tratar `HISTORICAL_LOCKED` como "archivo ya emitido, omitir y seguir con el siguiente" (rama al `Loop Over Items`), con prueba en TEST con un histórico real y con un archivo nuevo detrás. Subir la fecha de corte **no** es suficiente (basta que Dropbox cambie la fecha de un archivo viejo).
+2. **Pagos/Audi/otras automatizaciones:** el cambio solo toca `Remisiones CAT Produccion PG`, el rol `n8n_cat_prod`, 013/016/017 y los contenedores `api`/`web`. `n8n_app` no cambia. No reiniciar n8n; no usar `docker compose down/--remove-orphans`.
+3. **Sesiones que bloquean migraciones:** hoy hay 11–12 sesiones (10 de pgAdmin con el usuario `postgres`, 1 del Hub, ninguna `idle in transaction`, ninguna esperando bloqueos). Antes de cada migración repetir la consulta; si aparece `idle in transaction`, cerrar esa ventana de pgAdmin (no terminar sesiones desde SQL sin aviso).
+4. **Tarea de respaldo frecuente:** `Daubert - PostgreSQL Frequent` (cada 4 h) toma `pg_dump`; no compite (solo ACCESS SHARE), pero conviene que no coincida con el `ALTER TABLE` de 016.
+5. **Folios y ventana:** durante la ventana (Schedule apagado) los archivos reales que lleguen esperan; no se pierden ni se emiten fuera de orden (el detector ordena por fecha). Hoy: P2 siguiente **108**, P5 **134**, P6 **9**.
+
+### 13.5 Procedimiento de la ventana (ajustes al 5.1; no ejecutar todavía)
+1. **Antes (sin cambios):** repetir `inventory-caterpillar-prod-files.cjs --db` y `caterpillar-016-prod-inspect.cjs`; nuevo respaldo (`backup-caterpillar-prod-db.cjs`) justo antes; confirmar B1 corregido y probado, B2 desplegable y la comprobación de interfaz 13.2.
+2. **Detener solo Caterpillar:** desactivar `Remisiones CAT Produccion PG` (no Audi, Pagos ni el servicio de n8n). Anotar la hora. El botón Reprocesar devolverá 502 durante la ventana.
+3. **Esperar ejecuciones activas:** n8n *Executions* de ese workflow sin "Running" y `PROCESANDO` = 0 en PG (consulta de 13.1). Si alguna dura más de 5 min, no seguir (sección 6).
+4. **Sin ejecución simultánea:** el workflow anterior queda **desactivado y exportado**; el nuevo se importa inactivo y su Schedule/webhook se habilitan solo en los pasos 13–14 de 5.1. Nunca dos activos con el mismo path.
+5. **Archivos pendientes:** repetir el inventario. Si hay alguno, queda esperando y se emite al habilitar (o en la primera emisión controlada); si es un histórico, tras B1 se omite. Prohibido mover, renombrar o editar archivos para "forzar" casos.
+6. **Sesiones:** consulta de 13.4.3 antes de 013 y de 016.
+7. **Hub:** 013 → rol → 016/017 → postcheck → **despliegue del Hub** con verificación (`/api/health` con el commit nuevo, `grep` de `ADMISSION_REJECTED`, `regenerate` y "Regenerar" en las imágenes) → recién entonces el candidato.
+8. **Primera emisión real, sin documentos ficticios:** con el Schedule apagado y el webhook habilitado, esperar a la siguiente programación real de P2/P5/P6 (P2 llega aproximadamente semanal) y ejecutar el workflow nuevo manualmente con el operador. Una vez correcta, habilitar el Schedule.
+9. **Comprobar PDFs y folios:** snapshot guardado, ejecución `COMPLETADA`, reserva `APLICADA` = remisiones `GENERADA`, un PDF por remisión en la carpeta de salida, folios contiguos desde 108/134/9 según la planta, siguiente folio = último + 1, y un segundo run sin folios nuevos.
+10. **Después:** inspección diaria la primera semana (5.2) y conservar el workflow anterior desactivado.
 
