@@ -3,7 +3,10 @@
 **PREPARADO, NO DESPLEGADO.** Base `origin/main` = `d9ea09c`. La rama incluye
 únicamente la corrección TEST aprobada y su preparación productiva. No hubo cambios
 en daubert_global, importaciones/publicaciones en n8n PROD, reprocesos del correo 44,
-cambios de archivos reales ni reinicios. No hay cambios de Audi o Caterpillar.
+cambios de archivos reales ni reinicios productivos. No hay cambios de Audi o Caterpillar.
+
+Ensayo aislado posterior de estas candidatas, UP/DOWN y versiones anteriores:
+[resultados y condiciones de liberación](file-recovery-rehearsal.md).
 
 ## Entregables
 
@@ -71,8 +74,12 @@ manual, Schedule ni webhook. Reutiliza la referencia actual de PostgreSQL produc
 
 Los logs/IDs del procesamiento de un reproceso corresponderán al hijo; la fila de
 propiedad guarda el ID del padre. Registrar ambos IDs en la evidencia operativa.
-Se conserva la referencia al Error Workflow en ambos contextos; comprobar la atribución
-y eventual doble aviso al validar un fallo supervisado, sin cambiar ese manejador aquí.
+Se conserva la referencia al Error Workflow en ambos contextos. El ensayo aislado
+confirmó dos invocaciones y dos logs críticos por un fallo hijo/padre, sin correos:
+el manejador actual solo escribe logs. Se acepta expresamente mantener esos dos
+ERROR_CRITICO: representan dos ejecuciones de la misma cadena, no correos duplicados.
+Se conserva la arquitectura validada y no se eliminan los nueve nodos potencialmente
+inalcanzables ni se implementa otra arquitectura en este PR.
 
 **SQL 019:** los cuerpos de las seis funciones son iguales a TEST 018. Cambian la guarda,
 roles y controles de instalación/rollback. Se añaden tabla/columna y cuatro funciones;
@@ -155,12 +162,57 @@ histórica dentro de la migración.
    webhooks ni credenciales por simple suposición. Verificar GET health y versión.
 7. **Activación:** publicar el padre nuevo, comprobar que solo él posee el webhook y
    Schedule de Pagos, y retirar el bloqueo de acceso únicamente con SQL/API/workflow
-   compatibles. No dejar la versión antigua atendiendo las funciones nuevas.
+   compatibles. Usar activación/publicación por interfaz/API de n8n que registre los
+   triggers sin reiniciar el servicio. No dejar la versión antigua atendiendo las
+   funciones nuevas. **GET health no basta:** comprobar el webhook real sin token;
+   debe rechazar con 403 antes de abrir entradas (404 implica ruta aún no registrada).
 8. **Verificación:** metadatos/ACL, GET del Hub, `canManage` sin mutaciones y ausencia de
    ejecuciones/errores inesperados. La primera validación funcional con efectos reales
    necesita autorización y supervisión propias. No utilizar automáticamente el correo 44.
 
 ## Rollback coordinado
+
+### Preflight obligatorio antes de reabrir entradas
+
+- Registrar ID y versión publicada efectiva de padre `pagosProdAsignaciones01` e hijo
+  `pagosProdRecuperacion01`, y contrastar sus artefactos con el manifiesto. La versión
+  publicada es la que cuenta, no una copia editable ni solo el ID del workflow.
+- Confirmar que el hijo está publicado/disponible para Execute Workflow, que el padre
+  apunta a ese hijo, conserva `waitForSubWorkflow=true` y propaga sus errores. No ejecutar
+  el hijo con datos reales para hacer este chequeo.
+- Confirmar padre publicado, Schedule activo y webhook registrado una sola vez a su
+  nombre: `POST /webhook/daubert-hub/notificaciones-pago/reprocesar`.
+- Desde el entorno de red del **API del Hub**, comprobar la URL exacta configurada en
+  `PAYMENT_NOTIFICATIONS_REPROCESS_WEBHOOK_URL`, no la URL del editor, `/webhook-test/`,
+  una ruta de TEST o una comprobación hecha únicamente desde el servidor n8n.
+  Enviar POST con JSON vacío **sin** `X-Daubert-Automation-Token`: debe responder **403**
+  en autenticación, sin crear una ejecución. No imprimir ni transmitir el token real.
+- Si hay 404, timeout, error TLS/DNS, otra respuesta o discrepancia de versión/identidad,
+  mantener las entradas cerradas. Health=200 por sí solo no habilita la apertura.
+- No reabrir mutaciones de Pagos hasta que SQL, Hub, hijo, padre y ruta autenticada estén
+  listos y se haya guardado la evidencia del preflight. Este documento no autoriza
+  ejecutar ahora esa comprobación en PROD ni reprocesar el correo 44.
+
+### Interrupción, 502 o falta de confirmación
+
+SOLICITADO puede significar que el despacho se congeló antes de una entrega incierta;
+PROCESANDO identifica un propietario adquirido, no prueba que todavía esté ejecutándose.
+Ni un 502 ni un correo en ERROR demuestran que n8n no produjo efectos.
+
+1. Cerrar entradas afectadas y conservar request ID, correo, propietario, ID del padre,
+   IDs de hijos, versiones, tiempos, respuestas y logs. No hacer reintentos ciegos.
+2. Conciliar la fila de propiedad con las ejecuciones reales de n8n, incluyendo hijos,
+   ejecuciones activas/en espera/fallidas y posibles efectos de archivos/borradores.
+3. No inventar evidencia de finalización, reutilizar IDs históricos, actualizar estados
+   arbitrariamente ni borrar propietarios/registros para permitir un reintento o DOWN.
+4. Si no se puede demostrar el resultado, mantener el bloqueo y escalar a intervención
+   controlada con evidencia independiente. No hay expiración automática ni un comando
+   de desbloqueo genérico en este PR.
+
+**Rollback completo** significa restaurar SQL, workflow y Hub compatibles después de
+drenar y finalizar el trabajo. **Cierre seguro de entradas** solo contiene el incidente:
+no es un rollback completo ni autoriza DOWN cuando un propietario sigue sin resolver.
+La recuperación histórica del correo 44 permanece fuera del PR y del despliegue.
 
 - Mantener/cerrar nuevamente las mutaciones. Despublicar padre nuevo y esperar a sus
   hijos. Conservar exports, IDs de ejecución, filas y auditoría antes de intervenir.
@@ -191,6 +243,7 @@ histórica dentro de la migración.
   en transacciones READ ONLY, antes de cualquier cambio.
 - No se repitieron las suites generales aprobadas. No se ejecutaron UP/DOWN en PROD,
   importaciones/publicaciones de candidatos ni pruebas con Outlook/Dropbox reales.
-- Siguen pendientes el ensayo del rollback productivo en un entorno restaurado autorizado,
-  la validación del contexto padre/hijo con los servicios reales y el manejo supervisado
-  del caso histórico. Estos límites deben revisarse antes de autorizar despliegue.
+- El ensayo aislado posterior completó UP/DOWN, padre/hijo y restauración de versiones
+  anteriores con datos sintéticos sin pérdidas. Siguen fuera de alcance los servicios
+  externos reales y el manejo supervisado del caso histórico. Ver el informe enlazado
+  antes de autorizar despliegue; con propietarios sin finalizar el rollback sigue bloqueado.
