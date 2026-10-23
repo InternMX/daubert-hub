@@ -2,6 +2,8 @@
 
 Fuentes: [nota de despliegue 12C](../../deployments/2026-09-24-caterpillar-12c-prod.md), migración 009 (repo), paquete Caterpillar 2026-09-21 (externo), código del Hub. **Sin secretos.** Los hechos "al 2026-09-24" son el estado registrado en la nota; verifica el estado actual antes de actuar.
 
+> **Corte 015 → PROD (016):** el paquete preparado (migración, rol dedicado, candidato n8n, inspección, ensayo y procedimiento de corte/recuperación) está en [prod-cutover-016.md](prod-cutover-016.md). Este runbook describe el estado vigente hasta ese corte.
+
 ## Componentes en PROD
 
 | Elemento | Valor |
