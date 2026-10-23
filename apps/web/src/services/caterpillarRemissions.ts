@@ -107,6 +107,28 @@ export interface CaterpillarCancellation {
   requestId: string | null;
 }
 
+export type CaterpillarRegenerationBlock = 'UNAVAILABLE' | 'NOT_COMPLETED' | 'NO_SNAPSHOT' | 'LIVE_REMISSIONS' | 'CANCELLATION_NOT_FORMAL' | 'ALREADY_REGENERATED';
+
+export interface CaterpillarRegenerationAuthorization {
+  authorizationId: string;
+  reason: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  authorizedAt: string;
+  requestId: string | null;
+  regeneratedExecutionId: string | null;
+}
+
+// The Hub decides (and PostgreSQL re-checks) whether a commercial regeneration is possible; the UI only displays this.
+export interface CaterpillarRegenerationState {
+  eligible: boolean;
+  blockedBy: CaterpillarRegenerationBlock | null;
+  authorization: CaterpillarRegenerationAuthorization | null;
+}
+
+const NO_REGENERATION: CaterpillarRegenerationState = { eligible: false, blockedBy: 'UNAVAILABLE', authorization: null };
+
 export interface CaterpillarExecutionDetail {
   executionId: string;
   outcome: CaterpillarExecutionOutcome;
@@ -118,6 +140,7 @@ export interface CaterpillarExecutionDetail {
   latestErrorMessage: string | null;
   n8nExecutionId: string | null;
   reprocessOfExecutionId: string | null;
+  regeneration: CaterpillarRegenerationState;
   sourceDocument: CaterpillarSourceDocument;
   reservations: CaterpillarFolioReservation[];
   remittances: CaterpillarRemittance[];
@@ -312,6 +335,22 @@ export async function cancelCaterpillarRemission(executionId: string, remissionI
     cancellation: data.cancellation as CaterpillarCancellation | null };
 }
 
+const regenerationBlocks = new Set<string>(['UNAVAILABLE', 'NOT_COMPLETED', 'NO_SNAPSHOT', 'LIVE_REMISSIONS', 'CANCELLATION_NOT_FORMAL', 'ALREADY_REGENERATED']);
+
+function isRegenerationAuthorization(value: unknown): value is CaterpillarRegenerationAuthorization {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return isNonEmptyString(item.authorizationId) && isNonEmptyString(item.reason) && isNullableString(item.userId) && isNonEmptyString(item.userEmail)
+    && isNonEmptyString(item.userDisplayName) && isIsoDateString(item.authorizedAt) && isNullableString(item.requestId) && isNullableString(item.regeneratedExecutionId);
+}
+
+function isRegenerationState(value: unknown): value is CaterpillarRegenerationState {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.eligible === 'boolean' && (item.blockedBy === null || (typeof item.blockedBy === 'string' && regenerationBlocks.has(item.blockedBy)))
+    && (item.authorization === null || isRegenerationAuthorization(item.authorization));
+}
+
 function isExecutionDetail(value: unknown): value is CaterpillarExecutionDetail {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
@@ -325,6 +364,7 @@ function isExecutionDetail(value: unknown): value is CaterpillarExecutionDetail 
     && isNullableString(item.latestErrorMessage)
     && isNullableString(item.n8nExecutionId)
     && isNullableString(item.reprocessOfExecutionId)
+    && (item.regeneration === undefined || isRegenerationState(item.regeneration))
     && isSourceDocument(item.sourceDocument)
     && Array.isArray(item.reservations) && item.reservations.every(isReservation)
     && Array.isArray(item.remittances) && item.remittances.every(isRemittance);
@@ -359,7 +399,8 @@ export async function getCaterpillarExecution(executionId: string): Promise<Cate
   if (!response.ok || typeof body !== 'object' || body === null || !('data' in body) || !isExecutionDetail(body.data)) {
     throw new CaterpillarApiError(response.status);
   }
-  return body.data;
+  // An API that predates commercial regeneration simply never offers it.
+  return { ...body.data, regeneration: body.data.regeneration ?? NO_REGENERATION };
 }
 
 // Phase 12C: manual reprocess. Mirrors AutomationApiError's shape (status + the backend's own
@@ -418,4 +459,41 @@ export async function reprocessCaterpillarExecution(executionId: string, reason:
   // Only the fields this app actually uses — never the raw `accepted` envelope field or anything
   // else the Hub's response might carry.
   return { originalExecutionId: body.originalExecutionId, executionId: body.executionId, status: body.status };
+}
+
+// Commercial regeneration of a COMPLETADA execution whose remissions were all cancelled formally. A different contract from the technical reprocess above:
+// its own endpoint, its own statuses, and the authorizing ADMIN is recorded server-side. Reuses the reprocess error type (status + sanitized server message).
+export type CaterpillarRegenerationStatus = 'REGENERATION_STARTED' | 'ALREADY_PROCESSING' | 'ALREADY_REGENERATED';
+
+export interface CaterpillarRegenerationResult {
+  originalExecutionId: string;
+  executionId: string;
+  status: CaterpillarRegenerationStatus;
+  authorization: CaterpillarRegenerationAuthorization | null;
+}
+
+const regenerationStatuses = new Set<CaterpillarRegenerationStatus>(['REGENERATION_STARTED', 'ALREADY_PROCESSING', 'ALREADY_REGENERATED']);
+
+export async function regenerateCaterpillarExecution(executionId: string, reason: string): Promise<CaterpillarRegenerationResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/automations/remissions/caterpillar/executions/${encodeURIComponent(executionId)}/regenerate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason })
+    });
+  } catch { throw new CaterpillarReprocessApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : null;
+    throw new CaterpillarReprocessApiError(response.status, record && typeof record.message === 'string' ? record.message : undefined);
+  }
+  const item = typeof body === 'object' && body !== null ? body as Record<string, unknown> : null;
+  if (!item || item.accepted !== true || !isNonEmptyString(item.originalExecutionId) || !isNonEmptyString(item.executionId)
+    || typeof item.status !== 'string' || !regenerationStatuses.has(item.status as CaterpillarRegenerationStatus)
+    || (item.authorization !== null && item.authorization !== undefined && !isRegenerationAuthorization(item.authorization))) {
+    throw new CaterpillarReprocessApiError(response.status, undefined);
+  }
+  return { originalExecutionId: item.originalExecutionId, executionId: item.executionId, status: item.status as CaterpillarRegenerationStatus,
+    authorization: (item.authorization as CaterpillarRegenerationAuthorization | null | undefined) ?? null };
 }

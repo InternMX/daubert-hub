@@ -11,6 +11,7 @@ import {
   listCaterpillarExecutions,
   listCaterpillarSeries,
   reprocessCaterpillarExecution,
+  regenerateCaterpillarExecution,
   type CaterpillarExecutionDetail,
   type CaterpillarExecutionSummary,
   type CaterpillarProcessRoute,
@@ -34,6 +35,7 @@ vi.mock('../services/caterpillarRemissions', async (importOriginal) => ({
   listCaterpillarExecutions: vi.fn(),
   getCaterpillarExecution: vi.fn(),
   reprocessCaterpillarExecution: vi.fn(),
+  regenerateCaterpillarExecution: vi.fn(),
   cancelCaterpillarRemission: vi.fn()
 }));
 
@@ -43,6 +45,7 @@ const executionsMock = vi.mocked(listCaterpillarExecutions);
 const detailMock = vi.mocked(getCaterpillarExecution);
 const adjustMock = vi.mocked(adjustDocumentSeries);
 const reprocessMock = vi.mocked(reprocessCaterpillarExecution);
+const regenerateMock = vi.mocked(regenerateCaterpillarExecution);
 const cancelMock = vi.mocked(cancelCaterpillarRemission);
 
 function caterpillarOverview(overrides: Partial<AutomationOverview> = {}): AutomationOverview {
@@ -126,6 +129,7 @@ function executionDetail(overrides: Partial<CaterpillarExecutionDetail> = {}): C
     latestErrorMessage: null,
     n8nExecutionId: 'wf-1',
     reprocessOfExecutionId: null,
+    regeneration: { eligible: false, blockedBy: 'NOT_COMPLETED', authorization: null },
     sourceDocument: { documentId: '55', filename: 'remision_p2.pdf', path: '/dropbox/cat/p2/remision_p2.pdf', hash: 'abc123hash', origin: 'DROPBOX', documentDate: '2026-09-19' },
     reservations: [{ reservationId: '1', seriesId: '2', seriesCode: 'REMISION_CAT_P2', folioInicial: '85', folioFinal: '87', quantity: 3, status: 'APLICADA' }],
     remittances: [{
@@ -830,6 +834,78 @@ describe('CaterpillarRemissionsPage', () => {
       await user.click(within(reprocessDialog).getByRole('button', { name: 'Reprocesar' }));
       await screen.findByRole('alert');
       expect(document.body.textContent).not.toMatch(/token|webhook|5678/i);
+    });
+  });
+  // Commercial regeneration: a separate, ADMIN-only action offered ONLY when the Hub says the execution is eligible. The technical Reprocesar rule is untouched.
+  describe('commercial regeneration (017)', () => {
+    const eligible = { eligible: true, blockedBy: null, authorization: null } as const;
+    async function openDetailDialog(user: ReturnType<typeof userEvent.setup>) {
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      await user.click(within(table).getByText('remision_p2.pdf'));
+      return screen.findByRole('dialog');
+    }
+    function setup(regeneration: CaterpillarExecutionDetail['regeneration'], outcome: CaterpillarExecutionDetail['outcome'] = 'COMPLETED') {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome })]));
+      detailMock.mockResolvedValue(executionDetail({ outcome, regeneration }));
+    }
+
+    it('ADMIN sees Regenerar (and never Reprocesar) on a COMPLETADA execution the Hub reports as eligible', async () => {
+      setup(eligible);
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).getByRole('button', { name: 'Regenerar' })).toBeInTheDocument();
+      expect(within(dialog).queryByRole('button', { name: 'Reprocesar' })).not.toBeInTheDocument();
+    });
+    it('GENERAL never sees Regenerar', async () => {
+      setup(eligible);
+      const user = userEvent.setup();
+      renderPage(testGeneralUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).queryByRole('button', { name: 'Regenerar' })).not.toBeInTheDocument();
+    });
+    it('is not offered when the Hub says the execution is not eligible, and an ERROR execution only offers the technical Reprocesar', async () => {
+      setup({ eligible: false, blockedBy: 'LIVE_REMISSIONS', authorization: null });
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).queryByRole('button', { name: 'Regenerar' })).not.toBeInTheDocument();
+    });
+    it('explains why a fully cancelled historical program cannot be regenerated from the Hub (decision manual), without offering the button', async () => {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome: 'COMPLETED' })]));
+      detailMock.mockResolvedValue(executionDetail({ outcome: 'COMPLETED', regeneration: { eligible: false, blockedBy: 'NO_SNAPSHOT', authorization: null },
+        remittances: executionDetail().remittances.map((remittance) => ({ ...remittance, status: 'CANCELADA' })) }));
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).getByText(/requiere una decisión manual/)).toBeInTheDocument();
+      expect(within(dialog).queryByRole('button', { name: 'Regenerar' })).not.toBeInTheDocument();
+    });
+    it('shows who authorized a regeneration and why', async () => {
+      setup({ eligible: false, blockedBy: 'ALREADY_REGENERATED', authorization: { authorizationId: '9', reason: 'Corrección comercial', userId: '1', userEmail: 'admin@test.mx',
+        userDisplayName: 'Admin Prueba', authorizedAt: '2026-10-24T10:00:00.000Z', requestId: null, regeneratedExecutionId: '301' } });
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const dialog = await openDetailDialog(user);
+      expect(within(dialog).getByText(/Admin Prueba/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/Corrección comercial/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/ejecución #301/)).toBeInTheDocument();
+    });
+    it('authorizing sends the reason to the regenerate endpoint (never the reprocess one), shows the started message, and refreshes the list', async () => {
+      setup(eligible);
+      regenerateMock.mockResolvedValue({ originalExecutionId: '9007199254740993', executionId: '301', status: 'REGENERATION_STARTED', authorization: null });
+      const user = userEvent.setup();
+      renderPage(testAdminUser);
+      const detailDialog = await openDetailDialog(user);
+      const before = executionsMock.mock.calls.length;
+      await user.click(within(detailDialog).getByRole('button', { name: 'Regenerar' }));
+      const regenerateDialog = await screen.findByRole('dialog', { name: 'Regenerar remisiones' });
+      await user.type(within(regenerateDialog).getByRole('textbox', { name: /Motivo de la regeneración/ }), 'Corrección comercial');
+      await user.click(within(regenerateDialog).getByRole('button', { name: 'Autorizar y regenerar' }));
+      expect(await screen.findByText(/Regeneración iniciada\. Nueva ejecución: #301/)).toBeInTheDocument();
+      expect(regenerateMock).toHaveBeenCalledWith('9007199254740993', 'Corrección comercial');
+      expect(reprocessMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(executionsMock.mock.calls.length).toBeGreaterThan(before));
     });
   });
 });
