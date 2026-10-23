@@ -1,6 +1,6 @@
 # Caterpillar — Paquete y procedimiento de corte a PROD (016)
 
-> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO** para solicitar la autorización del corte hasta cerrar los bloqueos de la sección 9: la validación en n8n TEST de la **regeneración comercial** (decisión B, ya probada en PostgreSQL TEST y en el Hub: sección 10), la aplicación previa de 013 en PROD, los exports vivos de n8n y el respaldo restaurable de PROD.
+> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO todavía** para solicitar la autorización del corte; la lógica está validada de punta a punta en TEST (incluida la regeneración comercial) y solo quedan los bloqueos reales de la sección 9: exports vivos de n8n, respaldo restaurable de `daubert_global`, inventario de archivos pendientes y la compatibilidad final que se cierra con esos tres.
 > Principio: **TEST es la fuente de verdad de la lógica; PROD es la fuente de verdad de los datos y del entorno.** No se copia ninguna tabla, snapshot, contador ni fixture de TEST. No se crea un sistema paralelo: se moderniza el proceso productivo existente (misma base, mismo n8n, mismo Hub).
 
 ## 1. Qué contiene el paquete (todo en el repositorio, sin aplicar)
@@ -15,8 +15,8 @@
 | Candidato n8n PROD | `n8n/workflows/remisiones-caterpillar/candidate-016-prod/` (`prepare-prod.cjs`, `caterpillar-prod-016.CANDIDATE.INACTIVE.json`) | Workflow productivo inactivo, sin `id`, sin secretos, con Schedule y Webhook deshabilitados |
 | Pruebas | `apps/api/test/caterpillar-016-prod.spec.ts` (15) | Correspondencia migración ↔ workflow ↔ contrato del Hub |
 
-### Decisión de diseño que necesita tu aprobación: rol dedicado `n8n_cat_prod`
-Hoy Caterpillar usa `n8n_app`, **compartido con Remisiones Audi** (ver [production-runbook](production-runbook.md)). La protección contra el bypass de 015 consiste en que el rol del worker de Caterpillar **no tenga EXECUTE** sobre las 5 funciones antiguas (`fn_crear_ejecucion_automatizacion`, `reservar_folios_para_ejecucion`, `fn_registrar_remision_generada`, `fn_finalizar_ejecucion_automatizacion`, `fn_registrar_fallo_ejecucion`). Eso no puede hacerse sobre `n8n_app` sin romper Audi. Por eso el paquete crea **un rol y una credencial n8n nuevos** solo para Caterpillar (`n8n_cat_prod`, credencial `Postgres produccion CAT (n8n_cat_prod)`); `n8n_app` y Audi no se tocan. Si prefieres seguir con `n8n_app`, el gate seguiría existiendo pero **no habría protección contra el bypass**: no es lo validado en TEST.
+### Decisión tomada: rol dedicado `n8n_cat_prod` (separado de `n8n_app`, compartido con Audi)
+Hoy Caterpillar usa `n8n_app`, **compartido con Remisiones Audi** (ver [production-runbook](production-runbook.md)). La protección contra el bypass de 015 consiste en que el rol del worker de Caterpillar **no tenga EXECUTE** sobre las 5 funciones antiguas (`fn_crear_ejecucion_automatizacion`, `reservar_folios_para_ejecucion`, `fn_registrar_remision_generada`, `fn_finalizar_ejecucion_automatizacion`, `fn_registrar_fallo_ejecucion`). Eso no puede hacerse sobre `n8n_app` sin romper Audi. Por eso el paquete crea **un rol y una credencial n8n nuevos** solo para Caterpillar (`n8n_cat_prod`, credencial `Postgres produccion CAT (n8n_cat_prod)`); `n8n_app` y Audi no se tocan. Confirmado: ningún grant ni credencial del paquete menciona `n8n_app` (solo la inspección de solo lectura lo consulta), y los 7 nodos PostgreSQL del candidato usan `Postgres produccion CAT (n8n_cat_prod)`.
 
 ## 2. Estado real de PostgreSQL PROD (lectura 2026-10-23, solo lectura)
 
@@ -140,18 +140,16 @@ Nota de mantenimiento: `CaterpillarExecutionsRepository.claimAdmissionAndReserve
 - Ensayo `rehearse-caterpillar-016.cjs` sobre una restauración del respaldo pre-015 de TEST: precheck, up, postcheck, down, re-aplicación, historial/series/contadores intactos, snapshot, gate, segundo worker rechazado, propietario, error → reserva `ABANDONADA`, reproceso con folios **nuevos**, segundo reproceso sin emitir, bypass de funciones antiguas y DML directo denegados. `REHEARSAL_016_PASS` (16 comprobaciones); base y rol temporales eliminados.
 - Las 25 consultas de inspección se ejecutaron contra TEST (`--self-test`) para validar que corren.
 
-## 9. Bloqueos pendientes (indispensables)
+## 9. Bloqueos reales pendientes
 
-1. **~~Decisión sobre la reemisión por corrección~~ Resuelta: opción B (regeneración comercial autorizada)**, implementada y validada en PostgreSQL TEST y en el Hub (sección 10). Queda pendiente repetirla de punta a punta en n8n TEST. Opciones consideradas: (A) aceptar el bloqueo y resolver cada caso a mano mientras tanto; (B) implementar una regeneración autorizada mínima antes del corte; (C) permitir que el reproceso por botón acepte una ejecución `COMPLETADA` cuyas remisiones están **todas canceladas** (hijo único, folios nuevos, mismos controles). Se eligió B por decisión del negocio; C se descartó porque dejaba entrar una ejecución COMPLETADA al reproceso técnico.
-2. ~~Lectura real de `daubert_global`~~ **Realizada** (sección 2).
-3. **Exports vivos** de `Remisiones CAT Produccion PG` y del FULL de TEST para reconciliar y regenerar el candidato con `--require-live` (el repositorio solo tiene una copia saneada con `<WINDOWS_USER>`).
-4. **Respaldo de PROD restaurable** y ensayo de 016 sobre esa copia.
-5. **Decisión del rol dedicado** `n8n_cat_prod` y alta de su credencial en n8n.
-6. **Inventario de archivos pendientes y de ejecuciones en curso** en PROD.
-7. **Verificar que el Hub PROD ya incluya `ADMISSION_REJECTED`.**
-8. Verificaciones que requieren escritura (se hacen en la ventana, paso 11): primera emisión real con el candidato, PDFs, reproceso por botón, ciclo programado.
-9. **Migración 013 (cancelación formal) pendiente en PROD** (confirmado en la lectura: ni el ledger ni la función existen): se aplica antes de 016 (paso 0 de 5.1) y habilita la cancelación formal y, con ella, la regeneración.
-10. **Validar la regeneración de punta a punta en n8n TEST** (sección 13 del runbook de integración) antes de importar el candidato en PROD.
+Cerrado y verificado (ya no son bloqueos): lectura de solo lectura de `daubert_global`; decisión del rol dedicado `n8n_cat_prod`; opción B (regeneración comercial) implementada y probada de punta a punta en TEST (sección 10 y runbook de integración, sección 14: ejecuciones **237 → 238**); **013 es prerrequisito y PROD cumple lo que 013 exige** (rol Hub `daubert_hub_app` sin escritura sobre remisiones ni CREATE, con USAGE; trigger de `updated_at` activo; columnas de `security.users` correctas; 4 usuarios ADMIN utilizables).
+
+Pendiente, con la acción exacta:
+1. **Exports vivos de n8n** de `Remisiones CAT Produccion PG` (PROD) y del FULL de TEST. Procedimiento: sección 11. Sirven para reconciliar con el repositorio y regenerar el candidato con `--require-live` (hoy solo hay una copia saneada con `<WINDOWS_USER>`).
+2. **Respaldo de `daubert_global` restaurable**: `pg_dump -Fc` fuera de Dropbox y de los worktrees, SHA-256 y restauración en una base desechable; después `node scripts\rehearse-caterpillar-016.cjs <respaldo>` (013 si falta, después 016 completo y la prueba funcional con regeneración). El ensayo aplica 013 antes de 016 solo si la copia no la trae (con un respaldo de PROD siempre será así); `--simulate-prod` reproduce ese orden con el respaldo de TEST: `REHEARSAL_016_PASS`, 20 comprobaciones.
+3. **Inventario de archivos pendientes** en las carpetas de cliente y de ejecuciones en curso en n8n (qué se espera emitir y qué debe salir `REVIEW`).
+4. **Compatibilidad final**: con los puntos 1–3, repetir la inspección de solo lectura (`caterpillar-016-prod-inspect.cjs`) justo antes de la ventana y confirmar que el Hub desplegado en PROD incluye `ADMISSION_REJECTED`, el endpoint `regenerate` y la UI.
+5. Lo que solo puede verificarse con escritura (primera emisión real con el candidato, PDFs, reproceso y regeneración por botón en PROD, ciclo programado) queda para la ventana de corte, paso 11 de la sección 5.1.
 
 ## 10. Regeneración comercial (decisión B) — diseño, casos históricos, validación y efecto en el corte
 
@@ -186,3 +184,20 @@ Nota de mantenimiento: `CaterpillarExecutionsRepository.claimAdmissionAndReserve
 3. Los nodos `Normalizar y validar entrada reproceso CAT` y `Validar elegibilidad reproceso CAT` del candidato PROD conservan el código de PROD más la edición mínima compartida con TEST (`regeneration-entry.cjs`).
 4. Hub: se despliega primero (incluye `ADMISSION_REJECTED`, el endpoint y la UI; es tolerante a bases sin 013/017).
 5. Operación: tras el corte, la corrección de una programación emitida por 016 es: cancelar remisiones (Hub) → **Regenerar** (Hub, ADMIN, motivo) → verificar la ejecución nueva. Las programaciones históricas siguen necesitando decisión manual.
+
+## 11. Procedimiento para obtener los exports vivos (solo lectura sobre n8n; no se activa ni edita nada)
+
+Carpeta de destino sugerida (fuera del repositorio y de Dropbox): `C:\Users\06\Documents\Daubert\exports-n8n\`. El botón *Download* de n8n exporta el JSON del workflow **sin secretos** (solo nombres/ids de credenciales); aun así, no lo subas a ningún servicio externo.
+
+1. **FULL TEST**: en `http://localhost:5678` abre el workflow `Caterpillar TEST 015 — FULL (INACTIVE, staged)` → menú **⋯** (arriba a la derecha) → **Download** → guarda como `full-test-AAAAMMDD.json`. No lo ejecutes ni lo publiques.
+2. **PROD**: abre `Remisiones CAT Produccion PG` (id `9Ngnrpi16b6GtOAX`) → **⋯** → **Download** → `prod-AAAAMMDD.json`. Solo descarga; no lo desactives, no lo edites y no ejecutes nada.
+3. En PowerShell, desde la raíz del worktree:
+   ```powershell
+   cd n8n\workflows\remisiones-caterpillar\candidate-016-prod
+   node prepare-prod.cjs compare-full C:\Users\06\Documents\Daubert\exports-n8n\full-test-AAAAMMDD.json
+   node prepare-prod.cjs compare-prod C:\Users\06\Documents\Daubert\exports-n8n\prod-AAAAMMDD.json
+   ```
+   - `compare-full` debe listar como diferencias solo cosas de entorno de importación (ids, posiciones no cuentan: compara los parámetros de cada nodo). Cualquier nodo de lógica distinto (los 10 de lógica, los 6 nuevos y los 2 de entrada) significa que el FULL vivo tiene una edición manual que falta en el repositorio: se me comparte el nombre del nodo y se reconcilia antes de seguir.
+   - `compare-prod` compara el export vivo con la copia saneada del repositorio (sustituye el usuario de Windows por el marcador antes de comparar). Los nodos distintos son deriva de PROD posterior a la copia y deben revisarse.
+4. Con ambos reconciliados: `node prepare-prod.cjs --prod-export C:\Users\06\Documents\Daubert\exports-n8n\prod-AAAAMMDD.json --require-live` genera el candidato productivo real (falla si queda algún `<WINDOWS_USER>`). Ese archivo se revisa y **no** se importa hasta la ventana de corte.
+

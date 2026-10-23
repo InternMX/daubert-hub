@@ -37,6 +37,8 @@ function connectionFor(database) {
 const rewrite = text => text.split(PROD_DATABASE).join(SCRATCH_DB).split(PROD_WORKER_ROLE).join(SCRATCH_ROLE);
 // The database name is inside the function bodies, so the body fingerprints are recomputed for the rewritten text; the postcheck then proves the
 // fingerprint METHOD (JS md5 of the rendered text) equals what PostgreSQL stores, which is what the committed PROD pins rely on.
+// 013 is allowed in daubert_hub_test and daubert_global only: the scratch database takes the place of daubert_global (its hub role is daubert_hub_app).
+const rewrite013 = text => text.split(PROD_DATABASE).join(SCRATCH_DB);
 const rawFile = kind => rewrite(fs.readFileSync(path.join(DIR, `${P016}.${kind}.sql`), 'utf8'));
 const sqlFile = kind => (kind === 'postcheck' || kind === 'down' ? repin(rawFile(kind), rawFile('up')) : rawFile(kind));
 
@@ -58,7 +60,7 @@ async function expectFailure(db, label, work, pattern) {
 }
 
 async function main() {
-  const dump = process.argv[2];
+  const dump = process.argv.slice(2).find(argument => !argument.startsWith('--'));
   if (!dump || !fs.existsSync(dump)) throw new Error('Usage: node scripts/rehearse-caterpillar-016.cjs <pre015.dump>');
   const results = [];
   const check = (name, ok) => { results.push([name, ok]); if (!ok) throw new Error(`CHECK FAILED: ${name}`); };
@@ -85,6 +87,16 @@ async function main() {
       await db.query(`GRANT EXECUTE ON FUNCTION core.fn_crear_o_resolver_documento(bigint,text,text,text,text,date,text), ops.fn_resolver_ejecucion_para_reproceso(bigint) TO ${SCRATCH_ROLE}`);
       const idle = await q(`SELECT count(*)::int AS n FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones a USING(automatizacion_id) WHERE a.codigo='REMISIONES_CATERPILLAR' AND e.estado='PROCESANDO'`);
       check('restored copy is idle', idle[0].n === 0);
+      // PRODUCTION does not have migration 013 (individual cancellation) yet, and 016 requires it. --simulate-prod removes it from the restored TEST copy so the
+      // same order as the cutover is rehearsed: 013 (precheck, up, postcheck) first, then 016. A dump that already has 013 skips this step.
+      if (process.argv.includes('--simulate-prod')) {
+        await db.query('DROP FUNCTION IF EXISTS operacion.fn_cancelar_remision_caterpillar(bigint,bigint,text,text,bigint,text)');
+        await db.query('DROP TABLE IF EXISTS operacion.cancelaciones_remisiones');
+      }
+      if (!(await q("SELECT to_regclass('operacion.cancelaciones_remisiones') IS NOT NULL AS present"))[0].present) {
+        for (const kind of ['precheck', 'up', 'postcheck']) await db.query(rewrite013(fs.readFileSync(path.join(DIR, `20261020_013_caterpillar_cancellation.${kind}.sql`), 'utf8')));
+        check('013 (formal cancellation) applied before 016, as in the cutover', true);
+      }
       const before = await q(`SELECT (SELECT count(*) FROM operacion.remisiones)::int AS remissions, (SELECT count(*) FROM operacion.reservas_folios)::int AS reservations,
         (SELECT string_agg(codigo||':'||siguiente_folio,',' ORDER BY codigo) FROM operacion.series_documentales) AS series,
         (SELECT md5(COALESCE(string_agg((to_jsonb(d))::text,'|' ORDER BY documento_id),'')) FROM core.documentos d) AS documents`);

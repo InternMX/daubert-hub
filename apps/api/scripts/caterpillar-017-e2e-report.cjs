@@ -12,7 +12,9 @@ const { guardedUrl } = require('../test/support/caterpillar-cancellation-test-gu
 async function main() {
   const original = process.argv[2];
   if (original !== undefined && !/^[1-9]\d{0,17}$/.test(original)) throw new Error('execution id must be a positive integer');
-  const pool = new Pool({ connectionString: guardedUrl(process.env.TEST_DATABASE_URL_MIGRATOR, 'postgres').toString(), max: 1, connectionTimeoutMillis: 5000 });
+  // Least privilege when the Hub TEST login is available (SELECT is enough); otherwise postgres, always inside a READ ONLY transaction.
+  const connectionString = process.env.TEST_DATABASE_URL ? guardedUrl(process.env.TEST_DATABASE_URL, 'daubert_hub_test_user') : guardedUrl(process.env.TEST_DATABASE_URL_MIGRATOR, 'postgres');
+  const pool = new Pool({ connectionString: connectionString.toString(), max: 1, connectionTimeoutMillis: 5000 });
   const client = await pool.connect();
   try {
     await client.query("BEGIN READ ONLY; SET LOCAL statement_timeout='15s'");

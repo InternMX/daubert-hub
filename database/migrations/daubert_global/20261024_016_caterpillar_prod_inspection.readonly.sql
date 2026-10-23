@@ -162,3 +162,13 @@ SELECT to_regclass('operacion.cancelaciones_remisiones') IS NOT NULL AS cancella
   to_regprocedure('operacion.fn_cancelar_remision_caterpillar(bigint,bigint,text,text,bigint,text)') IS NOT NULL AS cancellation_function,
   to_regclass('operacion.autorizaciones_regeneracion_caterpillar') IS NOT NULL AS regeneration_table,
   to_regprocedure('operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)') IS NOT NULL AS regeneration_function;
+
+-- @cancellation_migration_readiness
+SELECT to_regrole('daubert_hub_app') IS NOT NULL AS hub_role_exists,
+  (SELECT CASE WHEN r.oid IS NULL THEN NULL ELSE has_table_privilege(r.oid,'operacion.remisiones','UPDATE,DELETE,TRUNCATE') OR has_any_column_privilege(r.oid,'operacion.remisiones','UPDATE') END FROM (SELECT to_regrole('daubert_hub_app') AS oid) r) AS hub_can_write_remissions_must_be_false,
+  (SELECT CASE WHEN r.oid IS NULL THEN NULL ELSE has_schema_privilege(r.oid,'operacion','CREATE') END FROM (SELECT to_regrole('daubert_hub_app') AS oid) r) AS hub_schema_create_must_be_false,
+  (SELECT CASE WHEN r.oid IS NULL THEN NULL ELSE has_schema_privilege(r.oid,'operacion','USAGE') END FROM (SELECT to_regrole('daubert_hub_app') AS oid) r) AS hub_schema_usage_must_be_true,
+  EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgrelid=to_regclass('operacion.remisiones') AND t.tgenabled='O' AND t.tgfoid=to_regprocedure('core.fn_actualizar_updated_at()') AND (t.tgtype::int & 19)=19) AS updated_at_trigger_enabled,
+  (SELECT string_agg(a.attname||':'||format_type(a.atttypid,a.atttypmod)||CASE WHEN a.attnotnull THEN ':nn' ELSE '' END, ', ' ORDER BY a.attname) FROM pg_attribute a
+    WHERE a.attrelid=to_regclass('security.users') AND a.attname IN ('user_id','email','display_name','role','status','must_change_password') AND NOT a.attisdropped) AS security_users_columns,
+  (SELECT count(*) FROM security.users u WHERE u.role='ADMIN' AND u.status='ACTIVE' AND NOT u.must_change_password) AS usable_admin_users;

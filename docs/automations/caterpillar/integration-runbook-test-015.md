@@ -339,3 +339,21 @@ No se instaló ni modificó nada. No se probó la escritura real (requiere ejecu
 (La corrección `REPROCESS_CREATED` del nodo `Mapear resultado creación reproceso CAT` debe estar ya aplicada.) Guardar sin publicar.
 
 **Prueba de punta a punta en n8n TEST (la ejecuta el operador)**: 1) con un programa P2 nuevo ya COMPLETADO (PDFs reales), cancelar **todas** sus remisiones con el botón de cancelación del Hub; 2) *Listen for test event* en el webhook y, como ADMIN, pulsar **Regenerar** con un motivo; 3) esperar 202 «Regeneración iniciada»; 4) verificar en PostgreSQL: una fila en `autorizaciones_regeneracion_caterpillar` con tu usuario y motivo, ejecución nueva `COMPLETADA` con `reproceso_de_id` = la original, folios nuevos, PDFs nuevos, original y remisiones canceladas intactas, `caterpillar-015-verify.cjs` PASS; 5) repetir el botón: debe responder `ALREADY_REGENERATED` sin emitir; 6) volver a copiar el Excel (mismo nombre o modificado) a `00_ARCHIVOS A PROCESAR` y comprobar que el gate lo bloquea sin folios.
+
+## 14. Resultado E2E real de la regeneración comercial (n8n TEST, 2026-10-23) — CERRADO
+
+Recorrido real **Hub (ADMIN) → webhook n8n TEST → PostgreSQL → PDFs**, con un caso nuevo y aislado (`PROGRAMACION DE ENTREGA CAT P2 PRUEBA REGEN 017 20261023.xlsx`, documento 361). Las ejecuciones 201, 202, 207 y 210 no se tocaron.
+
+| Paso | Evidencia (consultas de solo lectura + `caterpillar-017-e2e-report.cjs 237`) |
+| --- | --- |
+| Generación normal (FULL) | Ejecución **237** `COMPLETADA` (n8n 10812), snapshot V1 guardado, reserva **170** `APLICADA` folios **173–176**, 4 remisiones, 4 PDFs |
+| Cancelación formal (Hub, ADMIN) | Las 4 remisiones `CANCELADA` con **4 registros** en `cancelaciones_remisiones`; 0 vigentes |
+| Regenerar (Hub, ADMIN, motivo) | Autorización **9** (usuario ADMIN, motivo y request id registrados) vinculada a la ejecución nueva |
+| Ejecución regenerada | Ejecución **238** `COMPLETADA` (n8n 10832, `reproceso_de_id` = 237, mismo documento 361), reserva **171** `APLICADA` folios **177–180** (nuevos), 4 remisiones `GENERADA`, 4 PDFs; **8 PDFs** en total, todos existen en disco |
+| Original conservada | 237 sigue `COMPLETADA`, reserva 170 `APLICADA`, remisiones 173–176 `CANCELADA` con su historial |
+| Idempotencia | Segunda solicitud desde el Hub: **HTTP 200 `ALREADY_REGENERATED`**; existe una sola hija (238); sin folios extra |
+| Reingreso del Excel original | Se reutilizó el mismo documento 361 (no se creó otro); **sin ejecuciones nuevas, sin reservas, sin remisiones**; `REMISION_CAT_P2` sigue en **181**. El motivo exacto, reproducido sin efectos (el gate en una transacción que siempre se revierte): `BLOCK / REGENERATION_AUTHORIZATION_REQUIRED` apuntando a la ejecución 237 |
+| Verificadores finales | `caterpillar-015-verify.cjs`: `TEST_015_VERIFY_PASS` (0 violaciones, 0 funciones antiguas ejecutables por el worker). Reporte 017: 0 `PROCESANDO`; las **51 reservas `RESERVADA` históricas de TEST** son exactamente las del baseline previo (ids idénticos), sin modificarlas |
+
+Reconciliación del FULL: los cambios manuales hechos en el FULL de TEST (cierre terminal en `ERROR`, `REPROCESS_CREATED`, los dos nodos de entrada de la regeneración) ya están en el candidato del repositorio (`caterpillar-test-015.FULL.INACTIVE.json`, generado por `prepare-enabled.cjs`); la comparación contra el export vivo se hace con `compare-full` (ver el procedimiento de exports en `prod-cutover-016.md`, sección 11).
+
