@@ -125,9 +125,46 @@ describe('staged copies', () => {
   });
 });
 
+describe('terminal ERROR branch (FULL and FAILURE)', () => {
+  const failure = read(outputs.FAILURE);
+  const prepared = (w: Workflow, current: Record<string, unknown>, admission: Record<string, unknown>, document: Record<string, unknown>) => {
+    const nodes: Record<string, Record<string, unknown>> = { 'Propagar admisión CAT': admission, 'Propagar documento origen PG': document, 'Preparar archivo CAT': {} };
+    const run = new Function('$input', '$', '$execution', String(node(w, 'Preparar error CAT').parameters.jsCode));
+    return (run({ first: () => ({ json: current }) }, (name: string) => ({ first: () => ({ json: nodes[name] ?? {} }) }), { id: 10569 }) as Array<{ json: Record<string, unknown> }>)[0]!.json;
+  };
+  const owned = { puede_emitir: true, documento_origen_id: '330', ejecucion_id: '204' };
+  it.each([['FULL', full], ['FAILURE', failure]])('%s finalizes a controlled error as a terminal ERROR through the owner-checked entry', (_name, w) => {
+    const query = String(node(w, 'Registrar fallo PG').parameters.query);
+    expect(query).toContain("fn_finalizar_caterpillar_test($1::bigint, $2::text, 'ERROR', $3::text, $4::text)");
+    expect(query).not.toMatch(/fn_fallo|fn_registrar_fallo/);
+    expect(String((node(w, 'Registrar fallo PG').parameters.options as { queryReplacement: string }).queryReplacement)).toContain('String($execution.id)');
+  });
+  it('only the PDF conversion owns an execution; an earlier error never finalizes stale context, even of the same document', () => {
+    const pdf = prepared(full, { error: "Command failed: powershell -NoProfile -File convertir-cat-pdf.ps1" }, owned, { documento_origen_id: '330' });
+    expect(pdf).toMatchObject({ nodo_error: 'Convertir PDF CAT', ejecucion_id: '204', fallo_previo_admision: false });
+    const early = prepared(full, { error: 'Missing normalized operational field' }, owned, { documento_origen_id: '330' });
+    expect(early).toMatchObject({ nodo_error: 'Normalizar datos CAT', ejecucion_id: '', fallo_previo_admision: true });
+    const foreign = prepared(full, { error: 'Command failed: powershell', total_html: 1 }, owned, { documento_origen_id: '999' });
+    expect(foreign).toMatchObject({ ejecucion_id: '', fallo_previo_admision: true });
+    const notOwner = prepared(full, { error: 'Command failed: powershell' }, { ...owned, puede_emitir: false }, { documento_origen_id: '330' });
+    expect(notOwner).toMatchObject({ ejecucion_id: '', fallo_previo_admision: true });
+  });
+  it('only Normalizar and the PDF conversion can reach the error branch, so no remission can already be registered', () => {
+    const sources = Object.entries(full.connections).filter(([, v]) => v.main.some(out => out.some(c => c.node === 'Preparar error CAT'))).map(([k]) => k).sort();
+    expect(sources).toEqual(['Convertir PDF CAT', 'Normalizar datos CAT']);
+    const order = ['Convertir PDF CAT', 'Preparar registro remisiones PG', 'Registrar remisión PG'];
+    expect(full.connections[order[0]!]!.main[0]!.map(c => c.node)).toEqual([order[1]]);
+  });
+  it('FULL keeps the normal PDF conversion; only FAILURE injects the failing command', () => {
+    expect(String(node(full, 'Convertir PDF CAT').parameters.command)).toContain('convertir-cat-pdf.ps1');
+    expect(JSON.stringify(full)).not.toMatch(/CAT_FAILURE_TEST_015|exit 1/);
+    expect(String(node(failure, 'Convertir PDF CAT').parameters.command)).toMatch(/exit 1/);
+  });
+});
+
 describe('FAILURE TEST copy', () => {
   const failure = read(outputs.FAILURE);
-  it('is regenerable, inactive and differs from FULL only in the failure injection and terminal ERROR finalization', () => {
+  it('is regenerable, inactive and differs from FULL only in the injected conversion failure and the unused webhook path', () => {
     expect(stage(blocked, 'FAILURE')).toEqual(failure);
     expect(failure.name).toMatch(/FAILURE TEST$/);
     expect(failure.active).toBe(false);
@@ -136,16 +173,11 @@ describe('FAILURE TEST copy', () => {
     expect(node(failure, 'Webhook Reproceso').parameters.path).not.toBe(node(full, 'Webhook Reproceso').parameters.path);
     expect(failure.connections).toEqual(full.connections);
     const changed = failure.nodes.filter(n => JSON.stringify(n) !== JSON.stringify(full.nodes.find(m => m.name === n.name))).map(n => n.name).sort();
-    expect(changed).toEqual(['Convertir PDF CAT', 'Preparar error CAT', 'Registrar fallo PG', 'Webhook Reproceso CAT (TEST)']);
+    expect(changed).toEqual(['Convertir PDF CAT', 'Webhook Reproceso CAT (TEST)']);
     expect(JSON.stringify(failure)).not.toMatch(/daubert_global|Postgres produccion|XBIHVwg46DQuJc5S|9Ngnrpi16b6GtOAX/);
   });
-  it('fails the conversion with a non-zero exit through the existing error output, and finalizes through the owner-checked entry', () => {
-    const convert = node(failure, 'Convertir PDF CAT');
-    expect(String(convert.parameters.command)).toMatch(/exit 1/);
-    expect((convert as unknown as { onError: string }).onError).toBe('continueErrorOutput');
+  it('fails the conversion through the existing error output', () => {
+    expect((node(failure, 'Convertir PDF CAT') as unknown as { onError: string }).onError).toBe('continueErrorOutput');
     expect(failure.connections['Convertir PDF CAT']!.main[1]!.map(c => c.node)).toEqual(['Preparar error CAT']);
-    const query = String(node(failure, 'Registrar fallo PG').parameters.query);
-    expect(query).toMatch(/fn_finalizar_caterpillar_test\(\$1::bigint, \$2::text, 'ERROR', \$3::text, \$4::text\)/);
-    expect(query).not.toMatch(/fn_fallo|fn_registrar_fallo/);
   });
 });

@@ -98,24 +98,47 @@ return 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + script + '" -Te
     node.credentials = structuredClone(CAT_TEST_CREDENTIAL);
     node.notes = 'cat_test (usuario n8n_cat_test). Solo entradas protegidas de 015 y resolutores.';
   }
+  terminalErrorBranch(c);
   return profile === 'FAILURE' ? injectFailure(c) : c;
 }
 
-// FAILURE TEST copy only. (1) The PDF conversion command always exits 1: after the folios are reserved, before any remission is registered.
-// (2) The error branch finalizes the execution as a terminal ERROR through the owner-checked protected entry: fn_fallo only counts an attempt and
-// leaves PROCESANDO, and under 015 no retry can own the execution again. (3) A failed PowerShell command is attributed to Convertir PDF CAT.
+const nodeOf = (c, name) => { const node = c.nodes.find(n => n.name === name); if (!node) throw new Error(`Missing node ${name}`); return node; };
+function replaceOnce(text, from, to) {
+  if (text.split(from).length !== 2) throw new Error('Unexpected error preparation shape; review required');
+  return text.replace(from, to);
+}
+
+// Error branch of FULL and FAILURE. fn_fallo only counts an attempt (1 of 2) and leaves the execution PROCESANDO, and under 015 no retry can own it again,
+// so a controlled error is finalized as a terminal ERROR through the owner-checked protected entry (reservations are abandoned, folios never reused).
+// Only the PDF conversion (after admission, before any remission is registered) may own an execution; an error from Normalizar is always pre-admission, so
+// stale context of an earlier file in the same n8n run can never finalize a foreign or already COMPLETADA execution.
+function terminalErrorBranch(c) {
+  const failure = nodeOf(c, 'Registrar fallo PG');
+  failure.parameters.query = [
+    "SELECT f.ejecucion_id, f.ya_estaba_finalizada AS ya_registrado, f.estado_final AS estado_actual, (f.estado_final = 'ERROR') AS error_final,",
+    '  f.reservas_aplicadas, f.reservas_abandonadas, $3::text AS nodo_error, $4::text AS error_mensaje',
+    "FROM ops.fn_finalizar_caterpillar_test($1::bigint, $2::text, 'ERROR', $3::text, $4::text) AS f;"
+  ].join('\n');
+  failure.notes = 'Finalizacion ERROR terminal por la entrada protegida (propietario verificado). Reemplaza fn_fallo, que dejaba PROCESANDO.';
+  const prepare = nodeOf(c, 'Preparar error CAT');
+  let code = prepare.parameters.jsCode;
+  code = replaceOnce(code, 'current.total_html !== undefined ||', ['current.total_html !== undefined ||', '    /powershell|convertir-cat-pdf/i.test(errorMensaje) ||'].join('\n'));
+  code = replaceOnce(code, 'return [\n', [
+    '// Solo la conversion PDF ocurre despues de la admision y antes de registrar remisiones: cualquier otro origen no es propietario.',
+    'const ejecucionPropia = nodoError === "Convertir PDF CAT" ? ejecucionId : "";', '', 'return [', ''
+  ].join('\n'));
+  code = replaceOnce(code, 'ejecucion_id: ejecucionId,', 'ejecucion_id: ejecucionPropia,');
+  code = replaceOnce(code, 'fallo_previo_admision: ejecucionId === "",', 'fallo_previo_admision: ejecucionPropia === "",');
+  prepare.parameters.jsCode = code;
+  prepare.notes = 'Solo un fallo de Convertir PDF CAT con admision propia confirmada puede finalizar la ejecucion.';
+}
+
+// FAILURE TEST copy only: the PDF conversion always exits 1, after the folios are reserved and before any remission is registered.
 function injectFailure(c) {
-  const byName = name => { const node = c.nodes.find(n => n.name === name); if (!node) throw new Error(`Missing node ${name}`); return node; };
   c.name = 'Caterpillar TEST 015 — FAILURE TEST';
-  const convert = byName('Convertir PDF CAT');
+  const convert = nodeOf(c, 'Convertir PDF CAT');
   convert.parameters.command = `powershell -NoProfile -Command "[Console]::Error.WriteLine('CAT_FAILURE_TEST_015: conversion PDF provocada'); exit 1"`;
   convert.notes = 'FAILURE TEST: falla controlada (exit 1) tras reservar folios y antes de registrar remisiones. NO usar en el flujo operativo.';
-  const failure = byName('Registrar fallo PG');
-  failure.parameters.query = "SELECT f.ejecucion_id, f.ya_estaba_finalizada AS ya_registrado, f.estado_final AS estado_actual, (f.estado_final = 'ERROR') AS error_final,\n  f.reservas_aplicadas, f.reservas_abandonadas, $3::text AS nodo_error, $4::text AS error_mensaje\nFROM ops.fn_finalizar_caterpillar_test($1::bigint, $2::text, 'ERROR', $3::text, $4::text) AS f;";
-  failure.notes = 'FAILURE TEST: finalizacion ERROR terminal por la entrada protegida (propietario verificado). Reemplaza fn_fallo, que dejaba PROCESANDO.';
-  const prepare = byName('Preparar error CAT'), marker = 'current.total_html !== undefined ||';
-  if (!prepare.parameters.jsCode.includes(marker)) throw new Error('Unexpected error preparation shape');
-  prepare.parameters.jsCode = prepare.parameters.jsCode.replace(marker, `${marker}\n    /powershell|convertir-cat-pdf|CAT_FAILURE_TEST_015/i.test(errorMensaje) ||`);
   return c;
 }
 
