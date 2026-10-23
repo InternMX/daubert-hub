@@ -58,14 +58,14 @@ describe('CaterpillarController', () => {
 
   // Phase 12A.3 §E, refined by Phase 12C: the three original GET routes remain read-only; the one
   // new write route (POST executions/:executionId/reprocess) is the sole exception, and is ADMIN-only.
-  it('exposes two ADMIN-only POST routes and keeps consultation GET-only', () => {
+  it('exposes three ADMIN-only POST routes and keeps consultation GET-only', () => {
     const proto = CaterpillarController.prototype as unknown as Record<string, object>;
     const routeHandlers = Object.getOwnPropertyNames(proto)
       .filter((name) => name !== 'constructor')
       .filter((name) => Reflect.getMetadata(METHOD_METADATA, proto[name]!) !== undefined);
-    expect(routeHandlers.sort()).toEqual(['getExecutionDetail', 'listExecutions', 'listSeries', 'reprocess', 'cancelRemission'].sort());
+    expect(routeHandlers.sort()).toEqual(['getExecutionDetail', 'listExecutions', 'listSeries', 'reprocess', 'regenerate', 'cancelRemission'].sort());
     for (const name of routeHandlers) {
-      const expected = name === 'reprocess' || name === 'cancelRemission' ? RequestMethod.POST : RequestMethod.GET;
+      const expected = name === 'reprocess' || name === 'regenerate' || name === 'cancelRemission' ? RequestMethod.POST : RequestMethod.GET;
       expect(Reflect.getMetadata(METHOD_METADATA, proto[name]!)).toBe(expected);
       if (expected === RequestMethod.POST) expect(Reflect.getMetadata(ROLES_KEY, proto[name]!)).toEqual(['ADMIN']);
     }
@@ -163,5 +163,39 @@ describe('CaterpillarController', () => {
       const controller = new CaterpillarController({} as never, { reprocess } as never);
       await expect(controller.reprocess('153', { reason: 'motivo' }, { requestId: 'req-1' } as never, mockResponse() as never)).rejects.toMatchObject({ status: 502 });
     });
+  });
+});
+
+describe('CaterpillarController commercial regeneration', () => {
+  const response = () => ({ status: vi.fn() });
+  const authorization = { authorizationId: '9', reason: 'corrección', userId: '1', userEmail: 'a@b', userDisplayName: 'A', authorizedAt: '2026-10-24T10:00:00.000000Z', requestId: 'r', regeneratedExecutionId: null };
+
+  it('is a separate ADMIN-only POST route; the technical reprocess handler is untouched', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, CaterpillarController.prototype.regenerate)).toEqual(['ADMIN']);
+    expect(Reflect.getMetadata(METHOD_METADATA, CaterpillarController.prototype.regenerate)).toBe(RequestMethod.POST);
+  });
+  it('delegates with the reason and the authenticated identity and answers with its own vocabulary and the authorization record', async () => {
+    const regenerate = vi.fn().mockResolvedValue({ outcome: 'REGENERATION_STARTED', originalExecutionId: '300', executionId: '301', authorization });
+    const controller = new CaterpillarController({} as never, { regenerate } as never);
+    const res = response();
+    const result = await controller.regenerate('300', { reason: 'corrección' }, { requestId: 'req-1', user: { id: '9', email: 'admin@test.mx' } } as never, res as never);
+    expect(regenerate).toHaveBeenCalledWith('300', 'corrección', 'req-1', { userId: '9', userEmail: 'admin@test.mx' });
+    expect(result).toEqual({ accepted: true, originalExecutionId: '300', executionId: '301', status: 'REGENERATION_STARTED', authorization });
+    expect(res.status).not.toHaveBeenCalled();
+  });
+  it('answers 200 (nothing new started) for ALREADY_REGENERATED', async () => {
+    const regenerate = vi.fn().mockResolvedValue({ outcome: 'ALREADY_REGENERATED', originalExecutionId: '300', executionId: '301', authorization });
+    const res = response();
+    await new CaterpillarController({} as never, { regenerate } as never).regenerate('300', { reason: 'x' }, { requestId: 'r' } as never, res as never);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+  it.each([['NOT_ELIGIBLE_STATE', 409], ['ADMISSION_REJECTED', 409], ['SOURCE_FILE_MISSING', 409], ['UPSTREAM_TIMEOUT', 504], ['UPSTREAM_UNAVAILABLE', 502]] as const)('maps %s to HTTP %s, never a generic error for a known business rejection', async (outcome, status) => {
+    const regenerate = vi.fn().mockResolvedValue({ outcome, originalExecutionId: '300', executionId: null, authorization });
+    await expect(new CaterpillarController({} as never, { regenerate } as never).regenerate('300', { reason: 'x' }, { requestId: 'r' } as never, response() as never)).rejects.toMatchObject({ status });
+  });
+  it('validates the execution id before touching the service', async () => {
+    const regenerate = vi.fn();
+    await expect(new CaterpillarController({} as never, { regenerate } as never).regenerate('0', { reason: 'x' }, { requestId: 'r' } as never, response() as never)).rejects.toMatchObject({ status: 400 });
+    expect(regenerate).not.toHaveBeenCalled();
   });
 });

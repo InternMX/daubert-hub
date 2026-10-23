@@ -90,7 +90,9 @@ describe('PROD workflow candidate', () => {
     expect(node(candidate, 'Webhook Reproceso CAT (PROD)').parameters.path).toBe(node(prod, 'Webhook Reproceso CAT (PROD)').parameters.path);
   });
   it('keeps every environment node byte-identical to PROD and replaces only the validated logic', () => {
-    const replaced = new Set([...prodPrepare.LOGIC_FROM_FULL, prodPrepare.PROD_GATE_NODE, ...prodPrepare.DROPPED_PROD_NODES]);
+    const regenerationEntry = createRequire(resolve(root, 'n8n/workflows/remisiones-caterpillar/candidate-015/x.cjs'))('./regeneration-entry.cjs') as { ENTRY_NODE: string; ELIGIBILITY_NODE: string; patchNode: (n: Node) => Node };
+    const replaced = new Set([...prodPrepare.LOGIC_FROM_FULL, prodPrepare.PROD_GATE_NODE, ...prodPrepare.DROPPED_PROD_NODES, regenerationEntry.ENTRY_NODE, regenerationEntry.ELIGIBILITY_NODE]);
+    for (const name of [regenerationEntry.ENTRY_NODE, regenerationEntry.ELIGIBILITY_NODE]) expect(node(candidate, name).parameters, name).toEqual(regenerationEntry.patchNode(structuredClone(node(prod, name))).parameters);
     for (const prodNode of prod.nodes.filter(n => !replaced.has(n.name) && !n.type.endsWith('.stickyNote'))) {
       const kept = node(candidate, prodNode.name);
       expect(kept, prodNode.name).toBeTruthy();

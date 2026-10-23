@@ -20,6 +20,16 @@ describe('CaterpillarReprocessWebhookClient', () => {
   });
 
   describe('triggerReprocess', () => {
+    it('adds the kind field ONLY for a commercial regeneration; the plain reprocess body stays exactly executionId + reason', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(202, { accepted: true, status: 'REPROCESS_CREATED', originalExecutionId: '1', executionId: '2' }));
+      global.fetch = fetchMock as never;
+      const client = new CaterpillarReprocessWebhookClient(configWith() as never);
+      await client.triggerReprocess('1', 'motivo');
+      await client.triggerReprocess('1', 'motivo', 'REGENERATION');
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({ executionId: '1', reason: 'motivo' });
+      expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({ executionId: '1', reason: 'motivo', kind: 'REGENERATION' });
+    });
+
     it('POSTs executionId/reason to the configured URL with the shared header token, nothing else', async () => {
       const fetchMock = vi.fn().mockResolvedValue(jsonResponse(202, { accepted: true, status: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' }));
       global.fetch = fetchMock as never;

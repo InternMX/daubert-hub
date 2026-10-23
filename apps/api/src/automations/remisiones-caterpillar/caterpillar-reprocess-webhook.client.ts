@@ -45,7 +45,9 @@ export class CaterpillarReprocessWebhookClient {
   // executionId/reason are sent server-to-server only, in the outbound webhook request body — the
   // Hub never sends file paths, document ids, series, plants, or automation codes; n8n/PostgreSQL
   // resolve those from executionId on their own side (Phase 12C.2).
-  async triggerReprocess(executionId: string, reason: string): Promise<CaterpillarReprocessWebhookResult> {
+  // kind 'REGENERATION' marks a commercial regeneration (already authorized in PostgreSQL by an ADMIN); it is the only extra field ever sent and the
+  // plain reprocess body is unchanged. n8n uses it ONLY to accept a COMPLETADA execution; the authorization itself is enforced by the SQL gate.
+  async triggerReprocess(executionId: string, reason: string, kind?: 'REGENERATION'): Promise<CaterpillarReprocessWebhookResult> {
     const { url, token } = this.config.get('caterpillarReprocessWebhook', { infer: true });
     if (!url || !token) return { kind: 'NOT_CONFIGURED' };
 
@@ -55,7 +57,7 @@ export class CaterpillarReprocessWebhookClient {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', [WEBHOOK_HEADER_NAME]: token },
-        body: JSON.stringify({ executionId, reason }),
+        body: JSON.stringify(kind ? { executionId, reason, kind } : { executionId, reason }),
         signal: controller.signal
       });
       // Await the body parser inside the same deadline. fetch resolves at headers; aborting

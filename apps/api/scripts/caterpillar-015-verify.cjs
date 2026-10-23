@@ -1,3 +1,4 @@
+// (A cancelled remission is still a remission of its reservation: the check counts the folios of the range regardless of status.)
 // READ ONLY post-test verification of Caterpillar executions in daubert_hub_test. Usage: node scripts/caterpillar-015-verify.cjs [--since <ejecucion_id>]
 // Reports the executions after <since> (default 169 = highest execution id at the 015 cutover; older rows include the deliberate *_SERIE_OVERLAP allocator fixtures and pre-014 executions without snapshot) and the invariant violations (duplicate folios, multiple children, COMPLETADA mismatches are whole-table; overlaps and missing snapshots are scoped to rows after <since>).
 const { Pool } = require('pg');
@@ -18,7 +19,7 @@ const QUERIES = {
       ON a.serie_id=b.serie_id AND a.reserva_id<b.reserva_id AND a.folio_inicial<=b.folio_final AND b.folio_inicial<=a.folio_final AND (a.ejecucion_id>$1 OR b.ejecucion_id>$1)
     UNION ALL SELECT 'COMPLETED_RESERVATION_MISMATCH',e.ejecucion_id::text FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones au USING(automatizacion_id)
       WHERE au.codigo='REMISIONES_CATERPILLAR' AND e.estado='COMPLETADA' AND EXISTS(SELECT 1 FROM operacion.reservas_folios f WHERE f.ejecucion_id=e.ejecucion_id
-        AND f.cantidad<>(SELECT count(*) FROM operacion.remisiones r WHERE r.ejecucion_id=e.ejecucion_id AND r.serie_id=f.serie_id AND r.estatus<>'CANCELADA'))
+        AND f.cantidad<>(SELECT count(*) FROM operacion.remisiones r WHERE r.ejecucion_id=e.ejecucion_id AND r.serie_id=f.serie_id AND r.folio BETWEEN f.folio_inicial AND f.folio_final))
     UNION ALL SELECT 'PROCESSING_WITHOUT_OWNER',e.ejecucion_id::text FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones au USING(automatizacion_id)
       WHERE au.codigo='REMISIONES_CATERPILLAR' AND e.estado='PROCESANDO' AND e.n8n_execution_id IS NULL
     UNION ALL SELECT 'SNAPSHOT_EXECUTION_WITHOUT_SNAPSHOT',e.ejecucion_id::text FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones au USING(automatizacion_id)

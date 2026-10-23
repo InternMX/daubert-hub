@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const base5678 = require('../candidate-5678/prepare-candidate.cjs');
+const regenerationEntry = require('./regeneration-entry.cjs');
 
 const sourceFile = path.join(__dirname, '../candidate-5678/caterpillar-test-5678.PROPOSED.BLOCKED.json');
 const outputFile = path.join(__dirname, 'caterpillar-test-015.PROPOSED.BLOCKED.json');
@@ -223,6 +224,9 @@ if (!contexto.documento_origen_id) {
   c.nodes.push(branch);
   connections[prepararError.name] = { main: [[{ node: branch.name, type: 'main', index: 0 }]] };
   connections[branch.name] = { main: [[{ node: fallo.name, type: 'main', index: 0 }], [{ node: 'Registrar log error CAT', type: 'main', index: 0 }]] };
+
+  // Commercial regeneration (017): the reprocess entry carries an optional kind=REGENERATION and accepts a COMPLETADA execution only for it.
+  c.nodes.forEach(regenerationEntry.patchNode);
 
   for (const n of c.nodes.filter(x => x.type.endsWith('.stickyNote'))) {
     n.parameters.content = '## Caterpillar TEST 015 — NO APTO PARA EJECUCIÓN\nOffline: gate atómico 015; captura de snapshot por entrada SQL protegida; respuesta de reproceso sigue bloqueada.';

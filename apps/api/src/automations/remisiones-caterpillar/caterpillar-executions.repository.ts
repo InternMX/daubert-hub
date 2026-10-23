@@ -63,6 +63,27 @@ export interface CaterpillarCancelResultRow extends CaterpillarCancellationRow {
   resultado: 'CANCELLED' | 'ALREADY_CANCELLED';
 }
 
+export interface CaterpillarRegenerationAuthorizationRow extends QueryResultRow {
+  resultado?: 'AUTHORIZED' | 'ALREADY_AUTHORIZED';
+  autorizacion_id: string;
+  ejecucion_origen_id: string;
+  motivo: string;
+  usuario_id: string | null;
+  usuario_email: string;
+  usuario_nombre: string;
+  autorizada_en: string;
+  request_id: string | null;
+  ejecucion_nueva_id: string | null;
+}
+
+// What the detail needs to tell the UI whether a commercial regeneration is possible. The decision itself is always re-taken in PostgreSQL.
+export interface CaterpillarRegenerationContextRow extends QueryResultRow {
+  available: boolean;
+  has_snapshot: boolean;
+  has_child: boolean;
+  authorization: CaterpillarRegenerationAuthorizationRow | null;
+}
+
 export interface CaterpillarExecutionRow extends QueryResultRow {
   ejecucion_id: string;
   execution_state: string;
@@ -390,6 +411,35 @@ export class CaterpillarExecutionsRepository {
       FROM operacion.fn_cancelar_remision_caterpillar($1::bigint, $2::bigint, $3::text, $4::text, $5::bigint, $6::text)`,
     [executionId, remissionId, input.expectedRevision, input.reason, userId, requestId]);
     if (!row) throw new Error('Missing cancellation result');
+    return row;
+  }
+
+  // Read-only and tolerant of a database that does not have migration 017 (or 014) yet: absence is never cached and never an error.
+  async findRegenerationContext(executionId: string): Promise<CaterpillarRegenerationContextRow> {
+    const [schema] = await this.database.query<{ available: boolean }>(
+      "SELECT to_regclass('operacion.autorizaciones_regeneracion_caterpillar') IS NOT NULL AS available");
+    if (!schema?.available) return { available: false, has_snapshot: false, has_child: false, authorization: null };
+    const [row] = await this.database.query<CaterpillarRegenerationContextRow>(`
+      SELECT true AS available,
+        COALESCE((to_jsonb(d)->'caterpillar_admission') IS NOT NULL AND (to_jsonb(d)->'caterpillar_admission')<>'null'::jsonb, false) AS has_snapshot,
+        EXISTS(SELECT 1 FROM ops.ejecuciones_automatizacion c WHERE c.reproceso_de_id=e.ejecucion_id) AS has_child,
+        (SELECT jsonb_build_object('autorizacion_id',x.autorizacion_id::text,'ejecucion_origen_id',x.ejecucion_origen_id::text,'motivo',x.motivo,'usuario_id',x.usuario_id::text,
+          'usuario_email',x.usuario_email,'usuario_nombre',x.usuario_nombre,'request_id',x.request_id,'ejecucion_nueva_id',x.ejecucion_nueva_id::text,
+          'autorizada_en',to_char(x.autorizada_en AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
+          FROM operacion.autorizaciones_regeneracion_caterpillar x WHERE x.ejecucion_origen_id=e.ejecucion_id) AS authorization
+      FROM ops.ejecuciones_automatizacion e JOIN core.documentos d ON d.documento_id=e.documento_origen_id
+      JOIN ops.automatizaciones a ON a.automatizacion_id=e.automatizacion_id
+      WHERE e.ejecucion_id=$1::bigint AND a.codigo='REMISIONES_CATERPILLAR'`, [executionId]);
+    return row ?? { available: true, has_snapshot: false, has_child: false, authorization: null };
+  }
+
+  // One statement = one transaction. The definer function validates ADMIN, state, snapshot, formal cancellation of every remission, and records
+  // the single-use authorization; the Hub never writes the table itself.
+  async authorizeRegeneration(executionId: string, reason: string, userId: string, requestId: string): Promise<CaterpillarRegenerationAuthorizationRow> {
+    const [row] = await this.database.query<CaterpillarRegenerationAuthorizationRow>(`
+      SELECT resultado, autorizacion_id::text, ejecucion_origen_id::text, motivo, usuario_id::text, usuario_email, usuario_nombre, autorizada_en, request_id, ejecucion_nueva_id::text
+      FROM operacion.fn_autorizar_regeneracion_caterpillar($1::bigint, $2::text, $3::bigint, $4::text)`, [executionId, reason, userId, requestId]);
+    if (!row) throw new Error('Missing regeneration authorization result');
     return row;
   }
 

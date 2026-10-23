@@ -14,6 +14,7 @@
 // sweep), the TEST-only filter and every TEST path/credential are never carried over.
 
 const fs = require('node:fs');
+const regenerationEntry = require('../candidate-015/regeneration-entry.cjs');
 const path = require('node:path');
 
 const FULL_FILE = path.join(__dirname, '..', 'candidate-015', 'caterpillar-test-015.FULL.INACTIVE.json');
@@ -77,7 +78,8 @@ function build(prod, full) {
     if (DROPPED_PROD_NODES.includes(prodNode.name)) continue;
     if (prodNode.name === PROD_GATE_NODE) { nodes.push(derivedNode(fullNodes.get(GATE_NODE), prodNode)); continue; }
     if (LOGIC_FROM_FULL.includes(prodNode.name)) { nodes.push(derivedNode(fullNodes.get(prodNode.name), prodNode)); continue; }
-    nodes.push(clone(prodNode));
+    // The two reprocess-entry nodes keep PROD's own code (routes, process gating) plus the shared commercial-regeneration edit.
+    nodes.push(regenerationEntry.patchNode(clone(prodNode)));
   }
   for (const name of NEW_FROM_FULL) nodes.push(derivedNode(fullNodes.get(name), null));
 

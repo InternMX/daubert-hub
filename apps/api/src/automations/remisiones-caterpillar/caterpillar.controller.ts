@@ -5,7 +5,8 @@ import { Roles } from '../../security/route-access.decorators';
 import { ListCaterpillarExecutionsDto } from './dto/list-caterpillar-executions.dto';
 import { ReprocessCaterpillarExecutionDto } from './dto/reprocess-caterpillar-execution.dto';
 import { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
-import { CaterpillarExecutionsService, type CaterpillarExecutionDetailResponse, type CaterpillarReprocessOutcome, type ListCaterpillarExecutionsResponse } from './caterpillar-executions.service';
+import { RegenerateCaterpillarExecutionDto } from './dto/regenerate-caterpillar-execution.dto';
+import { CaterpillarExecutionsService, type CaterpillarExecutionDetailResponse, type CaterpillarReprocessOutcome, type CaterpillarRegenerationOutcome, type ListCaterpillarExecutionsResponse } from './caterpillar-executions.service';
 import { CaterpillarRoutingService, type ListCaterpillarSeriesResponse } from './caterpillar-routing.service';
 
 export interface CaterpillarReprocessResponse {
@@ -80,6 +81,25 @@ export class CaterpillarController {
     };
   }
 
+  // Commercial regeneration: a different contract from the technical reprocess above (which keeps accepting only ERROR/CANCELADA). It authorizes the
+  // execution in PostgreSQL (ADMIN, COMPLETADA, every remission formally cancelled, mandatory reason) and then asks n8n to run it. 202 only means
+  // "started": the new execution appears in the list and is COMPLETADA only when it finishes.
+  @Post('executions/:executionId/regenerate')
+  @Roles('ADMIN')
+  @HttpCode(202)
+  async regenerate(
+    @Param('executionId') executionId: string,
+    @Body() body: RegenerateCaterpillarExecutionDto,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    this.assertExecutionId(executionId);
+    const result = await this.executions.regenerate(executionId, body.reason, request.requestId, identityFromRequest(request));
+    this.rejectIfError(result.outcome);
+    if (result.outcome === 'ALREADY_REGENERATED') response.status(200);
+    return { accepted: true, originalExecutionId: result.originalExecutionId, executionId: result.executionId!, status: result.outcome, authorization: result.authorization };
+  }
+
   @Post('executions/:executionId/remittances/:remissionId/cancel')
   @Roles('ADMIN')
   @HttpCode(200)
@@ -104,7 +124,7 @@ export class CaterpillarController {
 
   // Every non-accepted outcome maps to a thrown HttpException — SafeExceptionFilter turns these
   // into the app's standard sanitized error body, never n8n's raw response.
-  private rejectIfError(outcome: CaterpillarReprocessOutcome): void {
+  private rejectIfError(outcome: CaterpillarReprocessOutcome | CaterpillarRegenerationOutcome): void {
     if (outcome === 'NOT_FOUND') throw new NotFoundException('Ejecución de Caterpillar no encontrada.');
     if (outcome === 'NOT_ELIGIBLE_STATE') throw new ConflictException('Esta ejecución no está en un estado elegible para reproceso.');
     if (outcome === 'SOURCE_DOCUMENT_MISSING') throw new ConflictException('El documento origen no tiene la información necesaria para reprocesar.');
