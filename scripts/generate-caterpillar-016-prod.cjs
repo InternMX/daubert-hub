@@ -19,13 +19,14 @@ const P016 = '20261024_016_caterpillar_atomic_admission_prod';
 const PROD_DATABASE = 'daubert_global';
 const PROD_WORKER_ROLE = 'n8n_cat_prod';
 
-// Pins of the five legacy functions the protected wrappers delegate to, as validated in TEST (md5 of prosrc without CR).
+// Pins of the five legacy functions the protected wrappers delegate to, as validated in TEST: md5 of the source WITHOUT comments and with collapsed whitespace
+// (PROD and TEST carry the same code with different comments, so the raw md5 would give a false drift).
 const LEGACY_PINS = [
-  ['ops.fn_crear_ejecucion_automatizacion(text,bigint,text,text,bigint)', '929939dcc7cd3ef0e09b7b2a868b9616'],
-  ['operacion.reservar_folios_para_ejecucion(bigint,text,integer)', '26719b6e9d322575673348111bc1279e'],
-  ['operacion.fn_registrar_remision_generada(bigint,text,bigint,date,text,jsonb)', '6efa9ced75530e72a3b79825c86ba3db'],
-  ['ops.fn_finalizar_ejecucion_automatizacion(bigint,text,text,text)', 'faf128cb79f25abbf723014a41165822'],
-  ['ops.fn_registrar_fallo_ejecucion(bigint,text,text,text)', 'a2d6151b712cf07836e49f0cbf4e8948']
+  ['ops.fn_crear_ejecucion_automatizacion(text,bigint,text,text,bigint)', '39a8f01535b92d492c85cac7fb3c168e'],
+  ['operacion.reservar_folios_para_ejecucion(bigint,text,integer)', '1ec951338fcb7218c59bc0cc03b97336'],
+  ['operacion.fn_registrar_remision_generada(bigint,text,bigint,date,text,jsonb)', '87cde2a1e34239b2c07fa4662f012726'],
+  ['ops.fn_finalizar_ejecucion_automatizacion(bigint,text,text,text)', '594b198708d4d1e53cf4ad812de81164'],
+  ['ops.fn_registrar_fallo_ejecucion(bigint,text,text,text)', 'fbcb268f79ad4e8580dae1d8c58380a0']
 ];
 
 const read = name => fs.readFileSync(path.join(DIR, name), 'utf8').replace(/\r\n/g, '\n');
@@ -69,7 +70,7 @@ function toProd(text) {
 const PIN_ENFORCEMENT = `  IF EXISTS(SELECT 1 FROM (VALUES
 ${LEGACY_PINS.map(([signature, hash]) => `    ('${signature}','${hash}')`).join(',\n')}
   ) pinned(signature,body_hash) WHERE to_regprocedure(pinned.signature) IS NULL
-    OR md5(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),''))<>pinned.body_hash) THEN
+    OR md5(btrim(regexp_replace(regexp_replace(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),''),'--[^\\n]*','','g'),'\\s+',' ','g')))<>pinned.body_hash) THEN
     RAISE EXCEPTION '016 legacy function body drift: the wrappers were validated against different legacy definitions; review required'; END IF;
 `;
 

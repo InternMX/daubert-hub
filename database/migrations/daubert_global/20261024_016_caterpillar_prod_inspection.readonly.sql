@@ -24,15 +24,17 @@ GROUP BY 1 ORDER BY 1;
 
 -- @legacy_function_pins
 SELECT pinned.signature, to_regprocedure(pinned.signature) IS NOT NULL AS exists,
-  md5(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),'')) AS body_md5, pinned.test_validated_md5,
-  md5(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),''))=pinned.test_validated_md5 AS matches_test_validated,
+  md5(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),'')) AS raw_body_md5,
+  md5(btrim(regexp_replace(regexp_replace(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),''),'--[^\n]*','','g'),'\s+',' ','g'))) AS normalized_md5,
+  pinned.test_validated_md5,
+  md5(btrim(regexp_replace(regexp_replace(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),''),'--[^\n]*','','g'),'\s+',' ','g')))=pinned.test_validated_md5 AS matches_test_validated,
   (SELECT pg_get_userbyid(proowner)||' secdef='||prosecdef FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)) AS owner
 FROM (VALUES
-  ('ops.fn_crear_ejecucion_automatizacion(text,bigint,text,text,bigint)','929939dcc7cd3ef0e09b7b2a868b9616'),
-  ('operacion.reservar_folios_para_ejecucion(bigint,text,integer)','26719b6e9d322575673348111bc1279e'),
-  ('operacion.fn_registrar_remision_generada(bigint,text,bigint,date,text,jsonb)','6efa9ced75530e72a3b79825c86ba3db'),
-  ('ops.fn_finalizar_ejecucion_automatizacion(bigint,text,text,text)','faf128cb79f25abbf723014a41165822'),
-  ('ops.fn_registrar_fallo_ejecucion(bigint,text,text,text)','a2d6151b712cf07836e49f0cbf4e8948')) pinned(signature,test_validated_md5);
+  ('ops.fn_crear_ejecucion_automatizacion(text,bigint,text,text,bigint)','39a8f01535b92d492c85cac7fb3c168e'),
+  ('operacion.reservar_folios_para_ejecucion(bigint,text,integer)','1ec951338fcb7218c59bc0cc03b97336'),
+  ('operacion.fn_registrar_remision_generada(bigint,text,bigint,date,text,jsonb)','87cde2a1e34239b2c07fa4662f012726'),
+  ('ops.fn_finalizar_ejecucion_automatizacion(bigint,text,text,text)','594b198708d4d1e53cf4ad812de81164'),
+  ('ops.fn_registrar_fallo_ejecucion(bigint,text,text,text)','fbcb268f79ad4e8580dae1d8c58380a0')) pinned(signature,test_validated_md5);
 
 -- @caterpillar_related_functions
 SELECT p.oid::regprocedure::text AS function, pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS security_definer,
@@ -78,11 +80,36 @@ SELECT s.codigo, s.estatus, s.siguiente_folio,
 FROM operacion.series_documentales s WHERE s.codigo IN ('REMISION_CAT_P2','REMISION_CAT_P5','REMISION_CAT_P6') ORDER BY 1;
 
 -- @series_gaps_and_overlaps
-SELECT 'DUPLICATE_FOLIO' AS rule, serie_id::text||':'||folio::text AS detail FROM operacion.remisiones GROUP BY serie_id, folio HAVING count(*)>1
-UNION ALL SELECT 'OVERLAPPING_RESERVATIONS', a.reserva_id||'/'||b.reserva_id FROM operacion.reservas_folios a JOIN operacion.reservas_folios b
+-- Folios may legitimately be re-issued after a cancellation (cancel + folio adjustment + regenerate), so a CANCELADA remission and a live one can share a
+-- (series, folio) and a fully cancelled reservation can overlap its successor: only LIVE duplicates/overlaps are violations (see @folio_reuse_after_cancellation).
+WITH live_reservations AS (
+  SELECT f.* FROM operacion.reservas_folios f JOIN operacion.series_documentales s USING(serie_id)
+  WHERE s.codigo LIKE 'REMISION_CAT%' AND f.estatus<>'ABANDONADA' AND (f.estatus<>'APLICADA' OR EXISTS (SELECT 1 FROM operacion.remisiones m
+    WHERE m.ejecucion_id=f.ejecucion_id AND m.serie_id=f.serie_id AND m.folio BETWEEN f.folio_inicial AND f.folio_final AND m.estatus<>'CANCELADA'))
+)
+SELECT 'DUPLICATE_LIVE_FOLIO' AS rule, serie_id::text||':'||folio::text AS detail FROM operacion.remisiones WHERE estatus<>'CANCELADA' GROUP BY serie_id, folio HAVING count(*)>1
+UNION ALL SELECT 'OVERLAPPING_LIVE_RESERVATIONS', a.reserva_id||'/'||b.reserva_id FROM live_reservations a JOIN live_reservations b
   ON a.serie_id=b.serie_id AND a.reserva_id<b.reserva_id AND a.folio_inicial<=b.folio_final AND b.folio_inicial<=a.folio_final
-UNION ALL SELECT 'EMITTED_OUTSIDE_RESERVATION', m.remision_id::text FROM operacion.remisiones m
-  WHERE NOT EXISTS (SELECT 1 FROM operacion.reservas_folios f WHERE f.ejecucion_id=m.ejecucion_id AND f.serie_id=m.serie_id AND m.folio BETWEEN f.folio_inicial AND f.folio_final);
+UNION ALL SELECT 'CATERPILLAR_REMISSION_OUTSIDE_RESERVATION', m.remision_id::text FROM operacion.remisiones m JOIN operacion.series_documentales s USING(serie_id)
+  WHERE s.codigo LIKE 'REMISION_CAT%' AND NOT EXISTS (SELECT 1 FROM operacion.reservas_folios f WHERE f.ejecucion_id=m.ejecucion_id AND f.serie_id=m.serie_id AND m.folio BETWEEN f.folio_inicial AND f.folio_final);
+
+-- @folio_reuse_after_cancellation
+SELECT s.codigo, m.folio, string_agg(m.remision_id::text||':'||m.estatus||':ej'||m.ejecucion_id::text, ' | ' ORDER BY m.remision_id) AS remissions
+FROM operacion.remisiones m JOIN operacion.series_documentales s USING(serie_id) WHERE s.codigo LIKE 'REMISION_CAT%'
+GROUP BY s.codigo, m.folio HAVING count(*)>1 ORDER BY 1,2;
+
+-- @cancel_and_reissue_history
+SELECT e2.ejecucion_id AS later_execution, d2.nombre_archivo AS later_file, e1.ejecucion_id AS earlier_execution, d1.nombre_archivo AS earlier_file,
+  (lower(btrim(d1.hash_archivo))=lower(btrim(d2.hash_archivo))) AS same_file_bytes,
+  (upper(btrim(regexp_replace(d1.nombre_archivo,'\.(xlsx|xlsm|xls)$','','i')))=upper(btrim(regexp_replace(d2.nombre_archivo,'\.(xlsx|xlsm|xls)$','','i')))) AS same_name
+FROM ops.ejecuciones_automatizacion e2 JOIN ops.automatizaciones a2 ON a2.automatizacion_id=e2.automatizacion_id AND a2.codigo='REMISIONES_CATERPILLAR'
+JOIN core.documentos d2 ON d2.documento_id=e2.documento_origen_id
+JOIN ops.ejecuciones_automatizacion e1 ON e1.ejecucion_id<e2.ejecucion_id AND e1.automatizacion_id=e2.automatizacion_id
+JOIN core.documentos d1 ON d1.documento_id=e1.documento_origen_id AND d1.empresa_id=d2.empresa_id AND d1.documento_id<>d2.documento_id
+WHERE EXISTS (SELECT 1 FROM operacion.remisiones r WHERE r.ejecucion_id=e1.ejecucion_id)
+  AND NOT EXISTS (SELECT 1 FROM operacion.remisiones r WHERE r.ejecucion_id=e1.ejecucion_id AND r.estatus<>'CANCELADA')
+  AND (lower(btrim(d1.hash_archivo))=lower(btrim(d2.hash_archivo)) OR upper(btrim(regexp_replace(d1.nombre_archivo,'\.(xlsx|xlsm|xls)$','','i')))=upper(btrim(regexp_replace(d2.nombre_archivo,'\.(xlsx|xlsm|xls)$','','i'))))
+ORDER BY 1;
 
 -- @executions_by_state
 SELECT e.estado, count(*) AS executions, min(e.ejecucion_id) AS first_id, max(e.ejecucion_id) AS last_id
@@ -103,7 +130,7 @@ FROM operacion.reservas_folios f GROUP BY 1 ORDER BY 1;
 -- @completed_reservation_mismatch
 SELECT e.ejecucion_id FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones au USING(automatizacion_id)
 WHERE au.codigo='REMISIONES_CATERPILLAR' AND e.estado='COMPLETADA' AND EXISTS (SELECT 1 FROM operacion.reservas_folios f WHERE f.ejecucion_id=e.ejecucion_id
-  AND f.cantidad<>(SELECT count(*) FROM operacion.remisiones r WHERE r.ejecucion_id=e.ejecucion_id AND r.serie_id=f.serie_id AND r.estatus<>'CANCELADA'));
+  AND f.cantidad<>(SELECT count(*) FROM operacion.remisiones r WHERE r.ejecucion_id=e.ejecucion_id AND r.serie_id=f.serie_id AND r.folio BETWEEN f.folio_inicial AND f.folio_final));
 
 -- @remissions_by_series_and_state
 SELECT s.codigo, m.estatus, count(*) AS remissions, min(m.folio) AS first_folio, max(m.folio) AS last_folio

@@ -19,6 +19,7 @@ const prodPrepare = createRequire(resolve(root, 'n8n/workflows/remisiones-caterp
 };
 const inspect = createRequire(resolve(root, 'apps/api/scripts/x.cjs'))('./caterpillar-016-prod-inspect.cjs') as {
   parseBlocks: (text: string) => Array<{ name: string; sql: string }>; assertReadOnly: (blocks: Array<{ name: string; sql: string }>) => void; SQL_FILE: string;
+  resolveConnection: (env: Record<string, string | undefined>, flags: string[]) => { host: string; port: number; database: string; user: string; password: string; options: string };
 };
 
 type Node = { id?: string; name: string; type: string; disabled?: boolean; notes?: string; credentials?: unknown; position: number[]; parameters: Record<string, unknown> };
@@ -182,5 +183,39 @@ describe('PROD inspection and role template', () => {
     expect(template).not.toMatch(/PASSWORD '[^:]/);
     expect(template).not.toMatch(/GRANT (SELECT|INSERT|UPDATE|DELETE|ALL)/i);
     expect(template).not.toMatch(/GRANT EXECUTE ON FUNCTION (ops\.fn_crear_ejecucion_automatizacion|operacion\.reservar_folios|operacion\.fn_registrar_remision_generada|ops\.fn_finalizar_ejecucion_automatizacion|ops\.fn_registrar_fallo_ejecucion)/);
+  });
+});
+
+describe('PROD inspection connection guard', () => {
+  const test = 'postgres://postgres:s3cret-pw@localhost:5432/daubert_hub_test';
+  const reuse = ['--reuse-postgres-from-test-url'];
+  it('reuses the postgres account only for daubert_global on localhost:5432, read-only from the first statement, without leaking the password', () => {
+    const config = inspect.resolveConnection({ TEST_DATABASE_URL_MIGRATOR: test }, reuse);
+    expect(config).toMatchObject({ host: 'localhost', port: 5432, database: 'daubert_global', user: 'postgres' });
+    expect(config.options).toContain('default_transaction_read_only=on');
+    expect(config.password).toBe('s3cret-pw');
+    for (const bad of [
+      ['postgres://postgres:s3cret-pw@db.example.com:5432/daubert_hub_test', 'localhost'],
+      ['postgres://postgres:s3cret-pw@localhost:5433/daubert_hub_test', 'localhost'],
+      ['postgres://other:s3cret-pw@localhost:5432/daubert_hub_test', 'postgres account'],
+      ['postgres://postgres:s3cret-pw@localhost:5432/daubert_global', 'daubert_hub_test'],
+      ['postgres://postgres:s3cret-pw@localhost:5432/daubert_hub_test?options=-c%20default_transaction_read_only%3Doff', 'query parameters']
+    ] as const) {
+      let message = '';
+      try { inspect.resolveConnection({ TEST_DATABASE_URL_MIGRATOR: bad[0] }, reuse); } catch (error) { message = (error as Error).message; }
+      expect(message, bad[0]).toContain(bad[1]);
+      expect(message).not.toContain('s3cret-pw');
+    }
+  });
+  it('the dedicated read-only variable must name daubert_global, differ from the TEST url and cannot be mixed with self-test', () => {
+    expect(inspect.resolveConnection({ PROD_DATABASE_URL_READONLY: 'postgres://ro:pw@localhost:5432/daubert_global' }, []).database).toBe('daubert_global');
+    expect(() => inspect.resolveConnection({ PROD_DATABASE_URL_READONLY: 'postgres://ro:pw@localhost:5432/daubert_hub_test' }, [])).toThrow('daubert_global');
+    expect(() => inspect.resolveConnection({ TEST_DATABASE_URL_MIGRATOR: test }, ['--self-test', ...reuse])).toThrow('mutually exclusive');
+    expect(() => inspect.resolveConnection({}, [])).toThrow('is not set');
+  });
+  it('rejects side-effect functions, row locks and writes even when disguised as a SELECT', () => {
+    for (const sql of ["SELECT pg_advisory_lock(1)", "SELECT nextval('operacion.reservas_folios_reserva_id_seq')", "SELECT pg_terminate_backend(1)", "SELECT set_config('x','y',false)",
+      "SELECT pg_read_file('x')", "SELECT lo_import('x')", "SELECT * FROM core.documentos FOR UPDATE", "SELECT * INTO t FROM core.documentos", "WITH x AS (DELETE FROM core.documentos RETURNING 1) SELECT * FROM x"])
+      expect(() => inspect.assertReadOnly([{ name: 'bad', sql }]), sql).toThrow();
   });
 });

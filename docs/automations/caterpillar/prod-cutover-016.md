@@ -1,6 +1,6 @@
 # Caterpillar — Paquete y procedimiento de corte a PROD (016)
 
-> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN.** Veredicto: **NO LISTO** para solicitar la autorización del corte hasta cerrar los bloqueos de la sección 9 (principalmente: lectura real de `daubert_global`, exports vivos de n8n y respaldo restaurable de PROD).
+> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO** para solicitar la autorización del corte hasta cerrar los bloqueos de la sección 9: la decisión sobre la **reemisión por corrección** (hallazgo de la lectura real), los exports vivos de n8n y el respaldo restaurable de PROD.
 > Principio: **TEST es la fuente de verdad de la lógica; PROD es la fuente de verdad de los datos y del entorno.** No se copia ninguna tabla, snapshot, contador ni fixture de TEST. No se crea un sistema paralelo: se moderniza el proceso productivo existente (misma base, mismo n8n, mismo Hub).
 
 ## 1. Qué contiene el paquete (todo en el repositorio, sin aplicar)
@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | Migración 016 (precheck / up / postcheck / down) | `database/migrations/daubert_global/20261024_016_caterpillar_atomic_admission_prod.*.sql` | Columna de snapshot (014) + funciones protegidas (015) para `daubert_global`. **Generadas** por `scripts/generate-caterpillar-016-prod.cjs` a partir de los archivos validados en TEST; `--check` falla si alguien las edita a mano |
 | Rol del worker | `…20261024_016_caterpillar_worker_role_prod.template.sql` | Crea `n8n_cat_prod` (contraseña por variable de `psql`, nunca en el repo) |
-| Inspección de solo lectura | `…20261024_016_caterpillar_prod_inspection.readonly.sql` + `apps/api/scripts/caterpillar-016-prod-inspect.cjs` | Estado real de PROD antes y después del corte (23 consultas `SELECT`) |
+| Inspección de solo lectura | `…20261024_016_caterpillar_prod_inspection.readonly.sql` + `apps/api/scripts/caterpillar-016-prod-inspect.cjs` | Estado real de PROD antes y después del corte (25 consultas `SELECT`, sesión de solo lectura verificada) |
 | Ensayo desechable | `scripts/rehearse-caterpillar-016.cjs` | Restaura un respaldo en una base temporal y ejecuta precheck → up → postcheck → down → up → postcheck → prueba funcional → bypass; luego elimina base y rol temporales |
 | Candidato n8n PROD | `n8n/workflows/remisiones-caterpillar/candidate-016-prod/` (`prepare-prod.cjs`, `caterpillar-prod-016.CANDIDATE.INACTIVE.json`) | Workflow productivo inactivo, sin `id`, sin secretos, con Schedule y Webhook deshabilitados |
 | Pruebas | `apps/api/test/caterpillar-016-prod.spec.ts` (15) | Correspondencia migración ↔ workflow ↔ contrato del Hub |
@@ -17,18 +17,31 @@
 ### Decisión de diseño que necesita tu aprobación: rol dedicado `n8n_cat_prod`
 Hoy Caterpillar usa `n8n_app`, **compartido con Remisiones Audi** (ver [production-runbook](production-runbook.md)). La protección contra el bypass de 015 consiste en que el rol del worker de Caterpillar **no tenga EXECUTE** sobre las 5 funciones antiguas (`fn_crear_ejecucion_automatizacion`, `reservar_folios_para_ejecucion`, `fn_registrar_remision_generada`, `fn_finalizar_ejecucion_automatizacion`, `fn_registrar_fallo_ejecucion`). Eso no puede hacerse sobre `n8n_app` sin romper Audi. Por eso el paquete crea **un rol y una credencial n8n nuevos** solo para Caterpillar (`n8n_cat_prod`, credencial `Postgres produccion CAT (n8n_cat_prod)`); `n8n_app` y Audi no se tocan. Si prefieres seguir con `n8n_app`, el gate seguiría existiendo pero **no habría protección contra el bypass**: no es lo validado en TEST.
 
-## 2. Estado real de PostgreSQL PROD
+## 2. Estado real de PostgreSQL PROD (lectura 2026-10-23, solo lectura)
 
-**No verificado.** La sesión de trabajo solo tiene credenciales de `daubert_hub_test`; no se buscaron ni se usaron otras. Lo único conocido de PROD proviene de la documentación del repositorio:
-`daubert_global`; rol Hub `daubert_hub_app`; rol n8n `n8n_app` (compartido con Audi); migración 009 aplicada el 2026-09-24; procesos habilitados P2, P5, P6; fecha de corte productiva 22/09/2026; empresa origen **122** (en TEST es 1207: el candidato conserva 122).
-**Series y siguientes folios actuales de `REMISION_CAT_P2/P5/P6`: pendientes de lectura.** (Los valores de TEST — 173/131/8 — no son los de PROD y no deben usarse.)
+Obtenido con `caterpillar-016-prod-inspect.cjs --reuse-postgres-from-test-url`: la sesión se abre con `default_transaction_read_only=on`, el script verifica `current_database()='daubert_global'`, `transaction_read_only='on'` y el puerto 5432 antes de leer, y ejecuta solo los `SELECT` revisados (25 bloques, 0 errores). No se modificó nada.
 
-Acción exacta para cerrar esto (solo lectura, sin bloqueos):
+| Tema | Resultado |
+| --- | --- |
+| Servidor | PostgreSQL 18.4, UTF8, collation `pg_unicode_fast` presente (requisito de 016 cumplido) |
+| Estructura | Tablas requeridas presentes; **no existe** `core.documentos.caterpillar_admission` (016 la crea); ninguna función de 016 existe (sin colisión de nombres); el rol `n8n_cat_prod` no existe |
+| Roles | `n8n_app` (LOGIN, no admin) ejecuta las 5 funciones antiguas y los resolvedores; `daubert_hub_app` no ejecuta ninguna; en el momento de la lectura solo había una sesión del Hub (el flujo n8n estaba en reposo) |
+| Funciones antiguas | Las 5 existen (dueño `postgres`, `SECURITY DEFINER`). **Su código es idéntico al validado en TEST** (huella sin comentarios coincide en las 5). Tres difieren de TEST solo en comentarios, por eso el pin de 016 se calcula sin comentarios |
+| Ejecuciones Caterpillar | 13, todas `COMPLETADA`; **0 `PROCESANDO`**, 0 `ERROR`, 0 reprocesos |
+| Reservas | 13, todas `APLICADA` (50 folios); ninguna `RESERVADA` vieja |
+| Series | `REMISION_CAT_P2`: siguiente folio **108** (23 remisiones `GENERADA`, 85–107). `REMISION_CAT_P5`: siguiente **134** (15 `GENERADA` 119–133 y 10 `CANCELADA` 128–137). `REMISION_CAT_P6`: siguiente **9** (2 `GENERADA`, 7–8) |
+| Documentos | 118 documentos en total (huella de datos `775b62cfc7ca0c13c1030bd12c0e5b4c`, sin la columna nueva); 13 de Caterpillar, empresa **122**, todos con hash y **ninguno con nombre no verificable** |
+| Integridad | Sin folios vivos duplicados ni reservas vivas solapadas; sin remisiones Caterpillar fuera de reserva; sin discrepancias en `COMPLETADA` |
+
+**Discrepancia explicada (no la causa 016, no se corrige):** en P5 el contador (134) es menor que el mayor folio usado (137). Las ejecuciones 14 (128–131) y 22 (132–137) tienen todas sus remisiones `CANCELADA`; después del ajuste de folio, la ejecución 23 volvió a emitir 128–133. Es el mecanismo vigente (cancelación 013 + ajuste de folio): los números 134–137 siguen libres, de modo que el siguiente P5 emitirá 134 y repetirá números de remisiones canceladas. 016 no cambia el asignador (`reservar_folios_para_ejecucion`), así que este comportamiento se conserva.
+
+**Hallazgo de negocio importante:** 2 de las 13 ejecuciones fueron **reemisiones por corrección** de un programa ya emitido: la 14 (mismo nombre `…PLANTA 5 260929 TEMPLATE`, contenido distinto de la 13) y la 23 (el mismo archivo de la 22, byte a byte, renombrado `…261020 CORREGIDO`, tras cancelar la 22). Con 016 el gate bloquea exactamente ese tipo de reingreso: para programas históricos responde `REVIEW` (`LEGACY_NAME_MATCH` / `LEGACY_FILE_MATCH`) y para programas emitidos con 016 que luego se cancelan, `BLOCK / REGENERATION_AUTHORIZATION_REQUIRED`; el reproceso del botón solo acepta padres `ERROR`/`CANCELADA` (una ejecución `COMPLETADA` cuyas remisiones se cancelaron no es elegible). Hoy no existe un camino autorizado de regeneración. Ver decisión en la sección 9.
+
+El reporte completo (JSON, sin secretos) se generó en el scratchpad de la sesión y no se guarda en el repositorio porque contiene datos operativos. Para repetirlo, mismo comando:
 ```powershell
-$env:PROD_DATABASE_URL_READONLY = 'postgres://<usuario_solo_lectura>:<contraseña>@localhost:5432/daubert_global'   # la proporciona el operador
-node apps\api\scripts\caterpillar-016-prod-inspect.cjs > prod-inspeccion-antes.json
+node apps\api\scripts\caterpillar-016-prod-inspect.cjs --reuse-postgres-from-test-url > prod-inspeccion.json
 ```
-El script exige que la base sea `daubert_global`, abre `BEGIN READ ONLY`, ejecuta solo los `SELECT` revisados (lo verifica estáticamente y con tests), no lee texto de consultas de otras sesiones y no imprime secretos. Reporta, entre otras cosas: migraciones/objetos presentes, firmas y huellas de las funciones antiguas **frente a las validadas en TEST**, roles y privilegios efectivos, ejecuciones por estado y `PROCESANDO`, reservas, series con `siguiente_folio` frente al mayor folio usado, folios duplicados/solapados, remisiones emitidas fuera de reserva, documentos históricos sin hash y **colisiones de identidad por nombre normalizado**.
+(o con `PROD_DATABASE_URL_READONLY` si se prefiere una cuenta de solo lectura con SELECT sobre las tablas indicadas; `daubert_docs_ro` hoy no las tiene).
 
 ## 3. Diferencias funcionales TEST / PROD
 
@@ -56,10 +69,11 @@ Nodos de PROD que **no cambian**: todo lo demás (≈45): detección, filtros, l
 3. **Nombres históricos no verificables bloquean toda la empresa.** Si un documento histórico tiene un nombre con caracteres prohibidos o sin extensión Excel, el gate responde `HISTORY_UNAVAILABLE` (REVIEW) a **cualquier** programación nueva. Por eso el precheck lo rechaza y el postcheck lo repite con el helper exacto.
 4. **Las ejecuciones históricas en ERROR/CANCELADA no se podrán reprocesar con el botón** (no tienen snapshot): el Hub mostrará el 409 `ADMISSION_REJECTED`. Es deliberado; regenerar histórico no está en alcance.
 5. **Archivos pendientes en carpetas al momento del corte.** Los ya procesados por el flujo anterior darán `REVIEW` (no es un error). Los realmente nuevos se emitirán normalmente. Inventariarlos antes (paso 5.0.7).
-6. **Funciones antiguas con definición distinta a la validada.** El precheck compara las 5 huellas (`md5`) contra TEST y **aborta si difieren**: los wrappers delegan en ellas y solo se validaron con esas definiciones.
+6. **Funciones antiguas con definición distinta a la validada.** El precheck compara las 5 huellas (`md5` del código **sin comentarios** y con espacios colapsados) contra TEST y **aborta si difieren**. En PROD las 5 coinciden hoy (3 difieren de TEST solo en comentarios).
 7. **Series y contadores.** 016 no toca `series_documentales`, `reservas_folios`, `remisiones` ni documentos (el ensayo compara huellas antes/después). Discrepancias entre contador y folios usados, si existen, las reporta la inspección; **no se corrigen en este corte**.
 8. **Dos workflows activos a la vez.** Procesarían los mismos archivos: el workflow anterior se desactiva *antes* de la migración y no se reactiva mientras el nuevo esté publicado.
-9. **Cancelaciones (013) y reservas.** 016 no depende de 013; la inspección informa si PROD la tiene.
+9. **Cancelaciones (013).** PROD ya tiene remisiones `CANCELADA` y folios reutilizados tras cancelar (sección 2). 016 no depende de 013 ni cambia el asignador, pero sí cambia lo que pasa al **reingresar** un programa cancelado (punto 10).
+10. **Reemisión por corrección bloqueada (decisión pendiente).** El gate trata un mismo nombre, o un mismo archivo renombrado, como duplicado (`REVIEW`/`BLOCK`), y no existe regeneración autorizada. En PROD 2 de 13 ejecuciones fueron reemisiones de ese tipo (14 y 23). Tras el corte esas correcciones **no podrán hacerse como hasta hoy**.
 
 ## 5. Procedimiento de corte (futuro; requiere autorización explícita)
 
@@ -120,14 +134,15 @@ Nota de mantenimiento: `CaterpillarExecutionsRepository.claimAdmissionAndReserve
 
 - `caterpillar-016-prod.spec.ts` (15): archivos de migración = lo generado desde TEST (sin ediciones manuales); sin tokens TEST; cuerpos de funciones idénticos a TEST salvo 3 sustituciones; huellas `md5` de postcheck/down recomputadas y las 5 de las funciones antiguas; sin DML fuera de funciones; sin GRANT de funciones antiguas; candidato regenerable, inactivo y sin `id`; nodos de entorno idénticos a PROD; gating P2/P5/P6 y corte 22/09 conservados; sin rutas, credenciales, sandbox, fallo provocado ni funciones `_test`; credencial dedicada en los PG; llamadas SQL ↔ firmas creadas por 016 (tipos y cantidad); topología sin aristas colgantes; respuesta aceptada por el cliente real del Hub; inspección solo-lectura; plantilla de rol sin secretos ni privilegios.
 - Ensayo `rehearse-caterpillar-016.cjs` sobre una restauración del respaldo pre-015 de TEST: precheck, up, postcheck, down, re-aplicación, historial/series/contadores intactos, snapshot, gate, segundo worker rechazado, propietario, error → reserva `ABANDONADA`, reproceso con folios **nuevos**, segundo reproceso sin emitir, bypass de funciones antiguas y DML directo denegados. `REHEARSAL_016_PASS` (16 comprobaciones); base y rol temporales eliminados.
-- Las 23 consultas de inspección se ejecutaron contra TEST (`--self-test`) para validar que corren.
+- Las 25 consultas de inspección se ejecutaron contra TEST (`--self-test`) para validar que corren.
 
 ## 9. Bloqueos pendientes (indispensables)
 
-1. **Lectura real de `daubert_global`** (sección 2): conexión de solo lectura proporcionada por el operador.
-2. **Exports vivos** de `Remisiones CAT Produccion PG` y del FULL de TEST para reconciliar y regenerar el candidato con `--require-live` (el repositorio solo tiene una copia saneada con `<WINDOWS_USER>`).
-3. **Respaldo de PROD restaurable** y ensayo de 016 sobre esa copia.
-4. **Decisión del rol dedicado** `n8n_cat_prod` y alta de su credencial en n8n.
-5. **Inventario de archivos pendientes y de ejecuciones en curso** en PROD.
-6. **Verificar que el Hub PROD ya incluya `ADMISSION_REJECTED`.**
-7. Verificaciones que requieren escritura (se hacen en la ventana, paso 11): primera emisión real con el candidato, PDFs, reproceso por botón, ciclo programado.
+1. **Decisión sobre la reemisión por corrección** (hallazgo de la sección 2). Opciones: (A) aceptar el bloqueo y resolver cada caso a mano mientras tanto; (B) implementar una regeneración autorizada mínima antes del corte; (C) permitir que el reproceso por botón acepte una ejecución `COMPLETADA` cuyas remisiones están **todas canceladas** (hijo único, folios nuevos, mismos controles). Recomendación: C — reutiliza el reproceso ya validado, pero cambia `fn_reprocesar_reservar_*`, la elegibilidad del nodo y la UI, y exige repetir la validación en TEST antes de PROD.
+2. ~~Lectura real de `daubert_global`~~ **Realizada** (sección 2).
+3. **Exports vivos** de `Remisiones CAT Produccion PG` y del FULL de TEST para reconciliar y regenerar el candidato con `--require-live` (el repositorio solo tiene una copia saneada con `<WINDOWS_USER>`).
+4. **Respaldo de PROD restaurable** y ensayo de 016 sobre esa copia.
+5. **Decisión del rol dedicado** `n8n_cat_prod` y alta de su credencial en n8n.
+6. **Inventario de archivos pendientes y de ejecuciones en curso** en PROD.
+7. **Verificar que el Hub PROD ya incluya `ADMISSION_REJECTED`.**
+8. Verificaciones que requieren escritura (se hacen en la ventana, paso 11): primera emisión real con el candidato, PDFs, reproceso por botón, ciclo programado.
