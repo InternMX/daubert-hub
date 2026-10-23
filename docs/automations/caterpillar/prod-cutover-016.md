@@ -1,6 +1,6 @@
 # Caterpillar — Paquete y procedimiento de corte a PROD (016)
 
-> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO todavía** para solicitar la autorización del corte; la lógica está validada de punta a punta en TEST (incluida la regeneración comercial) y solo quedan los bloqueos reales de la sección 9: respaldo restaurable de `daubert_global`, inventario de archivos pendientes y la compatibilidad final que se cierra con ambos. Los exports vivos de n8n ya se reconciliaron (sección 11.1) y el candidato productivo se generó con el export real.
+> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO todavía** para solicitar la autorización del corte; la lógica está validada de punta a punta en TEST (incluida la regeneración comercial) y solo quedan los bloqueos reales de la sección 9: inventario de archivos pendientes y la compatibilidad final que se cierra con él. El respaldo de `daubert_global` y el ensayo completo 013 → 016/017 sobre una restauración real ya se hicieron (sección 12). Los exports vivos de n8n ya se reconciliaron (sección 11.1) y el candidato productivo se generó con el export real.
 > Principio: **TEST es la fuente de verdad de la lógica; PROD es la fuente de verdad de los datos y del entorno.** No se copia ninguna tabla, snapshot, contador ni fixture de TEST. No se crea un sistema paralelo: se moderniza el proceso productivo existente (misma base, mismo n8n, mismo Hub).
 
 ## 1. Qué contiene el paquete (todo en el repositorio, sin aplicar)
@@ -146,7 +146,7 @@ Cerrado y verificado (ya no son bloqueos): lectura de solo lectura de `daubert_g
 
 Pendiente, con la acción exacta:
 1. ~~Exports vivos de n8n~~ **Hecho** (2026-10-23): reconciliados en la sección 11.1; el candidato se regeneró con el export real de PROD (`--require-live`, 0 marcadores).
-2. **Respaldo de `daubert_global` restaurable**: `pg_dump -Fc` fuera de Dropbox y de los worktrees, SHA-256 y restauración en una base desechable; después `node scripts\rehearse-caterpillar-016.cjs <respaldo>` (013 si falta, después 016 completo y la prueba funcional con regeneración). El ensayo aplica 013 antes de 016 solo si la copia no la trae (con un respaldo de PROD siempre será así); `--simulate-prod` reproduce ese orden con el respaldo de TEST: `REHEARSAL_016_PASS`, 20 comprobaciones.
+2. ~~Respaldo de `daubert_global` restaurable y ensayo~~ **Hecho** (2026-10-23, sección 12). Se repite el respaldo y el ensayo justo antes de la ventana para validar el estado vigente.
 3. **Inventario de archivos pendientes** en las carpetas de cliente y de ejecuciones en curso en n8n (qué se espera emitir y qué debe salir `REVIEW`).
 4. **Compatibilidad final**: con los puntos 1–3, repetir la inspección de solo lectura (`caterpillar-016-prod-inspect.cjs`) justo antes de la ventana y confirmar que el Hub desplegado en PROD incluye `ADMISSION_REJECTED`, el endpoint `regenerate` y la UI.
 5. Lo que solo puede verificarse con escritura (primera emisión real con el candidato, PDFs, reproceso y regeneración por botón en PROD, ciclo programado) queda para la ventana de corte, paso 11 de la sección 5.1.
@@ -219,4 +219,38 @@ Además, y solo como **entorno de TEST**: el webhook del FULL vivo tiene asignad
 **Qué se conservó de PROD en el candidato** (byte a byte): rutas reales de cliente (`CLIENTES\\…\\SOLICITUD DE MATERIAL`) y carpeta de herramientas (`HERRAMIENTAS AUTOMATIZACION\\REMISIONES CAT`), detección, `PROCESOS_HABILITADOS_PROD` (P2, P5, P6), corte 22/09/2026, empresa 122, log de errores, preparación de archivo, validación de elegibilidad con la tabla de rutas productivas (más únicamente la edición compartida de regeneración), schedule (10 min) y webhook `cat-reprocess` con el Header Auth `Daubert Hub - n8n PROD` (referencia por id al credencial existente; no hay secretos).
 
 **Candidato regenerado** (`candidate-016-prod/caterpillar-prod-016.CANDIDATE.INACTIVE.json`, 60 nodos): lógica de TEST (gate, snapshot, titularidad, cierre terminal en ERROR, respuesta `REPROCESS_CREATED`, regeneración) + entorno de PROD; 7 nodos PostgreSQL con `Postgres produccion CAT (n8n_cat_prod)`; funciones `*_caterpillar` de 016/017 y los dos resolvedores; sin `id` de workflow ni `webhookId`; `active=false`, Schedule y Webhook deshabilitados; sin rutas, credenciales ni funciones de TEST. Nada se importó ni se ejecutó en n8n.
+
+## 12. Respaldo restaurable y ensayo 013 → 016/017 sobre una copia real de PROD (2026-10-23)
+
+**Respaldo** (`scripts/backup-caterpillar-prod-db.cjs`, solo lectura: `pg_dump` toma una instantánea consistente con bloqueos ACCESS SHARE; no interrumpe n8n ni el Hub):
+- Archivo: `C:\Users\06\Documents\Daubert\respaldos-postgres-prod\daubert_global_pre_caterpillar_016_20261023_220606.dump` (fuera del repositorio y de Dropbox; ignorado por Git por estar fuera del árbol).
+- Tamaño: **291 072 bytes** (base de 13 MB; 390 entradas de catálogo). SHA-256: **`CA8A82AAEC4B89D0595C20CC675732C27D6B2A6C90CDE0687EAE48F8F28C6E26`**. Servidor y herramientas: PostgreSQL **18.4** (`pg_dump`/`pg_restore`/`initdb` 18.4). `pg_restore --list` lo lee, y además se **restauró de verdad** (abajo). Espacio: 251 GB libres.
+
+**Restauración real, aislada** (`scripts/rehearse-caterpillar-prod-copy.cjs`): inicia un PostgreSQL 18 propio (carpeta nueva en `ensayo-postgres-prod\<fecha_hora>\data`, solo loopback `127.0.0.1:55432`, sin contraseñas guardadas), crea los **nombres** de rol de producción (sin contraseñas, con sus límites de conexión y la única membresía que PROD tiene, `daubert_backup` ∈ `pg_read_all_data`, que es estado de clúster y no viaja en el respaldo) y una base **vacía** llamada `daubert_global` con la localización de producción (`Spanish_Spain.1252`); `pg_restore --exit-on-error` termina sin errores con propietarios y ACL conservados. Nunca se conecta al servidor operativo ni a `daubert_hub_test`; solo detiene **su** instancia y no borra nada (las carpetas del ensayo se conservan). Como en la ventana real, los archivos de migración se ejecutan **sin modificar** (la base se llama de verdad `daubert_global`).
+
+**Resultado: `PROD_COPY_REHEARSAL_PASS`, 52 comprobaciones.**
+| Área | Resultado |
+| --- | --- |
+| Estado restaurado | 24 ejecuciones (13 Caterpillar `COMPLETADA`, 0 `PROCESANDO`), 64 remisiones, 13 reservas, series P2/P5/P6 siguientes **108 / 134 / 9** idénticas al respaldo, huellas por tabla registradas; las 5 funciones antiguas coinciden con las validadas |
+| 013 | precheck, up y postcheck pasan sobre datos reales; no cambia ninguna tabla histórica ni contador; el Hub gana solo la función de cancelación y lectura del ledger; `n8n_app` queda exacto |
+| Rol | La plantilla crea `n8n_cat_prod` (sin EXECUTE legado ni privilegios de tabla) |
+| 016/017 | precheck (`PRECHECK_016_PASS`), up y postcheck (`POSTCHECK_016_PASS`) pasan; historia y contadores idénticos; **0 snapshots históricos inventados**; siguientes folios idénticos; sin ejecuciones, reservas ni remisiones nuevas |
+| Privilegios | `n8n_cat_prod` ejecuta **exactamente** las 6 entradas protegidas + los 2 resolvedores (8 funciones) y no tiene ningún privilegio de tabla; `n8n_app` (Audi) conserva todos sus privilegios y no gana ninguno; el Hub gana solo `fn_autorizar_regeneracion_caterpillar` y lectura de la tabla de autorizaciones; ningún otro rol ni PUBLIC ejecuta las funciones nuevas (PUBLIC solo conserva dos funciones de trigger preexistentes) |
+| Bypass | El worker no puede ejecutar ninguna función antigua, ni hacer DML directo, ni autorizar; `n8n_app` sí conserva las funciones antiguas (Audi) |
+| Contratos del candidato | Las 8 sentencias SQL de los nodos PostgreSQL del candidato PROD se `PREPARE`n como `n8n_cat_prod` contra la copia migrada |
+| Históricos | Un reingreso como el 13→14 (mismo nombre, otro contenido) → `REVIEW / LEGACY_NAME_MATCH`; como el 22→23 (mismos bytes, renombrado) → `REVIEW / LEGACY_FILE_MATCH`; ambos **sin folios**. Las ejecuciones 14, 22 y 23 **no se pueden reprocesar** (sin snapshot) y la regeneración de la 14 y la 22 **no es autorizable** (cancelación informal y sin snapshot). Un programa realmente nuevo se admite y reserva exactamente el folio 108 de P2. Ningún registro histórico se modificó (el humo no dejó rastro: huellas idénticas) |
+| Rollback antes de emitir | `016 down` deja el estado de 013; `013 down` (ledger vacío) devuelve la base **exactamente** al respaldo (historia, contadores, privilegios del Hub y de Audi); 013 y 016 se vuelven a aplicar sin problema |
+| Rollback después de emitir | Tras una emisión (snapshot + remisión + `COMPLETADA`), `016 down` **se niega** (`rollback refused`); no pierde datos ni toca el contador (P2 avanzó exactamente un folio: 108 → 109) |
+
+**Problemas detectados durante el ensayo** (ninguno estaba en las migraciones):
+1. Del script: una transacción de lectura de mi inspección quedaba abierta y bloqueaba el `ALTER TABLE` de 016 (`lock timeout`); corregido. Es útil como recordatorio operativo: **la ventana real no debe tener sesiones propias abiertas sobre las tablas**; `lock_timeout=5s` hace que 016 falle limpio, sin cambios, si hay una.
+2. El estado de clúster no viaja en el respaldo: sin `daubert_backup` ∈ `pg_read_all_data`, el postcheck de 013 (`backup role policy drift`) falla. En PROD esa membresía **existe** (se verificó en solo lectura); en una restauración nueva hay que reproducirla.
+3. `pg_ctl start` con la salida capturada bloqueaba el script; corregido.
+
+**Recuperación** (confirmada con el ensayo):
+- *Falla antes de emitir remisiones nuevas* (precheck/up/postcheck de 013 o 016, importación, o antes de la primera emisión): cada migración es una transacción y falla sin cambios; si ya se aplicó, `016 down` y luego `013 down` devuelven la base al estado original y se reactiva el workflow anterior (que sigue usando `n8n_app` y las funciones antiguas, intactas).
+- *Falla después de emitir remisiones nuevas*: **no** se restaura el respaldo (perdería registros y rompería la secuencia documental) y **no** se reinician contadores. `016 down` se niega mientras exista un snapshot o evidencia de ejecución; `013 down` se niega con historial de cancelaciones y las autorizaciones de regeneración también bloquean el retroceso. Solo corrección hacia adelante: reproceso técnico o regeneración autorizada desde el Hub, y conciliación manual con las funciones protegidas (runbook 015, sección 6).
+- Qué cubre el rollback: 016 (columna de snapshot, funciones `*_caterpillar`, tabla de autorizaciones y ACL) y 013 (ledger y función de cancelación); el rol `n8n_cat_prod` y su credencial no se eliminan automáticamente (decisión manual).
+
+**Repetir el ensayo**: `node scripts\rehearse-caterpillar-prod-copy.cjs <respaldo.dump>` (cada corrida usa una carpeta nueva con marca de tiempo; limpiar carpetas viejas es una decisión manual y explícita).
 
