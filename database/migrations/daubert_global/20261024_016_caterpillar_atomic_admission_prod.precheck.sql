@@ -37,6 +37,11 @@ BEGIN
   IF EXISTS(SELECT 1 FROM core.documentos d JOIN ops.ejecuciones_automatizacion e ON e.documento_origen_id=d.documento_id JOIN ops.automatizaciones a USING(automatizacion_id)
     WHERE a.codigo='REMISIONES_CATERPILLAR' AND (d.nombre_archivo ~ '[\\/:*?"<>|[:cntrl:]]' OR upper(btrim(d.nombre_archivo)) !~ '\.(XLSX|XLSM|XLS)$')) THEN
     RAISE EXCEPTION '016 historical Caterpillar document names cannot be verified by the gate; every admission would be REVIEW (HISTORY_UNAVAILABLE)'; END IF;
+  IF to_regclass('operacion.cancelaciones_remisiones') IS NULL OR to_regprocedure('operacion.fn_cancelar_remision_caterpillar(bigint,bigint,text,text,bigint,text)') IS NULL THEN
+    RAISE EXCEPTION '016 requires the individual cancellation ledger (migration 013) because regeneration is defined on formally cancelled remissions'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='daubert_hub_app') THEN RAISE EXCEPTION '016 requires the Hub runtime role'; END IF;
+  IF to_regclass('operacion.autorizaciones_regeneracion_caterpillar') IS NOT NULL OR to_regprocedure('operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)') IS NOT NULL THEN
+    RAISE EXCEPTION '016 regeneration objects already exist; refusing replacement'; END IF;
   IF EXISTS(SELECT 1 FROM (VALUES
     ('ops.fn_crear_ejecucion_automatizacion(text,bigint,text,text,bigint)','39a8f01535b92d492c85cac7fb3c168e'),
     ('operacion.reservar_folios_para_ejecucion(bigint,text,integer)','1ec951338fcb7218c59bc0cc03b97336'),

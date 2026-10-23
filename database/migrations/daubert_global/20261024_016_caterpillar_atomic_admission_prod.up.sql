@@ -51,7 +51,62 @@ BEGIN
     OR md5(btrim(regexp_replace(regexp_replace(replace((SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(pinned.signature)),chr(13),''),'--[^\n]*','','g'),'\s+',' ','g')))<>pinned.body_hash) THEN
     RAISE EXCEPTION '016 legacy function body drift: the wrappers were validated against different legacy definitions; review required'; END IF;
 END $pins$;
+DO $guard017$
+BEGIN
+  IF to_regclass('operacion.cancelaciones_remisiones') IS NULL OR to_regprocedure('operacion.fn_cancelar_remision_caterpillar(bigint,bigint,text,text,bigint,text)') IS NULL THEN
+    RAISE EXCEPTION '016 requires the individual cancellation ledger (migration 013) because regeneration is defined on formally cancelled remissions'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='daubert_hub_app') THEN RAISE EXCEPTION '016 requires the Hub runtime role'; END IF;
+  IF to_regclass('operacion.autorizaciones_regeneracion_caterpillar') IS NOT NULL OR to_regprocedure('operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)') IS NOT NULL THEN
+    RAISE EXCEPTION '016 regeneration objects already exist; refusing replacement'; END IF;
+END $guard017$;
 ALTER TABLE core.documentos ADD COLUMN caterpillar_admission JSONB NULL;
+
+CREATE TABLE operacion.autorizaciones_regeneracion_caterpillar (
+  autorizacion_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ejecucion_origen_id bigint NOT NULL UNIQUE REFERENCES ops.ejecuciones_automatizacion(ejecucion_id) ON DELETE RESTRICT,
+  motivo text NOT NULL CHECK (motivo = btrim(motivo) AND length(motivo) BETWEEN 1 AND 500),
+  usuario_id bigint REFERENCES security.users(user_id) ON DELETE SET NULL,
+  usuario_email text NOT NULL CHECK (btrim(usuario_email) <> ''),
+  usuario_nombre text NOT NULL CHECK (btrim(usuario_nombre) <> ''),
+  autorizada_en timestamptz NOT NULL DEFAULT clock_timestamp(),
+  request_id text CHECK (request_id IS NULL OR length(btrim(request_id)) BETWEEN 1 AND 200),
+  ejecucion_nueva_id bigint UNIQUE REFERENCES ops.ejecuciones_automatizacion(ejecucion_id) ON DELETE RESTRICT,
+  CONSTRAINT ck_regeneracion_distinta CHECK (ejecucion_nueva_id IS NULL OR ejecucion_nueva_id <> ejecucion_origen_id)
+);
+
+CREATE FUNCTION operacion.fn_autorizar_regeneracion_caterpillar(p_ejecucion_id bigint,p_motivo text,p_usuario_id bigint,p_request_id text)
+RETURNS TABLE(resultado text,autorizacion_id bigint,ejecucion_origen_id bigint,motivo text,usuario_id bigint,usuario_email text,usuario_nombre text,
+  autorizada_en text,request_id text,ejecucion_nueva_id bigint)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $fn$
+DECLARE v_email text; v_name text; v_state text; v_doc core.documentos%ROWTYPE; auth operacion.autorizaciones_regeneracion_caterpillar%ROWTYPE; v_result text:='AUTHORIZED';
+BEGIN
+  PERFORM pg_advisory_xact_lock_shared(hashtextextended('CAT_ATOMIC_SCHEMA_015',0));
+  IF p_ejecucion_id IS NULL OR p_ejecucion_id<=0 OR p_motivo IS NULL OR length(btrim(p_motivo)) NOT BETWEEN 1 AND 500
+    OR (p_request_id IS NOT NULL AND length(btrim(p_request_id)) NOT BETWEEN 1 AND 200) THEN RAISE EXCEPTION 'CAT_REGEN_INVALID' USING ERRCODE='22023'; END IF;
+  -- Same actor contract as the individual cancellation: the authenticated Hub identity (ADMIN, ACTIVE, password already changed). No credential column is read.
+  SELECT u.email,u.display_name INTO v_email,v_name FROM security.users u WHERE u.user_id=p_usuario_id AND u.role='ADMIN' AND u.status='ACTIVE' AND NOT u.must_change_password FOR SHARE OF u;
+  IF NOT FOUND THEN RAISE EXCEPTION 'CAT_REGEN_FORBIDDEN' USING ERRCODE='PCR05'; END IF;
+  SELECT e.estado,e.documento_origen_id INTO v_state,v_doc.documento_id FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones a USING(automatizacion_id)
+    WHERE e.ejecucion_id=p_ejecucion_id AND a.codigo='REMISIONES_CATERPILLAR' FOR UPDATE OF e;
+  IF NOT FOUND THEN RAISE EXCEPTION 'CAT_REGEN_NOT_FOUND' USING ERRCODE='PCR01'; END IF;
+  SELECT * INTO auth FROM operacion.autorizaciones_regeneracion_caterpillar x WHERE x.ejecucion_origen_id=p_ejecucion_id;
+  IF FOUND THEN
+    v_result:='ALREADY_AUTHORIZED';
+  ELSE
+    IF v_state<>'COMPLETADA' THEN RAISE EXCEPTION 'CAT_REGEN_STATE' USING ERRCODE='PCR02'; END IF;
+    SELECT * INTO v_doc FROM core.documentos WHERE documento_id=v_doc.documento_id AND tipo_documento='PROGRAMACION_ENTREGA';
+    -- Historical programs have no V1 snapshot: nothing to compare the regenerated content against, so they are never regenerated automatically.
+    IF NOT FOUND OR v_doc.empresa_id IS NULL OR ops.fn_cat_snapshot_015(v_doc.empresa_id,v_doc.nombre_archivo,v_doc.caterpillar_admission) IS NULL THEN RAISE EXCEPTION 'CAT_REGEN_SNAPSHOT_REQUIRED' USING ERRCODE='PCR03'; END IF;
+    IF NOT EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=p_ejecucion_id)
+      OR EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=p_ejecucion_id AND (m.estatus IS DISTINCT FROM 'CANCELADA'
+        OR NOT EXISTS(SELECT 1 FROM operacion.cancelaciones_remisiones c WHERE c.remision_id=m.remision_id))) THEN RAISE EXCEPTION 'CAT_REGEN_REMISSIONS' USING ERRCODE='PCR04'; END IF;
+    IF EXISTS(SELECT 1 FROM ops.ejecuciones_automatizacion e WHERE e.reproceso_de_id=p_ejecucion_id) THEN RAISE EXCEPTION 'CAT_REGEN_CHILD_EXISTS' USING ERRCODE='PCR06'; END IF;
+    INSERT INTO operacion.autorizaciones_regeneracion_caterpillar(ejecucion_origen_id,motivo,usuario_id,usuario_email,usuario_nombre,request_id)
+      VALUES(p_ejecucion_id,btrim(p_motivo),p_usuario_id,v_email,v_name,p_request_id) RETURNING * INTO auth;
+  END IF;
+  RETURN QUERY SELECT v_result,auth.autorizacion_id,auth.ejecucion_origen_id,auth.motivo,auth.usuario_id,auth.usuario_email,auth.usuario_nombre,
+    to_char(auth.autorizada_en AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),auth.request_id,auth.ejecucion_nueva_id;
+END $fn$;
 
 -- Match JavaScript NFC/trim/whitespace/uppercase without changing V1 canonicalization.
 CREATE FUNCTION ops.fn_cat_key_text_015(p_text text) RETURNS text LANGUAGE sql IMMUTABLE STRICT
@@ -187,6 +242,7 @@ RETURNS TABLE(decision text,reason text,can_emit boolean,worker_id text,ejecucio
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $fn$
 DECLARE par record; doc core.documentos%ROWTYPE; ctx jsonb; old_ctx jsonb; old record; child record; claim record; reserved record;
   own_id bigint; created boolean:=false; legacy_count integer:=0; route_count integer; normalized_old_name text;
+  regen boolean:=false; auth record;
 BEGIN
   IF current_database()<>'daubert_global' OR current_setting('transaction_isolation')<>'read committed' THEN RAISE EXCEPTION 'CAT_ATOMIC_TEST_READ_COMMITTED_REQUIRED' USING ERRCODE='55000'; END IF;
   PERFORM pg_advisory_xact_lock_shared(hashtextextended('CAT_ATOMIC_SCHEMA_015',0));
@@ -225,15 +281,33 @@ BEGIN
     ELSE RETURN QUERY SELECT 'BLOCK','ALREADY_REPROCESSED',false,NULL::text,child.child_id,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
     END IF;
   ELSE
-    IF par.parent_state NOT IN ('ERROR','CANCELADA') THEN
-      RETURN QUERY SELECT 'BLOCK','PARENT_NOT_REPROCESSABLE',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
+    -- Commercial regeneration (017): a COMPLETADA parent is accepted ONLY through a recorded ADMIN authorization (operacion.autorizaciones_regeneracion_caterpillar)
+    -- and only while every one of its remissions is formally cancelled. Without the authorization it stays PARENT_NOT_REPROCESSABLE, exactly as before.
+    regen:=par.parent_state='COMPLETADA';
+    IF regen THEN
+      SELECT * INTO auth FROM operacion.autorizaciones_regeneracion_caterpillar x WHERE x.ejecucion_origen_id=p_parent FOR UPDATE;
+      IF NOT FOUND THEN
+        RETURN QUERY SELECT 'BLOCK','PARENT_NOT_REPROCESSABLE',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
+      END IF;
+      IF NOT EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=p_parent)
+        OR EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=p_parent AND (m.estatus IS DISTINCT FROM 'CANCELADA'
+          OR NOT EXISTS(SELECT 1 FROM operacion.cancelaciones_remisiones c WHERE c.remision_id=m.remision_id))) THEN
+        RETURN QUERY SELECT 'REVIEW','PARENT_HAS_ACTIVE_REMISSIONS',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
+      END IF;
+    ELSE
+      IF par.parent_state NOT IN ('ERROR','CANCELADA') THEN
+        RETURN QUERY SELECT 'BLOCK','PARENT_NOT_REPROCESSABLE',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
+      END IF;
+      -- A failed run that already registered live remissions is a partial emission: it needs reconciliation, never a second emission.
+      IF EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=p_parent AND m.estatus IS DISTINCT FROM 'CANCELADA') THEN
+        RETURN QUERY SELECT 'REVIEW','PARENT_HAS_ACTIVE_REMISSIONS',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
+      END IF;
     END IF;
-    -- A failed run that already registered live remissions is a partial emission: it needs reconciliation, never a second emission.
-    IF EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=p_parent AND m.estatus IS DISTINCT FROM 'CANCELADA') THEN
-      RETURN QUERY SELECT 'REVIEW','PARENT_HAS_ACTIVE_REMISSIONS',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
-    END IF;
+    -- Another execution of the same program still counts unless it is the parent itself or a COMPLETADA whose remissions are all cancelled (it no longer holds a live emission).
     IF EXISTS(SELECT 1 FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones a USING(automatizacion_id)
-      WHERE e.documento_origen_id=doc.documento_id AND a.codigo='REMISIONES_CATERPILLAR' AND e.estado IN ('PROCESANDO','COMPLETADA')) THEN
+      WHERE e.documento_origen_id=doc.documento_id AND a.codigo='REMISIONES_CATERPILLAR' AND e.ejecucion_id<>p_parent
+        AND (e.estado='PROCESANDO' OR (e.estado='COMPLETADA' AND NOT (EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=e.ejecucion_id)
+          AND NOT EXISTS(SELECT 1 FROM operacion.remisiones m WHERE m.ejecucion_id=e.ejecucion_id AND m.estatus IS DISTINCT FROM 'CANCELADA'))))) THEN
       RETURN QUERY SELECT 'BLOCK','PROGRAM_IN_PROGRESS_OR_EMITTED',false,NULL::text,p_parent,NULL::bigint,NULL::bigint,NULL::bigint,NULL::integer,legacy_count; RETURN;
     END IF;
     -- Other documents: same conflict policy as the admission gate. The parent's own document lineage was resolved above.
@@ -261,6 +335,11 @@ BEGIN
     SELECT * INTO STRICT claim FROM ops.fn_crear_ejecucion_automatizacion('REMISIONES_CATERPILLAR',doc.documento_id,p_worker,NULL,p_parent);
     IF claim.motivo<>'REPROCESS_CREATED' THEN RAISE EXCEPTION 'CAT_ATOMIC_UNEXPECTED_EXECUTION_RESULT' USING ERRCODE='55000'; END IF;
     own_id:=claim.ejecucion_id; created:=true;
+    -- The authorization is consumed by exactly one child execution (the child is unique per parent by uq_ejecuciones_automatizacion_reproceso_unico).
+    IF regen THEN
+      UPDATE operacion.autorizaciones_regeneracion_caterpillar x SET ejecucion_nueva_id=own_id WHERE x.autorizacion_id=auth.autorizacion_id AND x.ejecucion_nueva_id IS NULL;
+      IF NOT FOUND THEN RAISE EXCEPTION 'CAT_REGEN_AUTHORIZATION_ALREADY_USED' USING ERRCODE='55000'; END IF;
+    END IF;
   END IF;
   PERFORM 1 FROM ops.ejecuciones_automatizacion e WHERE e.ejecucion_id=own_id AND e.estado='PROCESANDO' AND e.n8n_execution_id=p_worker AND e.reproceso_de_id=p_parent FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'CAT_ATOMIC_OWNER_CHANGED' USING ERRCODE='55000'; END IF;
@@ -364,4 +443,23 @@ END $acl$;
 GRANT EXECUTE ON FUNCTION ops.fn_admitir_reservar_caterpillar(bigint,text,text,integer),ops.fn_guardar_snapshot_caterpillar(bigint,text),ops.fn_reprocesar_reservar_caterpillar(bigint,text,text,integer),
   operacion.fn_registrar_remision_caterpillar(bigint,text,text,bigint,date,text,jsonb),
   ops.fn_finalizar_caterpillar(bigint,text,text,text,text),ops.fn_fallo_caterpillar(bigint,text,text,text) TO n8n_cat_prod;
+DO $acl$
+DECLARE r record; v_role text;
+BEGIN
+  FOR r IN SELECT DISTINCT acl.grantee FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl
+    WHERE c.oid='operacion.autorizaciones_regeneracion_caterpillar'::regclass AND acl.grantee<>c.relowner LOOP
+    EXECUTE 'REVOKE ALL ON operacion.autorizaciones_regeneracion_caterpillar FROM '||CASE WHEN r.grantee=0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(r.grantee)) END;
+  END LOOP;
+  FOR r IN SELECT DISTINCT acl.grantee FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('s', c.relowner))) acl
+    WHERE c.oid='operacion.autorizaciones_regeneracion_caterpillar_autorizacion_id_seq'::regclass AND acl.grantee<>c.relowner LOOP
+    EXECUTE 'REVOKE ALL ON SEQUENCE operacion.autorizaciones_regeneracion_caterpillar_autorizacion_id_seq FROM '||CASE WHEN r.grantee=0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(r.grantee)) END;
+  END LOOP;
+  FOR r IN SELECT DISTINCT acl.grantee FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+    WHERE p.oid='operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)'::regprocedure AND acl.grantee<>p.proowner LOOP
+    EXECUTE 'REVOKE ALL ON FUNCTION operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text) FROM '||CASE WHEN r.grantee=0 THEN 'PUBLIC' ELSE quote_ident(pg_get_userbyid(r.grantee)) END;
+  END LOOP;
+  v_role := 'daubert_hub_app';
+  EXECUTE format('GRANT SELECT ON operacion.autorizaciones_regeneracion_caterpillar TO %I', v_role);
+  EXECUTE format('GRANT EXECUTE ON FUNCTION operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text) TO %I', v_role);
+END $acl$;
 COMMIT;

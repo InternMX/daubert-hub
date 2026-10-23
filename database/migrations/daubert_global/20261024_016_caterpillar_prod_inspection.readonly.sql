@@ -156,3 +156,9 @@ GROUP BY 1 HAVING count(*)>1 ORDER BY 1;
 
 -- @document_fingerprint
 SELECT count(*) AS documents, md5(COALESCE(string_agg((to_jsonb(d)-'caterpillar_admission')::text,'|' ORDER BY documento_id),'')) AS existing_document_data_fingerprint FROM core.documentos d;
+
+-- @cancellation_and_regeneration_objects
+SELECT to_regclass('operacion.cancelaciones_remisiones') IS NOT NULL AS cancellation_ledger,
+  to_regprocedure('operacion.fn_cancelar_remision_caterpillar(bigint,bigint,text,text,bigint,text)') IS NOT NULL AS cancellation_function,
+  to_regclass('operacion.autorizaciones_regeneracion_caterpillar') IS NOT NULL AS regeneration_table,
+  to_regprocedure('operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)') IS NOT NULL AS regeneration_function;

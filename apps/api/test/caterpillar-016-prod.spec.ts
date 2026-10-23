@@ -44,13 +44,28 @@ describe('PROD migration 016 is the validated TEST logic, generated and pinned',
     expect(upSql).toContain("current_database()<>'daubert_global'");
     expect(upSql).toContain('n8n_cat_prod');
   });
-  it('every function body equals the TEST body except the three documented substitutions', () => {
-    const prodBodies = generator.functionBodies(upSql), testBodies = generator.functionBodies(testUp);
-    expect(prodBodies.size).toBe(9);
+  it('every function body equals the validated TEST body (015, with the 017 reprocess gate and authorize function) except the documented substitutions', () => {
+    const regenerationUp = read('20261024_017_caterpillar_regeneration_test.up.sql');
+    const reprocessStart = regenerationUp.indexOf('$fn$', regenerationUp.indexOf('CREATE OR REPLACE FUNCTION ops.fn_reprocesar_reservar_caterpillar_test')) + 4;
+    const testBodies = generator.functionBodies(testUp);
+    testBodies.set('ops.fn_reprocesar_reservar_caterpillar_test', regenerationUp.slice(reprocessStart, regenerationUp.indexOf('$fn$', reprocessStart)));
+    for (const [name, body] of generator.functionBodies(regenerationUp)) testBodies.set(name, body);
+    const prodBodies = generator.functionBodies(upSql);
+    expect(prodBodies.size).toBe(10);
+    expect(testBodies.size).toBe(10);
     for (const [name, body] of testBodies) {
       const prodName = name.replace('_caterpillar_test', '_caterpillar');
       expect(prodBodies.get(prodName), prodName).toBe(generator.toProd(body));
     }
+  });
+  it('production gets the commercial regeneration pieces and requires formal cancellation (013) first', () => {
+    expect(upSql).toContain('CREATE TABLE operacion.autorizaciones_regeneracion_caterpillar');
+    expect(upSql).toContain('GRANT SELECT ON operacion.autorizaciones_regeneracion_caterpillar TO %I');
+    expect(upSql).toContain("v_role := 'daubert_hub_app'");
+    expect(upSql).toContain('migration 013');
+    expect(rendered[`${generator.P016}.precheck.sql`]).toContain('migration 013');
+    expect(rendered[`${generator.P016}.postcheck.sql`]).toContain('015 authorize privilege drift'.replace('015', '016'));
+    expect(rendered[`${generator.P016}.down.sql`]).toContain('regeneration authorizations exist; rollback refused');
   });
   it('the committed postcheck pins the md5 of the rendered bodies and the five validated legacy bodies', () => {
     const bodies = generator.functionBodies(upSql);

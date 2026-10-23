@@ -15,9 +15,11 @@ const crypto = require('node:crypto');
 
 const DIR = path.join(__dirname, '..', 'database', 'migrations', 'daubert_global');
 const T015 = '20261022_015_caterpillar_atomic_admission_test';
+const T017 = '20261024_017_caterpillar_regeneration_test';
 const P016 = '20261024_016_caterpillar_atomic_admission_prod';
 const PROD_DATABASE = 'daubert_global';
 const PROD_WORKER_ROLE = 'n8n_cat_prod';
+const PROD_HUB_ROLE = 'daubert_hub_app';
 
 // Pins of the five legacy functions the protected wrappers delegate to, as validated in TEST: md5 of the source WITHOUT comments and with collapsed whitespace
 // (PROD and TEST carry the same code with different comments, so the raw md5 would give a false drift).
@@ -57,6 +59,7 @@ function repin(text, sourceSql) {
 
 function toProd(text) {
   let out = text;
+  out = out.split('daubert_hub_test_user').join(PROD_HUB_ROLE);
   out = out.split('daubert_hub_test').join(PROD_DATABASE);
   out = out.split('n8n_cat_test').join(PROD_WORKER_ROLE);
   out = out.split('_caterpillar_test').join('_caterpillar');
@@ -74,7 +77,52 @@ ${LEGACY_PINS.map(([signature, hash]) => `    ('${signature}','${hash}')`).join(
     RAISE EXCEPTION '016 legacy function body drift: the wrappers were validated against different legacy definitions; review required'; END IF;
 `;
 
+// Pieces of the validated TEST migration 017 (commercial regeneration): the authorization table, the Hub-facing function, the patched reprocess gate and the ACLs.
+function regeneration017() {
+  const up = read(`${T017}.up.sql`);
+  const slice = (startMarker, endMarker, from = 0) => {
+    const a = up.indexOf(startMarker, from);
+    if (a < 0) throw new Error('017 shape changed: ' + startMarker);
+    const b = up.indexOf(endMarker, a);
+    if (b < 0) throw new Error('017 shape changed: ' + endMarker);
+    return up.slice(a, b + endMarker.length);
+  };
+  return {
+    table: slice('CREATE TABLE operacion.autorizaciones_regeneracion_caterpillar (', '\n);'),
+    authorize: slice('CREATE FUNCTION operacion.fn_autorizar_regeneracion_caterpillar', 'END $fn$;'),
+    reprocess: slice('CREATE OR REPLACE FUNCTION ops.fn_reprocesar_reservar_caterpillar_test', 'END $fn$;').replace('CREATE OR REPLACE FUNCTION', 'CREATE FUNCTION'),
+    acl: slice('DO $acl$', 'END $acl$;')
+  };
+}
+
+// Guards for the regeneration objects. Formal cancellation (migration 013) is a hard prerequisite: regeneration is defined on formally cancelled remissions.
+const REGENERATION_GUARD_IFS = `  IF to_regclass('operacion.cancelaciones_remisiones') IS NULL OR to_regprocedure('operacion.fn_cancelar_remision_caterpillar(bigint,bigint,text,text,bigint,text)') IS NULL THEN
+    RAISE EXCEPTION '015 requires the individual cancellation ledger (migration 013) because regeneration is defined on formally cancelled remissions'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='daubert_hub_test_user') THEN RAISE EXCEPTION '015 requires the Hub runtime role'; END IF;
+  IF to_regclass('operacion.autorizaciones_regeneracion_caterpillar') IS NOT NULL OR to_regprocedure('operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)') IS NOT NULL THEN
+    RAISE EXCEPTION '015 regeneration objects already exist; refusing replacement'; END IF;
+`;
+
+const REGENERATION_POSTCHECK = `  IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid=to_regclass('operacion.autorizaciones_regeneracion_caterpillar') AND relkind='r' AND pg_get_userbyid(relowner)='postgres') THEN RAISE EXCEPTION '015 regeneration table missing'; END IF;
+  IF (SELECT count(*) FROM pg_constraint WHERE conrelid='operacion.autorizaciones_regeneracion_caterpillar'::regclass AND contype='u')<>2
+    OR (SELECT count(*) FROM pg_constraint WHERE conrelid='operacion.autorizaciones_regeneracion_caterpillar'::regclass AND contype='f')<>3 THEN RAISE EXCEPTION '015 regeneration uniqueness/reference drift'; END IF;
+  FOR f IN SELECT * FROM (VALUES
+    ('operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)','00000000000000000000000000000000')
+  ) expected(signature,body_hash) LOOP
+    SELECT * INTO proc_row FROM pg_proc WHERE oid=to_regprocedure(f.signature);
+    IF NOT FOUND OR NOT proc_row.prosecdef OR pg_get_userbyid(proc_row.proowner)<>'postgres' OR proc_row.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog, pg_temp']
+      OR md5(replace(proc_row.prosrc,chr(13),''))<>f.body_hash OR has_function_privilege('public',proc_row.oid,'EXECUTE') THEN RAISE EXCEPTION '015 regeneration function definition drift'; END IF;
+  END LOOP;
+  FOR r IN SELECT oid,rolname FROM pg_roles WHERE NOT rolsuper AND rolname<>'postgres' AND rolname !~ '^pg_' LOOP
+    IF has_function_privilege(r.oid,'operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text)'::regprocedure,'EXECUTE') IS DISTINCT FROM (r.rolname='daubert_hub_test_user') THEN RAISE EXCEPTION '015 authorize privilege drift'; END IF;
+  END LOOP;
+  IF EXISTS(SELECT 1 FROM aclexplode((SELECT relacl FROM pg_class WHERE oid='operacion.autorizaciones_regeneracion_caterpillar'::regclass)) a
+    WHERE a.grantee<>(SELECT relowner FROM pg_class WHERE oid='operacion.autorizaciones_regeneracion_caterpillar'::regclass)
+      AND NOT (a.grantee=(SELECT oid FROM pg_roles WHERE rolname='daubert_hub_test_user') AND a.privilege_type='SELECT' AND NOT a.is_grantable)) THEN RAISE EXCEPTION '015 regeneration table ACL drift'; END IF;
+`;
+
 function buildUp(t015) {
+  const regeneration = regeneration017();
   let up = t015;
   up = replaceOnce(up, /^-- PREPARED ONLY, NOT APPLIED\. TEST-only wrappers[^\n]*\n/, `-- PREPARED ONLY, NOT APPLIED. PRODUCTION (${PROD_DATABASE}) migration 016 = validated 014 + 015 (proven in the test database), generated by scripts/generate-caterpillar-016-prod.cjs.\n-- Do not edit by hand: regenerate. Creates the snapshot column and protected wrappers; no backfill, no allocator or table changes, no data touched.\n`, 'header');
   // 014 is merged: the column must not exist yet; the idle check cannot reference it before it is created.
@@ -87,7 +135,14 @@ function buildUp(t015) {
     IF has_function_privilege('n8n_cat_test',to_regprocedure(signature),'EXECUTE') THEN RAISE EXCEPTION '015 dedicated role must not hold legacy EXECUTE (direct, PUBLIC or membership)'; END IF;`, 'legacy grants');
   up = replaceOnce(up, /\(e\.estado='PROCESANDO' OR d\.caterpillar_admission IS NOT NULL\)\) THEN RAISE EXCEPTION '015 requires a reviewed idle cutover; no snapshot-backed executions'/,
     `e.estado='PROCESANDO') THEN RAISE EXCEPTION '015 requires a reviewed idle cutover; no PROCESANDO Caterpillar execution'`, 'idle');
-  up = replaceOnce(up, "END $guard$;\n", `END $guard$;\n${PIN_ENFORCEMENT_FOR_UP}\nALTER TABLE core.documentos ADD COLUMN caterpillar_admission JSONB NULL;\n`, 'column');
+  up = replaceOnce(up, "END $guard$;\n", `END $guard$;\n${PIN_ENFORCEMENT_FOR_UP}\nDO $guard017$\nBEGIN\n${REGENERATION_GUARD_IFS}END $guard017$;\nALTER TABLE core.documentos ADD COLUMN caterpillar_admission JSONB NULL;\n\n${regeneration.table}\n\n${regeneration.authorize}\n`, 'column');
+  const start = up.indexOf('CREATE FUNCTION ops.fn_reprocesar_reservar_caterpillar_test');
+  const end = up.indexOf('END $fn$;', start) + 'END $fn$;'.length;
+  if (start < 0 || end < start) throw new Error('015 shape changed: reprocess function');
+  up = up.slice(0, start) + regeneration.reprocess + up.slice(end);
+  const commit = up.lastIndexOf('\nCOMMIT;');
+  if (commit < 0) throw new Error('015 shape changed: COMMIT');
+  up = up.slice(0, commit) + '\n' + regeneration.acl + up.slice(commit);
   return up;
 }
 // Pins are enforced inside a DO block of their own (the guard block above is closed by then).
@@ -106,7 +161,7 @@ function buildPrecheck(p) {
     IF has_function_privilege('n8n_cat_test',to_regprocedure(f),'EXECUTE') THEN RAISE EXCEPTION '015 dedicated role must not hold legacy EXECUTE (direct, PUBLIC or membership)'; END IF;`, 'pre legacy');
   pre = replaceOnce(pre, /AND\(e\.estado='PROCESANDO' OR d\.caterpillar_admission IS NOT NULL\)\) THEN RAISE EXCEPTION '015 reviewed idle cutover required'; END IF;/,
     `AND e.estado='PROCESANDO') THEN RAISE EXCEPTION '015 reviewed idle cutover required: no PROCESANDO Caterpillar execution'; END IF;
-${UNVERIFIABLE_NAMES_PRECHECK}${PIN_ENFORCEMENT}`, 'pre idle');
+${UNVERIFIABLE_NAMES_PRECHECK}${REGENERATION_GUARD_IFS}${PIN_ENFORCEMENT}`, 'pre idle');
   pre = replaceOnce(pre, "SELECT 'PRECHECK_015_PASS' AS result;", `SELECT 'PRECHECK_015_PASS' AS result;
 -- Record before/after: the added NULL column is deliberately excluded from the fingerprint.
 SELECT count(*) AS documents,md5(COALESCE(string_agg((to_jsonb(d)-'caterpillar_admission')::text,'|' ORDER BY documento_id),'')) AS existing_document_data_fingerprint FROM core.documentos d;`, 'pre pass');
@@ -123,7 +178,7 @@ const UNVERIFIABLE_NAMES_PRECHECK = `  IF EXISTS(SELECT 1 FROM core.documentos d
 const UNVERIFIABLE_NAMES_POSTCHECK = `  IF EXISTS(SELECT 1 FROM core.documentos d JOIN ops.ejecuciones_automatizacion e ON e.documento_origen_id=d.documento_id JOIN ops.automatizaciones a USING(automatizacion_id)
     WHERE a.codigo='REMISIONES_CATERPILLAR' AND d.caterpillar_admission IS NULL AND (d.nombre_archivo ~ '[\\\\/:*?"<>|[:cntrl:]]' OR ops.fn_cat_key_text_015(d.nombre_archivo) !~ '\\.(XLSX|XLSM|XLS)$')) THEN
     RAISE EXCEPTION '015 historical Caterpillar document names cannot be verified by the gate; every admission would be REVIEW (HISTORY_UNAVAILABLE)'; END IF;
-END $postcheck$;`;
+${REGENERATION_POSTCHECK}END $postcheck$;`;
 
 function buildPostcheck(p) {
   let post = replaceOnce(p, "IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='n8n_cat_test'", `IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid
@@ -137,6 +192,15 @@ function buildPostcheck(p) {
 
 function buildDown(d) {
   let down = d;
+  down = replaceOnce(down, /DROP FUNCTION ops\.fn_fallo_caterpillar_test\(bigint,text,text,text\);\n/, `LOCK TABLE operacion.autorizaciones_regeneracion_caterpillar IN ACCESS EXCLUSIVE MODE;
+DO $auth$
+BEGIN
+  IF EXISTS(SELECT 1 FROM operacion.autorizaciones_regeneracion_caterpillar) THEN RAISE EXCEPTION '015 regeneration authorizations exist; rollback refused'; END IF;
+END $auth$;
+DROP FUNCTION operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text);
+DROP TABLE operacion.autorizaciones_regeneracion_caterpillar;
+DROP FUNCTION ops.fn_fallo_caterpillar_test(bigint,text,text,text);
+`, 'down regeneration');
   down = replaceOnce(down, /GRANT EXECUTE ON FUNCTION ops\.fn_crear_ejecucion_automatizacion[\s\S]*?TO n8n_cat_test;\n/, `-- The dedicated role never held legacy EXECUTE: nothing to restore. The legacy functions are untouched.
 LOCK TABLE core.documentos IN ACCESS EXCLUSIVE MODE;
 DO $snapshots$
@@ -176,5 +240,5 @@ function main() {
   if (check && drift) process.exitCode = 1;
 }
 
-module.exports = { render, toProd, repin, functionBodies, md5, P016, PROD_DATABASE, PROD_WORKER_ROLE, LEGACY_PINS };
+module.exports = { render, toProd, repin, functionBodies, md5, P016, PROD_DATABASE, PROD_WORKER_ROLE, PROD_HUB_ROLE, LEGACY_PINS };
 if (require.main === module) main();

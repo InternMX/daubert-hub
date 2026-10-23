@@ -1,6 +1,6 @@
 # Caterpillar — Paquete y procedimiento de corte a PROD (016)
 
-> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO** para solicitar la autorización del corte hasta cerrar los bloqueos de la sección 9: la decisión sobre la **reemisión por corrección** (hallazgo de la lectura real), los exports vivos de n8n y el respaldo restaurable de PROD.
+> **Estado: PREPARADO OFFLINE. NADA SE HA APLICADO A PRODUCCIÓN** (la única interacción con `daubert_global` fue una lectura de solo lectura, sección 2). Veredicto: **NO LISTO** para solicitar la autorización del corte hasta cerrar los bloqueos de la sección 9: la validación en n8n TEST de la **regeneración comercial** (decisión B, ya probada en PostgreSQL TEST y en el Hub: sección 10), la aplicación previa de 013 en PROD, los exports vivos de n8n y el respaldo restaurable de PROD.
 > Principio: **TEST es la fuente de verdad de la lógica; PROD es la fuente de verdad de los datos y del entorno.** No se copia ninguna tabla, snapshot, contador ni fixture de TEST. No se crea un sistema paralelo: se moderniza el proceso productivo existente (misma base, mismo n8n, mismo Hub).
 
 ## 1. Qué contiene el paquete (todo en el repositorio, sin aplicar)
@@ -11,6 +11,7 @@
 | Rol del worker | `…20261024_016_caterpillar_worker_role_prod.template.sql` | Crea `n8n_cat_prod` (contraseña por variable de `psql`, nunca en el repo) |
 | Inspección de solo lectura | `…20261024_016_caterpillar_prod_inspection.readonly.sql` + `apps/api/scripts/caterpillar-016-prod-inspect.cjs` | Estado real de PROD antes y después del corte (25 consultas `SELECT`, sesión de solo lectura verificada) |
 | Ensayo desechable | `scripts/rehearse-caterpillar-016.cjs` | Restaura un respaldo en una base temporal y ejecuta precheck → up → postcheck → down → up → postcheck → prueba funcional → bypass; luego elimina base y rol temporales |
+| Regeneración comercial (017, dentro de 016) | `…20261024_017_caterpillar_regeneration_test.*` (TEST, validada) y su versión PROD dentro de 016 | Tabla de autorizaciones + función del Hub + reproceso con regeneración; ver sección 10 |
 | Candidato n8n PROD | `n8n/workflows/remisiones-caterpillar/candidate-016-prod/` (`prepare-prod.cjs`, `caterpillar-prod-016.CANDIDATE.INACTIVE.json`) | Workflow productivo inactivo, sin `id`, sin secretos, con Schedule y Webhook deshabilitados |
 | Pruebas | `apps/api/test/caterpillar-016-prod.spec.ts` (15) | Correspondencia migración ↔ workflow ↔ contrato del Hub |
 
@@ -89,6 +90,7 @@ Nodos de PROD que **no cambian**: todo lo demás (≈45): detección, filtros, l
 8. **Confirmar con el operador:** credencial n8n nueva y su contraseña, ventana, responsable presente.
 
 ### 5.1 Ventana de corte (orden exacto)
+0. **013 (cancelación formal) primero**, porque la regeneración se define sobre remisiones canceladas formalmente y PROD aún no la tiene: `20261020_013_caterpillar_cancellation.precheck.sql` → `.up.sql` → `.postcheck.sql` (ya contemplan `daubert_global` y `daubert_hub_app`). Se hace con el workflow anterior ya desactivado (paso 1) y sin ejecuciones en curso.
 1. **Impedir nuevas entradas:** desactivar `Remisiones CAT Produccion PG` (apaga Schedule y webhook; durante la ventana el botón Reprocesar devolverá 502 por diseño). No tocar Audi, Pagos ni reiniciar n8n.
 2. Confirmar **0 ejecuciones en curso** en n8n y **0 `PROCESANDO`** en `ops.ejecuciones_automatizacion` (Caterpillar).
 3. Exportar y conservar el JSON del workflow anterior (rollback antes de emitir).
@@ -123,6 +125,8 @@ Regla de oro: **no restaurar el respaldo ni reiniciar contadores después de emi
 | Admisión (`BLOCK` / `REVIEW`) | Sin folios; es el resultado esperado de duplicados o históricos. Revisión humana |
 | Reserva hecha y falla el PDF | Rama de error: ejecución `ERROR`, reserva `ABANDONADA` (folios consumidos, no reutilizables). Reprocesar con el botón (folios nuevos) |
 | Fallo entre registro y finalización | Ejecución puede quedar `PROCESANDO` con dueño caído: conciliación manual y registrada con las funciones protegidas (runbook 015, sección 6); nunca editar folios ni contadores |
+| Regeneración: autorización registrada pero n8n no respondió | Seguro reintentar el mismo botón: la autorización es única (`ALREADY_AUTHORIZED`) y el webhook es idempotente (`ALREADY_PROCESSING` / `ALREADY_REGENERATED`) |
+| Regeneración fallida (la ejecución nueva queda `ERROR`) | Reproceso técnico normal sobre la ejecución nueva (folios nuevos; la original cancelada ya no bloquea). No se crea otra autorización |
 | Reproceso | `409 ADMISSION_REJECTED` = regla de negocio (remisiones vigentes, sin snapshot, conflicto); `502/504` = técnico: consultar la ejecución antes de reintentar (idempotente: `ALREADY_REPROCESSED`) |
 
 ## 7. Cambios en Daubert Hub
@@ -138,7 +142,7 @@ Nota de mantenimiento: `CaterpillarExecutionsRepository.claimAdmissionAndReserve
 
 ## 9. Bloqueos pendientes (indispensables)
 
-1. **Decisión sobre la reemisión por corrección** (hallazgo de la sección 2). Opciones: (A) aceptar el bloqueo y resolver cada caso a mano mientras tanto; (B) implementar una regeneración autorizada mínima antes del corte; (C) permitir que el reproceso por botón acepte una ejecución `COMPLETADA` cuyas remisiones están **todas canceladas** (hijo único, folios nuevos, mismos controles). Recomendación: C — reutiliza el reproceso ya validado, pero cambia `fn_reprocesar_reservar_*`, la elegibilidad del nodo y la UI, y exige repetir la validación en TEST antes de PROD.
+1. **~~Decisión sobre la reemisión por corrección~~ Resuelta: opción B (regeneración comercial autorizada)**, implementada y validada en PostgreSQL TEST y en el Hub (sección 10). Queda pendiente repetirla de punta a punta en n8n TEST. Opciones consideradas: (A) aceptar el bloqueo y resolver cada caso a mano mientras tanto; (B) implementar una regeneración autorizada mínima antes del corte; (C) permitir que el reproceso por botón acepte una ejecución `COMPLETADA` cuyas remisiones están **todas canceladas** (hijo único, folios nuevos, mismos controles). Se eligió B por decisión del negocio; C se descartó porque dejaba entrar una ejecución COMPLETADA al reproceso técnico.
 2. ~~Lectura real de `daubert_global`~~ **Realizada** (sección 2).
 3. **Exports vivos** de `Remisiones CAT Produccion PG` y del FULL de TEST para reconciliar y regenerar el candidato con `--require-live` (el repositorio solo tiene una copia saneada con `<WINDOWS_USER>`).
 4. **Respaldo de PROD restaurable** y ensayo de 016 sobre esa copia.
@@ -146,3 +150,39 @@ Nota de mantenimiento: `CaterpillarExecutionsRepository.claimAdmissionAndReserve
 6. **Inventario de archivos pendientes y de ejecuciones en curso** en PROD.
 7. **Verificar que el Hub PROD ya incluya `ADMISSION_REJECTED`.**
 8. Verificaciones que requieren escritura (se hacen en la ventana, paso 11): primera emisión real con el candidato, PDFs, reproceso por botón, ciclo programado.
+9. **Migración 013 (cancelación formal) pendiente en PROD** (confirmado en la lectura: ni el ledger ni la función existen): se aplica antes de 016 (paso 0 de 5.1) y habilita la cancelación formal y, con ella, la regeneración.
+10. **Validar la regeneración de punta a punta en n8n TEST** (sección 13 del runbook de integración) antes de importar el candidato en PROD.
+
+## 10. Regeneración comercial (decisión B) — diseño, casos históricos, validación y efecto en el corte
+
+### 10.1 Los dos casos históricos de PROD (lectura de solo lectura; nada se modificó)
+| | Caso 1: ejecuciones 13 → 14 (P5) | Caso 2: ejecuciones 22 → 23 (P5) |
+| --- | --- | --- |
+| Qué ocurrió | El 29/09 se emitió `…260929 TEMPLATE` (ej. 13, folios 124–127). El 01/10 el **mismo nombre** con contenido distinto (hash distinto) se procesó otra vez (ej. 14, folios 128–131, mismos 4 artículos): una **duplicidad**, no una corrección | El 20/10 `…261020 TEMPLATE` (ej. 22, folios 132–137, 6 remisiones). Tras la incidencia se reingresó el **mismo archivo, byte a byte, renombrado** `…261020 CORREGIDO` (ej. 23, folios 128–133) |
+| Cancelaciones | 128–131 (ej. 14) canceladas el 20/10 20:26:56 con el motivo «Generación incorrecta por duplicidad P5. Incidencia 20/10/2026.»; las remisiones de la ej. 13 siguen vigentes | 132–137 (ej. 22) canceladas en el mismo instante y con el mismo motivo |
+| ¿Cancelación formal? | **No.** Un único `UPDATE` masivo (misma marca de tiempo en las 10 filas) sobre `remisiones.estatus/motivo_cancelacion`. `operacion.cancelaciones_remisiones` y `fn_cancelar_remision_caterpillar` **no existen en PROD** (013 sin aplicar): no hay quién autorizó ni cuándo | Igual |
+| Cómo se corrigió | Se canceló; el contador se rebobinó con un ajuste de serie (`operacion.ajustes_series`, mínimo ajustable 119) | Se reutilizaron los folios 128–133: la ej. 23 reservó el 20/10 20:32 (después de cancelar 20:26) |
+| Relación con lo nuevo | Remisiones originales (14) y nuevas (23) se relacionan **solo por número de folio repetido** y por el motivo textual; no hay vínculo `reproceso_de_id` ni autorización | Igual (ej. 23 no referencia a 22 ni a 14) |
+
+**Conclusión y decisión manual necesaria.** Las ejecuciones 14 y 22 son históricas (sin snapshot) y se cancelaron sin registro formal, así que **no son elegibles** para regeneración: ni se inventan registros de cancelación ni se autoriza nada automáticamente. Además ya fueron "corregidas" a mano por la ej. 23, por lo que regenerarlas otra vez duplicaría la emisión. Si el negocio necesitara algo sobre ellas, es una decisión manual fuera del Hub. El Hub lo muestra: «No se puede regenerar desde el Hub…» (`NO_SNAPSHOT` / `CANCELLATION_NOT_FORMAL`).
+
+### 10.2 Diseño mínimo (reutiliza lo existente; 1 tabla nueva, 1 función nueva, 1 endpoint)
+- **Cancelación**: se reutiliza tal cual la formal de 013 (`fn_cancelar_remision_caterpillar`, botón del Hub, ledger con actor y motivo). No hay otro sistema de cancelación.
+- **Autorización** (ADMIN, única y trazable): `operacion.autorizaciones_regeneracion_caterpillar` (una fila por ejecución original: motivo, usuario/correo/nombre, fecha, request id y la ejecución nueva que la consumió) + `operacion.fn_autorizar_regeneracion_caterpillar` (solo el rol del Hub; `SECURITY DEFINER`). Exige: ADMIN activo, ejecución `COMPLETADA`, **con snapshot**, remisiones ≥ 1 y **todas canceladas formalmente (con registro en el ledger)**, sin hijo. Es idempotente (`ALREADY_AUTHORIZED`). Nadie escribe la tabla directamente.
+- **Ejecución**: se reutiliza el gate de reproceso (`fn_reprocesar_reservar_*`, mismo permiso del worker, misma admisión atómica, snapshot, conflictos y reserva de folios nuevos). Cambio mínimo en esa función: un padre `COMPLETADA` se acepta **solo si existe la autorización** y sus remisiones siguen todas canceladas; las reglas ERROR/CANCELADA no cambian. Sin autorización el resultado sigue siendo `PARENT_NOT_REPROCESSABLE`. La autorización queda consumida por el único hijo (`uq_ejecuciones_automatizacion_reproceso_unico` + `UNIQUE` en la tabla). Una regeneración fallida (`ERROR`) se recupera con el reproceso técnico normal (la original cancelada ya no bloquea el programa).
+- **Recargar o modificar el Excel no regenera nada**: el gate sigue respondiendo `BLOCK / REGENERATION_AUTHORIZATION_REQUIRED` (mismo nombre) o `REVIEW / MANIFEST_MATCH_REVIEW` (copia renombrada); y la regeneración autorizada vuelve a leer el archivo y exige que su snapshot coincida (`ALREADY_STORED`), de lo contrario `CONFLICT` aborta antes de reservar.
+- **Sin bypass desde n8n**: el worker no puede ejecutar la función de autorización ni leer/escribir la tabla; solo puede pedir el gate, que exige la autorización registrada por un ADMIN.
+- **Hub/n8n**: endpoint propio `POST …/executions/:id/regenerate` (ADMIN) con estados propios (`REGENERATION_STARTED`, `ALREADY_PROCESSING`, `ALREADY_REGENERATED`); primero registra la autorización en PostgreSQL y luego llama al **mismo webhook** con `kind: "REGENERATION"` (solo cambia la elegibilidad del nodo de entrada: COMPLETADA en lugar de ERROR/CANCELADA). El botón **Reprocesar** no cambia; **Regenerar** es otra acción, otro diálogo y otros mensajes, y solo aparece cuando la API informa `regeneration.eligible`. 202 significa «iniciada», nunca «completada».
+
+### 10.3 Validación real en `daubert_hub_test`
+- Migración `20261024_017_caterpillar_regeneration_test`: precheck, up y postcheck aplicados (`PRECHECK_017_PASS`, `POSTCHECK_017_PASS`); 015 sin regresión (`TEST_015_REAL_PASS`).
+- `apps/api/test/caterpillar-017-real.test-runner.cjs`: **`TEST_017_REAL_PASS`, 54 comprobaciones** (fase A en ROLLBACK + fase B con dos backends y fixtures `HUB_TEST_017_*`). Cubre: ejecución completada, cancelación formal (parcial no basta), motivo obligatorio, actor no ADMIN, histórico sin snapshot, autorización idempotente, Hub/worker sin escritura directa, gate sin autorización, ejecución nueva con folios nuevos y propietario, consumo único, segundo worker, reintento, original y remisiones canceladas intactas, Excel modificado o renombrado bloqueado, recuperación de una regeneración fallida, y defensa en profundidad. **Carreras reales**: dos autorizaciones simultáneas → una sola fila; dos workers simultáneos → un hijo, una reserva.
+- Hub: servicio, controlador, cliente del webhook, diálogo y página con pruebas (API 590+, web 87 archivos / 1223+ pruebas, `tsc` y `eslint` limpios).
+- **Pendiente (lo ejecuta el operador en n8n TEST)**: actualizar los dos nodos de entrada del FULL (instrucciones en la sección 13 del runbook de integración) y repetir el ciclo completo con PDFs reales: cancelar las remisiones de una ejecución con el botón de cancelación, pulsar **Regenerar**, verificar la ejecución nueva y sus folios.
+
+### 10.4 Efecto sobre el corte productivo
+1. **013 es ahora prerrequisito** y aún no está en PROD: hay que aplicar `20261020_013_caterpillar_cancellation.{precheck,up,postcheck}` (ya preparada para `daubert_global` / `daubert_hub_app`) **antes** de 016. Sin 013 no hay cancelación formal y el Hub muestra la regeneración como no disponible.
+2. 016 (generada) ya incluye 017: tabla, función del Hub, reproceso con regeneración y ACLs (`daubert_hub_app` ejecuta solo la autorización y lee la tabla). El precheck falla si falta 013; el postcheck verifica huellas, ACL y unicidad.
+3. Los nodos `Normalizar y validar entrada reproceso CAT` y `Validar elegibilidad reproceso CAT` del candidato PROD conservan el código de PROD más la edición mínima compartida con TEST (`regeneration-entry.cjs`).
+4. Hub: se despliega primero (incluye `ADMISSION_REJECTED`, el endpoint y la UI; es tolerante a bases sin 013/017).
+5. Operación: tras el corte, la corrección de una programación emitida por 016 es: cancelar remisiones (Hub) → **Regenerar** (Hub, ADMIN, motivo) → verificar la ejecución nueva. Las programaciones históricas siguen necesitando decisión manual.

@@ -21,7 +21,7 @@ BEGIN
     ('ops.fn_cat_snapshot_015(bigint,text,jsonb)','3a0d74e788c628bf6d8dd909abdcb172'),
     ('ops.fn_cat_worker_015(bigint,text)','c31231a468afab425b37d6b9176ea04d'),
     ('ops.fn_admitir_reservar_caterpillar(bigint,text,text,integer)','71db3261c8aafc7b050238c50f76b800'),
-    ('ops.fn_reprocesar_reservar_caterpillar(bigint,text,text,integer)','08e824748e8f29446cb3db9a06614359'),
+    ('ops.fn_reprocesar_reservar_caterpillar(bigint,text,text,integer)','f2cd15a1e78a1f2132ef3bf9a06fe69d'),
     ('ops.fn_guardar_snapshot_caterpillar(bigint,text)','81f1e930d6c527fa1e95372d79320bc7'),
     ('operacion.fn_registrar_remision_caterpillar(bigint,text,text,bigint,date,text,jsonb)','10f24f8a090a4b3246e708018ec9a432'),
     ('ops.fn_finalizar_caterpillar(bigint,text,text,text,text)','997d8d733d6849636cab0f282c1ef944'),
@@ -31,6 +31,13 @@ BEGIN
       AND md5(replace(prosrc,chr(13),''))=f.body_hash) THEN RAISE EXCEPTION '016 rollback refuses definition drift'; END IF;
   END LOOP;
 END $known$;
+LOCK TABLE operacion.autorizaciones_regeneracion_caterpillar IN ACCESS EXCLUSIVE MODE;
+DO $auth$
+BEGIN
+  IF EXISTS(SELECT 1 FROM operacion.autorizaciones_regeneracion_caterpillar) THEN RAISE EXCEPTION '016 regeneration authorizations exist; rollback refused'; END IF;
+END $auth$;
+DROP FUNCTION operacion.fn_autorizar_regeneracion_caterpillar(bigint,text,bigint,text);
+DROP TABLE operacion.autorizaciones_regeneracion_caterpillar;
 DROP FUNCTION ops.fn_fallo_caterpillar(bigint,text,text,text);
 DROP FUNCTION ops.fn_finalizar_caterpillar(bigint,text,text,text,text);
 DROP FUNCTION operacion.fn_registrar_remision_caterpillar(bigint,text,text,bigint,date,text,jsonb);

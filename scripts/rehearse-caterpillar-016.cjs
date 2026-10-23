@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createRequire } = require('node:module');
-const { P016, PROD_DATABASE, PROD_WORKER_ROLE, repin } = require('./generate-caterpillar-016-prod.cjs');
+const { P016, PROD_DATABASE, PROD_WORKER_ROLE, PROD_HUB_ROLE, repin } = require('./generate-caterpillar-016-prod.cjs');
 
 const requireFromRepo = createRequire(path.join(__dirname, '..', 'package.json'));
 const { Client } = requireFromRepo('pg');
@@ -80,6 +80,8 @@ async function main() {
       // PRODUCTION-like start: no snapshot column, dedicated role with only schema USAGE and the read-only resolvers.
       await db.query('ALTER TABLE core.documentos DROP COLUMN IF EXISTS caterpillar_admission');
       await db.query(`GRANT USAGE ON SCHEMA core, ops, operacion TO ${SCRATCH_ROLE}`);
+      // The restored copy carries the TEST Hub grants; the production Hub role already has schema USAGE in daubert_global (scratch database only).
+      await db.query(`GRANT USAGE ON SCHEMA core, ops, operacion TO ${PROD_HUB_ROLE}`);
       await db.query(`GRANT EXECUTE ON FUNCTION core.fn_crear_o_resolver_documento(bigint,text,text,text,text,date,text), ops.fn_resolver_ejecucion_para_reproceso(bigint) TO ${SCRATCH_ROLE}`);
       const idle = await q(`SELECT count(*)::int AS n FROM ops.ejecuciones_automatizacion e JOIN ops.automatizaciones a USING(automatizacion_id) WHERE a.codigo='REMISIONES_CATERPILLAR' AND e.estado='PROCESANDO'`);
       check('restored copy is idle', idle[0].n === 0);
@@ -131,6 +133,29 @@ async function main() {
         const child = (await q('SELECT * FROM ops.fn_reprocesar_reservar_caterpillar($1::bigint,$2::text,$3::text,$4::integer)', [gate.ejecucion_id, 'W-REH-3', series, 1]))[0];
         check('reprocess of the ERROR parent reserves NEW folios', child.reason === 'REPROCESS_ACQUIRED' && child.can_emit === true && child.folio_inicial !== gate.folio_inicial);
         check('second reprocess does not emit', (await q('SELECT * FROM ops.fn_reprocesar_reservar_caterpillar($1::bigint,$2::text,$3::text,$4::integer)', [gate.ejecucion_id, 'W-REH-4', series, 1]))[0].can_emit === false);
+        // Commercial regeneration (017 inside 016): complete -> formal cancellation (013, by the owner) -> ADMIN authorization as the Hub role -> regenerating gate as the worker.
+        await db.query('RESET ROLE');
+        const adminId = (await q("SELECT user_id::text AS id FROM security.users WHERE role='ADMIN' AND status='ACTIVE' AND NOT must_change_password ORDER BY user_id LIMIT 1"))[0].id;
+        await db.query(`SET LOCAL ROLE ${SCRATCH_ROLE}`);
+        const manifest2 = JSON.stringify({ ...JSON.parse(manifest), documents: [{ purchaseOrder: '9900000002', lines: [['REHEARSAL-002', '89-REH002', '9900000002', 20, 'BOLSAS']] }] });
+        const doc2 = (await q('SELECT * FROM core.fn_crear_o_resolver_documento($1::bigint,$2::text,$3::text,$4::text,$5::text,$6::date,$7::text)',
+          [company, 'PROGRAMACION_ENTREGA', 'PROGRAMACION DE ENTREGA CAT P2 REHEARSAL 016 B.xlsx', 'C:/rehearsal/REHEARSAL 016 B.xlsx', 'DROPBOX', '2026-10-24', 'rehearsal016b']))[0];
+        await q('SELECT ops.fn_guardar_snapshot_caterpillar($1::bigint,$2::text)', [doc2.documento_id, manifest2]);
+        const g2 = (await q('SELECT * FROM ops.fn_admitir_reservar_caterpillar($1::bigint,$2::text,$3::text,$4::integer)', [doc2.documento_id, 'W-REH-6', series, 1]))[0];
+        await q('SELECT * FROM operacion.fn_registrar_remision_caterpillar($1,$2,$3,$4,$5,$6,$7::jsonb)', [g2.ejecucion_id, 'W-REH-6', series, g2.folio_inicial, '2026-10-24', 'REHEARSAL/NO_FILE/b.pdf', '[{"codigo_interno":"REH","cantidad_texto":"20 bolsas"}]']);
+        await q("SELECT * FROM ops.fn_finalizar_caterpillar($1::bigint,$2::text,'COMPLETADA')", [g2.ejecucion_id, 'W-REH-6']);
+        await db.query('RESET ROLE');
+        const live = (await q("SELECT remision_id::text AS id, to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS revision FROM operacion.remisiones WHERE ejecucion_id=$1", [g2.ejecucion_id]));
+        for (const r of live) await q('SELECT * FROM operacion.fn_cancelar_remision_caterpillar($1::bigint,$2::bigint,$3::text,$4::text,$5::bigint,$6::text)', [g2.ejecucion_id, r.id, r.revision, 'rehearsal cancellation', adminId, 'rehearsal']);
+        await db.query(`SET LOCAL ROLE ${PROD_HUB_ROLE}`);
+        const auth = (await q('SELECT * FROM operacion.fn_autorizar_regeneracion_caterpillar($1::bigint,$2::text,$3::bigint,$4::text)', [g2.ejecucion_id, 'rehearsal regeneration', adminId, 'rehearsal-auth']))[0];
+        check('regeneration: the production Hub role authorizes a formally cancelled COMPLETADA execution', auth.resultado === 'AUTHORIZED' && auth.usuario_email);
+        await expectFailure(db, 'regeneration: Hub cannot write the authorization table', () => db.query("INSERT INTO operacion.autorizaciones_regeneracion_caterpillar(ejecucion_origen_id,motivo,usuario_email,usuario_nombre) VALUES(1,'x','x','x')"), /42501|permission denied|permiso denegado/i);
+        await db.query(`SET LOCAL ROLE ${SCRATCH_ROLE}`);
+        const regen = (await q('SELECT * FROM ops.fn_reprocesar_reservar_caterpillar($1::bigint,$2::text,$3::text,$4::integer)', [g2.ejecucion_id, 'W-REH-7', series, 1]))[0];
+        check('regeneration: the worker gets ONE new execution with NEW folios', regen.can_emit && regen.reason === 'REPROCESS_ACQUIRED' && Number(regen.folio_inicial) > Number(g2.folio_final));
+        check('regeneration: a second request does not emit', (await q('SELECT * FROM ops.fn_reprocesar_reservar_caterpillar($1::bigint,$2::text,$3::text,$4::integer)', [g2.ejecucion_id, 'W-REH-8', series, 1]))[0].can_emit === false);
+        await expectFailure(db, 'regeneration: the worker cannot authorize', () => db.query('SELECT * FROM operacion.fn_autorizar_regeneracion_caterpillar($1::bigint,$2::text,$3::bigint,$4::text)', [g2.ejecucion_id, 'x', adminId, 'w']), /42501|permission denied|permiso denegado/i);
         for (const legacy of ['SELECT * FROM operacion.reservar_folios_para_ejecucion(1,\'x\',1)', 'SELECT * FROM ops.fn_crear_ejecucion_automatizacion(\'REMISIONES_CATERPILLAR\',1,\'x\',\'x\',null)']) {
           await expectFailure(db, 'legacy bypass', () => db.query(legacy), /42501|permission denied|permiso denegado/i);
         }
