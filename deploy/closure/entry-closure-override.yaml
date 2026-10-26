@@ -1,0 +1,11 @@
+# Mandatory in EVERY Compose invocation that creates or recreates Web (forward deploy AND rollback). Host directory must exist and contain default.conf (create_host_path=false):
+# prepare it with scripts/deploy/Set-EntryClosure.ps1 -Action Prepare. Missing configuration must never fall back to the image default.
+services:
+  web:
+    volumes:
+      - type: bind
+        source: C:/Users/06/AppData/Local/DaubertHub/maintenance-window/nginx-conf.d
+        target: /etc/nginx/conf.d
+        read_only: true
+        bind:
+          create_host_path: false

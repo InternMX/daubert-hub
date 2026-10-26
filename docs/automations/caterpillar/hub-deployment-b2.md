@@ -1,5 +1,7 @@
 # B2 — Integración y despliegue coordinado de Daubert Hub con Caterpillar (preparado; NO ejecutado)
 
+> **SUPERADO (2026-10-26)** por [joint-deployment-plan](joint-deployment-plan.md), el documento único del despliegue conjunto Pagos + Caterpillar. Se conserva como referencia histórica de la opción B (Hub 6370753 + Caterpillar, sin Pagos #17).
+
 Estado al **2026-10-26**: preparado y ensayado en entornos aislados. **Nada se ha ejecutado en PROD**: ni push, ni merge, ni migraciones, ni recreación de contenedores.
 Complementa [prod-cutover-016](prod-cutover-016.md) (migraciones, rol, n8n) y [deployment-checklist](../../operations/deployment-checklist.md) (procedimiento general del Hub). Sin secretos.
 
@@ -101,7 +103,7 @@ docker save "daubert-hub-api:rollback-$prev" "daubert-hub-web:rollback-$prev" -o
 
 # 3. Despliegue (solo api y web)
 $env:APP_VERSION = (node -p "require('./package.json').version")
-$env:GIT_COMMIT  = (git rev-parse --short HEAD)
+$env:GIT_COMMIT  = (git rev-parse --short=7 HEAD)
 docker compose @cf up -d --build api web
 
 # 4. Verificacion
