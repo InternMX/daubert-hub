@@ -146,6 +146,8 @@ export class PaymentFileAssignmentsRepository {
         const company = await client.query("SELECT 1 FROM core.empresas WHERE empresa_id = $1 AND estatus = 'ACTIVO' FOR SHARE", [input.companyId]);
         if (!company.rows.length) throw new NotFoundException('Empresa activa no encontrada.');
         if (input.action === 'CHANGE' && input.companyId === record.companyId) throw new ConflictException('Selecciona otra empresa.');
+        const destination = await client.query<{ safe: boolean }>('SELECT core.fn_destino_asignacion_pago_disponible($1, $2) AS safe', [correoId, input.companyId]);
+        if (destination.rows[0]?.safe !== true) throw new ConflictException({ code: 'POINT_DESTINATION_HAS_EFFECTS', message: 'Esta empresa ya tiene resultados o borradores en este correo. No se puede agregar el archivo con seguridad.' });
       }
       if (!record.status) {
         await client.query(`INSERT INTO core.asignaciones_archivo_notificacion_pago
@@ -192,7 +194,11 @@ export class PaymentFileAssignmentsRepository {
       // Commit the freeze BEFORE contacting n8n: even an uncertain/throwing upstream cannot
       // reopen a window for assignment after a potentially accepted processing request.
       await client.query('COMMIT');
-    } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      if ((error as { code?: string }).code === 'P4091') throw new ConflictException({ code: 'POINT_REPROCESS_BUSY', message: 'Ya existe una solicitud o un procesamiento de este correo sin finalizar.' });
+      throw error;
+    }
     finally { client.release(); }
     return dispatch();
   }
