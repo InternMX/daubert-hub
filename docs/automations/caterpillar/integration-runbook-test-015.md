@@ -286,7 +286,7 @@ No se instaló ni modificó nada. No se probó la escritura real (requiere ejecu
 | Nombre distinto, contenido V1 equivalente | Renombrar copia | `REVIEW MANIFEST_MATCH_REVIEW` | pendiente |
 | Snapshot repetido / conflictivo | Releer / cambiar manifest | `ALREADY_STORED` / `CONFLICT`, sin folios | pendiente |
 | Histórico sin snapshot (reproceso) | Reproceso de los 17 históricos | `HISTORICAL_LOCKED`, error técnico controlado (falla cerrado), sin escritura | pendiente |
-| Histórico sin snapshot (escaneo automático) | Histórico ya emitido seguido de un Excel P2 nuevo | `SKIPPED_HISTORICAL` y el siguiente archivo termina `COMPLETADA` (sección 15) | **pendiente de ejecución real** |
+| Histórico sin snapshot (escaneo automático) | Histórico ya emitido seguido de un Excel P2 nuevo | `SKIPPED_HISTORICAL` y el siguiente archivo termina `COMPLETADA` (sección 15) | **hecho** (documento 268 omitido → ejecución 239 `COMPLETADA`, 4 remisiones) |
 | Reproceso ERROR / CANCELADA / COMPLETADA | Desde Hub (ADMIN) | hijo único con folios nuevos / rechazo `NOT_ELIGIBLE_STATE` | pendiente |
 | Error antes / después de reservar | Excel inválido / forzar fallo de PDF | sin folios / reserva conservada, fallo del propietario | pendiente |
 | Dos workers | runner de concurrencia | un propietario, B espera `Lock/advisory` | pendiente |
@@ -359,7 +359,7 @@ Recorrido real **Hub (ADMIN) → webhook n8n TEST → PostgreSQL → PDFs**, con
 
 Reconciliación del FULL: los cambios manuales hechos en el FULL de TEST (cierre terminal en `ERROR`, `REPROCESS_CREATED`, los dos nodos de entrada de la regeneración) ya están en el candidato del repositorio (`caterpillar-test-015.FULL.INACTIVE.json`, generado por `prepare-enabled.cjs`); la comparación contra el export vivo se hace con `compare-full` (ver el procedimiento de exports en `prod-cutover-016.md`, sección 11).
 
-## 15. B1 — omitir históricos ya emitidos sin detener el lote (preparado; pendiente de la prueba real en n8n TEST)
+## 15. B1 — omitir históricos ya emitidos sin detener el lote — CERRADO (E2E real en n8n TEST, 2026-10-26)
 
 **Causa.** Un documento anterior a 015 con ejecución terminal, remisiones o reservas y sin snapshot no puede capturar uno: `ops.fn_guardar_snapshot_caterpillar(_test)` **devuelve** el texto `HISTORICAL_LOCKED` (no lanza excepción). `Verificar snapshot CAT` solo admite `STORED`/`ALREADY_STORED` y falla en un nodo sin salida de error, así que el primer histórico detenía todos los archivos siguientes. En PROD hay 11 de esos archivos en las carpetas escaneadas.
 
@@ -386,3 +386,19 @@ Qué **no** cambia: solo el valor exacto `HISTORICAL_LOCKED` se omite; en reproc
 7. **Repetir** la ejecución una vez: no debe haber ejecuciones ni folios nuevos (el B1 da `BLOCK PROGRAM_ALREADY_EMITTED`, los demás se omiten/bloquean).
 8. **Limpieza opcional** de los dos archivos: el mismo script con `-Remove`.
 Avisar el resultado; con él se cierra B1 en este documento.
+
+### 15.1 Resultado E2E real (n8n TEST, FULL con la corrección B1)
+| Pasada | Resultado |
+| --- | --- |
+| 1 (REGEN 017 → histórico 268 → B1 nuevo) | Workflow *Success*. Documento 268 omitido con `SKIPPED_HISTORICAL`; el lote continuó y el archivo B1 generó la ejecución **239 `COMPLETADA`** con cuatro remisiones |
+| 2 (repetición) | *Success*; sin ejecuciones, reservas ni remisiones nuevas |
+| Estado final | P2 `siguiente_folio` = 185, P5 = 131, P6 = 8; 0 ejecuciones `PROCESANDO`; las 51 reservas `RESERVADA` históricas y las ejecuciones 237/238 intactas |
+| Runner PostgreSQL (`caterpillar-b1-historical.test-runner.cjs`, `ROLLBACK`) | `B1_TEST_DB_PASS`, 79 comprobaciones (función real, FULL y candidato PROD, el worker `n8n_cat_test` solo en las llamadas a la entrada protegida) |
+| Pruebas automatizadas | `caterpillar-b1-historical-skip.spec.ts` 48/48 y 681 de `test/caterpillar` |
+
+Confirmación de solo lectura (opcional, con `TEST_DATABASE_URL_MIGRATOR`): `node scripts/caterpillar-b1-e2e-report.cjs` debe dar `B1_E2E_REPORT_PASS` (268 sin snapshot y sin ejecuciones nuevas, ejecuciones nuevas `COMPLETADA` con reserva `APLICADA`), y `caterpillar-015-verify.cjs` / `caterpillar-017-e2e-report.cjs` como siempre.
+
+### 15.2 Qué llega a `Omitir histórico CAT` y de dónde sale el contexto
+- **Único camino de entrada.** `Omitir histórico CAT` solo tiene una conexión de entrada: la salida *true* de `¿Histórico ya emitido?`. Esa salida solo recibe el ítem cuya propia expresión `$json.estado === "HISTORICAL_LOCKED"` es verdadera (IF estricto: un valor no booleano es un error, no un *false* silencioso) y cuyo `mode` no es `REPROCESS`. `ALREADY_STORED`, `STORED`, `CONFLICT`, etc. van a la salida *false*. La prueba `caterpillar-b1-historical-skip.spec.ts` lo ejecuta con 12 valores distintos y con ambos modos, sobre FULL y sobre el candidato PROD.
+- **`.first()` y el lote.** En n8n 2.27 `$("Nodo").first()` sin `runIndex` usa `defaultReturnRunIndex = -1`, es decir, la **última ejecución** de ese nodo (`getNodeExecutionData`, `workflow-data-proxy`). Con `Loop Over Items` de lote 1, la cadena completa de un archivo termina antes de que empiece el siguiente, así que la última ejecución de `Propagar documento origen PG` es siempre la del archivo en curso. Es el mismo patrón que ya usan `Preparar reserva folios PG`, `Propagar admisión CAT` y `Preparar snapshot admisión CAT` desde TEST y PROD, y el E2E lo confirma (el 268 omitido y el B1 emitido, cada uno con su documento). El modo no puede mezclarse dentro de una ejecución: el escaneo automático solo contiene archivos `AUTO` y el webhook de reproceso procesa un único archivo `REPROCESS`. Además, `Omitir histórico CAT` no escribe nada: el peor caso de una atribución errónea sería un registro informativo equivocado, nunca una emisión.
+- **Lo visto en la captura (INPUT `ALREADY_STORED`, OUTPUT `SKIPPED_HISTORICAL`).** El nodo no lee el `estado` de su entrada: el resultado sale de `Propagar documento origen PG` y el valor `snapshot_estado` es fijo (`"HISTORICAL_LOCKED"`), de modo que el OUTPUT no depende del INPUT. Como la salida *true* del IF solo se alimenta con `HISTORICAL_LOCKED`, un `ALREADY_STORED` no puede haber activado esa rama; lo coherente es un efecto de visualización de la interfaz en lotes (el panel INPUT de un nodo que corre una vez, detrás de nodos que corren una vez por archivo, puede mostrar otra iteración del nodo padre). No se modificó la lógica. Si se quiere comprobar con la ejecución guardada, abrir `¿Histórico ya emitido?` y mirar su salida *true* en la iteración del 268.
