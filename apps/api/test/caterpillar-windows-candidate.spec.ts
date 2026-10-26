@@ -12,8 +12,10 @@ const { outputFile, sourceFixtureFile, holdCode, ioNames } = load('./prepare-can
 const { createCaterpillarManifestV1 } = load('./manifest-v1.generated.cjs');
 const { createCaterpillarWindowsTestSafety } = load('./runtime-test-safety.cjs');
 const { readCaterpillarOperationalContent } = load('./manifest-transport.cjs');
+/* eslint-disable @typescript-eslint/no-explicit-any -- n8n item/node payloads are untyped JSON in this offline fixture test */
 type Item = { json: Record<string, any> };
 type Workflow = { nodes: Array<{ name: string; parameters: Record<string, any> }> };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 const source = JSON.parse(readFileSync(sourceFixtureFile, 'utf8')) as Workflow & { connections: unknown; nodeStructure: unknown };
 const candidate = JSON.parse(readFileSync(outputFile, 'utf8')) as Workflow;
 const fixture = JSON.parse(readFileSync(resolve(__dirname, 'fixtures/caterpillar-normalized-items.json'), 'utf8')) as Record<string, Item[]>;
@@ -94,6 +96,7 @@ describe('Windows TEST candidate — offline only', () => {
     const before = JSON.stringify(items);
     const original = normalize(source, items);
     const proposed = normalize(candidate, items);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to drop the transport field before comparing
     expect(proposed.map(({ json: { cat_operational_content: _content, ...json } }) => ({ json }))).toEqual(original);
     expect(proposed).toHaveLength(original.length);
     const content = readCaterpillarOperationalContent(proposed);

@@ -55,6 +55,7 @@ function companyId(value: string): string {
   return value;
 }
 export function normalizeCaterpillarProgrammingName(fileName: string): string {
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what a file name must not contain
   if (typeof fileName !== 'string' || /[\\/:*?"<>|\x00-\x1f]/.test(fileName) || fileName.trim().startsWith('~$')) throw new Error('Expected an Excel basename, not a path');
   const match = /^(.*)\.(xlsx|xlsm|xls)$/i.exec(fileName.trim());
   if (!match || !keyText(match[1]!)) throw new Error('Invalid Excel programming name');
