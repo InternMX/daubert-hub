@@ -21,6 +21,8 @@ const FULL_FILE = path.join(__dirname, '..', 'candidate-015', 'caterpillar-test-
 const PROD_FILE = path.join(__dirname, '..', 'prod', 'workflow.live-20261023.json');
 const OUTPUT_FILE = path.join(__dirname, 'caterpillar-prod-016.CANDIDATE.INACTIVE.json');
 const PLACEHOLDER = '<WINDOWS_USER>';
+// Fixed identifier of the candidate's webhook node (generated once; different from the live production workflow's webhookId).
+const CANDIDATE_WEBHOOK_ID = '5d1c7a4e-8b36-4f0a-9c52-3e7b6a19d204';
 
 // Dedicated credential (role n8n_cat_prod, created by the 016 role template). It is referenced BY NAME only: no id, no secret.
 const WORKER_CREDENTIAL = { postgres: { name: 'Postgres produccion CAT (n8n_cat_prod)' } };
@@ -84,8 +86,10 @@ function build(prod, full) {
   for (const name of NEW_FROM_FULL) nodes.push(derivedNode(fullNodes.get(name), null));
 
   for (const node of nodes) {
-    // A node-level webhook id belongs to the live workflow's registration; n8n assigns a new one on import, so the candidate can never collide with it.
+    // The live workflow's webhookId belongs to its registration and must never be reused. The candidate's webhook gets its OWN fixed id: without a webhookId n8n publishes the webhook under
+    // /webhook/<workflowId>/<node name>/<path> instead of /webhook/cat-reprocess (observed in n8n 2.27.4 when the workflow is imported through the CLI), so the Hub URL would not reach it.
     delete node.webhookId;
+    if (node.type.endsWith('.webhook')) node.webhookId = CANDIDATE_WEBHOOK_ID;
     if (node.type.endsWith('.postgres')) node.credentials = clone(WORKER_CREDENTIAL);
     // Nothing automatic is enabled in the candidate: enabling Schedule/Webhook is an explicit, ordered step of the cutover.
     if (/\.(scheduleTrigger|webhook)$/.test(node.type)) { node.disabled = true; node.notes = 'Caterpillar 016: mantener deshabilitado hasta el paso correspondiente del corte.'; }

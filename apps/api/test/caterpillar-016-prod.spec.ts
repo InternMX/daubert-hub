@@ -256,13 +256,17 @@ describe('PROD candidate built from the LIVE production export', () => {
     expect(comparison.parameters).toEqual([]);
     expect(comparison.connections).toEqual({ onlyReference: [], onlyExported: [] });
   });
-  it('keeps the live webhook (path, Header Auth reference), schedule and active flag semantics: inactive candidate, nothing automatic enabled, no workflow id, no node webhook id', () => {
+  it('keeps the live webhook (path, Header Auth reference), schedule and active flag semantics: inactive candidate, nothing automatic enabled, no workflow id, own webhook id', () => {
     const webhook = node(candidate, 'Webhook Reproceso CAT (PROD)');
     expect(webhook.parameters.path).toBe('cat-reprocess');
     expect(webhook.credentials).toEqual(node(liveProd, 'Webhook Reproceso CAT (PROD)').credentials);
     expect(candidate.active).toBe(false);
     expect(candidate).not.toHaveProperty('id');
-    expect(JSON.stringify(candidate)).not.toContain('webhookId');
+    // Only the webhook node carries a webhookId: its own, fixed and DIFFERENT from the live workflow's (n8n 2.27.4 serves /webhook/cat-reprocess only for a webhook that has one).
+    const withWebhookId = (candidate.nodes as Array<{ name: string; webhookId?: string }>).filter(n => n.webhookId).map(n => n.name);
+    expect(withWebhookId).toEqual(['Webhook Reproceso CAT (PROD)']);
+    expect((webhook as { webhookId?: string }).webhookId).toMatch(/^[0-9a-f-]{36}$/);
+    expect((webhook as { webhookId?: string }).webhookId).not.toBe((node(liveProd, 'Webhook Reproceso CAT (PROD)') as { webhookId?: string }).webhookId);
     expect(node(candidate, 'Schedule Trigger').parameters).toEqual(node(liveProd, 'Schedule Trigger').parameters);
     expect(node(candidate, 'Schedule Trigger').disabled).toBe(true);
     expect(webhook.disabled).toBe(true);
