@@ -93,6 +93,39 @@ daubert_hub_app recibe SELECT en la tabla de propiedad y EXECUTE en comprobació
 Sin escritura directa sobre la tabla nueva para los roles de aplicación ni EXECUTE público.
 La instalación aborta si los privilegios por defecto introducen accesos inesperados.
 
+## Contrato de `fn_iniciar_recuperacion_pago`
+
+La ausencia de una fila SOLICITADO **es intencional**: el reproceso manual autorizado
+desde n8n no pasa por el despacho HTTP del Hub. Ambas entradas del padre convergen en
+la misma adquisición exclusiva, antes de llamar al hijo:
+
+- Hub: reserva SOLICITADO antes del webhook; n8n adquiere esa reserva.
+- Manual: n8n crea directamente PROCESANDO si no existe propietario y el correo está
+  ERROR/PROCESADO. También puede iniciar una ejecución nueva tras FINALIZADO.
+- Un propietario PROCESANDO impide entrar a otro ejecutor, incluso al mismo ID.
+  No se permite repetir un ID ya finalizado. Un ID vacío, correo inexistente o
+  PENDIENTE devuelve false. Adquirir no rehabilita archivos ni certifica efectos.
+
+La adquisición usa el mismo advisory lock y bloqueo del correo que el despacho y
+la asignación. Aunque no haya reserva previa, PROCESANDO hace que la evaluación
+de asignabilidad bloquee cambios desde el Hub mientras el hijo sigue trabajando.
+
+La autorización está en el **principal SQL**: EXECUTE se concede solo a `n8n_app`
+(además del propietario/administración de la base); se revoca de PUBLIC y del Hub.
+El webhook exige Header Auth y el inicio manual exige los permisos de n8n y acceso a
+la credencial autorizada. El padre utiliza `String($execution.id)`, no un ID aportado
+por el cliente del Hub. Un texto de ejecución arbitrario no concede permisos SQL.
+
+Límite explícito: la función no consulta el registro de ejecuciones de n8n ni autoriza
+por ID de workflow. Quien tenga acceso SQL como `n8n_app` pertenece al perímetro
+confiable del contrato; no se promete aislamiento entre workflows que compartan esa
+credencial. No añadir un flag de sesión o exigir SOLICITADO como falsa autenticación:
+lo primero es falsificable por el mismo principal y lo segundo rompe el inicio manual.
+
+La prueba focalizada `apps/api/test/payment-recovery-start-contract.sql` verifica
+llamadas reales bajo roles sin privilegio/Hub y bajo n8n_app, sin repetir el ensayo.
+Solo acepta la base desechable `review_interrupted`; todos sus fixtures se revierten.
+
 ## Caso histórico LUA TANY: decisión explícita
 
 Consulta de solo lectura del **2026-10-23 14:58 UTC−06**:
