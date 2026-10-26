@@ -23,13 +23,19 @@ function setup(options: {
   details?: unknown[];
   routes?: CaterpillarProcessRoute[];
   webhookResult?: unknown;
+  regenerationContext?: unknown;
+  audits?: unknown[];
+  authorization?: unknown;
 } = {}) {
   const repository = {
     list: vi.fn().mockResolvedValue(options.listResult ?? { total: 0, executions: [] }),
     findById: vi.fn().mockResolvedValue(options.findByIdResult ?? null),
     findReservationsByExecutionId: vi.fn().mockResolvedValue(options.reservations ?? []),
     findRemissionsByExecutionId: vi.fn().mockResolvedValue(options.remissions ?? []),
-    findDetailsByRemisionIds: vi.fn().mockResolvedValue(options.details ?? [])
+    findDetailsByRemisionIds: vi.fn().mockResolvedValue(options.details ?? []),
+    findCancellationAuditsByExecutionId: vi.fn().mockResolvedValue(options.audits ?? []),
+    findRegenerationContext: vi.fn().mockResolvedValue(options.regenerationContext ?? { available: false, has_snapshot: false, has_child: false, authorization: null }),
+    authorizeRegeneration: vi.fn().mockImplementation(() => (options.authorization instanceof Error ? Promise.reject(options.authorization) : Promise.resolve(options.authorization)))
   };
   const routing = { listRoutes: vi.fn().mockResolvedValue(options.routes ?? [p2Route, torreonRoute, torreonPlanta2Route]) };
   const webhookClient = { triggerReprocess: vi.fn().mockResolvedValue(options.webhookResult ?? { kind: 'NOT_CONFIGURED' }) };
@@ -167,6 +173,22 @@ describe('CaterpillarExecutionsService', () => {
       const { data } = await service.getDetail('5');
       expect(typeof data.remittances[0]?.pdfPath).toBe('string');
     });
+
+    it('exposes exact revision and historical cancellation while never guessing a shared Torreon process', async () => {
+      const { service, repository } = setup({
+        findByIdResult: { ejecucion_id: '14', execution_state: 'COMPLETADA', started_at: '2026-10-20T12:00:00Z', finished_at: null, documento_id: '55' },
+        remissions: [{ remision_id: '100', serie_id: '9', serie_codigo: 'REMISION_CAT_TORREON', folio: '128', fecha_documento: '2026-10-20', estatus: 'CANCELADA',
+          revision: '2026-10-20T12:00:00.123456Z', motivo_cancelacion: 'Original' }]
+      });
+      repository.findCancellationAuditsByExecutionId.mockResolvedValue([{
+        remision_id: '100', motivo: 'Original', cancelacion_id: '1', usuario_id: null, usuario_email: 'historic@example.invalid', usuario_nombre: 'Nombre original',
+        cancelada_en: '2026-10-20T12:01:00.123456Z', request_id: 'req'
+      }]);
+      const { data } = await service.getDetail('14');
+      expect(data.outcome).toBe('COMPLETED');
+      expect(data.remittances[0]).toMatchObject({ revision: '2026-10-20T12:00:00.123456Z', processLabel: null, cancellationReason: 'Original',
+        cancellation: { userId: null, userDisplayName: 'Nombre original', userEmail: 'historic@example.invalid' } });
+    });
   });
 
   describe('reprocess', () => {
@@ -196,9 +218,12 @@ describe('CaterpillarExecutionsService', () => {
     it.each([
       ['NOT_FOUND'],
       ['NOT_ELIGIBLE_STATE'],
+      ['SOURCE_DOCUMENT_MISSING'],
+      ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'],
       ['SOURCE_FILE_MISSING'],
       ['OUTSIDE_TEST_SCOPE'],
-      ['OUTSIDE_ALLOWED_SCOPE']
+      ['OUTSIDE_ALLOWED_SCOPE'],
+      ['ADMISSION_REJECTED']
     ] as const)('maps a known REJECTED reason %s through unchanged, recording a NOTHING_TO_REPROCESS audit row and no child executionId', async (reason) => {
       const { service, triggerRequests } = setup({ webhookResult: { kind: 'REJECTED', reason } });
       const result = await service.reprocess('153', 'motivo', 'req-1', identity);
@@ -234,5 +259,68 @@ describe('CaterpillarExecutionsService', () => {
       const result = await service.reprocess('153', 'motivo', 'req-1', identity);
       expect(result).toEqual({ outcome: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' });
     });
+  });
+});
+
+describe('CaterpillarExecutionsService commercial regeneration', () => {
+  const execution = { ejecucion_id: '300', execution_state: 'COMPLETADA', started_at: '2026-10-24T10:00:00.000Z', finished_at: '2026-10-24T10:05:00.000Z', failed_attempts: 0, max_attempts: 2,
+    error_node: null, error_message: null, n8n_execution_id: 'wf', reproceso_de_id: null, documento_id: '55', source_filename: 'a.xlsx', source_company_id: '1', source_company_name: 'C',
+    source_origin: 'DROPBOX', source_path: 'p', source_status: 'ACTIVO', source_file_date: null };
+  const cancelled = (id: string) => ({ remision_id: id, serie_id: '2', serie_codigo: 'REMISION_CAT_P2', folio: id, fecha_documento: '2026-10-24', pdf_path: null, estatus: 'CANCELADA', revision: '2026-10-24T10:00:00.000000Z', motivo_cancelacion: 'x' });
+  const audit = (id: string) => ({ remision_id: id, motivo: 'x', cancelacion_id: '1', usuario_id: '1', usuario_email: 'a@b', usuario_nombre: 'A', cancelada_en: '2026-10-24T10:00:00.000000Z', request_id: null });
+  const context = (over: Record<string, unknown> = {}) => ({ available: true, has_snapshot: true, has_child: false, authorization: null, ...over });
+  const detail = async (over: { remissions?: unknown[]; audits?: unknown[]; ctx?: unknown; state?: string } = {}) => {
+    const { service } = setup({ findByIdResult: { ...execution, execution_state: over.state ?? 'COMPLETADA' }, remissions: over.remissions ?? [cancelled('1'), cancelled('2')], audits: over.audits ?? [audit('1'), audit('2')], regenerationContext: over.ctx ?? context() });
+    return (await service.getDetail('300')).data.regeneration;
+  };
+
+  it('offers regeneration only when COMPLETADA, with a snapshot, and EVERY remission cancelled formally', async () => {
+    expect(await detail()).toEqual({ eligible: true, blockedBy: null, authorization: null });
+  });
+  it.each([
+    ['migration 017 not installed', { ctx: { available: false, has_snapshot: false, has_child: false, authorization: null } }, 'UNAVAILABLE'],
+    ['execution not completed', { state: 'ERROR' }, 'NOT_COMPLETED'],
+    ['historical program without snapshot', { ctx: context({ has_snapshot: false }) }, 'NO_SNAPSHOT'],
+    ['a live remission remains', { remissions: [cancelled('1'), { ...cancelled('2'), estatus: 'GENERADA' }] }, 'LIVE_REMISSIONS'],
+    ['no remissions at all', { remissions: [], audits: [] }, 'LIVE_REMISSIONS'],
+    ['cancelled without a ledger record (manual cancellation)', { audits: [audit('1')] }, 'CANCELLATION_NOT_FORMAL'],
+    ['already regenerated', { ctx: context({ has_child: true }) }, 'ALREADY_REGENERATED']
+  ] as const)('does not offer regeneration: %s', async (_name, over, blockedBy) => {
+    expect(await detail(over as never)).toMatchObject({ eligible: false, blockedBy });
+  });
+
+  const authorization = { resultado: 'AUTHORIZED', autorizacion_id: '9', ejecucion_origen_id: '300', motivo: 'corrección', usuario_id: '1', usuario_email: 'admin@test.mx', usuario_nombre: 'Admin',
+    autorizada_en: '2026-10-24T10:00:00.000000Z', request_id: 'req-1', ejecucion_nueva_id: null };
+  it('authorizes in PostgreSQL first, then asks n8n with kind REGENERATION, and translates the statuses to the regeneration vocabulary', async () => {
+    const { service, repository, webhookClient } = setup({ authorization, webhookResult: { kind: 'ACCEPTED', status: 'REPROCESS_CREATED', originalExecutionId: '300', executionId: '301' } });
+    const result = await service.regenerate('300', 'corrección', 'req-1', identity);
+    expect(repository.authorizeRegeneration).toHaveBeenCalledWith('300', 'corrección', '1', 'req-1');
+    expect(webhookClient.triggerReprocess).toHaveBeenCalledWith('300', 'corrección', 'REGENERATION');
+    expect(result).toMatchObject({ outcome: 'REGENERATION_STARTED', originalExecutionId: '300', executionId: '301', authorization: { authorizationId: '9', reason: 'corrección', userEmail: 'admin@test.mx' } });
+  });
+  it.each([['ALREADY_PROCESSING', 'ALREADY_PROCESSING'], ['ALREADY_REPROCESSED', 'ALREADY_REGENERATED']] as const)('maps n8n %s to %s', async (status, expected) => {
+    const { service } = setup({ authorization, webhookResult: { kind: 'ACCEPTED', status, originalExecutionId: '300', executionId: '301' } });
+    expect((await service.regenerate('300', 'm', 'r', identity)).outcome).toBe(expected);
+  });
+  it('never calls n8n when the authorization is refused, and maps the SQL reasons to business errors', async () => {
+    for (const [code, status] of [['PCR01', 404], ['PCR02', 409], ['PCR03', 409], ['PCR04', 409], ['PCR05', 403], ['PCR06', 409], ['22023', 400], ['42P01', 503]] as const) {
+      const { service, webhookClient } = setup({ authorization: Object.assign(new Error('x'), { code }) });
+      await expect(service.regenerate('300', 'm', 'r', identity)).rejects.toMatchObject({ status });
+      expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
+    }
+  });
+  it('hides unexpected database errors behind a generic 503', async () => {
+    const { service } = setup({ authorization: Object.assign(new Error('relation secret.table'), { code: 'XX000' }) });
+    await expect(service.regenerate('300', 'm', 'r', identity)).rejects.toMatchObject({ status: 503, message: expect.not.stringContaining('secret') });
+  });
+  it('requires a resolvable authenticated user before touching PostgreSQL or n8n', async () => {
+    const { service, repository, webhookClient } = setup({ authorization });
+    await expect(service.regenerate('300', 'm', 'r', { userId: null, userEmail: null })).rejects.toMatchObject({ status: 400 });
+    expect(repository.authorizeRegeneration).not.toHaveBeenCalled();
+    expect(webhookClient.triggerReprocess).not.toHaveBeenCalled();
+  });
+  it('keeps the recorded authorization visible when n8n is down (safe to retry: single-use authorization)', async () => {
+    const { service } = setup({ authorization, webhookResult: { kind: 'TIMEOUT' } });
+    expect(await service.regenerate('300', 'm', 'r', identity)).toMatchObject({ outcome: 'UPSTREAM_TIMEOUT', executionId: null, authorization: { authorizationId: '9' } });
   });
 });

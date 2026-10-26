@@ -1,0 +1,19 @@
+{
+  "base": [
+    { "cliente_grupo": "CAT_P3_P4_P5_P6", "planta_codigo": "P5", "subplanta_codigo": "", "cliente": "Cliente de prueba", "rfc": "RFC-TEST", "fecha_entrega": "20/10/2026", "codigo": "ABC", "numero_parte": "0007-A", "orden_compra": "001-OC", "cantidad_numerica": 10, "unidad_remision": "PIEZAS", "file_name": "original.xlsx", "hash_archivo": "physical-a" },
+    { "cliente_grupo": "CAT_P3_P4_P5_P6", "planta_codigo": "P5", "subplanta_codigo": "", "cliente": "Cliente de prueba", "rfc": "RFC-TEST", "fecha_entrega": "20/10/2026", "codigo": "DEF", "numero_parte": "0008", "orden_compra": "002-OC", "cantidad_numerica": 2.5, "unidad_remision": "ROLLOS" }
+  ],
+  "canonicalJson": "{\"version\":\"CAT_OPERATIONAL_CONTENT_V1\",\"scope\":[\"CAT_P3_P4_P5_P6\",\"P5\",\"\",\"Cliente de prueba\",\"RFC-TEST\"],\"deliveryDate\":\"2026-10-20\",\"grouping\":\"POR_ARTICULO\",\"documents\":[{\"purchaseOrder\":\"001-OC\",\"lines\":[[\"ABC\",\"0007-A\",\"001-OC\",10,\"PIEZAS\"]]},{\"purchaseOrder\":\"002-OC\",\"lines\":[[\"DEF\",\"0008\",\"002-OC\",2.5,\"ROLLOS\"]]}]}",
+  "vectors": [
+    { "name": "renamed", "patch": { "file_name": "renamed.xlsx", "file_path": "other/path.xlsx" }, "equivalent": true },
+    { "name": "physical_save", "patch": { "hash_archivo": "physical-b", "fecha_archivo_iso": "2027-01-01" }, "equivalent": true },
+    { "name": "quantity", "patch": { "cantidad_numerica": 11 }, "equivalent": false },
+    { "name": "purchase_order", "patch": { "orden_compra": "1-OC" }, "equivalent": false },
+    { "name": "effective_date", "patch": { "fecha_entrega": "21/10/2026" }, "equivalent": false },
+    { "name": "plant", "patch": { "planta_codigo": "P6" }, "equivalent": false },
+    { "name": "subplant", "patch": { "subplanta_codigo": "FINSA_1" }, "equivalent": false },
+    { "name": "client", "patch": { "cliente": "Otro cliente" }, "equivalent": false },
+    { "name": "part", "patch": { "numero_parte": "7-A" }, "equivalent": false },
+    { "name": "unit", "patch": { "unidad_remision": "HOJAS" }, "equivalent": false }
+  ]
+}

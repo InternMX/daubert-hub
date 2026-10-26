@@ -91,8 +91,43 @@ export interface CaterpillarRemittance {
   // (Phase 12A.4: no "Abrir PDF" yet).
   pdfPath: string | null;
   status: string;
+  revision?: string | null;
+  processLabel?: string | null;
+  cancellationReason?: string | null;
+  cancellation?: CaterpillarCancellation | null;
   details: CaterpillarRemittanceDetail[];
 }
+
+export interface CaterpillarCancellation {
+  cancellationId: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  cancelledAt: string;
+  requestId: string | null;
+}
+
+export type CaterpillarRegenerationBlock = 'UNAVAILABLE' | 'NOT_COMPLETED' | 'NO_SNAPSHOT' | 'LIVE_REMISSIONS' | 'CANCELLATION_NOT_FORMAL' | 'ALREADY_REGENERATED';
+
+export interface CaterpillarRegenerationAuthorization {
+  authorizationId: string;
+  reason: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  authorizedAt: string;
+  requestId: string | null;
+  regeneratedExecutionId: string | null;
+}
+
+// The Hub decides (and PostgreSQL re-checks) whether a commercial regeneration is possible; the UI only displays this.
+export interface CaterpillarRegenerationState {
+  eligible: boolean;
+  blockedBy: CaterpillarRegenerationBlock | null;
+  authorization: CaterpillarRegenerationAuthorization | null;
+}
+
+const NO_REGENERATION: CaterpillarRegenerationState = { eligible: false, blockedBy: 'UNAVAILABLE', authorization: null };
 
 export interface CaterpillarExecutionDetail {
   executionId: string;
@@ -105,6 +140,7 @@ export interface CaterpillarExecutionDetail {
   latestErrorMessage: string | null;
   n8nExecutionId: string | null;
   reprocessOfExecutionId: string | null;
+  regeneration: CaterpillarRegenerationState;
   sourceDocument: CaterpillarSourceDocument;
   reservations: CaterpillarFolioReservation[];
   remittances: CaterpillarRemittance[];
@@ -248,7 +284,71 @@ function isRemittance(value: unknown): value is CaterpillarRemittance {
     && isIsoDateString(item.documentDate)
     && isNullableString(item.pdfPath)
     && isNonEmptyString(item.status)
+    && (item.revision === undefined || item.revision === null || isRevision(item.revision))
+    && (item.processLabel === undefined || isNullableString(item.processLabel))
+    && (item.cancellationReason === undefined || isNullableString(item.cancellationReason))
+    && (item.cancellation === undefined || item.cancellation === null || isCancellation(item.cancellation))
     && Array.isArray(item.details) && item.details.every(isRemittanceDetail);
+}
+
+function isRevision(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value);
+}
+
+function isCancellation(value: unknown): value is CaterpillarCancellation {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return isNonEmptyString(item.cancellationId) && isNullableString(item.userId)
+    && isNonEmptyString(item.userEmail) && isNonEmptyString(item.userDisplayName)
+    && isIsoDateString(item.cancelledAt) && isNullableString(item.requestId);
+}
+
+export class CaterpillarCancellationApiError extends Error {
+  constructor(public readonly status: number) { super('Caterpillar cancellation request failed'); }
+}
+
+export interface CaterpillarCancelResult {
+  status: 'CANCELLED' | 'ALREADY_CANCELLED';
+  remissionId: string;
+  cancellationReason: string | null;
+  cancellation: CaterpillarCancellation | null;
+}
+
+export async function cancelCaterpillarRemission(executionId: string, remissionId: string, reason: string, expectedRevision: string): Promise<CaterpillarCancelResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/automations/remissions/caterpillar/executions/${encodeURIComponent(executionId)}/remittances/${encodeURIComponent(remissionId)}/cancel`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason, expectedRevision })
+    });
+  } catch { throw new CaterpillarCancellationApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new CaterpillarCancellationApiError(response.status);
+  const data = typeof body === 'object' && body !== null && 'data' in body ? body.data : null;
+  if (typeof data !== 'object' || data === null || !('status' in data) || !('remissionId' in data)
+    || !('cancellationReason' in data) || !('cancellation' in data)
+    || typeof data.status !== 'string' || !['CANCELLED', 'ALREADY_CANCELLED'].includes(data.status) || data.remissionId !== remissionId
+    || !isNullableString(data.cancellationReason) || (data.cancellation !== null && !isCancellation(data.cancellation))
+    || (data.status === 'CANCELLED' && (data.cancellation === null || !isNonEmptyString(data.cancellationReason)))) {
+    throw new CaterpillarCancellationApiError(response.status);
+  }
+  return { status: data.status as CaterpillarCancelResult['status'], remissionId, cancellationReason: data.cancellationReason,
+    cancellation: data.cancellation as CaterpillarCancellation | null };
+}
+
+const regenerationBlocks = new Set<string>(['UNAVAILABLE', 'NOT_COMPLETED', 'NO_SNAPSHOT', 'LIVE_REMISSIONS', 'CANCELLATION_NOT_FORMAL', 'ALREADY_REGENERATED']);
+
+function isRegenerationAuthorization(value: unknown): value is CaterpillarRegenerationAuthorization {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return isNonEmptyString(item.authorizationId) && isNonEmptyString(item.reason) && isNullableString(item.userId) && isNonEmptyString(item.userEmail)
+    && isNonEmptyString(item.userDisplayName) && isIsoDateString(item.authorizedAt) && isNullableString(item.requestId) && isNullableString(item.regeneratedExecutionId);
+}
+
+function isRegenerationState(value: unknown): value is CaterpillarRegenerationState {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.eligible === 'boolean' && (item.blockedBy === null || (typeof item.blockedBy === 'string' && regenerationBlocks.has(item.blockedBy)))
+    && (item.authorization === null || isRegenerationAuthorization(item.authorization));
 }
 
 function isExecutionDetail(value: unknown): value is CaterpillarExecutionDetail {
@@ -264,6 +364,7 @@ function isExecutionDetail(value: unknown): value is CaterpillarExecutionDetail 
     && isNullableString(item.latestErrorMessage)
     && isNullableString(item.n8nExecutionId)
     && isNullableString(item.reprocessOfExecutionId)
+    && (item.regeneration === undefined || isRegenerationState(item.regeneration))
     && isSourceDocument(item.sourceDocument)
     && Array.isArray(item.reservations) && item.reservations.every(isReservation)
     && Array.isArray(item.remittances) && item.remittances.every(isRemittance);
@@ -298,7 +399,8 @@ export async function getCaterpillarExecution(executionId: string): Promise<Cate
   if (!response.ok || typeof body !== 'object' || body === null || !('data' in body) || !isExecutionDetail(body.data)) {
     throw new CaterpillarApiError(response.status);
   }
-  return body.data;
+  // An API that predates commercial regeneration simply never offers it.
+  return { ...body.data, regeneration: body.data.regeneration ?? NO_REGENERATION };
 }
 
 // Phase 12C: manual reprocess. Mirrors AutomationApiError's shape (status + the backend's own
@@ -357,4 +459,41 @@ export async function reprocessCaterpillarExecution(executionId: string, reason:
   // Only the fields this app actually uses — never the raw `accepted` envelope field or anything
   // else the Hub's response might carry.
   return { originalExecutionId: body.originalExecutionId, executionId: body.executionId, status: body.status };
+}
+
+// Commercial regeneration of a COMPLETADA execution whose remissions were all cancelled formally. A different contract from the technical reprocess above:
+// its own endpoint, its own statuses, and the authorizing ADMIN is recorded server-side. Reuses the reprocess error type (status + sanitized server message).
+export type CaterpillarRegenerationStatus = 'REGENERATION_STARTED' | 'ALREADY_PROCESSING' | 'ALREADY_REGENERATED';
+
+export interface CaterpillarRegenerationResult {
+  originalExecutionId: string;
+  executionId: string;
+  status: CaterpillarRegenerationStatus;
+  authorization: CaterpillarRegenerationAuthorization | null;
+}
+
+const regenerationStatuses = new Set<CaterpillarRegenerationStatus>(['REGENERATION_STARTED', 'ALREADY_PROCESSING', 'ALREADY_REGENERATED']);
+
+export async function regenerateCaterpillarExecution(executionId: string, reason: string): Promise<CaterpillarRegenerationResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/automations/remissions/caterpillar/executions/${encodeURIComponent(executionId)}/regenerate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason })
+    });
+  } catch { throw new CaterpillarReprocessApiError(0); }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : null;
+    throw new CaterpillarReprocessApiError(response.status, record && typeof record.message === 'string' ? record.message : undefined);
+  }
+  const item = typeof body === 'object' && body !== null ? body as Record<string, unknown> : null;
+  if (!item || item.accepted !== true || !isNonEmptyString(item.originalExecutionId) || !isNonEmptyString(item.executionId)
+    || typeof item.status !== 'string' || !regenerationStatuses.has(item.status as CaterpillarRegenerationStatus)
+    || (item.authorization !== null && item.authorization !== undefined && !isRegenerationAuthorization(item.authorization))) {
+    throw new CaterpillarReprocessApiError(response.status, undefined);
+  }
+  return { originalExecutionId: item.originalExecutionId, executionId: item.executionId, status: item.status as CaterpillarRegenerationStatus,
+    authorization: (item.authorization as CaterpillarRegenerationAuthorization | null | undefined) ?? null };
 }

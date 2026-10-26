@@ -1,5 +1,5 @@
 import type { AutomationIntegrationStatus } from '../services/automationsOverview';
-import { CaterpillarReprocessApiError, type CaterpillarReprocessResult, type CaterpillarStatus } from '../services/caterpillarRemissions';
+import { CaterpillarReprocessApiError, type CaterpillarRegenerationBlock, type CaterpillarRegenerationResult, type CaterpillarReprocessResult, type CaterpillarStatus } from '../services/caterpillarRemissions';
 import { lifecycleStatusLabel, processingOutcomeLabel, processingOutcomeSeverity, type ProcessingOutcomeSeverity } from './automationOverviewPresentation';
 
 // Moved here from CaterpillarRemissionsPage.tsx (lint fix, no behavior change): that file exports
@@ -108,4 +108,33 @@ export function caterpillarReprocessErrorMessage(error: unknown): string {
     if (error.status === 504) return 'La automatización tardó demasiado en responder.';
   }
   return 'No fue posible solicitar el reproceso. Intenta nuevamente.';
+}
+
+// Commercial regeneration is a different action from the technical reprocess and is worded as such. 202 only means "started": the new execution
+// is COMPLETADA when it finishes, which the executions list shows. ALREADY_* are informative, never errors.
+export function caterpillarRegenerationSuccessMessage(result: CaterpillarRegenerationResult): string {
+  if (result.status === 'REGENERATION_STARTED') return `Regeneración iniciada. Nueva ejecución: #${result.executionId}. Los folios y las remisiones nuevas aparecerán al terminar.`;
+  if (result.status === 'ALREADY_PROCESSING') return 'La regeneración ya está en curso.';
+  return `Esta ejecución ya fue regenerada. Ejecución existente: #${result.executionId}`;
+}
+
+export function caterpillarRegenerationErrorMessage(error: unknown): string {
+  if (error instanceof CaterpillarReprocessApiError) {
+    if (error.status === 403) return 'Solo un administrador puede autorizar una regeneración.';
+    if (error.status === 404) return 'La ejecución ya no existe o no está disponible.';
+    if (error.status === 409) return error.serverMessage ?? 'Esta ejecución no es elegible para regeneración.';
+    if (error.status === 502) return 'La autorización quedó registrada, pero no fue posible comunicarse con la automatización. Reintenta: no se duplicará.';
+    if (error.status === 504) return 'La autorización quedó registrada, pero la automatización tardó demasiado en responder. Reintenta: no se duplicará.';
+  }
+  return 'No fue posible solicitar la regeneración. Intenta nuevamente.';
+}
+
+// Why an execution whose remissions are all cancelled cannot be regenerated from the Hub. Display only.
+export function caterpillarRegenerationBlockLabel(blockedBy: CaterpillarRegenerationBlock): string | null {
+  switch (blockedBy) {
+    case 'NO_SNAPSHOT': return 'No se puede regenerar desde el Hub: la programación es anterior al control de snapshots y requiere una decisión manual.';
+    case 'CANCELLATION_NOT_FORMAL': return 'No se puede regenerar desde el Hub: alguna remisión se canceló sin el registro formal de cancelación.';
+    case 'ALREADY_REGENERATED': return 'Esta ejecución ya fue regenerada.';
+    default: return null;
+  }
 }

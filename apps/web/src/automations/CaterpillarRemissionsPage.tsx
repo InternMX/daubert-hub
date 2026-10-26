@@ -12,15 +12,20 @@ import {
   type CaterpillarExecutionDetail,
   type CaterpillarExecutionSummary,
   type CaterpillarProcessRoute,
+  type CaterpillarRemittance,
   type ListCaterpillarExecutions
 } from '../services/caterpillarRemissions';
 import { AdjustNextFolioDialog } from './AdjustNextFolioDialog';
 import { CaterpillarReprocessDialog } from './CaterpillarReprocessDialog';
+import { CaterpillarRegenerateDialog } from './CaterpillarRegenerateDialog';
+import { CaterpillarCancelRemissionDialog } from './CaterpillarCancelRemissionDialog';
 import {
   caterpillarFolioRangeLabel,
   caterpillarOutcomeLabel,
   caterpillarOutcomeSeverity,
   caterpillarProcessLabelOrUndetermined,
+  caterpillarRegenerationBlockLabel,
+  caterpillarRegenerationSuccessMessage,
   caterpillarReprocessSuccessMessage,
   caterpillarStatusLabel,
   caterpillarStatusSeverity,
@@ -364,10 +369,37 @@ function CaterpillarReprocessAction({ executionId, outcome, sourceFilename, onRe
   );
 }
 
+// Commercial regeneration: a separate action from the technical reprocess. It is offered only when the Hub reports the execution as eligible
+// (completed, every remission cancelled formally, with snapshot, not yet regenerated). Advisory UX: the backend and PostgreSQL re-check everything.
+function CaterpillarRegenerateAction({ detail, onRegenerated }: { detail: CaterpillarExecutionDetail; onRegenerated: (message: string) => void }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  if (user?.role !== 'ADMIN' || !detail.regeneration.eligible) return null;
+
+  return (
+    <>
+      <Button size="small" variant="outlined" color="warning" onClick={() => setOpen(true)}>Regenerar</Button>
+      <CaterpillarRegenerateDialog
+        open={open}
+        executionId={detail.executionId}
+        sourceFilename={detail.sourceDocument.filename}
+        onClose={() => setOpen(false)}
+        onRegenerated={(result) => {
+          setOpen(false);
+          onRegenerated(caterpillarRegenerationSuccessMessage(result));
+        }}
+      />
+    </>
+  );
+}
+
 // §5: a Dialog, not a new full page — the closest existing Hub interaction pattern for
 // supplementary read-only information triggered from a table row (Phase 12A.4 §5 explicitly
 // prefers Dialog/Drawer over a new route for this).
-function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { executionId: string | null; onClose: () => void; onReprocessed: (message: string) => void }) {
+function ExecutionDetailDialog({ executionId, onClose, onReprocessed, onCancelled }: { executionId: string | null; onClose: () => void; onReprocessed: (message: string) => void; onCancelled: (message: string) => void }) {
+  const { user } = useAuth();
+  const [cancellingRemission, setCancellingRemission] = useState<CaterpillarRemittance | null>(null);
   const [detail, setDetail] = useState<CaterpillarExecutionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -387,10 +419,10 @@ function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { execut
   }, [executionId, retry]);
 
   return (
-    <Dialog open={executionId !== null} onClose={onClose} fullWidth maxWidth="md" scroll="paper">
+    <Dialog open={executionId !== null} onClose={() => { if (!cancellingRemission) onClose(); }} fullWidth maxWidth="md" scroll="paper">
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Detalle de ejecución
-        <IconButton aria-label="Cerrar" onClick={onClose} size="small"><CloseRoundedIcon fontSize="small" /></IconButton>
+        <IconButton aria-label="Cerrar" onClick={onClose} disabled={Boolean(cancellingRemission)} size="small"><CloseRoundedIcon fontSize="small" /></IconButton>
       </DialogTitle>
       <DialogContent dividers>
         {loading && <SectionSpinner label="Cargando detalle de la ejecución" />}
@@ -403,12 +435,15 @@ function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { execut
           <>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <DetailSectionHeading>General</DetailSectionHeading>
-              <CaterpillarReprocessAction
-                executionId={detail.executionId}
-                outcome={detail.outcome}
-                sourceFilename={detail.sourceDocument.filename}
-                onReprocessed={onReprocessed}
-              />
+              <Stack direction="row" spacing={1}>
+                <CaterpillarReprocessAction
+                  executionId={detail.executionId}
+                  outcome={detail.outcome}
+                  sourceFilename={detail.sourceDocument.filename}
+                  onReprocessed={onReprocessed}
+                />
+                <CaterpillarRegenerateAction detail={detail} onRegenerated={onReprocessed} />
+              </Stack>
             </Box>
             <MetaRow label="ID ejecución" value={<Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{detail.executionId}</Typography>} />
             <MetaRow label="Estado" value={<OutcomeChip outcome={detail.outcome} />} />
@@ -416,6 +451,17 @@ function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { execut
             <MetaRow label="Fin" value={<Typography variant="body2">{detail.finishedAt ? formatCaterpillarTimestamp(detail.finishedAt) : 'No disponible'}</Typography>} />
             <MetaRow label="Intentos fallidos / máximo" value={<Typography variant="body2">{detail.failedAttempts} / {detail.maxAttempts}</Typography>} />
             {detail.n8nExecutionId && <MetaRow label="Ejecución n8n" value={<Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{detail.n8nExecutionId}</Typography>} />}
+            {detail.regeneration.authorization && (
+              <MetaRow label="Regeneración autorizada" value={
+                <Typography variant="body2">
+                  {detail.regeneration.authorization.userDisplayName} ({detail.regeneration.authorization.userEmail}) · {formatCaterpillarTimestamp(detail.regeneration.authorization.authorizedAt)} · «{detail.regeneration.authorization.reason}»
+                  {detail.regeneration.authorization.regeneratedExecutionId ? ` · ejecución #${detail.regeneration.authorization.regeneratedExecutionId}` : ''}
+                </Typography>
+              } />
+            )}
+            {!detail.regeneration.eligible && detail.regeneration.blockedBy && detail.remittances.length > 0 && detail.remittances.every((remittance) => remittance.status === 'CANCELADA') && caterpillarRegenerationBlockLabel(detail.regeneration.blockedBy) && (
+              <Alert severity="info" sx={{ mt: 1 }}>{caterpillarRegenerationBlockLabel(detail.regeneration.blockedBy)}</Alert>
+            )}
             {detail.reprocessOfExecutionId && <MetaRow label="Reproceso de" value={<Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{detail.reprocessOfExecutionId}</Typography>} />}
             {detail.latestErrorNode && <MetaRow label="Nodo con error" value={<Typography variant="body2">{detail.latestErrorNode}</Typography>} />}
             {detail.latestErrorMessage && <MetaRow label="Mensaje de error" value={<Typography variant="body2" color="error.main">{detail.latestErrorMessage}</Typography>} />}
@@ -459,8 +505,17 @@ function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { execut
                     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1}>
                       <Typography fontWeight={700}>Folio {remittance.folio} — {remittance.seriesCode}</Typography>
                       <Typography variant="body2" color="text.secondary">{remittanceStatusLabel(remittance.status)}</Typography>
+                      {user?.role === 'ADMIN' && detail.outcome !== 'PROCESSING' && remittance.status === 'GENERADA' && remittance.revision && (
+                        <Button color="error" size="small" onClick={() => setCancellingRemission(remittance)} aria-label={`Cancelar remisión ${remittance.folio}`}>Cancelar</Button>
+                      )}
                     </Stack>
                     <MetaRow label="Fecha" value={<Typography variant="body2">{formatCaterpillarDate(remittance.documentDate)}</Typography>} />
+                    <MetaRow label="Proceso" value={<Typography variant="body2">{remittance.processLabel ?? 'Proceso no determinado'}</Typography>} />
+                    {remittance.status === 'CANCELADA' && <>
+                      <MetaRow label="Motivo de cancelación" value={<Typography variant="body2">{remittance.cancellationReason ?? 'No disponible'}</Typography>} />
+                      <MetaRow label="Cancelada por" value={<Typography variant="body2">{remittance.cancellation ? `${remittance.cancellation.userDisplayName} (${remittance.cancellation.userEmail})` : 'Auditoría histórica no disponible'}</Typography>} />
+                      {remittance.cancellation && <MetaRow label="Fecha de cancelación" value={<Typography variant="body2">{formatCaterpillarTimestamp(remittance.cancellation.cancelledAt)}</Typography>} />}
+                    </>}
                     {/* Plain text only — never a link/button, no filesystem or Dropbox navigation
                         (Phase 12A.4 §5/§H: no "Abrir PDF" yet). */}
                     <MetaRow label="Ruta PDF" value={<Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8125rem', overflowWrap: 'anywhere' }}>{remittance.pdfPath ?? 'No disponible'}</Typography>} />
@@ -488,6 +543,13 @@ function ExecutionDetailDialog({ executionId, onClose, onReprocessed }: { execut
           </>
         )}
       </DialogContent>
+      {cancellingRemission && executionId && <CaterpillarCancelRemissionDialog executionId={executionId} remission={cancellingRemission}
+        onClose={() => { setCancellingRemission(null); setRetry((value) => value + 1); }}
+        onCancelled={(result) => {
+          setCancellingRemission(null);
+          setRetry((value) => value + 1);
+          onCancelled(result.status === 'CANCELLED' ? 'La remisión fue cancelada. No se recuperaron folios.' : 'La remisión ya estaba cancelada. Se conservó la cancelación original.');
+        }} />}
     </Dialog>
   );
 }
@@ -531,7 +593,7 @@ export function CaterpillarRemissionsPage() {
         </Box>
       </Stack>
 
-      <ExecutionDetailDialog executionId={selectedExecutionId} onClose={() => setSelectedExecutionId(null)} onReprocessed={handleReprocessed} />
+      <ExecutionDetailDialog executionId={selectedExecutionId} onClose={() => setSelectedExecutionId(null)} onReprocessed={handleReprocessed} onCancelled={handleReprocessed} />
       <Snackbar open={Boolean(feedback)} autoHideDuration={5000} onClose={() => setFeedback(null)} message={feedback} />
     </>
   );

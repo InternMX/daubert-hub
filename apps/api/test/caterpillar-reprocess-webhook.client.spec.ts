@@ -15,10 +15,21 @@ describe('CaterpillarReprocessWebhookClient', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
   describe('triggerReprocess', () => {
+    it('adds the kind field ONLY for a commercial regeneration; the plain reprocess body stays exactly executionId + reason', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(202, { accepted: true, status: 'REPROCESS_CREATED', originalExecutionId: '1', executionId: '2' }));
+      global.fetch = fetchMock as never;
+      const client = new CaterpillarReprocessWebhookClient(configWith() as never);
+      await client.triggerReprocess('1', 'motivo');
+      await client.triggerReprocess('1', 'motivo', 'REGENERATION');
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({ executionId: '1', reason: 'motivo' });
+      expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({ executionId: '1', reason: 'motivo', kind: 'REGENERATION' });
+    });
+
     it('POSTs executionId/reason to the configured URL with the shared header token, nothing else', async () => {
       const fetchMock = vi.fn().mockResolvedValue(jsonResponse(202, { accepted: true, status: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154' }));
       global.fetch = fetchMock as never;
@@ -69,9 +80,12 @@ describe('CaterpillarReprocessWebhookClient', () => {
     it.each([
       ['NOT_FOUND', 404],
       ['NOT_ELIGIBLE_STATE', 409],
+      ['SOURCE_DOCUMENT_MISSING', 409],
+      ['SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING', 422],
       ['SOURCE_FILE_MISSING', 409],
       ['OUTSIDE_TEST_SCOPE', 409],
-      ['OUTSIDE_ALLOWED_SCOPE', 409]
+      ['OUTSIDE_ALLOWED_SCOPE', 409],
+      ['ADMISSION_REJECTED', 409]
     ] as const)('parses a rejected %s response at HTTP %d', async (reason, status) => {
       global.fetch = vi.fn().mockResolvedValue(jsonResponse(status, { accepted: false, error: reason })) as never;
       const client = new CaterpillarReprocessWebhookClient(configWith() as never);
@@ -182,6 +196,49 @@ describe('CaterpillarReprocessWebhookClient', () => {
       const result = await client.triggerReprocess('153', 'motivo');
       expect(result).toEqual({ kind: 'NETWORK_ERROR' });
       expect(JSON.stringify(result)).not.toMatch(/ECONNREFUSED|5678|secret-token/i);
+    });
+
+    it.each([202, 409])('keeps the original deadline through a stalled HTTP %d JSON body', async (status) => {
+      vi.useFakeTimers();
+      const json = vi.fn();
+      let signal: AbortSignal | undefined;
+      global.fetch = vi.fn().mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+        signal = init.signal;
+        return new Promise((resolve) => setTimeout(() => resolve({
+          status,
+          json: json.mockImplementation(() => new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => reject(new Error('private upstream body')), { once: true });
+          }))
+        }), 9_000));
+      }) as never;
+      const client = new CaterpillarReprocessWebhookClient(configWith() as never);
+      let result: unknown;
+      const promise = client.triggerReprocess('153', 'motivo').then((value) => { result = value; return value; });
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(json).toHaveBeenCalledTimes(1);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
+      expect(result).toEqual({ kind: 'TIMEOUT' });
+      await expect(promise).resolves.toEqual({ kind: 'TIMEOUT' });
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('accepts a body completed before the deadline and clears the timeout', async () => {
+      vi.useFakeTimers();
+      let signal: AbortSignal | undefined;
+      global.fetch = vi.fn().mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+        signal = init.signal;
+        return Promise.resolve({ status: 200, json: () => new Promise((resolve) => setTimeout(() => resolve({
+          accepted: true, status: 'REPROCESS_CREATED', originalExecutionId: '153', executionId: '154'
+        }), 9_999)) });
+      }) as never;
+      const promise = new CaterpillarReprocessWebhookClient(configWith() as never).triggerReprocess('153', 'motivo');
+      await vi.advanceTimersByTimeAsync(9_999);
+      await expect(promise).resolves.toMatchObject({ kind: 'ACCEPTED', status: 'REPROCESS_CREATED' });
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(false);
     });
 
     it('returns NOT_CONFIGURED without calling fetch when the URL is missing', async () => {

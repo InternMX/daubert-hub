@@ -33,7 +33,7 @@
     docs/deployments/2026-10-01-hub-v1-prod.md).
 
 .PARAMETER ComposeFile
-    Compose files of PROD. Default: compose.pilot.yaml and compose.prod-temp.yaml.
+    Compose files of PROD. Default: compose.pilot.yaml, compose.prod-temp.yaml and the entry-closure override.
 
 .PARAMETER MaxBackupAgeHours
     A deploy needs at least one valid (SHA-256 matching) published backup no older than this.
@@ -47,7 +47,7 @@ param(
     [string]$Candidate = 'HEAD',
     [string]$EnvFile = 'deploy\pilot.prod.env',
     [string]$ProjectName = 'daubert-hub',
-    [string[]]$ComposeFile = @('compose.pilot.yaml', 'compose.prod-temp.yaml'),
+    [string[]]$ComposeFile = @('compose.pilot.yaml', 'compose.prod-temp.yaml', 'deploy/closure/entry-closure-override.yaml'),
     [int]$MaxBackupAgeHours = 6,
     [int]$MinFreeGB = 10,
     [string]$BackupConfigPath = 'C:\ProgramData\DaubertHub\Backup\config.json'
@@ -135,7 +135,7 @@ Invoke-Safe 'Repo' 'rama y arbol' {
 }
 Invoke-Safe 'Repo' 'commit candidato' {
     $full = @(Get-Git @('rev-parse', $Candidate))[0]
-    $short = @(Get-Git @('rev-parse', '--short', $Candidate))[0]
+    $short = @(Get-Git @('rev-parse', '--short=7', $Candidate))[0]
     $head = @(Get-Git @('rev-parse', 'HEAD'))[0]
     $originMain = @(Get-Git @('rev-parse', 'origin/main'))[0]
     Add-Result 'Repo' 'candidato' 'INFO' ($short + ' (' + $full + ')')

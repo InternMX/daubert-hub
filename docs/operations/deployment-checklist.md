@@ -30,6 +30,7 @@ Este release no requiere migraciones (0 cambios en `database/`) ni cambios en n8
 | --- | --- | --- |
 | `deploy/pilot.prod.env` | `.gitignore` | Credenciales de BD y tokens de webhooks |
 | `compose.prod-temp.yaml` | `.git/info/exclude` (solo en el host de deployment) | Pasa `AUTH_COOKIE_SECURE` y las variables `PAYMENT_NOTIFICATIONS_*`, que `compose.pilot.yaml` no pasa |
+| `deploy/closure/entry-closure-override.yaml` | Repositorio | Monta de solo lectura el directorio externo de `conf.d` (cierre de entradas). **Obligatorio en toda recreación de Web**, incluido el rollback; ver [joint-deployment-plan](../automations/caterpillar/joint-deployment-plan.md) §2 |
 | `%ProgramData%\DaubertHub\Backup\config.json`, `pgpass`, `age-recipients.txt` | Fuera del repositorio | Configuración externa del backup |
 | Proyecto Compose `daubert-hub`, puerto `8082` | Nombres reales de PROD | Difieren del ejemplo genérico (`daubert-hub-prod`, `8080`) |
 
@@ -79,7 +80,7 @@ Comprueba, entre otros:
 | --- | --- | --- |
 | `-Preflight` | Ejecuta `Test-DaubertDeployPreflight.ps1` y **propaga su exit code**: `0` apto, `1` bloqueado, `2` sin cambios de Hub/Docker | No |
 | `-WhatIf` | Ejecuta el preflight y **las mismas validaciones que `-Deploy`**; si todo pasa imprime el plan: commit actual de PROD, commit a desplegar (== `HEAD`), `APP_VERSION`, cambios de Hub/Docker que se desplegarían, servicios afectados (`api`, `web`), las anclas de rollback que se crearían, el comando Compose exacto, los checks post-deploy y el procedimiento de rollback. Con preflight `1` → "bloqueado"; con `2` o sin cambios de Hub/Docker → "SIN CAMBIOS DE HUB/DOCKER — NO HAY NADA QUE DESPLEGAR" y no imprime plan | **No**: nunca llega a la función mutante (bloqueada fuera de `-Deploy`) |
-| `-Deploy` | 1) preflight (aborta con `1`; con `2` informa que no hay nada que desplegar); 2) vuelve a comprobar `HEAD == candidato`, árbol limpio, commit anterior (SHA hexadecimal válido), `/api/health` de PROD sano, `APP_VERSION`, imágenes de Compose, que la imagen en ejecución de `api` y `web` sea la etiquetada (digest de manifiesto) y que las etiquetas `rollback-<commit anterior>` **no existan**; 3) imprime el plan y pide escribir **exactamente** `DEPLOY DAUBERT HUB` (cualquier otra entrada, incluidas variantes en minúscula o con espacios, cancela sin tocar nada); 4) crea las anclas por nombre y comprueba que cada una existe y apunta al digest esperado; 5) fija `APP_VERSION` (del `package.json` raíz) y `GIT_COMMIT` (`git rev-parse --short HEAD`) y ejecuta `docker compose … up -d --build api web`; 6) espera a `api` *healthy* y a `web`, verifica `/api/health` (`status=ok`, `database=connected`, `environment=PRODUCTION`, `commit` = candidato, `version` = `APP_VERSION`), `docker compose ps` (solo lectura) y que ambos servicios estén en ejecución | **Sí**, y solo `api` y `web` |
+| `-Deploy` | 1) preflight (aborta con `1`; con `2` informa que no hay nada que desplegar); 2) vuelve a comprobar `HEAD == candidato`, árbol limpio, commit anterior (SHA hexadecimal válido), `/api/health` de PROD sano, `APP_VERSION`, imágenes de Compose, que la imagen en ejecución de `api` y `web` sea la etiquetada (digest de manifiesto) y que las etiquetas `rollback-<commit anterior>` **no existan**; 3) imprime el plan y pide escribir **exactamente** `DEPLOY DAUBERT HUB` (cualquier otra entrada, incluidas variantes en minúscula o con espacios, cancela sin tocar nada); 4) crea las anclas por nombre y comprueba que cada una existe y apunta al digest esperado; 5) fija `APP_VERSION` (del `package.json` raíz) y `GIT_COMMIT` (`git rev-parse --short=7 HEAD`) y ejecuta `docker compose … up -d --build api web`; 6) espera a `api` *healthy* y a `web`, verifica `/api/health` (`status=ok`, `database=connected`, `environment=PRODUCTION`, `commit` = candidato, `version` = `APP_VERSION`), `docker compose ps` (solo lectura) y que ambos servicios estén en ejecución | **Sí**, y solo `api` y `web` |
 
 Códigos de salida: `0` correcto · `1` bloqueado o abortado (PROD no cambió) · `2` nada que desplegar · `3` error de uso · `5` **DEPLOYMENT FALLIDO**.
 
@@ -172,7 +173,7 @@ Leyenda: **A** = automatizado por el preflight o por `Deploy-DaubertHub.ps1`; **
 
 ```powershell
 # Constantes de PROD (compose.yaml NO se carga a propósito)
-$cf = @('--project-name','daubert-hub','--env-file','deploy/pilot.prod.env','-f','compose.pilot.yaml','-f','compose.prod-temp.yaml')
+$cf = @('--project-name','daubert-hub','--env-file','deploy/pilot.prod.env','-f','compose.pilot.yaml','-f','compose.prod-temp.yaml','-f','deploy/closure/entry-closure-override.yaml')
 
 # PRE-DEPLOY: preflight (solo lectura). Exit 0 = apto; 1 = no apto; 2 = nada que desplegar
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\Test-DaubertDeployPreflight.ps1
@@ -209,7 +210,7 @@ docker save "daubert-hub-api:rollback-$prev" "daubert-hub-web:rollback-$prev" -o
 
 ```powershell
 $env:APP_VERSION = (node -p "require('./package.json').version")   # = package.json raiz (hoy 1.0.6)
-$env:GIT_COMMIT  = (git rev-parse --short HEAD)                     # = el candidato (el preflight exige candidato == HEAD)
+$env:GIT_COMMIT  = (git rev-parse --short=7 HEAD)                     # = el candidato (el preflight exige candidato == HEAD)
 docker compose @cf up -d --build api web                            # solo api y web; nunca down
 ```
 

@@ -39,8 +39,26 @@
     activates, deactivates or modifies anything in n8n. It does NOT affect the migrations gate
     (migrations always block) or any other validation.
 
+.PARAMETER AcknowledgeMigrationsAlreadyApplied
+    Explicit acknowledgement that the database/ files in the release are migrations that were ALREADY applied by hand (precheck, UP, postcheck) before this deployment. It is only
+    honoured together with ALL of: -ExpectedMigrations (every database/ file of the release must start with one of these name prefixes under database/migrations/daubert_global/;
+    any other database/ file still blocks), -MigrationsEvidence (a file written within -EvidenceMaxAgeHours that contains every -EvidenceMarkers text, e.g. the saved output of the
+    postchecks) and -EvidenceMarkers. The script still runs no SQL and applies nothing.
+
+.PARAMETER ExpectedN8nPaths
+    Optional. With -AcknowledgeN8nAlreadyApplied, every changed n8n/ file must start with one of these path prefixes; anything else still blocks.
+
+.PARAMETER RequireClosedWindow
+    The approved entry-closure override (deploy/closure/entry-closure-override.yaml) is ALWAYS part of every Compose invocation of this script, so Web never starts without the
+    externally mounted conf.d. With this switch -Deploy also requires that the mounted default.conf is the CLOSED policy (byte for byte deploy/closure/entry-closure-policy.conf);
+    use it for the joint Pagos + Caterpillar window.
+
 .PARAMETER HealthTimeoutSeconds
     How long -Deploy waits for api to become healthy and web to answer. Default: 180.
+
+.NOTES
+    Rollback anchors and /api/health use the 7-character commit (git rev-parse --short=7 HEAD) everywhere; GIT_COMMIT is built with the same value. An anchor that already exists is
+    reused ONLY when it points at exactly the running image (same digest); otherwise the deployment is blocked and nothing is overwritten.
 #>
 [CmdletBinding()]
 param(
@@ -49,7 +67,14 @@ param(
     [switch]$Deploy,
     [string]$Candidate = 'HEAD',
     [int]$HealthTimeoutSeconds = 180,
-    [switch]$AcknowledgeN8nAlreadyApplied
+    [switch]$AcknowledgeN8nAlreadyApplied,
+    [switch]$AcknowledgeMigrationsAlreadyApplied,
+    [string[]]$ExpectedMigrations = @(),
+    [string]$MigrationsEvidence = '',
+    [string[]]$EvidenceMarkers = @(),
+    [int]$EvidenceMaxAgeHours = 6,
+    [string[]]$ExpectedN8nPaths = @(),
+    [switch]$RequireClosedWindow
 )
 
 Set-StrictMode -Version Latest
@@ -61,9 +86,11 @@ $script:Mode = 'None'
 $script:ConfirmationPhrase = 'DEPLOY DAUBERT HUB'
 $script:Project = 'daubert-hub'
 $script:EnvFile = 'deploy/pilot.prod.env'
-$script:ComposeFiles = @('compose.pilot.yaml', 'compose.prod-temp.yaml')
+$script:ComposeFiles = @('compose.pilot.yaml', 'compose.prod-temp.yaml', 'deploy/closure/entry-closure-override.yaml')
+$script:ClosureDir = 'C:\Users\06\AppData\Local\DaubertHub\maintenance-window\nginx-conf.d'
 $script:Services = @('api', 'web')
 $script:ShaPattern = '^[0-9a-f]{7,40}$'
+$script:Options = @{}
 
 # ================================================================== Output (never prints secrets)
 function Protect-Line {
@@ -186,6 +213,14 @@ function Read-DeployConfirmation {
     return (Read-Host ('Para continuar escriba exactamente: ' + $script:ConfirmationPhrase))
 }
 
+function Read-DeployEvidence {
+    # Reads (never writes) the migrations evidence file: existence, age and text. Mocked in the tests.
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' } }
+    $item = Get-Item -LiteralPath $Path
+    return [pscustomobject]@{ Exists = $true; AgeHours = ((Get-Date) - $item.LastWriteTime).TotalHours; Text = (Get-Content -LiteralPath $Path -Raw) }
+}
+
 function Start-DeploySleep {
     param([int]$Seconds)
     Start-Sleep -Seconds $Seconds
@@ -223,11 +258,21 @@ function Test-ImageExists {
     return ($r.Code -eq 0)
 }
 
+function Get-ClosureState {
+    # Read-only facts about the external conf.d that the override mounts (create_host_path=false: it must exist) and about the versioned closed policy.
+    $conf = Join-Path $script:ClosureDir 'default.conf'
+    $policy = Join-Path $script:RepoRoot 'deploy\closure\entry-closure-policy.conf'
+    $confSha = ''; $policySha = ''
+    if (Test-Path -LiteralPath $conf) { $confSha = (Get-FileHash -LiteralPath $conf -Algorithm SHA256).Hash.ToLower() }
+    if (Test-Path -LiteralPath $policy) { $policySha = (Get-FileHash -LiteralPath $policy -Algorithm SHA256).Hash.ToLower() }
+    return @{ ConfExists = [bool]$confSha; ConfSha = $confSha; PolicySha = $policySha }
+}
+
 function Get-DeployContext {
     param([string]$Candidate)
     $git = @('--no-optional-locks')
     $head = Invoke-DeployRead 'git' ($git + @('rev-parse', 'HEAD'))
-    $headShort = Invoke-DeployRead 'git' ($git + @('rev-parse', '--short', 'HEAD'))
+    $headShort = Invoke-DeployRead 'git' ($git + @('rev-parse', '--short=7', 'HEAD'))   # fixed 7-character commit: GIT_COMMIT, /api/health and the rollback-<commit> anchors all use it
     $cand = Invoke-DeployRead 'git' ($git + @('rev-parse', $Candidate))
     $dirty = Invoke-DeployRead 'git' ($git + @('status', '--short'))
     $pkgPath = Join-Path $script:RepoRoot 'package.json'
@@ -270,8 +315,13 @@ function Get-DeployContext {
             TagDigest     = (Get-TagDigest $imageRef)
             Anchor        = $anchor
             AnchorExists  = $(if ($anchor) { Test-ImageExists $anchor } else { $false })
+            AnchorDigest  = ''
         }
+        if ($services[$svc].AnchorExists) { $services[$svc].AnchorDigest = (Get-TagDigest $anchor) }
     }
+
+    $evidence = [pscustomobject]@{ Required = $false; Exists = $false; AgeHours = 0; Text = '' }
+    if ($script:Options.Contains('MigrationsEvidence') -and $script:Options['MigrationsEvidence']) { $evidence = Read-DeployEvidence ([string]$script:Options['MigrationsEvidence']) }
 
     return [pscustomobject]@{
         CandidateInput = $Candidate
@@ -287,6 +337,8 @@ function Get-DeployContext {
         HubDockerFiles = $hubDocker
         MigrationFiles = $migrations
         N8nFiles       = $n8n
+        Evidence       = $evidence
+        Closure        = (Get-ClosureState)
         ComposeImages  = @($images.Out)
         Services       = $services
     }
@@ -296,12 +348,15 @@ function Get-DeployContext {
 function Test-DeployGate {
     # Pure: turns facts into a list of blocking reasons. Empty list = may proceed.
     # $AcknowledgeN8n lifts ONLY the n8n/ reason; migrations and every other check are unaffected.
-    param($Context, [bool]$AcknowledgeN8n = $false)
+    param($Context, [bool]$AcknowledgeN8n = $false, $Options = @{})
     $reasons = @()
+    $migrationPrefix = 'database/migrations/daubert_global/'
     if (-not $Context.CandidateFull -or $Context.CandidateFull -ne $Context.HeadFull) { $reasons += 'El candidato no es exactamente HEAD (GIT_COMMIT se toma de HEAD al construir).' }
     if (@($Context.Dirty).Count -gt 0) { $reasons += 'El arbol de trabajo no esta limpio.' }
     if ($Context.HeadShort -cnotmatch $script:ShaPattern) { $reasons += 'No se pudo determinar el commit corto de HEAD.' }
     if (-not $Context.AppVersion) { $reasons += 'No se pudo leer APP_VERSION de package.json.' }
+    if (-not $Context.Closure.ConfExists) { $reasons += 'Falta default.conf en el directorio externo del cierre (override obligatorio en toda recreacion de Web); ejecute Set-EntryClosure.ps1 -Action Prepare.' }
+    if ($Options.Contains('RequireClosedWindow') -and $Options['RequireClosedWindow'] -and (-not $Context.Closure.PolicySha -or $Context.Closure.ConfSha -ne $Context.Closure.PolicySha)) { $reasons += 'La ventana exige el cierre ACTIVO: default.conf externo no es la politica cerrada versionada (ejecute Set-EntryClosure.ps1 -Action Close).' }
     if (-not $Context.Health) {
         $reasons += 'No se pudo leer /api/health de PROD.'
     } else {
@@ -324,10 +379,43 @@ function Test-DeployGate {
         } elseif ($s.RunningDigest -ne $s.TagDigest) {
             $reasons += ($svc + ': la imagen en ejecucion no es ' + $s.Image + '; no hay ancla de rollback fiable.')
         }
-        if ($s.AnchorExists) { $reasons += ('La etiqueta ' + $s.Anchor + ' ya existe: nunca se sobrescribe.') }
+        if ($s.AnchorExists) {
+            # An existing anchor is reused ONLY when it is exactly the running image (same digest); anything else is never overwritten.
+            if (-not ($s.AnchorDigest -and $s.RunningDigest -and $s.AnchorDigest -eq $s.RunningDigest)) { $reasons += ('La etiqueta ' + $s.Anchor + ' ya existe y NO apunta a la imagen en ejecucion: nunca se sobrescribe.') }
+        }
     }
-    if (@($Context.MigrationFiles).Count -gt 0) { $reasons += 'El release incluye migraciones: este script no las aplica; seguir el checklist manual.' }
-    if (@($Context.N8nFiles).Count -gt 0 -and -not $AcknowledgeN8n) { $reasons += 'El release incluye cambios de n8n: este script no los aplica; seguir el checklist manual, o confirmar que ya estan aplicados y verificados en PROD con -AcknowledgeN8nAlreadyApplied.' }
+    if (@($Context.MigrationFiles).Count -gt 0) {
+        $ackMigrations = ($Options.Contains('AckMigrations') -and [bool]$Options['AckMigrations'])
+        if (-not $ackMigrations) {
+            $reasons += 'El release incluye migraciones: este script no las aplica; seguir el checklist manual, o confirmar que ya estan aplicadas con -AcknowledgeMigrationsAlreadyApplied (con -ExpectedMigrations, -MigrationsEvidence y -EvidenceMarkers).'
+        } else {
+            $expected = @($Options['ExpectedMigrations'] | Where-Object { $_ })
+            $markers = @($Options['EvidenceMarkers'] | Where-Object { $_ })
+            if ($expected.Count -eq 0) { $reasons += '-AcknowledgeMigrationsAlreadyApplied exige -ExpectedMigrations (prefijos de nombre permitidos).' }
+            else {
+                $unexpected = @($Context.MigrationFiles | Where-Object { $file = $_; -not ($file.StartsWith($migrationPrefix) -and @($expected | Where-Object { $file.Substring($migrationPrefix.Length).StartsWith($_) }).Count -gt 0) })
+                if ($unexpected.Count -gt 0) { $reasons += ('Archivos de database/ no esperados en el release (' + $unexpected.Count + '): ' + (($unexpected | Select-Object -First 3) -join ', ')) }
+            }
+            if ($markers.Count -eq 0) { $reasons += '-AcknowledgeMigrationsAlreadyApplied exige -EvidenceMarkers (textos que deben figurar en la evidencia).' }
+            $evidence = $Context.Evidence
+            $maxAge = if ($Options.Contains('EvidenceMaxAgeHours')) { [double]$Options['EvidenceMaxAgeHours'] } else { 6 }
+            if (-not $evidence -or -not $evidence.Exists) { $reasons += 'Falta el archivo de evidencia de migraciones (-MigrationsEvidence).' }
+            else {
+                if ($evidence.AgeHours -gt $maxAge) { $reasons += ('La evidencia de migraciones tiene ' + [math]::Round($evidence.AgeHours, 1) + ' h (maximo ' + $maxAge + ' h).') }
+                foreach ($m in $markers) { if (-not ([string]$evidence.Text).Contains($m)) { $reasons += ('La evidencia de migraciones no contiene "' + $m + '".') } }
+            }
+        }
+    }
+    if (@($Context.N8nFiles).Count -gt 0) {
+        if (-not $AcknowledgeN8n) { $reasons += 'El release incluye cambios de n8n: este script no los aplica; seguir el checklist manual, o confirmar que ya estan aplicados y verificados en PROD con -AcknowledgeN8nAlreadyApplied.' }
+        else {
+            $allowedN8n = @($Options['ExpectedN8nPaths'] | Where-Object { $_ })
+            if ($allowedN8n.Count -gt 0) {
+                $outside = @($Context.N8nFiles | Where-Object { $file = $_; @($allowedN8n | Where-Object { $file.StartsWith($_) }).Count -eq 0 })
+                if ($outside.Count -gt 0) { $reasons += ('Archivos de n8n/ fuera de -ExpectedN8nPaths (' + $outside.Count + '): ' + (($outside | Select-Object -First 3) -join ', ')) }
+            }
+        }
+    }
     return $reasons
 }
 
@@ -350,7 +438,8 @@ function New-DeployPlan {
     $anchors = @()
     foreach ($svc in $script:Services) {
         $s = $Context.Services[$svc]
-        $anchors += [pscustomobject]@{ Service = $svc; Source = $s.Image; Anchor = $s.Anchor; Digest = $s.RunningDigest }
+        # Reuse = the anchor already exists AND (validated by Test-DeployGate) points at exactly the running image; it is then verified, never re-tagged.
+        $anchors += [pscustomobject]@{ Service = $svc; Source = $s.Image; Anchor = $s.Anchor; Digest = $s.RunningDigest; Reuse = [bool]$s.AnchorExists }
     }
     return [pscustomobject]@{
         Services      = @($script:Services)
@@ -383,7 +472,10 @@ function Show-DeployPlan {
     foreach ($f in ($Plan.Changes | Select-Object -First 40)) { Write-Safe ('  ' + $f) }
     if ($Plan.Changes.Count -gt 40) { Write-Safe ('  ... y ' + ($Plan.Changes.Count - 40) + ' mas') }
     Write-Safe 'Preservacion de las imagenes actuales (antes del build; nunca se sobrescribe una etiqueta):'
-    foreach ($a in $Plan.Anchors) { Write-Safe ('  docker tag ' + $a.Source + ' ' + $a.Anchor + '   (digest ' + $a.Digest + ')') }
+    foreach ($a in $Plan.Anchors) {
+        if ($a.Reuse) { Write-Safe ('  ' + $a.Anchor + ' ya existe y apunta a la imagen en ejecucion (digest ' + $a.Digest + '): se reutiliza, no se vuelve a etiquetar') }
+        else { Write-Safe ('  docker tag ' + $a.Source + ' ' + $a.Anchor + '   (digest ' + $a.Digest + ')') }
+    }
     Write-Safe 'Variables de build:'
     foreach ($k in $Plan.EnvVariables.Keys) { Write-Safe ('  ' + $k + '=' + $Plan.EnvVariables[$k]) }
     Write-Safe 'Comando de despliegue:'
@@ -401,9 +493,15 @@ function New-RollbackAnchors {
     param($Plan)
     foreach ($a in $Plan.Anchors) {
         if ($a.Anchor -cnotmatch '^daubert-hub-(api|web):rollback-[0-9a-f]{7,40}$') { Write-Safe ('Ancla invalida: ' + $a.Anchor); return $false }
-        if (Test-ImageExists $a.Anchor) { Write-Safe ('La etiqueta ' + $a.Anchor + ' ya existe: se aborta sin sobrescribir.'); return $false }
+        if (Test-ImageExists $a.Anchor) {
+            # Only an anchor that is exactly the running image may pre-exist (e.g. created by a previous controlled phase); anything else aborts without overwriting.
+            $existing = Get-TagDigest $a.Anchor
+            if ($a.Reuse -and $existing -and $existing -eq $a.Digest) { continue }
+            Write-Safe ('La etiqueta ' + $a.Anchor + ' ya existe y no es la imagen en ejecucion: se aborta sin sobrescribir.'); return $false
+        }
     }
     foreach ($a in $Plan.Anchors) {
+        if ($a.Reuse) { Write-Safe ('OK ' + $a.Anchor + ' (existente, mismo digest ' + $a.Digest + ')'); continue }
         $t = Invoke-DeployMutation 'docker' @('tag', $a.Source, $a.Anchor)
         if ($t.Code -ne 0) { Write-Safe ('docker tag fallo para ' + $a.Anchor); return $false }
         if (-not (Test-ImageExists $a.Anchor)) { Write-Safe ('La etiqueta ' + $a.Anchor + ' no existe tras crearla.'); return $false }
@@ -520,6 +618,8 @@ function Show-Usage {
     Write-Host '  -Deploy     Unico modo que modifica PROD; pide escribir exactamente: DEPLOY DAUBERT HUB.'
     Write-Host 'Opciones: -Candidate <commit> (debe ser HEAD), -HealthTimeoutSeconds <n>.'
     Write-Host '  -AcknowledgeN8nAlreadyApplied  Reconoce que los archivos n8n/ del release ya estan aplicados y verificados en PROD (no aplica ni toca n8n; no afecta a las migraciones).'
+    Write-Host '  -AcknowledgeMigrationsAlreadyApplied  Reconoce que las migraciones de database/ ya se aplicaron a mano; exige -ExpectedMigrations <prefijos>, -MigrationsEvidence <archivo reciente> y -EvidenceMarkers <textos> (no ejecuta SQL).'
+    Write-Host '  -ExpectedN8nPaths <prefijos>          Con -AcknowledgeN8nAlreadyApplied, todo archivo n8n/ del release debe empezar por uno de estos prefijos.'
     Write-Host 'Sin modo no se hace nada. Detalle: docs/operations/deployment-checklist.md'
 }
 
@@ -532,8 +632,9 @@ function Invoke-Preflight {
 }
 
 function Invoke-DeployMain {
-    param([bool]$DoPreflight, [bool]$DoWhatIf, [bool]$DoDeploy, [string]$Candidate, [int]$TimeoutSeconds, [bool]$AcknowledgeN8n = $false)
+    param([bool]$DoPreflight, [bool]$DoWhatIf, [bool]$DoDeploy, [string]$Candidate, [int]$TimeoutSeconds, [bool]$AcknowledgeN8n = $false, $Options = @{})
 
+    $script:Options = $Options
     $selected = @(@($DoPreflight, $DoWhatIf, $DoDeploy) | Where-Object { $_ })
     if ($selected.Count -eq 0) { Show-Usage; return 0 }
     if ($selected.Count -gt 1) {
@@ -563,7 +664,7 @@ function Invoke-DeployMain {
         Write-Safe 'SIN CAMBIOS DE HUB/DOCKER - NO HAY NADA QUE DESPLEGAR'
         return 2
     }
-    $reasons = @(Test-DeployGate $ctx $AcknowledgeN8n)
+    $reasons = @(Test-DeployGate $ctx $AcknowledgeN8n $Options)
     if ($reasons.Count -gt 0) {
         Write-Safe ''
         Write-Safe 'DEPLOYMENT BLOQUEADO. PROD no cambio:'
@@ -574,6 +675,11 @@ function Invoke-DeployMain {
         Write-Safe ''
         Write-Safe ('ADVERTENCIA: el release incluye ' + @($ctx.N8nFiles).Count + ' archivo(s) bajo n8n/. Se reconocen (-AcknowledgeN8nAlreadyApplied) como YA APLICADOS y VERIFICADOS en PROD.')
         Write-Safe 'Este script NO importa, activa, desactiva ni modifica workflows de n8n; solo despliega api y web.'
+    }
+    if (@($ctx.MigrationFiles).Count -gt 0) {
+        Write-Safe ''
+        Write-Safe ('ADVERTENCIA: el release incluye ' + @($ctx.MigrationFiles).Count + ' archivo(s) bajo database/. Se reconocen (-AcknowledgeMigrationsAlreadyApplied) como YA APLICADOS a mano, con evidencia reciente que contiene: ' + (@($Options['EvidenceMarkers']) -join ', ') + '.')
+        Write-Safe 'Este script NO ejecuta SQL ni migraciones; solo despliega api y web.'
     }
 
     $plan = New-DeployPlan $ctx
@@ -600,5 +706,7 @@ function Invoke-DeployMain {
 # Dot-sourcing (tests) only defines the functions above.
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
-    exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied))
+    $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
+    exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }

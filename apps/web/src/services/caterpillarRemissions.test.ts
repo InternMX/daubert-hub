@@ -6,6 +6,7 @@ import {
   listCaterpillarExecutions,
   listCaterpillarSeries,
   reprocessCaterpillarExecution,
+  regenerateCaterpillarExecution,
   type CaterpillarExecutionDetail,
   type CaterpillarExecutionSummary,
   type CaterpillarProcessRoute
@@ -66,6 +67,7 @@ function executionDetail(overrides: Partial<CaterpillarExecutionDetail> = {}): C
     latestErrorMessage: null,
     n8nExecutionId: 'wf-5',
     reprocessOfExecutionId: null,
+    regeneration: { eligible: false, blockedBy: 'NOT_COMPLETED', authorization: null },
     sourceDocument: { documentId: '55', filename: 'archivo.pdf', path: '/dropbox/cat/archivo.pdf', hash: 'abc123', origin: 'DROPBOX', documentDate: '2026-09-19' },
     reservations: [{ reservationId: '1', seriesId: '2', seriesCode: 'REMISION_CAT_P2', folioInicial: '85', folioFinal: '87', quantity: 3, status: 'APLICADA' }],
     remittances: [{
@@ -266,5 +268,31 @@ describe('reprocessCaterpillarExecution', () => {
     const error = await reprocessCaterpillarExecution('161', 'Motivo').catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(CaterpillarReprocessApiError);
     expect(JSON.stringify(error)).not.toMatch(/secret-token|internal-n8n-host/i);
+  });
+});
+
+describe('regenerateCaterpillarExecution', () => {
+  const authorization = { authorizationId: '9', reason: 'Corrección', userId: '1', userEmail: 'a@b.mx', userDisplayName: 'Admin', authorizedAt: '2026-10-24T10:00:00.000Z', requestId: 'r', regeneratedExecutionId: null };
+
+  it('POSTs to the regenerate endpoint (not reprocess) with only the reason and returns the parsed regeneration result', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: '300', executionId: '301', status: 'REGENERATION_STARTED', authorization }, 202));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await regenerateCaterpillarExecution('300', 'Corrección');
+    expect(result).toEqual({ originalExecutionId: '300', executionId: '301', status: 'REGENERATION_STARTED', authorization });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain('/automations/remissions/caterpillar/executions/300/regenerate');
+    expect(url).not.toContain('reprocess');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'Corrección' });
+  });
+  it('rejects a technical-reprocess status or a malformed body instead of trusting it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ accepted: true, originalExecutionId: '300', executionId: '301', status: 'REPROCESS_CREATED' }, 202)));
+    await expect(regenerateCaterpillarExecution('300', 'x')).rejects.toBeInstanceOf(CaterpillarReprocessApiError);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ accepted: true, executionId: '301', status: 'REGENERATION_STARTED' }, 202)));
+    await expect(regenerateCaterpillarExecution('300', 'x')).rejects.toBeInstanceOf(CaterpillarReprocessApiError);
+  });
+  it('keeps the HTTP status and the sanitized server message of a business rejection', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ message: 'Todas las remisiones deben estar canceladas.' }, 409)));
+    await expect(regenerateCaterpillarExecution('300', 'x')).rejects.toMatchObject({ status: 409, serverMessage: 'Todas las remisiones deben estar canceladas.' });
   });
 });

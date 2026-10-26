@@ -42,6 +42,7 @@ function New-Fake {
         Confirmation    = 'DEPLOY DAUBERT HUB'
         ApiHealth       = 'healthy'
         State           = 'running'
+        Evidence        = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'POSTCHECK_019_PASS POSTCHECK_013_PASS POSTCHECK_016_PASS' }
     }
 }
 
@@ -50,7 +51,7 @@ function Get-FakeRead {
     $f = $script:Fake
     $line = $Exe + ' ' + ($CmdArgs -join ' ')
     if ($Exe -eq 'powershell') { return @{ Code = $f.PreflightCode; Out = @('(salida simulada del preflight)') } }
-    if ($line -match 'rev-parse --short HEAD') { return @{ Code = 0; Out = @($f.HeadShort) } }
+    if ($line -match 'rev-parse --short=7 HEAD') { return @{ Code = 0; Out = @($f.HeadShort) } }
     if ($line -match 'rev-parse (\S+)$') {
         if ($Matches[1] -eq 'HEAD') { return @{ Code = 0; Out = @($f.HeadFull) } }
         return @{ Code = 0; Out = @($f.CandidateFull) }
@@ -85,10 +86,10 @@ function Get-FakeHttp {
 }
 
 function Invoke-Main {
-    param([bool]$P = $false, [bool]$W = $false, [bool]$D = $false, [string]$C = 'HEAD', [int]$T = 0, [bool]$N8nAck = $false)
+    param([bool]$P = $false, [bool]$W = $false, [bool]$D = $false, [string]$C = 'HEAD', [int]$T = 0, [bool]$N8nAck = $false, $Opt = @{})
     $script:Printed = @()
     $script:Mutations = @()
-    $result = @(Invoke-DeployMain $P $W $D $C $T $N8nAck)
+    $result = @(Invoke-DeployMain $P $W $D $C $T $N8nAck $Opt)
     return $result[-1]
 }
 
@@ -96,8 +97,10 @@ function Set-StandardMocks {
     Mock Invoke-DeployRead { Get-FakeRead $Exe $CmdArgs }
     Mock Invoke-DeployHttp { Get-FakeHttp $Url }
     Mock Read-HubPort { '8082' }
+    Mock Get-ClosureState { if ($script:Fake.ContainsKey('Closure')) { $script:Fake.Closure } else { @{ ConfExists = $true; ConfSha = 'aa'; PolicySha = 'aa' } } }
     Mock Start-DeploySleep { }
     Mock Read-DeployConfirmation { $script:Fake.Confirmation }
+    Mock Read-DeployEvidence { $script:Fake.Evidence }
     Mock Write-Host { $script:Printed += [string]$Object }
     Mock Invoke-DeployMutation {
         $f = $script:Fake
@@ -388,7 +391,7 @@ Describe 'Deploy exitoso (simulado)' {
         $script:Mutations.Count | Should Be 3
         $script:Mutations[0].Args -join ' ' | Should Be ('tag daubert-hub-api:latest daubert-hub-api:rollback-' + $script:Prev)
         $script:Mutations[1].Args -join ' ' | Should Be ('tag daubert-hub-web:latest daubert-hub-web:rollback-' + $script:Prev)
-        $expected = @('compose', '--project-name', 'daubert-hub', '--env-file', 'deploy/pilot.prod.env', '-f', 'compose.pilot.yaml', '-f', 'compose.prod-temp.yaml', 'up', '-d', '--build', 'api', 'web')
+        $expected = @('compose', '--project-name', 'daubert-hub', '--env-file', 'deploy/pilot.prod.env', '-f', 'compose.pilot.yaml', '-f', 'compose.prod-temp.yaml', '-f', 'deploy/closure/entry-closure-override.yaml', 'up', '-d', '--build', 'api', 'web')
         ($script:Mutations[2].Args -join ' ') | Should Be ($expected -join ' ')
         (Get-PrintedText) | Should Match 'DEPLOYMENT CORRECTO'
         foreach ($m in $script:Mutations) { $m.Exe | Should Be 'docker' }
@@ -488,7 +491,7 @@ Describe 'Secretos' {
 
 Describe 'Comandos prohibidos' {
     $docker = 'docker'
-    $cf = @('--project-name', 'daubert-hub', '--env-file', 'deploy/pilot.prod.env', '-f', 'compose.pilot.yaml', '-f', 'compose.prod-temp.yaml')
+    $cf = @('--project-name', 'daubert-hub', '--env-file', 'deploy/pilot.prod.env', '-f', 'compose.pilot.yaml', '-f', 'compose.prod-temp.yaml', '-f', 'deploy/closure/entry-closure-override.yaml')
 
     It 'la lista de mutaciones permitidas acepta exactamente el tag de ancla y el compose up api web' {
         (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:latest', 'daubert-hub-api:rollback-fbda7c6')) | Should BeNullOrEmpty
@@ -591,5 +594,108 @@ Describe 'Esquema de salida' {
         $help = Get-Content -LiteralPath $scriptPath -Raw
         $help | Should Match '0 ok \| 1 blocked or aborted \| 2 nothing to deploy'
         $help | Should Match '5 DEPLOYMENT FAILED'
+    }
+}
+
+Describe 'Release conjunto: anclas reutilizables, migraciones ya aplicadas con evidencia y rutas n8n esperadas' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Joint = @('apps/api/src/x.ts', 'n8n/workflows/remisiones-caterpillar/c.json', 'n8n/workflows/payment-notifications/p.json',
+            'database/migrations/daubert_global/20261020_013_caterpillar_cancellation.up.sql', 'database/migrations/daubert_global/20261023_019_payment_file_recovery_prod.up.sql')
+        $script:JointOpt = @{ AckMigrations = $true; ExpectedMigrations = @('20261020_013_caterpillar_cancellation', '20261023_019_payment_file_recovery_prod'); MigrationsEvidence = 'evidence.txt'
+            EvidenceMarkers = @('POSTCHECK_013_PASS', 'POSTCHECK_019_PASS'); EvidenceMaxAgeHours = 6; ExpectedN8nPaths = @('n8n/workflows/remisiones-caterpillar/', 'n8n/workflows/payment-notifications/') }
+        $script:Fake.Files = $script:Joint
+    }
+
+    It 'con todo reconocido y evidencia valida el release conjunto se despliega (anclas y compose habituales)' {
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 0
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+        (Get-PrintedText) | Should Match 'No ejecuta SQL ni migraciones|NO ejecuta SQL ni migraciones'
+    }
+
+    It 'sin el reconocimiento de migraciones sigue bloqueado' {
+        (Invoke-Main -D $true -N8nAck $true) | Should Be 1
+        (Get-PrintedText) | Should Match 'migraciones'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'el reconocimiento exige prefijos esperados y marcadores' {
+        $opt = $script:JointOpt.Clone(); $opt.ExpectedMigrations = @()
+        (Invoke-Main -D $true -N8nAck $true -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'exige -ExpectedMigrations'
+        $opt = $script:JointOpt.Clone(); $opt.EvidenceMarkers = @()
+        (Invoke-Main -D $true -N8nAck $true -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'exige -EvidenceMarkers'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'una migracion no esperada en el release sigue bloqueando' {
+        $script:Fake.Files = $script:Joint + 'database/migrations/daubert_global/20261099_099_sorpresa_prod.up.sql'
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no esperados'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'evidencia ausente, vieja o sin los marcadores bloquea' {
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' }
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'Falta el archivo de evidencia'
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 9; Text = 'POSTCHECK_013_PASS POSTCHECK_019_PASS' }
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'tiene 9 h'
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'POSTCHECK_013_PASS' }
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no contiene "POSTCHECK_019_PASS"'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'con -ExpectedN8nPaths un archivo n8n/ ajeno al release bloquea aunque se reconozca n8n' {
+        $script:Fake.Files = $script:Joint + 'n8n/workflows/audi/a.json'
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'fuera de -ExpectedN8nPaths'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un ancla existente con el MISMO digest que la imagen en ejecucion se reutiliza: no se vuelve a etiquetar, la otra se crea' {
+        $script:Fake.Tags[('daubert-hub-api:rollback-' + $script:Prev)] = $script:Fake.Running['api']
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 0
+        $tags = @($script:Mutations | Where-Object { $_.Args[0] -eq 'tag' } | ForEach-Object { $_.Args[2] })
+        ($tags -join ',') | Should Be ('daubert-hub-web:rollback-' + $script:Prev)
+        (Get-PrintedText) | Should Match 'se reutiliza'
+    }
+
+    It 'un ancla existente con OTRO digest bloquea y nunca se sobrescribe' {
+        $script:Fake.Tags[('daubert-hub-api:rollback-' + $script:Prev)] = 'sha256:eeeeeeeeeeeeeeee'
+        (Invoke-Main -D $true -N8nAck $true -Opt $script:JointOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'NO apunta a la imagen en ejecucion'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'el commit se obtiene con un formato fijo de 7 caracteres' {
+        (Invoke-Main -W $true -N8nAck $true -Opt $script:JointOpt) | Should Be 0
+        # The fake answers ONLY the exact 'rev-parse --short=7 HEAD' request with the short commit: if the script asked for another format the plan would not show it.
+        (Get-PrintedText) | Should Match ('Commit a desplegar +: ' + $script:HeadShort)
+    }
+}
+
+Describe 'Cierre externo obligatorio' {
+    BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'el override del cierre forma parte de todos los comandos Compose' {
+        (Get-ComposeBaseArgs) -join ' ' | Should Match '-f deploy/closure/entry-closure-override.yaml'
+    }
+    It 'bloquea si falta el default.conf externo' {
+        $script:Fake.Closure = @{ ConfExists = $false; ConfSha = ''; PolicySha = 'aa' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{}) -join ' ') | Should Match 'default.conf'
+    }
+    It 'con -RequireClosedWindow bloquea si el cierre no esta activo y pasa si lo esta' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'bb'; PolicySha = 'aa' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true }) -join ' ') | Should Match 'cierre ACTIVO'
+        (@(Test-DeployGate $ctx $false @{}) -join ' ') | Should Not Match 'cierre ACTIVO'
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'aa'; PolicySha = 'aa' }
+        $ctx2 = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx2 $false @{ RequireClosedWindow = $true }) -join ' ') | Should Not Match 'cierre ACTIVO'
     }
 }
