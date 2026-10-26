@@ -313,3 +313,5 @@ La ruta de PROD es Caddy (`dauberthub…ts.net`, LAN) → `127.0.0.1:8082` → c
 9. **Comprobar PDFs y folios:** snapshot guardado, ejecución `COMPLETADA`, reserva `APLICADA` = remisiones `GENERADA`, un PDF por remisión en la carpeta de salida, folios contiguos desde 108/134/9 según la planta, siguiente folio = último + 1, y un segundo run sin folios nuevos.
 10. **Después:** inspección diaria la primera semana (5.2) y conservar el workflow anterior desactivado.
 
+### 13.6 B2 — integración y despliegue del Hub
+El PR, el acoplamiento con Pagos, el procedimiento exacto de actualización y rollback de `api`/`web` y los criterios de autorización están en [hub-deployment-b2](hub-deployment-b2.md).
