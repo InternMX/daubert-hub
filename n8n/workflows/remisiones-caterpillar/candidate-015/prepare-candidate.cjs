@@ -36,6 +36,25 @@ if (!["STORED", "ALREADY_STORED"].includes(estado)) {
 }
 return $("Normalizar datos CAT").all();`;
 
+// B1 (PROD cutover): an already-emitted legacy document that has no snapshot is reported by the protected SQL entry as the VALUE 'HISTORICAL_LOCKED' (the function RETURNS it;
+// it is not an exception). On the automatic scan only that exact value is a normal outcome: the file is skipped and the loop continues. Reprocess keeps the fail-closed path,
+// and every other result (CONFLICT, UNAVAILABLE, unknown text, missing value) still reaches the verifier, which aborts. SQL errors never reach this node at all.
+const HISTORICAL_SKIP_CONDITION = '={{ $json.estado === "HISTORICAL_LOCKED" && ($("Propagar documento origen PG").first().json || {}).mode !== "REPROCESS" }}';
+const HISTORICAL_SKIP_BODY = `// SKIPPED_HISTORICAL: documento anterior al snapshot, ya emitido. Sin escritura en PostgreSQL, sin ejecucion, reserva, remision ni PDF; el archivo no se toca.
+const origen = $("Propagar documento origen PG").first().json || {};
+if (!origen.documento_origen_id) {
+  throw new Error("CAT_TEST_015_SKIP_CONTEXT_INVALID");
+}
+return [{ json: {
+  resultado: "SKIPPED_HISTORICAL",
+  motivo: "Documento historico ya emitido sin snapshot (HISTORICAL_LOCKED); no se emite de nuevo",
+  snapshot_estado: "HISTORICAL_LOCKED",
+  documento_origen_id: String(origen.documento_origen_id),
+  file_name: origen.file_name ?? null,
+  file_path: origen.file_path ?? null,
+  hash_archivo: origen.hash_archivo ?? null
+} }];`;
+
 const PREPARE_TAIL_ORIGINAL = `if (!base.ejecucion_id) {
   throw new Error("No existe ejecucion_id para reservar folios.");
 }`;
@@ -161,10 +180,19 @@ if (!contexto.documento_origen_id) {
       options: { queryReplacement: '={{ [ $json.documento_origen_id, $json.manifest_canonical ] }}' } },
     notes: 'SQL HOLD. Entrada protegida de 015: compare-and-set inmutable; n8n_cat_test no recibe UPDATE sobre core.documentos.' };
   const snapVerify = { id: 'cat015-snapshot-0003', name: 'Verificar snapshot CAT', type: 'n8n-nodes-base.code', typeVersion: 2,
-    position: at(0, 672), parameters: { jsCode: SNAPSHOT_VERIFY }, notes: 'Fail-closed: solo STORED/ALREADY_STORED continua; re-emite los items normalizados originales.' };
+    position: at(0, 896), parameters: { jsCode: SNAPSHOT_VERIFY }, notes: 'Fail-closed: solo STORED/ALREADY_STORED continua; re-emite los items normalizados originales.' };
+  // B1: the exact value HISTORICAL_LOCKED (automatic scan only) leaves through a dedicated branch back to the loop; everything else still reaches the verifier.
+  const snapHistorical = { id: 'cat015-snapshot-0004', name: '¿Histórico ya emitido?', type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    position: at(0, 672), parameters: ifBoolean('cat015-historical-cond-0001', HISTORICAL_SKIP_CONDITION),
+    notes: 'Solo el valor exacto HISTORICAL_LOCKED en el escaneo automatico. Reproceso y cualquier otro resultado siguen a Verificar snapshot CAT (falla cerrado).' };
+  const snapSkip = { id: 'cat015-snapshot-0005', name: 'Omitir histórico CAT', type: 'n8n-nodes-base.code', typeVersion: 2,
+    position: [snapHistorical.position[0] + 224, snapHistorical.position[1] + 160], parameters: { jsCode: HISTORICAL_SKIP_BODY },
+    notes: 'Resultado SKIPPED_HISTORICAL: sin SQL, sin archivos ni comandos; vuelve a Loop Over Items para seguir con el siguiente archivo.' };
   connections[normalizar.name].main[0] = [{ node: snapPrepare.name, type: 'main', index: 0 }];
   connections[snapPrepare.name] = { main: [[{ node: snapSave.name, type: 'main', index: 0 }]] };
-  connections[snapSave.name] = { main: [[{ node: snapVerify.name, type: 'main', index: 0 }]] };
+  connections[snapSave.name] = { main: [[{ node: snapHistorical.name, type: 'main', index: 0 }]] };
+  connections[snapHistorical.name] = { main: [[{ node: snapSkip.name, type: 'main', index: 0 }], [{ node: snapVerify.name, type: 'main', index: 0 }]] };
+  connections[snapSkip.name] = { main: [[{ node: 'Loop Over Items', type: 'main', index: 0 }]] };
   connections[snapVerify.name] = { main: [[{ node: prepararReserva.name, type: 'main', index: 0 }]] };
 
   // 4. Series/quantity preparation without an execution.
@@ -182,7 +210,7 @@ if (!contexto.documento_origen_id) {
   const propagar = { id: 'cat015-admission-0001', name: 'Propagar admisión CAT', type: 'n8n-nodes-base.code', typeVersion: 2,
     position: [reservar.position[0] + 224, reservar.position[1]], parameters: { jsCode: PROPAGATE_ADMISSION },
     notes: 'Falla cerrado ante respuesta inesperada. BLOCK/REVIEW => puede_emitir=false.' };
-  c.nodes.push(snapPrepare, snapSave, snapVerify, propagar);
+  c.nodes.push(snapPrepare, snapSave, snapHistorical, snapSkip, snapVerify, propagar);
   connections[reservar.name] = { main: [[{ node: propagar.name, type: 'main', index: 0 }]] };
   connections[propagar.name] = { main: [[{ node: esReproceso.name, type: 'main', index: 0 }]] };
   mapear.parameters.jsCode = MAP_REPROCESS;

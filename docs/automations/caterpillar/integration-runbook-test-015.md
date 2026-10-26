@@ -162,11 +162,12 @@ persiste el snapshot (servicio interno vs. otra vía revisada); con esa decisió
   (texto idéntico al `JSON.stringify` de TypeScript, verificado en pruebas) y la valida con `fn_cat_snapshot_015`. Resultado: `STORED`,
   `ALREADY_STORED`, `CONFLICT` (nunca sobrescribe) o `HISTORICAL_LOCKED` (documento con intentos terminales, remisiones o reservas: sin backfill).
   Errores (`SOURCE_NOT_FOUND`, `SNAPSHOT_INVALID`) abortan.
-- **Workflow**: Normalizar → Preparar snapshot → Guardar snapshot (SQL) → Verificar snapshot (solo STORED/ALREADY_STORED; re-emite los items normalizados) →
-  Preparar reserva → gate. Sin snapshot no hay ejecución ni folios (el gate responde `HISTORY_UNAVAILABLE`).
+- **Workflow**: Normalizar → Preparar snapshot → Guardar snapshot (SQL) → `¿Histórico ya emitido?` → Verificar snapshot (solo STORED/ALREADY_STORED; re-emite los items normalizados) →
+  Preparar reserva → gate. Sin snapshot no hay ejecución ni folios (el gate responde `HISTORY_UNAVAILABLE`). `HISTORICAL_LOCKED` es un **valor devuelto** (no una excepción):
+  en el escaneo automático se omite el archivo (`Omitir histórico CAT` → `SKIPPED_HISTORICAL` → `Loop Over Items`); ver sección 15.
 - **Reproceso**: el mismo documento ya tiene snapshot → `ALREADY_STORED`; contenido distinto → `CONFLICT`; histórico sin snapshot → `HISTORICAL_LOCKED`
   (reproceso bloqueado explícitamente, sin manifests inventados).
-- **Límite**: un fallo de captura aborta la ejecución de n8n (no hay log por Preparar error) y, dentro de un lote, detiene los archivos siguientes.
+- **Límite**: un fallo de captura (CONFLICT, UNAVAILABLE, error SQL) aborta la ejecución de n8n (no hay log por Preparar error) y, dentro de un lote, detiene los archivos siguientes. El único resultado de captura que **no** detiene el lote es `HISTORICAL_LOCKED` en el escaneo automático (sección 15).
 
 ## 8. Preparación integral del corte (estado y procedimiento) — NO EJECUTAR sin autorización
 
@@ -284,7 +285,8 @@ No se instaló ni modificó nada. No se probó la escritura real (requiere ejecu
 | Archivo nuevo, contenido distinto | Nombre y datos nuevos | `ADMIT` | pendiente |
 | Nombre distinto, contenido V1 equivalente | Renombrar copia | `REVIEW MANIFEST_MATCH_REVIEW` | pendiente |
 | Snapshot repetido / conflictivo | Releer / cambiar manifest | `ALREADY_STORED` / `CONFLICT`, sin folios | pendiente |
-| Histórico sin snapshot | Reproceso de los 17 históricos | `HISTORICAL_LOCKED`, error técnico controlado, sin escritura | pendiente |
+| Histórico sin snapshot (reproceso) | Reproceso de los 17 históricos | `HISTORICAL_LOCKED`, error técnico controlado (falla cerrado), sin escritura | pendiente |
+| Histórico sin snapshot (escaneo automático) | Histórico ya emitido seguido de un Excel P2 nuevo | `SKIPPED_HISTORICAL` y el siguiente archivo termina `COMPLETADA` (sección 15) | **pendiente de ejecución real** |
 | Reproceso ERROR / CANCELADA / COMPLETADA | Desde Hub (ADMIN) | hijo único con folios nuevos / rechazo `NOT_ELIGIBLE_STATE` | pendiente |
 | Error antes / después de reservar | Excel inválido / forzar fallo de PDF | sin folios / reserva conservada, fallo del propietario | pendiente |
 | Dos workers | runner de concurrencia | un propietario, B espera `Lock/advisory` | pendiente |
@@ -357,3 +359,30 @@ Recorrido real **Hub (ADMIN) → webhook n8n TEST → PostgreSQL → PDFs**, con
 
 Reconciliación del FULL: los cambios manuales hechos en el FULL de TEST (cierre terminal en `ERROR`, `REPROCESS_CREATED`, los dos nodos de entrada de la regeneración) ya están en el candidato del repositorio (`caterpillar-test-015.FULL.INACTIVE.json`, generado por `prepare-enabled.cjs`); la comparación contra el export vivo se hace con `compare-full` (ver el procedimiento de exports en `prod-cutover-016.md`, sección 11).
 
+## 15. B1 — omitir históricos ya emitidos sin detener el lote (preparado; pendiente de la prueba real en n8n TEST)
+
+**Causa.** Un documento anterior a 015 con ejecución terminal, remisiones o reservas y sin snapshot no puede capturar uno: `ops.fn_guardar_snapshot_caterpillar(_test)` **devuelve** el texto `HISTORICAL_LOCKED` (no lanza excepción). `Verificar snapshot CAT` solo admite `STORED`/`ALREADY_STORED` y falla en un nodo sin salida de error, así que el primer histórico detenía todos los archivos siguientes. En PROD hay 11 de esos archivos en las carpetas escaneadas.
+
+**Corrección mínima** (FULL TEST y candidato PROD, mismos nodos): entre `Guardar snapshot admisión CAT` y `Verificar snapshot CAT` se agregan
+- `¿Histórico ya emitido?` (IF booleano estricto): `$json.estado === "HISTORICAL_LOCKED" && ($("Propagar documento origen PG").first().json || {}).mode !== "REPROCESS"`. Verdadero → `Omitir histórico CAT`; falso → `Verificar snapshot CAT` sin cambios.
+- `Omitir histórico CAT` (Code, sin SQL ni I/O): devuelve `{ resultado: "SKIPPED_HISTORICAL", snapshot_estado, documento_origen_id, file_name, file_path, hash_archivo, motivo }` y se conecta a `Loop Over Items`.
+
+Qué **no** cambia: solo el valor exacto `HISTORICAL_LOCKED` se omite; en reproceso (`mode = REPROCESS`) sigue fallando cerrado; `CONFLICT`, `UNAVAILABLE`, texto distinto o ausente llegan al verificador y abortan; un error de PostgreSQL (conexión, permisos, `P0002`, `22023`, `55000`) se produce en `Guardar snapshot`, antes del IF. No se escribe nada, no se inventa snapshot, no hay ejecución, reserva, folios ni PDF, y el archivo no se mueve.
+
+**Evidencia automatizada (sin n8n).** `caterpillar-b1-historical-skip.spec.ts` ejecuta el código real de los nodos, las expresiones del IF y las conexiones reales de FULL y del candidato PROD (47 pruebas: topología, omisión, reproceso, 12 valores que no se omiten, continuidad del lote, propagación de errores SQL y paridad con el export vivo de PROD). `caterpillar-b1-historical.test-runner.cjs` repite el recorrido contra `daubert_hub_test` con la función real, siempre con `ROLLBACK`, y comprueba que ejecuciones, reservas, remisiones, snapshots y folios no cambian.
+
+### Prueba real en n8n TEST (la ejecuta el operador)
+1. **Aplicar el cambio al FULL vivo** (no hace falta reimportar: se conservan sus ajustes manuales). Abrir `Caterpillar TEST 015 — FULL`, copiar el contenido de `n8n/workflows/remisiones-caterpillar/candidate-015/b1-historical-skip.FULL.paste.json`, pegarlo en el lienzo (Ctrl+V; crea los dos nodos ya conectados entre sí) y reconectar:
+   - borrar la conexión `Guardar snapshot admisión CAT → Verificar snapshot CAT`;
+   - `Guardar snapshot admisión CAT → ¿Histórico ya emitido?`;
+   - `¿Histórico ya emitido?` salida **true** → `Omitir histórico CAT` (ya conectada) y `Omitir histórico CAT → Loop Over Items` (entrada);
+   - `¿Histórico ya emitido?` salida **false** → `Verificar snapshot CAT`.
+   Guardar. Es la única modificación.
+2. **Preparar los archivos** (solo carpeta TEST): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare-caterpillar-b1-test-scenario.ps1`. Deja en `Pruebas\REMISIONES CAT\00_ARCHIVOS A PROCESAR`: la copia del histórico `…SC PLANTA 2 PRUEBA PG FINAL2.xlsx` (documento 268: `COMPLETADA`, 4 remisiones, sin snapshot; modificado 07:00) y el nuevo `…P2 PRUEBA B1 20261026.xlsx` (08:00, contenido nuevo). El `REGEN 017` (documento 361, con snapshot) ya estaba y debe dar `BLOCK` sin folios. Orden esperado: REGEN → histórico → nuevo.
+3. **Anotar el estado previo**: `siguiente_folio` de `REMISION_CAT_P2` y el máximo de `ejecucion_id` (`caterpillar-015-verify.cjs` o la consulta de siempre).
+4. **Ejecutar** el FULL con el disparador manual (Schedule y webhook siguen deshabilitados).
+5. **Esperado en la ejecución de n8n:** estado *Success* (no se detiene en el histórico); `Omitir histórico CAT` con una salida `SKIPPED_HISTORICAL` (`documento_origen_id` 268); el REGEN llega al gate con `BLOCK`/`PROGRAM_ALREADY_EMITTED`; el B1 recorre generación, registro y finalización.
+6. **Esperado en PostgreSQL TEST:** una ejecución nueva `COMPLETADA` para el documento B1 con su reserva `APLICADA` y 2–4 remisiones `GENERADA` con PDF en `02_SALIDAS`; **ninguna** ejecución, reserva ni remisión nueva para los documentos 268 y 361; el documento 268 sigue sin snapshot; `REMISION_CAT_P2` avanza solo lo que emitió el B1; ejecuciones 237/238 y las reservas `RESERVADA` sin cambios.
+7. **Repetir** la ejecución una vez: no debe haber ejecuciones ni folios nuevos (el B1 da `BLOCK PROGRAM_ALREADY_EMITTED`, los demás se omiten/bloquean).
+8. **Limpieza opcional** de los dos archivos: el mismo script con `-Remove`.
+Avisar el resultado; con él se cierra B1 en este documento.

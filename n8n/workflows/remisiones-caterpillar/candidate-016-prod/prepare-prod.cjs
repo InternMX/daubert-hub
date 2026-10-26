@@ -28,7 +28,7 @@ const WORKER_CREDENTIAL = { postgres: { name: 'Postgres produccion CAT (n8n_cat_
 // Nodes whose behaviour changed in the validated TEST workflow and that contain no environment constant: taken from FULL.
 const LOGIC_FROM_FULL = ['Normalizar datos CAT', 'Preparar reserva folios PG', 'Reservar folios PG', 'Asignar folios PG CAT', 'Registrar remisión PG',
   'Finalizar ejecución PG', 'Preparar error CAT', 'Registrar fallo PG', 'Responder reproceso aceptado', 'Mapear resultado creación reproceso CAT'];
-const NEW_FROM_FULL = ['Preparar snapshot admisión CAT', 'Guardar snapshot admisión CAT', 'Verificar snapshot CAT', 'Propagar admisión CAT', '¿Ejecución propia confirmada?'];
+const NEW_FROM_FULL = ['Preparar snapshot admisión CAT', 'Guardar snapshot admisión CAT', '¿Histórico ya emitido?', 'Omitir histórico CAT', 'Verificar snapshot CAT', 'Propagar admisión CAT', '¿Ejecución propia confirmada?'];
 const GATE_NODE = '¿Puede emitir CAT?';            // replaces PROD "¿Procesar según PG?" (same position, same two outputs)
 const PROD_GATE_NODE = '¿Procesar según PG?';
 const DROPPED_PROD_NODES = ['Crear o recuperar ejecución PG', 'Propagar ejecución PG', 'Responder reproceso estado inesperado'];

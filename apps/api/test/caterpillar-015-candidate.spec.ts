@@ -78,8 +78,9 @@ describe('015 candidate — inactive and still blocked', () => {
     expect(reach('Propagar admisión CAT').has('Registrar remisión PG')).toBe(false);
     const preds = Object.entries(workflow.connections).filter(([, e]) => e.main.flat().some(t => t.node === 'Asignar folios PG CAT')).map(([n]) => n);
     expect(preds).toEqual(['¿Puede emitir CAT?']);
-    const chain = ['Normalizar datos CAT', 'Preparar snapshot admisión CAT', 'Guardar snapshot admisión CAT', 'Verificar snapshot CAT', 'Preparar reserva folios PG', 'Reservar folios PG', 'Propagar admisión CAT'];
-    chain.slice(0, -1).forEach((from, i) => expect(workflow.connections[from]!.main[0]).toEqual([{ node: chain[i + 1], type: 'main', index: 0 }]));
+    const chain = ['Normalizar datos CAT', 'Preparar snapshot admisión CAT', 'Guardar snapshot admisión CAT', '¿Histórico ya emitido?', 'Verificar snapshot CAT', 'Preparar reserva folios PG', 'Reservar folios PG', 'Propagar admisión CAT'];
+    // The historical check is a branch: its "true" output (index 0) skips the file, its "false" output (index 1) is the mandatory path to the verifier.
+    chain.slice(0, -1).forEach((from, i) => expect(workflow.connections[from]!.main[from === '¿Histórico ya emitido?' ? 1 : 0]).toEqual([{ node: chain[i + 1], type: 'main', index: 0 }]));
     // Skipping or failing the capture leaves the reservation unreachable: the snapshot is a mandatory predecessor of the gate.
     expect(reach('Verificar snapshot CAT').has('Reservar folios PG')).toBe(false);
     expect(reach('Guardar snapshot admisión CAT').has('Reservar folios PG')).toBe(false);

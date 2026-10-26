@@ -982,12 +982,60 @@
       "notes": "SQL HOLD. Entrada protegida de 015: compare-and-set inmutable; n8n_cat_test no recibe UPDATE sobre core.documentos."
     },
     {
+      "id": "cat015-snapshot-0004",
+      "name": "¿Histórico ya emitido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7680,
+        2256
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cat015-historical-cond-0001",
+              "leftValue": "={{ $json.estado === \"HISTORICAL_LOCKED\" && ($(\"Propagar documento origen PG\").first().json || {}).mode !== \"REPROCESS\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Solo el valor exacto HISTORICAL_LOCKED en el escaneo automatico. Reproceso y cualquier otro resultado siguen a Verificar snapshot CAT (falla cerrado)."
+    },
+    {
+      "id": "cat015-snapshot-0005",
+      "name": "Omitir histórico CAT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7904,
+        2416
+      ],
+      "parameters": {
+        "jsCode": "// SKIPPED_HISTORICAL: documento anterior al snapshot, ya emitido. Sin escritura en PostgreSQL, sin ejecucion, reserva, remision ni PDF; el archivo no se toca.\nconst origen = $(\"Propagar documento origen PG\").first().json || {};\nif (!origen.documento_origen_id) {\n  throw new Error(\"CAT_TEST_015_SKIP_CONTEXT_INVALID\");\n}\nreturn [{ json: {\n  resultado: \"SKIPPED_HISTORICAL\",\n  motivo: \"Documento historico ya emitido sin snapshot (HISTORICAL_LOCKED); no se emite de nuevo\",\n  snapshot_estado: \"HISTORICAL_LOCKED\",\n  documento_origen_id: String(origen.documento_origen_id),\n  file_name: origen.file_name ?? null,\n  file_path: origen.file_path ?? null,\n  hash_archivo: origen.hash_archivo ?? null\n} }];"
+      },
+      "notes": "Resultado SKIPPED_HISTORICAL: sin SQL, sin archivos ni comandos; vuelve a Loop Over Items para seguir con el siguiente archivo."
+    },
+    {
       "id": "cat015-snapshot-0003",
       "name": "Verificar snapshot CAT",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7680,
+        7904,
         2256
       ],
       "parameters": {
@@ -1628,7 +1676,36 @@
       "main": [
         [
           {
+            "node": "¿Histórico ya emitido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Histórico ya emitido?": {
+      "main": [
+        [
+          {
+            "node": "Omitir histórico CAT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Verificar snapshot CAT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Omitir histórico CAT": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }

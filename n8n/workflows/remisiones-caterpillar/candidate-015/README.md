@@ -10,8 +10,10 @@ correo ni rutas PROD nuevos. `prepare-candidate.cjs` regenera el JSON (`node pre
 ```
 Preparar archivo CAT → Resolver documento origen PG → Propagar documento origen PG        (sin crear ejecución)
 → catálogos → Leer/Guardar/Leer copia → Excel → Normalizar datos CAT                       (manifest V1 antes de agrupar Torreón)
-→ Preparar snapshot admisión CAT → Guardar snapshot admisión CAT (SQL protegido) → Verificar snapshot CAT
-   (solo STORED/ALREADY_STORED continúan, con los items normalizados originales; cualquier otro resultado aborta ANTES de existir ejecución)
+→ Preparar snapshot admisión CAT → Guardar snapshot admisión CAT (SQL protegido) → ¿Histórico ya emitido?
+   · el valor exacto HISTORICAL_LOCKED en el escaneo automático → Omitir histórico CAT (SKIPPED_HISTORICAL) → Loop Over Items (sin ejecución, reserva, folios ni PDF)
+   · todo lo demás (incl. HISTORICAL_LOCKED en reproceso) → Verificar snapshot CAT: solo STORED/ALREADY_STORED continúan, con los items normalizados originales;
+     cualquier otro resultado aborta ANTES de existir ejecución. Un error SQL falla en Guardar snapshot y nunca llega a la rama de omisión
 → Preparar reserva folios PG        (documento, serie, cantidad, modo/padre; sin ejecucion_id)
 → Reservar folios PG                (gate 015: fn_admitir_… o, con padre, fn_reprocesar_…; worker = $execution.id)
 → Propagar admisión CAT             (valida el derecho a emitir; BLOCK/REVIEW => puede_emitir=false)
