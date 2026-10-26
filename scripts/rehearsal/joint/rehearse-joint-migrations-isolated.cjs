@@ -11,7 +11,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const BIN = 'C:\\Program Files\\PostgreSQL\\18\\bin';
-const MIGRATIONS = path.resolve(__dirname, '..', 'database', 'migrations', 'daubert_global');
+const MIGRATIONS = path.resolve(__dirname, '..', '..', '..', 'database', 'migrations', 'daubert_global');
+// Outputs (schema dumps, state file with THROW-AWAY database credentials) go OUTSIDE the repository: REHEARSAL_OUT or the OS temp directory.
+const OUT_DIR = process.env.REHEARSAL_OUT || require('os').tmpdir();
 const ROLES = [['daubert_backup', 2, true], ['daubert_docs_ro', -1, true], ['daubert_hub_app', -1, true], ['daubert_hub_test_user', -1, true], ['n8n_app', -1, true], ['n8n_app_test', 10, false], ['n8n_cat_test', 5, true]];
 const WATCHED_ROLES = ['n8n_app', 'daubert_hub_app', 'daubert_docs_ro', 'daubert_backup', 'n8n_cat_prod'];
 const results = [];
@@ -155,7 +157,7 @@ const listDiff = (before, after) => ({ added: after.filter(x => !before.includes
     B.apply('C013'); B.apply('C016'); B.apply('P019');
     // Order A's schema was dumped right after its UP; compare with B's after both complete.
     const schemaB = B.schemaDump();
-    fs.writeFileSync(path.join(__dirname, '..', '..', 'schema-order-A.sql'), schemaA); fs.writeFileSync(path.join(__dirname, '..', '..', 'schema-order-B.sql'), schemaB);
+    fs.writeFileSync(path.join(OUT_DIR, 'schema-order-A.sql'), schemaA); fs.writeFileSync(path.join(OUT_DIR, 'schema-order-B.sql'), schemaB);
     check('apply order does not matter: the final schema of 013->016->019 equals 019->013->016 (pg_dump -s, same SHA)', sha(schemaA) === sha(schemaB), `${sha(schemaA)} vs ${sha(schemaB)}`);
     const sB = B.snapshot();
     check('order B: same row fingerprints, counters and watched-role privileges as order A', diffMap(s1.fingerprints, sB.fingerprints).length === 0 && s1.sequences === sB.sequences && JSON.stringify(s1.privileges.n8n_app) === JSON.stringify(sB.privileges.n8n_app) && JSON.stringify(s1.privileges.daubert_hub_app) === JSON.stringify(sB.privileges.daubert_hub_app), '');
@@ -175,7 +177,7 @@ const listDiff = (before, after) => ({ added: after.filter(x => !before.includes
     B.sql(`UPDATE core.documentos SET caterpillar_admission = NULL WHERE documento_id = ${docId}`);
     info('Caterpillar 013 DOWN refusal with ledger rows', 'NOT RE-EXECUTED here: proven in the earlier prod-copy rehearsal (commit 87d45b0, "013 down refuses with cancellation history")');
 
-    fs.writeFileSync(path.join(__dirname, '..', '..', 'joint-migrations-state.json'), JSON.stringify({ container: B.name, port: B.port, hubPassword: B.hubPassword, note: 'throw-away database with all migrations applied (order B)' }));
+    fs.writeFileSync(path.join(OUT_DIR, 'joint-migrations-state.json'), JSON.stringify({ container: B.name, port: B.port, hubPassword: B.hubPassword, note: 'throw-away database with all migrations applied (order B)' }));
     if (process.argv.includes('--keep')) { /* leave order B running for the Hub probes */ } else B.stop();
     A.stop();
     console.log(JSON.stringify({ result: 'JOINT_MIGRATIONS_REHEARSAL_PASS', checks: results.filter(r => !r.info).length, results }, null, 2));

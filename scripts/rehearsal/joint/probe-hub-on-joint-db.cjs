@@ -19,7 +19,7 @@ const results = [];
 const check = (name, ok, detail) => { results.push({ name, pass: Boolean(ok), ...(ok ? {} : { detail: String(detail).slice(0, 500) }) }); if (!ok) throw Object.assign(new Error('CHECK_FAILED'), { check: name }); };
 
 // The Caterpillar probe body is the one already reviewed in rehearse-hub-contracts-isolated.cjs; the Pagos part is appended here.
-const source = fs.readFileSync(path.join(__dirname, 'rehearse-hub-contracts-isolated.cjs'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', '..', 'rehearse-hub-contracts-isolated.cjs'), 'utf8');
 const probeBody = /const PROBE = `([\s\S]*?)`;\r?\n\r?\nfunction probe/.exec(source)[1].replace(/\\\\n/g, '\\n');
 const pagosAddition = `
 const pagosProbe = async () => {
