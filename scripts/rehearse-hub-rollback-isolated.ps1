@@ -8,13 +8,15 @@ param(
   [Parameter(Mandatory = $true)][string]$OldDir,
   [Parameter(Mandatory = $true)][string]$NewDir,
   [int]$Port = 18082,
-  [int]$DbPort = 55433
+  [int]$DbPort = 55433,
+  [string]$Project = 'daubert-hub-rbtest'   # a different name lets the rehearsal be repeated for another candidate (tags and containers of earlier runs are never overwritten)
 )
 $ErrorActionPreference = 'Continue'   # native stderr must not become terminating errors in Windows PowerShell 5.1; every step is checked explicitly
-$project = 'daubert-hub-rbtest'
-$img = 'daubert-hub-rbtest'           # image prefix produced by the rehearsal project (the PROD one is daubert-hub-<svc>)
-$pgName = 'daubert-hub-rbtest-pg'
-$work = Join-Path $env:TEMP 'daubert-hub-rbtest'
+if ($Project -notmatch '^daubert-hub-rbtest[a-z0-9]*$') { throw 'Project name must start with daubert-hub-rbtest' }
+$project = $Project
+$img = $Project                       # image prefix produced by the rehearsal project (the PROD one is daubert-hub-<svc>)
+$pgName = "$Project-pg"
+$work = Join-Path $env:TEMP $Project
 $results = New-Object System.Collections.ArrayList
 function Check($name, $ok, $detail) { [void]$results.Add([pscustomobject]@{ check = $name; pass = [bool]$ok; detail = "$detail" }); if (-not $ok) { throw "CHECK FAILED: $name ($detail)" } }
 function Health { try { Invoke-RestMethod "http://localhost:$Port/api/health" -TimeoutSec 5 } catch { $null } }

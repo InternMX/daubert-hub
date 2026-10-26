@@ -152,7 +152,7 @@ Pendiente, con la acción exacta:
 4. **Nuevos bloqueos reales** (sección 13.4):
    - ~~B1 — el candidato no toleraba releer los 11 archivos ya emitidos~~ **CERRADO** (2026-10-26): corrección validada en n8n TEST (integration-runbook-test-015, §15: histórico 268 omitido → ejecución 239 `COMPLETADA`, 2.ª pasada sin cambios, folios y reservas intactos) y presente tal cual en el candidato PROD (62 nodos, inactivo).
    - **B2 — el Hub de PROD (`6370753`) no tiene la rama**: ni `ADMISSION_REJECTED`, ni cancelación formal, ni regeneración, ni botón. Requiere integrar a `main` y desplegar (decisión del responsable).
-   - **B3 — decisión del responsable de Pagos/Audi y de n8n**: confirmar que `Generación PDFs` y `Generación Hojas Identificación` no leen las carpetas Caterpillar (no se pudo comprobar sin la interfaz de n8n).
+   - ~~B3 — `Generación PDFs` y `Generación Hojas Identificación`~~ **Descartado** (2026-10-26): pertenecen a **Audi**, no a Caterpillar; no compiten por las carpetas de Caterpillar y ya no son un pendiente de este corte.
 5. Lo que solo puede verificarse con escritura (primera emisión real con el candidato, PDFs, reproceso y regeneración por botón en PROD, ciclo programado) queda para la ventana de corte, paso 11 de la sección 5.1.
 
 ## 10. Regeneración comercial (decisión B) — diseño, casos históricos, validación y efecto en el corte
@@ -276,8 +276,8 @@ Los 11 candidatos coinciden por **hash** con un documento con ejecución `COMPLE
 
 ### 13.2 n8n PROD (solo lectura; faltan 3 comprobaciones de interfaz)
 - `Remisiones CAT Produccion PG` (`9Ngnrpi16b6GtOAX`): **activo**; Schedule cada **10 min** (`:x0:38`); webhook `cat-reprocess`. Desde el último arranque de n8n (10:18) el registro muestra 37 ejecuciones, **37 correctas**, duración ≈ 0,5–2 s, **ninguna sin fin**. PostgreSQL: 24 ejecuciones `COMPLETADA`, **0 `PROCESANDO`/`PENDIENTE`**.
-- Activos en la misma instancia: Audi, Pagos (`pagosProdAsignaciones01` y su manejador de errores), Health Check, `Generación PDFs`, `Generación Hojas Identificación`. Los workflows TEST de Caterpillar siguen **inactivos** (staged). Solo Audi y Pagos tienen carpetas propias conocidas; **no se pudo comprobar** si los dos de generación tocan carpetas Caterpillar.
-- **Comprobar en la interfaz de n8n** (no puedo leerlo sin su API): (a) *Executions* filtrado por `Remisiones CAT Produccion PG` justo antes de la ventana, sin ninguna en curso; (b) abrir `Generación PDFs` y `Generación Hojas Identificación` y confirmar que no apuntan a `SOLICITUD DE MATERIAL` de Caterpillar; (c) que el workflow nuevo se importa sin colisión del path `cat-reprocess` (n8n lo rechaza si el anterior sigue activo).
+- Activos en la misma instancia: Audi (incluidos `Generación PDFs` y `Generación Hojas Identificación`, que son de Audi), Pagos (`pagosProdAsignaciones01` y su manejador de errores) y Health Check. Los workflows TEST de Caterpillar siguen **inactivos** (staged). Ninguno de ellos usa las carpetas de Caterpillar.
+- **Comprobar en la interfaz de n8n** (no puedo leerlo sin su API): (a) *Executions* filtrado por `Remisiones CAT Produccion PG` justo antes de la ventana, sin ninguna en curso; (b) que el workflow nuevo se importa sin colisión del path `cat-reprocess` (n8n lo rechaza si el anterior sigue activo). Los workflows de generación de PDF y hojas de identificación son de Audi y no se revisan para este corte.
 
 ### 13.3 Hub de PROD: qué está desplegado realmente
 La ruta de PROD es Caddy (`dauberthub…ts.net`, LAN) → `127.0.0.1:8082` → contenedor `daubert-hub-web-1` → `daubert-hub-api-1` (proyecto Compose `daubert-hub`, carpeta `daubert-hub-deploy-main`, base `daubert_global`, usuario `daubert_hub_app`). El `localhost:5173` y el API de `:3000` que corre desde el worktree de esta rama son TEST y no cuentan.
