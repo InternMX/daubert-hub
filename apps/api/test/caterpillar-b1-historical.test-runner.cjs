@@ -35,6 +35,16 @@ async function failing(client, sql, params) {
   catch (error) { await client.query('ROLLBACK TO SAVEPOINT expected'); return error; }
 }
 
+// Only the calls that represent the n8n worker run under its role; the worker has EXECUTE on the protected entries and no table privileges at all, so baseline, fixtures
+// lookup and verification stay with the authorized postgres session. RESET ROLE in finally guarantees the scope never leaks (every failing call uses a savepoint).
+const WORKER = 'n8n_cat_test';
+async function asWorker(client, run) {
+  await client.query(`SET LOCAL ROLE ${WORKER}`);
+  try { return await run(); } finally { await client.query('RESET ROLE'); }
+}
+const save = (client, id, manifest) => asWorker(client, async () => (await client.query(SAVE, [id, manifest])).rows[0].estado);
+const saveFails = (client, id, manifest) => asWorker(client, () => failing(client, SAVE, [id, manifest]));
+
 // What the workflow does with the snapshot answer of one scanned document (automatic scan or reprocess).
 function throughWorkflow(workflow, answer, document, mode) {
   const source = { json: { documento_origen_id: String(document.documento_id), file_name: document.nombre_archivo, file_path: `TEST\\${document.nombre_archivo}`, hash_archivo: document.hash_archivo, ...(mode ? { mode } : {}) } };
@@ -64,9 +74,14 @@ async function main() {
         AND EXISTS (SELECT 1 FROM ops.ejecuciones_automatizacion e WHERE e.documento_origen_id = d.documento_id AND e.estado <> 'PROCESANDO') ORDER BY d.documento_id`)).rows;
     check('at least three already-emitted P2 historical documents without snapshot exist in TEST', historical.length >= 3 && historical.some(d => d.remissions > 0), `found ${historical.length}`);
 
-    await client.query('SET LOCAL ROLE n8n_cat_test');
+    // The worker identity is real and has no table access (nothing is granted by this runner); only the protected entry is callable.
+    const asWorkerIdentity = await asWorker(client, async () => ({ user: (await client.query('SELECT current_user AS u')).rows[0].u,
+      directRead: await failing(client, 'SELECT count(*) FROM core.documentos', []) }));
+    check('the simulated worker is n8n_cat_test and has NO direct table privilege (permission denied on core.documentos)',
+      asWorkerIdentity.user === WORKER && asWorkerIdentity.directRead && asWorkerIdentity.directRead.code === '42501', JSON.stringify({ user: asWorkerIdentity.user, code: asWorkerIdentity.directRead && asWorkerIdentity.directRead.code }));
+    check('outside the worker scope the session is the authorized one again', (await client.query('SELECT current_user AS u')).rows[0].u === 'postgres', 'role leaked');
     for (const document of historical) {
-      const answer = (await client.query(SAVE, [document.documento_id, source.manifest])).rows[0].estado;
+      const answer = await save(client, document.documento_id, source.manifest);
       check(`document ${document.documento_id} (${document.remissions} remissions) -> HISTORICAL_LOCKED returned as a value`, answer === 'HISTORICAL_LOCKED', answer);
       for (const [label, workflow] of Object.entries(workflows)) {
         const automatic = throughWorkflow(workflow, answer, document, undefined);
@@ -80,21 +95,20 @@ async function main() {
     check('no snapshot was invented for any historical document', stillNoSnapshot === 0, stillNoSnapshot);
 
     // The same entry on a document that already has a snapshot, and on faulty inputs: none of them may be skipped.
-    const stored = (await client.query(SAVE, [source.documento_id, source.manifest])).rows[0].estado;
+    const stored = await save(client, source.documento_id, source.manifest);
     check('document with the same stored snapshot -> ALREADY_STORED (normal path, not skipped)', stored === 'ALREADY_STORED', stored);
     const normalPath = throughWorkflow(workflows.FULL, stored, source, undefined);
     check('ALREADY_STORED reaches the reservation preparation (a new file continues the normal path)', normalPath.reached === 'Preparar reserva folios PG', JSON.stringify(normalPath));
     const other = JSON.stringify({ ...JSON.parse(source.manifest), deliveryDate: '2031-01-01' });
-    const conflict = (await client.query(SAVE, [source.documento_id, other])).rows[0].estado;
+    const conflict = await save(client, source.documento_id, other);
     check('different content for a stored snapshot -> CONFLICT (not skipped, aborts at the verifier)', conflict === 'CONFLICT' && /SNAPSHOT_NOT_STORED/.test(throughWorkflow(workflows.FULL, conflict, source).threw ?? ''), conflict);
-    const missing = await failing(client, SAVE, [999999999, source.manifest]);
+    const missing = await saveFails(client, 999999999, source.manifest);
     check('unknown document -> real SQL error P0002 (raised by the call itself, so no node can turn it into SKIPPED)', missing && missing.code === 'P0002', missing && missing.code);
-    const invalid = await failing(client, SAVE, [historical[0].documento_id, null]);
+    const invalid = await saveFails(client, historical[0].documento_id, null);
     check('missing manifest -> real SQL error 22023', invalid && invalid.code === '22023', invalid && invalid.code);
-    const corrupt = await failing(client, SAVE, [historical[0].documento_id, '{"scope":"x"}']);
+    const corrupt = await saveFails(client, historical[0].documento_id, '{"scope":"x"}');
     check('malformed manifest -> real SQL error 22023', corrupt && corrupt.code === '22023', corrupt && corrupt.code);
 
-    await client.query('RESET ROLE');
     const inTransactionAfter = (await client.query(COUNTS)).rows[0];
     check('no execution, reservation, remission, snapshot or folio changed inside the transaction', JSON.stringify(inTransactionAfter) === JSON.stringify(inTransactionBefore), JSON.stringify({ inTransactionBefore, inTransactionAfter }));
     await client.query('ROLLBACK');
