@@ -1,12 +1,12 @@
 # Estado del proyecto y guía de mantenimiento
 
-Actualizado el **2026-10-22** (revisión general de `main`). Describe lo que existe **hoy en el código y en PRODUCCIÓN**; lo pendiente se marca como tal. Sin secretos.
+Actualizado el **2026-10-27** (cierre del despliegue conjunto; el resto del documento conserva el detalle del 2026-10-22 y puede estar desactualizado en lo que difiera de esta tabla). Describe lo que existe **hoy en el código y en PRODUCCIÓN**; lo pendiente se marca como tal. Sin secretos.
 
 | | |
 | --- | --- |
-| Hub en PRODUCCIÓN | `6370753` (versión `1.0.6`, PR #14). `main` solo difiere por documentación |
-| Migraciones aplicadas en `daubert_global` | hasta la `20261022_017` (Notificaciones de pago); las `012`–`014` son TEST-only |
-| Workflow de Pagos activo | `pagosProdAsignaciones01` (108 nodos); rollback: `3Dh72JJYROHtaw1X` (100 nodos, inactivo) |
+| Hub en PRODUCCIÓN | `f099e31` (tag `release-2026-10-27-hub-pagos-cat`; muestra `1.0.6` por no haberse subido la versión; `1.1.0` preparado en `chore/release-1.1.0-versioning-closeout`, pendiente de despliegue). Nota: [despliegue conjunto](../deployments/2026-10-27-hub-pagos-caterpillar-joint-prod.md) |
+| Migraciones aplicadas en `daubert_global` | hasta la `20261024_016` (Caterpillar, junto con 019 de Pagos y 013; ver la nota del 2026-10-27); antes: hasta la `20261022_017` (Notificaciones de pago); las `012`–`014` son TEST-only |
+| Workflows n8n PROD | Pagos `pagosProdAsignaciones01` (111 nodos) + hijo `pagosProdRecuperacion01` (106); Caterpillar `catProd016Remisiones01` (62); el CAT anterior `9Ngnrpi16b6GtOAX` y `3Dh72JJYROHtaw1X` (Pagos antiguo) están inactivos |
 | **Pendiente destacado** | **Primer ZIP real de Notificaciones de pago procesado en PRODUCCIÓN por el workflow de 108 nodos** — hasta validarlo no se usa la asignación puntual ni su reproceso con datos reales ([checklist](../automations/payment-notifications/production-rollout.md#e-validación-y-pendientes)) |
 
 ## 1. Arquitectura en una página

@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validateEnvironment } from '../src/config/environment';
+
+// The fallback in environment.ts and every workspace must track the root package.json (the source of APP_VERSION for builds).
+const readVersion = (path: string): string => JSON.parse(readFileSync(resolve(__dirname, path), 'utf8')).version;
+const rootVersion = readVersion('../../../package.json');
 
 const valid = { DB_HOST: 'localhost', DB_PORT: '5432', DB_NAME: 'daubert_hub_test', DB_USER: 'test', DB_PASSWORD: 'secret' };
 
@@ -25,7 +31,7 @@ describe('validateEnvironment', () => {
 
   describe('app version/commit build metadata', () => {
     it('defaults to the known application version and "unknown" commit when neither env var is set', () => {
-      expect(validateEnvironment(valid)).toMatchObject({ app: { version: '0.8.0-pilot.1', commit: 'unknown' } });
+      expect(validateEnvironment(valid)).toMatchObject({ app: { version: rootVersion, commit: 'unknown' } });
     });
 
     it('uses APP_VERSION and GIT_COMMIT when provided', () => {
@@ -39,8 +45,14 @@ describe('validateEnvironment', () => {
         app: { version: '1.0.0', commit: 'abc1234' }
       });
       expect(validateEnvironment({ ...valid, APP_VERSION: '   ', GIT_COMMIT: '   ' })).toMatchObject({
-        app: { version: '0.8.0-pilot.1', commit: 'unknown' }
+        app: { version: rootVersion, commit: 'unknown' }
       });
+    });
+
+    it('keeps the fallback version and the workspace versions equal to the root package.json version', () => {
+      expect(validateEnvironment(valid).app.version).toBe(rootVersion);
+      expect(readVersion('../package.json')).toBe(rootVersion);
+      expect(readVersion('../../web/package.json')).toBe(rootVersion);
     });
 
     it('never fails validation solely because commit metadata is unavailable', () => {
