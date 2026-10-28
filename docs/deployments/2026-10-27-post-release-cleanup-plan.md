@@ -2,6 +2,8 @@
 
 Complementa [la nota del despliegue conjunto](2026-10-27-hub-pagos-caterpillar-joint-prod.md) y la Fase F del [plan conjunto](../automations/caterpillar/joint-deployment-plan.md#10-fase-f--limpieza-y-cierre-técnico). Inventario **solo de lectura** (git, `docker ps/images/volume/network ls`, listados de carpetas); **no se eliminó nada**. Sin secretos. La producción está abierta: cualquier eliminación requiere autorización explícita, por nombre exacto, sin comodines.
 
+> **Estado 2026-10-28 (histórico).** `1.1.0` ya se desplegó ([nota](2026-10-28-hub-v1.1.0-prod.md)) y la limpieza de worktrees auxiliares y ensayos se hizo después, con autorización por etapas. Los worktrees y carpetas `ensayo-…` que cita este plan **ya no existen** (las referencias a rutas locales son del inventario de ese día); permanecen los worktrees `daubert-hub` (checkout de desarrollo), `daubert-hub-deploy-main` (checkout de despliegue) y `daubert-hub-security-deps`. Para operar, usar [deployment-checklist](../operations/deployment-checklist.md).
+
 Clasificación: **CONSERVAR** · **ARCHIVAR** (conservar, pero fuera del camino de trabajo) · **CANDIDATO A ELIMINAR** (solo con autorización) · **REVISAR MANUALMENTE**.
 
 ## Registro de lo realizado

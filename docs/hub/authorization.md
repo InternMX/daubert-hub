@@ -21,9 +21,12 @@ Fuentes: `security/roles.guard.ts`, `security/route-access.decorators.ts`, `secu
 | Datos maestros (proveedores, clientes, contactos, direcciones, alias) | ✔ | ✔ | Sin `@Roles` |
 | Ver automatizaciones, historial, detalle, series | ✔ | ✔ | Sin `@Roles` |
 | Acuse de revisión de un problema de automatización | ✔ | ✔ | Sin `@Roles` (acción operativa) |
-| Reproceso de Notificaciones de pago | ✔ | ✔ | Sin `@Roles` (acción operativa) |
+| Reproceso y asignación puntual de archivos de Notificaciones de pago | ✔ | ✔ | Sin `@Roles` (acción operativa; ver «Decisiones abiertas») |
+| Configuración de Pagos por empresa (ruta Dropbox, destinatarios, «Procesa comprobantes», «Generar borradores») | ✔ | ✔ | Sin `@Roles` (`payment-notification-settings.controller.ts`) |
 | **Ajustar `siguiente_folio` de una serie** | ✔ | ✘ | `@Roles('ADMIN')` a nivel de método |
 | **Reproceso manual Caterpillar** | ✔ | ✘ | `@Roles('ADMIN')` a nivel de método |
+| **Regeneración comercial y cancelación individual de remisiones Caterpillar** | ✔ | ✘ | `@Roles('ADMIN')` a nivel de método (`caterpillar.controller.ts`) |
+| **Auditoría administrativa** (`/api/audit`) | ✔ | ✘ | `@Roles('ADMIN')` a nivel de clase |
 | **Administración de usuarios** (`/api/users/*`) | ✔ | ✘ | `@Roles('ADMIN')` a nivel de clase |
 | Rutas web `/users*` | ✔ | ✘ | `AdminRoute` (UX; la API es la autoridad) |
 
@@ -32,6 +35,10 @@ Fuentes: `security/roles.guard.ts`, `security/route-access.decorators.ts`, `secu
 - El ajuste de folios endureció también el ajuste de Audi, que antes no tenía restricción de rol (comentario en `automations.controller.ts`, Fase 12B.2).
 - Hoy **no** hay permisos granulares por módulo/cliente/planta: sólo los dos roles.
 - Ocultar botones en la web (p. ej. "Reprocesar" sólo visible a `ADMIN` con ejecución `FAILED`/`CANCELLED`) es UX. Un usuario `GENERAL` que llame al endpoint directamente recibe `403`.
+
+## Decisiones abiertas (auditoría 2026-10-28)
+
+Pagos y los datos maestros no restringen acciones sensibles a `ADMIN`, mientras que Caterpillar sí. Esto es el comportamiento **actual**, no una política aprobada como definitiva; qué acciones deben pasar a `ADMIN` es una decisión de negocio pendiente (P-09 en [pendientes](../00-overview/pending-and-roadmap.md#4-riesgos-operativos-pendientes)). No se ha cambiado ningún rol.
 
 ## Autorización hacia n8n y PostgreSQL (no es de usuarios)
 

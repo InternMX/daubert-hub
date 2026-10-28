@@ -2,7 +2,9 @@
 
 Release: commit **`f099e310625ab5220654276b9b862ab86dfdebfa`** (`f099e31`, merge del PR #18 `feat/caterpillar-remission-controls`), tag anotado **`release-2026-10-27-hub-pagos-cat`** (objeto `65aea0d`, publicado en `origin`, apunta a `f099e31`). Sin secretos en esta nota.
 
-> **Versión mostrada.** Este release se construyó con `package.json` en `1.0.6`, así que `/api/health` y el pie de la interfaz siguen mostrando `v1.0.6` aunque el Hub contiene funciones nuevas. No es un fallo del despliegue: nadie subió la versión antes de construir (ver [Versionado](#versionado-por-qué-seguía-en-106)). La corrección (`1.1.0`) está **preparada en una rama aparte y pendiente de despliegue**; no se movió ni se re-etiquetó el commit/tag publicados.
+> **Versión mostrada.** Este release se construyó con `package.json` en `1.0.6`, así que `/api/health` y el pie de la interfaz siguen mostrando `v1.0.6` aunque el Hub contiene funciones nuevas. No es un fallo del despliegue: nadie subió la versión antes de construir (ver [Versionado](#versionado-por-qué-seguía-en-106)). La corrección (`1.1.0`) se preparó en una rama aparte; no se movió ni se re-etiquetó el commit/tag publicados.
+>
+> **Actualización 2026-10-28:** `1.1.0` ya está desplegado en PRODUCCIÓN (commit `6909dc8`, tag `v1.1.0`); ver [hub-v1.1.0-prod](2026-10-28-hub-v1.1.0-prod.md). El punto 8 de «Riesgos y verificaciones operativas pendientes» queda resuelto; los demás siguen vigentes (en especial la validación de negocio de los puntos 1 y 2). Este documento se conserva como registro del 27 de octubre.
 
 ## Estado: despliegue completado vs. seguimiento operativo pendiente
 

@@ -23,6 +23,11 @@ Este directorio es la **fuente de verdad documental** de Daubert Hub y de las au
 | Saber por qué algo se diseñó así | [decisions/README.md](decisions/README.md) |
 | Ver qué se promovió a PROD y cuándo | [deployments/](deployments/) |
 | Ver el estado actual del proyecto, módulos, riesgos y qué no tocar a mano | [00-overview/project-status.md](00-overview/project-status.md) |
+| Ver **pendientes, riesgos abiertos, hoja de ruta (1.2.0) y decisiones por aprobar** | [00-overview/pending-and-roadmap.md](00-overview/pending-and-roadmap.md) |
+| Ver el estado de **seguridad, roles, respaldos, recuperación y observabilidad** | [operations/security-and-operations-status.md](operations/security-and-operations-status.md) |
+| Ver el último release (Hub 1.1.0, 2026-10-28) | [deployments/2026-10-28-hub-v1.1.0-prod.md](deployments/2026-10-28-hub-v1.1.0-prod.md) |
+| Resolver incidencias | [operations/troubleshooting](operations/troubleshooting.md) · [caterpillar](automations/caterpillar/troubleshooting.md) · [pagos](automations/payment-notifications/troubleshooting.md) · [audi](automations/audi/troubleshooting.md) · [base de datos](database/troubleshooting.md) |
+| Operación diaria de cada automatización | [Caterpillar](automations/caterpillar/production-runbook.md) · [Pagos](automations/payment-notifications/production-runbook.md) · [Audi](automations/audi/production-runbook.md) |
 
 ## Mapa documental
 
@@ -92,8 +97,10 @@ Leyenda de fuentes usada en todo el árbol:
 - Corregir las discrepancias Hub ↔ n8n y el drift detectados en D2 ([n8n-test-prod-drift](automations/n8n-test-prod-drift.md), [caterpillar/reprocessing](automations/caterpillar/reprocessing.md#discrepancias-hub--n8n-verificadas-en-d2)).
 - Resolver las inconsistencias listadas en [00-overview/environments.md](00-overview/environments.md#inconsistencias-detectadas-deuda-documental-y-de-configuración).
 
-> Estado vigente del proyecto, pendientes y riesgos: [00-overview/project-status.md](00-overview/project-status.md).
+> Estado vigente del proyecto: [00-overview/project-status.md](00-overview/project-status.md). Pendientes, riesgos y hoja de ruta (fuente única): [00-overview/pending-and-roadmap.md](00-overview/pending-and-roadmap.md).
 
 ## Regla de mantenimiento
 
 Una feature no está terminada hasta que se actualiza su documentación relevante. Al cambiar comportamiento, actualiza en el mismo PR: el documento del módulo, [system-map.md](00-overview/system-map.md) si cambian rutas/tablas, y crea un ADR si la decisión es arquitectónica.
+
+**Después de cada release:** (1) nota en [deployments](deployments/README.md); (2) [project-status](00-overview/project-status.md) y [pending-and-roadmap](00-overview/pending-and-roadmap.md) (mover lo validado, añadir lo nuevo); (3) [security-and-operations-status](operations/security-and-operations-status.md) si cambió seguridad, respaldos u observabilidad; (4) marcar como **histórico**, sin borrar, el runbook que describa un estado anterior y enlazar al vigente; (5) `git diff --check`, enlaces relativos y búsqueda de secretos antes del PR. Un runbook con fecha antigua no manda sobre la sección «Estado vigente» del módulo.
