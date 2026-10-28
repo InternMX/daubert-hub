@@ -1,0 +1,4 @@
+# The candidate-015 generators embed their own source text into the staged workflow JSON, and the specs compare a
+# regeneration with the committed copies byte for byte. A CRLF checkout (core.autocrlf=true on Windows) changes the
+# embedded text and fails apps/api/test/caterpillar-015-enabled.spec.ts, so these files are always checked out as LF.
+n8n/workflows/remisiones-caterpillar/candidate-015/** text eol=lf

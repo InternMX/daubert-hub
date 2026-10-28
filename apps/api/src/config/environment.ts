@@ -93,10 +93,10 @@ function booleanFlag(value: string | undefined, name: string, fallback: boolean)
 // reads the root package.json directly) both supply it explicitly — this
 // constant only matters for a direct workspace dev command or an ad-hoc process
 // launch that skips both. Keep it in sync with the root package.json
-// "version" field when bumping releases; this is intentionally the one
+// "version" field when bumping releases (environment.spec.ts fails on drift); this is intentionally the one
 // place that small duplication is accepted, in exchange for the app version
 // never failing to resolve to *something* meaningful.
-const DEFAULT_APP_VERSION = '0.8.0-pilot.1';
+const DEFAULT_APP_VERSION = '1.1.0';
 const UNKNOWN_BUILD_METADATA = 'unknown';
 
 export function validateEnvironment(env: Record<string, string | undefined>): EnvironmentConfig {
