@@ -7,8 +7,8 @@ Módulo piloto de documentación: primer módulo documentado de extremo a extrem
 | Código de automatización | `REMISIONES_CATERPILLAR` |
 | Cliente | Caterpillar (empresa en `core.empresas`, resuelta por las rutas) |
 | Disparo normal | Schedule de n8n **cada 10 minutos** (nota de despliegue 12C) |
-| Hub | Monitoreo (series, historial, detalle), ajuste de folio y reproceso manual (`ADMIN`) |
-| Estado en PROD | Promovido y verificado el 2026-09-24 ([nota](../../deployments/2026-09-24-caterpillar-12c-prod.md)) |
+| Hub | Monitoreo (series, historial, detalle, Actividad reciente), ajuste de folio (fase 12B), reproceso manual, regeneración comercial y cancelación individual (todos `ADMIN`) |
+| Estado en PROD | Workflow 016 `catProd016Remisiones01` publicado el 2026-10-27 ([nota](../../deployments/2026-10-27-hub-pagos-caterpillar-joint-prod.md)); Hub `1.1.0` ([nota](../../deployments/2026-10-28-hub-v1.1.0-prod.md)). **Primera emisión real tras 016 pendiente de validación**; sin Error Workflow. Estado vigente: [production-runbook](production-runbook.md#estado-vigente-2026-10-28-hub-110). Anterior (12C): [nota 2026-09-24](../../deployments/2026-09-24-caterpillar-12c-prod.md) |
 
 ## Propósito
 
@@ -52,6 +52,8 @@ Módulo piloto de documentación: primer módulo documentado de extremo a extrem
 | `42e97bc` | Nota de despliegue 12C PROD |
 
 ## TEST vs PROD (verificado contra los exports)
+
+> **Histórico (workflow 12C, 2026-09).** La tabla compara `MANUAL TEST REMISIONES CAT` con `Remisiones CAT Produccion PG`. Desde el 2026-10-27 PROD ejecuta `catProd016Remisiones01` (62 nodos). Las diferencias de entorno (rutas, credenciales, webhook, ámbito) siguen el mismo patrón, pero la **paridad funcional nodo a nodo del 016 entre TEST y PROD no está verificada**; ver [n8n-test-prod-drift](../n8n-test-prod-drift.md) y [pendientes](../../00-overview/pending-and-roadmap.md).
 
 Comparación completa en [n8n-test-prod-drift](../n8n-test-prod-drift.md#caterpillar). Resumen con la clasificación **ESPERADA / DEUDA / DRIFT / REQUIERE REVISIÓN**:
 

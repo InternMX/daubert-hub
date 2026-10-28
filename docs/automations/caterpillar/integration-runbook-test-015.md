@@ -1,6 +1,8 @@
 # Fase 5E — compatibilidad 015 y runbook de integración coordinada en TEST (handoff)
 
-**015 NO APLICADA. Ningún workflow n8n, dato, PROD, Dropbox ni Notificaciones de Pago tocados.**
+> **Documento histórico (TEST, 2026-10).** Las etapas 5E a 9 describen el estado previo a aplicar 015 en TEST; los resultados reales están en §10-§15. En PROD se aplicó la 016 el 2026-10-27 ([production-runbook](production-runbook.md#estado-vigente-2026-10-28-hub-110)). Las rutas locales de worktrees que aparecen en los comandos (p. ej. `daubert-hub-caterpillar-remission-controls`) ya no existen: ejecutar desde un checkout vigente.
+
+**015 NO APLICADA (a la fecha de esta etapa). Ningún workflow n8n, dato, PROD, Dropbox ni Notificaciones de Pago tocados.**
 Rama `feat/caterpillar-remission-controls`, base `da15d70`. Alcance 5E: revisión + preparación + lecturas autorizadas.
 
 ## 1. Compatibilidad de 015 con el workflow TEST actual
@@ -277,6 +279,8 @@ No se instaló ni modificó nada. No se probó la escritura real (requiere ejecu
 8. Schedule: no habilitar hasta cerrar la tabla de abajo.
 
 ### 9.4 Escenarios y verificación (completar con resultados reales)
+
+> **Histórico (desactualizado).** Esta tabla es la plantilla de la etapa 9 y sus celdas «pendiente» **no reflejan el estado actual**: los escenarios se ejecutaron y cerraron en TEST en las secciones [§10](#10-resultado-real-del-corte-015-en-daubert_hub_test-2026-10-22) a [§15](#15-b1--omitir-históricos-ya-emitidos-sin-detener-el-lote--cerrado-e2e-real-en-n8n-test-2026-10-26) (corte 015, falla y recuperación, reproceso desde el Hub, regeneración comercial, B1 y reproceso con hijo único). La validación **en PRODUCCIÓN** de estos escenarios sigue pendiente de uso real; el estado vigente está en el [runbook de PROD](production-runbook.md#estado-vigente-2026-10-28-hub-110) y en [pendientes](../../00-overview/pending-and-roadmap.md). La tabla se conserva como referencia de casos de prueba.
 | Caso | Cómo | Esperado / verificación | Resultado real |
 |---|---|---|---|
 | Programación nueva | Excel nuevo en `00_…` | COMPLETADA; PDFs; `verify` PASS | pendiente |

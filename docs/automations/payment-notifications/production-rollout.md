@@ -1,6 +1,9 @@
 # Asignación puntual de archivos — puesta en PRODUCCIÓN
 
 Estado al **2026-10-22**: **desplegada y habilitada (fases A y B) en PRODUCCIÓN; pendiente de validar con el primer ZIP real.**
+
+> **Actualización 2026-10-28 (este documento es histórico a partir de aquí).** El workflow `pagosProdAsignaciones01` pasó de 108 a **111 nodos** el 2026-10-27 y se publicó el hijo `pagosProdRecuperacion01` (106 nodos); el Hub en PROD es `1.1.0` (`6909dc8`). El **primer ZIP real sigue sin validarse** y la recuperación no tiene ejecuciones en PROD. Estado vigente: [README](README.md#estado-vigente-2026-10-28-hub-110-implementado-probado-y-pendiente) y [pendientes](../../00-overview/pending-and-roadmap.md). Las cifras de 108 nodos y `1.0.6` de abajo describen el 2026-10-22.
+
 Todo lo marcado como *validado* se refiere únicamente al entorno indicado; **nada se ha probado todavía en PRODUCCIÓN con un comprobante real**.
 Sin secretos: solo se nombran variables, no sus valores. Contrato técnico de la función: [file-assignment-contract](file-assignment-contract.md). Operación diaria: [production-runbook](production-runbook.md#asignación-puntual-de-comprobantes).
 

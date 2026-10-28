@@ -1,8 +1,33 @@
 # Caterpillar — Runbook de PROD
 
+## Estado vigente (2026-10-28, Hub 1.1.0)
+
+> Esta sección manda sobre el resto del documento, que describe el estado del **2026-09-24** (despliegue 12C) y se conserva como **histórico** para el rollback y la verificación de 12C.
+
+| Elemento | Estado vigente | Evidencia |
+| --- | --- | --- |
+| Workflow activo en PROD | `catProd016Remisiones01` (62 nodos): Schedule cada 10 min y Webhook POST `cat-reprocess`; credencial PostgreSQL dedicada `Postgres produccion CAT (n8n_cat_prod)` (rol `n8n_cat_prod`, creado el 2026-10-27) | [despliegue conjunto](../../deployments/2026-10-27-hub-pagos-caterpillar-joint-prod.md) |
+| Workflows anteriores | `9Ngnrpi16b6GtOAX` (12C) inactivo y **conservado como rollback; nunca activo a la vez que el 016**. Los workflows `qe21HhdBcyjpYA67` y `G6DvdBTwqsQd3GPD` están archivados | ídem |
+| Hub | `1.1.0` / `6909dc8`: series, historial, detalle, errores, ajuste de folio (fase **12B**, ADMIN, con bitácora `operacion.ajustes_series`), reproceso, regeneración comercial y cancelación individual (todos `ADMIN`) | [hub/authorization](../../hub/authorization.md) · [nota 1.1.0](../../deployments/2026-10-28-hub-v1.1.0-prod.md) |
+| Migraciones en PROD | 009 (reproceso), 013 (cancelación) y 016 (admisión atómica, `SKIPPED_HISTORICAL`); **no** se aplicaron las `*_test` (014, 015, 017) | [database/migrations](../../database/migrations.md) |
+| Folios y duplicados | `UNIQUE(ejecucion_id, serie_id)`, reservas contiguas con `reservar_folios_para_ejecucion`, rechazo `PROGRAM_ALREADY_EMITTED` y omisión de históricos ya emitidos sin detener el lote; sin duplicados (validado en TEST y por las pruebas) | [database-contract](database-contract.md) · [automatic-admission](automatic-admission.md) |
+| Actividad reciente | **Implementada y verificada** (API, web, pruebas y verificación visual en PROD tras 1.1.0); ya no es un pendiente | [hub/automations](../../hub/automations.md) |
+| Validado en TEST, **no** en PROD | Admisión atómica con snapshot, reproceso con hijo único, regeneración comercial, cancelación individual e histórico B1 (E2E reales en n8n TEST, 2026-10-23/26). En PROD no hay aún uso real de ninguno | [integration-runbook-test-015](integration-runbook-test-015.md) §10-§15 |
+| **Primera emisión real tras 016** | **Pendiente de validación de negocio.** Los ciclos del Schedule terminan en «success», pero no hay evidencia de que haya emitido remisiones. Verificar con `apps/api/scripts/caterpillar-015-verify.cjs` (solo lectura) | [pendientes P-03](../../00-overview/pending-and-roadmap.md#3-implementado-pero-pendiente-de-validación-real-en-producción) |
+| **Error Workflow** | **No configurado** en el workflow de PRODUCCIÓN (Audi y Pagos sí lo tienen). Un fallo solo es visible en la ejecución de n8n y en el Hub | P-04 |
+| Procesos / plantas habilitados | **No reconfirmado.** Último estado verificado (2026-09-24): P2, P5 y P6 habilitados; P3, P4, NL FINSA 1/3 y Torreón/Planta 2 no. Depende de `PROCESOS_HABILITADOS_PROD` (duplicado en `Detectar archivos CAT1` y `Validar elegibilidad reproceso CAT`) y de `ops.automatizacion_series_proceso`. No dar por habilitada una ruta sin comprobarlo | P-13 |
+| TEST vs PROD | Difieren en rutas, credenciales, webhook y ámbito; la paridad funcional nodo a nodo **no está verificada** | [n8n-test-prod-drift](../n8n-test-prod-drift.md) |
+| Ejecuciones protegidas | Cinco ejecuciones `waiting` (672, 681, 685, 686, 689) de workflows archivados: no reanudar, reintentar ni borrar | nota conjunta |
+
+Seguimiento: [pendientes y hoja de ruta](../../00-overview/pending-and-roadmap.md).
+
+---
+
+# Histórico: despliegue 12C (2026-09-24)
+
 Fuentes: [nota de despliegue 12C](../../deployments/2026-09-24-caterpillar-12c-prod.md), migración 009 (repo), paquete Caterpillar 2026-09-21 (externo), código del Hub. **Sin secretos.** Los hechos "al 2026-09-24" son el estado registrado en la nota; verifica el estado actual antes de actuar.
 
-> **Corte 015 → PROD (016):** el paquete preparado (migración, rol dedicado, candidato n8n, inspección, ensayo y procedimiento de corte/recuperación) está en [prod-cutover-016.md](prod-cutover-016.md). Este runbook describe el estado vigente hasta ese corte.
+> **Corte 015 → PROD (016):** el paquete (migración, rol dedicado, candidato n8n, inspección, ensayo y procedimiento de corte/recuperación) está en [prod-cutover-016.md](prod-cutover-016.md) y **ya se aplicó el 2026-10-27**. Esta sección describe el estado hasta ese corte (**histórico**).
 
 ## Componentes en PROD
 
@@ -85,6 +110,8 @@ El primer `REPROCESS_CREATED` real en PROD se **difiere** hasta que exista una e
 - Un solo workflow activo.
 
 ## Operación (Fase D2, verificada contra el export)
+
+> **Histórico en cuanto al workflow:** los nombres y rutas de esta sección corresponden al workflow 12C `Remisiones CAT Produccion PG`. Desde el 2026-10-27 el activo es `catProd016Remisiones01`; las tareas de revisión (salud, input, output, reproceso, detener/reactivar) siguen siendo válidas sustituyendo ese nombre, y el riesgo «sin Error Workflow» sigue vigente.
 
 Workflow: `Remisiones CAT Produccion PG` ([export](../../../n8n/workflows/remisiones-caterpillar/prod/workflow.json)). Instancia n8n **compartida con TEST** (mismo `instanceId` en todos los exports): distingue siempre el nombre del workflow y su credencial.
 

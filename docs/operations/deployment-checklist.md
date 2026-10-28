@@ -157,6 +157,17 @@ Leyenda: **A** = automatizado por el preflight o por `Deploy-DaubertHub.ps1`; **
 | 6 | Revisar logs de `api` (`docker compose @cf logs --tail 100 api`) | M |
 | 7 | Registrar la nota en `docs/deployments/` y enlazarla desde su `README.md` | M |
 
+### Ventana con cierre de entradas (procedimiento usado en el release 1.1.0)
+
+Orden verificado el 2026-10-28 (detalle en la [nota](../deployments/2026-10-28-hub-v1.1.0-prod.md)); ejecutar desde `daubert-hub-deploy-main` en `main` y en el commit aprobado:
+
+1. Preflight (`Deploy-DaubertHub.ps1 -Preflight`) sin `FAIL`; respaldos PostgreSQL y n8n recientes con hash coincidente; anclas o `docker save` de rollback disponibles; un único operador de n8n durante la ventana (el cierre HTTP **no** bloquea ejecuciones manuales de n8n, CLI ni reintentos).
+2. `.\scripts\deploy\Set-EntryClosure.ps1 -Action Close` → debe terminar en `CLOSURE ACTIVE (verified)`.
+3. `.\scripts\deploy\Deploy-DaubertHub.ps1 -WhatIf -RequireClosedWindow` y después `-Deploy -RequireClosedWindow`. El script pide escribir `DEPLOY DAUBERT HUB` con `Read-Host`: requiere una consola interactiva (un `powershell.exe` hijo con la frase por stdin funciona desde un entorno no interactivo).
+4. Verificar `/api/health` (versión y commit esperados, `database: connected`).
+5. `Set-EntryClosure.ps1 -Action Reload` (refresca la resolución de `api:3000` tras recrear la API) → `RELOADED`.
+6. `Set-EntryClosure.ps1 -Action Open` → `CLOSURE OFF (verified)`; repetir health y humo. No declarar éxito con el cierre activo.
+
 ### ROLLBACK
 
 | # | Paso | A/M |

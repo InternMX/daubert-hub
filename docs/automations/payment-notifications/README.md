@@ -5,12 +5,27 @@ Documentado en la Fase D2 **a partir de los exports reales**. Los JSON **no est�
 | | |
 | --- | --- |
 | Código de automatización | `PAYMENT_NOTIFICATIONS` |
-| Workflow PROD | **`pagosProdAsignaciones01`** (v2, 108 nodos) — activo desde 2026-10-22; el anterior `3Dh72JJYROHtaw1X` (`Produccion Notificacion de pagos a Proveedores`, 100 nodos, versión `887c122b`) queda inactivo como rollback. El resto de este documento describe el export original de 100 nodos; el delta v2 está en [production-rollout](production-rollout.md) |
+| Workflow PROD | Padre **`pagosProdAsignaciones01`** (**111 nodos** desde el 2026-10-27; 108 desde el 2026-10-22) e hijo de recuperación **`pagosProdRecuperacion01`** (106 nodos), ambos publicados; el anterior `3Dh72JJYROHtaw1X` (`Produccion Notificacion de pagos a Proveedores`, 100 nodos) queda inactivo como rollback y **no debe activarse**. El resto de este documento describe el export original de 100 nodos; el delta v2 está en [production-rollout](production-rollout.md) y la recuperación en [payment-file-recovery-promotion](payment-file-recovery-promotion.md) |
 | Workflow TEST | `Test Notificacion de pagos a Proveedores` — inactivo al exportar, 100 nodos |
 | Disparos | **Automático:** `Schedule Trigger` → `Obtener correos Outlook` (sondeo del buzón; intervalo sin valor explícito en el export) · **Manual:** `Reprocesar correo manual` · **Hub:** webhook `POST daubert-hub/notificaciones-pago/reprocesar` |
 | Credenciales | `Postgres produccion` / `Postgres pruebas`; `Outlook LOGIN OAUT2` (**la misma en TEST y PROD**); `Daubert Hub - n8n PROD` / `… TEST` (Header Auth del webhook) |
 | Error Workflow | PROD: `ERROR - NOTIFICACIONES DE PAGO`, **activo en PRODUCCIÓN**; el workflow de Pagos lo referencia por ID. Pendiente real: su exportación **no está versionada** en el repositorio. TEST: ninguno |
 | Hub | Dashboard, detalle, **reproceso** (`POST /api/automations/payment-notifications/:executionId/reprocess`, sin restricción de rol), acuses de revisión y **configuración por empresa** ([company-configuration](company-configuration.md)) |
+
+## Estado vigente (2026-10-28, Hub 1.1.0): implementado, probado y pendiente
+
+| Capacidad | Implementado | Probado | Pendiente |
+| --- | --- | --- | --- |
+| Sondeo automático del buzón y procesamiento de un correo por ejecución | Sí (por sondeo, no por evento) | Flujo v1 en PROD desde 2026-09; v2 en TEST | Retraso aceptable no definido (P-11) |
+| Procesamiento del ZIP: descompresión, extracción de fecha, clasificación por catálogo, borradores de Outlook (no envía a proveedores; solo el resumen interno) | Sí (111 nodos) | TEST y PROD con el flujo v1 | **Primer ZIP real con el workflow de 111 nodos en PROD: no validado** (P-01) |
+| Asignación de proveedores (alias permanentes y asignación puntual por archivo) | Sí | Alias en PROD; asignación puntual 18/18 en TEST aislado | Asignación puntual con datos reales en PROD |
+| Gestión de destinatarios y ruta desde el Hub | Sí ([company-configuration](company-configuration.md)) | PROD (2026-09-25) | Sin auditoría de cambios (P-07); accesible a `GENERAL` (P-09) |
+| Incidencias y reproceso desde el Hub | Sí (`fileErrors`, «Archivos que requieren atención», reproceso, sin restricción de rol) | v1 en PROD | Reproceso del flujo v2 con datos reales |
+| Recuperación individual de archivos (migración 019 + hijo `pagosProdRecuperacion01`) | Sí, publicado | Ensayos en TEST ([file-recovery-rehearsal](file-recovery-rehearsal.md)) | **0 ejecuciones del hijo en PROD** (P-02) |
+| Actividad reciente | Sí | A + T + P | — |
+| Error Workflow `ERROR - NOTIFICACIONES DE PAGO` | Activo en PROD | — | Su export no está versionado (P-15) |
+
+Los correos 44, 38 y 45 están protegidos: no tocarlos. Detalle de pendientes: [pendientes y hoja de ruta](../../00-overview/pending-and-roadmap.md).
 
 ## Propósito
 

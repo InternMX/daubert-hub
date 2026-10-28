@@ -1,5 +1,7 @@
 # Propuesta: vulnerabilidades npm de producción (API) – 2026-10-27
 
+> **Estado 2026-10-28: aplicada** en el PR #20 (commit `6909dc8`) y desplegada con Hub 1.1.0: `npm audit --omit=dev` pasó de 4 vulnerabilidades a 0 ([nota](2026-10-28-hub-v1.1.0-prod.md)). El texto siguiente es histórico.
+
 **Propuesta, no aplicada.** No se modificó `package.json` ni `package-lock.json` de esta rama por este motivo. Las pruebas se hicieron en una copia desechable fuera del repositorio. Complementa [la nota del despliegue conjunto](2026-10-27-hub-pagos-caterpillar-joint-prod.md#advertencias-de-dependencias-npm).
 
 ## Alcance
