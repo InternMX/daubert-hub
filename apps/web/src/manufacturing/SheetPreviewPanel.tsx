@@ -48,7 +48,8 @@ interface SheetPreviewPanelProps {
   context?: BindReviewContext;
   /** Incidencias vigentes que afectan directamente la representación del documento (valor que no se imprime, texto que puede desbordarse…). Los datos faltantes vienen de la respuesta. */
   avisos?: Incidencia[];
-  onAssessment?: (result: SheetPreviewResponse | null, key: string) => void;
+  /** `result` null: la revisión de estos datos está en curso (`estado` ausente) o no pudo obtenerse (`estado` = 'error'). */
+  onAssessment?: (result: SheetPreviewResponse | null, key: string, estado?: 'error') => void;
 }
 
 export function SheetPreviewPanel({ family, familyLabel, data, context, avisos = [], onAssessment }: SheetPreviewPanelProps) {
@@ -79,6 +80,7 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, avisos =
       }).catch((error: unknown) => {
         if (current !== sequence.current || (error instanceof DOMException && error.name === 'AbortError')) return;
         setStatus('error'); setErrorKind(error instanceof SheetPreviewError ? error.kind : 'NETWORK');
+        assessmentCallback.current?.(null, payloadKey, 'error');
       });
     }, PREVIEW_DEBOUNCE_MS);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -113,7 +115,7 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, avisos =
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>Borrador sin aprobar: no es una hoja emitida ni lleva firmas reales. Los datos solo existen en memoria.</Typography>
 
       <div ref={container}>
-        {!family && <Alert severity="info">Selecciona la familia (Bolsa Plana 1 u Hojas) para ver la vista previa con su plantilla.</Alert>}
+        {!family && <Alert severity="info">Selecciona la familia de manufactura para ver la vista previa con su plantilla.</Alert>}
         {family && status === 'error' && errorKind && <Alert severity="error" sx={{ mb: 1.5 }}>{errorTexts[errorKind]}</Alert>}
         {family && actual?.bloqueado && <Alert severity="error" data-testid="preview-blocked">{actual.bloqueado} No se muestra un documento para no producir una hoja engañosa.</Alert>}
         {family && result && !result.bloqueado && <SheetFrame html={result.html} scale={scale} title={`Vista previa de la hoja ${familyLabel}`} incomplete={!result.completo} />}

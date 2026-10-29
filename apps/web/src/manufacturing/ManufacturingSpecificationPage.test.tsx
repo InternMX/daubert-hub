@@ -670,8 +670,8 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     const ids = items.map((e) => e.getAttribute('data-incidencia-id'));
     expect(new Set(ids).size).toBe(ids.length);
     const unidad = items.find((e) => e.getAttribute('data-incidencia-id') === 'FALTANTE:unidadDimensiones')!;
-    await user.click(within(unidad).getByRole('button', { name: 'Ir' }));
-    expect(frameOf('Unidad de las medidas').contains(document.activeElement)).toBe(true);
+    await user.click(within(unidad).getByRole('button', { name: /^Ir a: / }));
+    await waitFor(() => expect(frameOf('Unidad de las medidas').contains(document.activeElement)).toBe(true));
     // corregir el dato elimina la incidencia en todos los lugares
     await user.click(screen.getByRole('combobox', { name: /Unidad de las medidas/ }));
     await user.click(await screen.findByRole('option', { name: /Pulgadas/ }));
@@ -741,5 +741,111 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
     expect(screen.queryByLabelText('Cantidad por rollo o paquete')).not.toBeInTheDocument();
     expect(screen.queryByText(/no indica la cantidad de bolsas u hojas/)).not.toBeInTheDocument();
+  });
+
+  it('H1 (escenario 12): mientras no hay respuesta vigente el resumen dice «Revisando…» y nunca «Sin incidencias»; al llegar la respuesta se muestra su resultado', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    let resolver: (r: unknown) => void = () => undefined;
+    previewMock.mockImplementation(() => new Promise((resolve) => { resolver = resolve as never; }));
+    renderPage();
+    await buscar(user);
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    await waitFor(() => expect(previewMock).toHaveBeenCalled(), { timeout: 3000 });
+    expect(screen.getByTestId('resumen-revisando')).toHaveTextContent('Revisando…');
+    expect(screen.queryByTestId('resumen-vacio')).not.toBeInTheDocument();
+    // una contradicción que solo conoce el backend aparece cuando llega la respuesta vigente, y el estado desaparece
+    await act(async () => { resolver({ ...completa, incidencias: [{ id: 'COLOR_AZUL:colorPreset', codigo: 'COLOR_AZUL', nivel: 'CONTRADICCION', campos: ['colorPreset'], seccion: 'color', mensaje: 'COLOR VIGENTE', origen: 'TITLE', afectaVistaPrevia: false, reconocible: true }] }); await Promise.resolve(); });
+    await waitFor(() => expect(screen.queryByTestId('resumen-revisando')).not.toBeInTheDocument());
+    expect(screen.getByTestId('resumen-CONTRADICCION')).toBeInTheDocument();
+    expect(screen.queryByTestId('resumen-vacio')).not.toBeInTheDocument();
+    // un cambio posterior vuelve a «Revisando…» y retira los avisos de la solicitud anterior
+    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    expect(screen.getByTestId('resumen-revisando')).toBeInTheDocument();
+    expect(screen.queryByText('COLOR VIGENTE')).not.toBeInTheDocument();
+  });
+
+  it('H1: si la revisión del backend falla no se afirma «Sin incidencias»: se informa que no está disponible', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    previewMock.mockRejectedValue(new Error('x'));
+    renderPage();
+    await buscar(user);
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    expect(await screen.findByTestId('resumen-no-disponible', {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.queryByTestId('resumen-vacio')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resumen-revisando')).not.toBeInTheDocument();
+  });
+
+  it('H4: «Ir» revela el aviso concreto aunque no se haya validado, lo asocia al campo (aria-describedby), lo enfoca y el botón nombra la incidencia', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(casoB());
+    renderPage();
+    await buscar(user, 'PRUEBA58X43');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+    expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(0);                                   // oculto hasta validar o navegar
+    await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    await user.click(screen.getByRole('button', { name: /^Ir a: .*unidad/i }));
+    await waitFor(() => expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(1));
+    const mensaje = deId('FALTANTE:unidadDimensiones')[0] as HTMLElement;
+    await waitFor(() => expect(frameOf('Unidad de las medidas').contains(document.activeElement)).toBe(true));
+    expect((document.activeElement as HTMLElement).getAttribute('aria-describedby') ?? '').toContain(mensaje.id);
+    expect(frameOf('Unidad de las medidas').contains(mensaje)).toBe(true);
+    // solo se reveló el aviso al que se navegó: los demás datos faltantes siguen ocultos
+    expect(screen.queryAllByTestId('incidencia').filter((e) => e.getAttribute('data-incidencia-id')?.startsWith('FALTANTE:') && e !== mensaje)).toHaveLength(0);
+  });
+});
+
+describe('ManufacturingSpecificationPage · Bolsa Natural sugiere NATURAL', { timeout: 30_000 }, () => {
+  const ultimoPreview = () => previewMock.mock.calls.at(-1)![1];
+  const elegirFamilia = async (user: ReturnType<typeof userEvent.setup>, nombre: string) => { await user.click(screen.getByRole('radio', { name: nombre })); };
+  const marcoColor = () => screen.getByRole('combobox', { name: /^Color/ }).closest('div.MuiBox-root') as HTMLElement;
+
+  it('búsqueda y cambio de familia: un producto PMG (azul por defecto) pasa a NATURAL sin heredar azul ni el 2 %, y la vista previa imprime NATURAL', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    renderPage();
+    await buscar(user, 'FUELLE61');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(campo('Texto del color en el documento').value).toMatch(/DAUBERT AZUL/);
+    await elegirFamilia(user, 'Bolsa Natural');
+    expect(campo('Texto del color en el documento').value).toBe('NATURAL');
+    expect(campo('Concentración del color (%)').value).toBe('');
+    expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(255, 242, 204)' });
+    await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Natural').getAttribute('srcdoc')).toContain('color=NATURAL|#FFF2CC'), { timeout: 3000 });
+    expect(ultimoPreview()).toMatchObject({ colorNombre: 'NATURAL', colorHex: '#FFF2CC', composicion: 'NAT' });
+    await elegirFamilia(user, 'Bolsa Fuelle');                                                      // y de regreso: el azul y su 2 % vuelven solos
+    expect(campo('Texto del color en el documento').value).toMatch(/DAUBERT AZUL AL 2%/);
+  });
+
+  it('edición manual y restauración: el color elegido se respeta al cambiar de familia y «Restaurar» vuelve a NATURAL', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    renderPage();
+    await buscar(user, 'FUELLE61');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await elegirFamilia(user, 'Bolsa Natural');
+    await user.click(screen.getByRole('combobox', { name: /^Color/ }));
+    await user.click(await screen.findByRole('option', { name: /^Verde/ }));
+    expect(campo('Texto del color en el documento').value).toBe('VERDE');
+    await elegirFamilia(user, 'Bolsa Fuelle');
+    expect(campo('Texto del color en el documento').value).toBe('VERDE');                           // no se sobrescribe
+    await elegirFamilia(user, 'Bolsa Natural');
+    await user.click(within(marcoColor()).getByRole('button', { name: 'Restaurar Color' }));
+    expect(campo('Texto del color en el documento').value).toBe('NATURAL');
+    expect(campo('Concentración del color (%)').value).toBe('');
+  });
+
+  it('contradicción con BIND: el aviso del backend (BIND indica otro color) se muestra una vez y no se oculta', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(bolsaNatural());
+    previewMock.mockResolvedValue({ html: '<p>x</p>', familia: 'BOLSA_NATURAL', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null,
+      incidencias: [{ id: 'COLOR_AZUL:colorPreset', codigo: 'COLOR_AZUL', nivel: 'CONTRADICCION', campos: ['colorPreset'], seccion: 'color', mensaje: 'BIND indica color AZUL, pero Bolsa Natural sugiere NATURAL.', origen: 'TITLE', afectaVistaPrevia: false, reconocible: true }] });
+    renderPage();
+    await buscar(user, 'NAT61');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    await waitFor(() => expect(screen.getAllByText(/Bolsa Natural sugiere NATURAL/)).toHaveLength(1), { timeout: 3000 });
+    expect(screen.getByTestId('resumen-CONTRADICCION')).toHaveTextContent('1 contradicción');
   });
 });

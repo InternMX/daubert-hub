@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Chip, Collapse, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Collapse, Paper, Stack, Typography } from '@mui/material';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { FieldKey } from '../services/manufacturingFamilies';
 import { anclaDe, estaReconocida, NIVEL_ETIQUETA, ORDEN_NIVEL, resumir, SECCION_ETIQUETA, type Incidencia, type NivelIncidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
@@ -19,6 +19,11 @@ interface IncidenciasContexto {
   deshacer: (i: Incidencia) => void;
   /** Tras pulsar «Validar especificación» también se muestran los datos faltantes en su campo. */
   validado: boolean;
+  /** Ids de las incidencias a las que el usuario navegó con «Ir»: su aviso concreto se muestra aunque aún no haya validado. */
+  reveladas: ReadonlySet<string>;
+  revelar: (id: string) => void;
+  /** Estado de la revisión del backend: mientras no hay respuesta vigente no se afirma que no hay incidencias. */
+  revision: 'vigente' | 'revisando' | 'no-disponible';
 }
 
 const Contexto = createContext<IncidenciasContexto | null>(null);
@@ -32,12 +37,13 @@ const colorDe = (nivel: NivelIncidencia): 'error' | 'warning.main' | 'text.secon
 
 // Los datos faltantes no se marcan en rojo hasta que el usuario valida (el resumen ya los cuenta); un valor no válido sí se señala al escribirlo.
 const SE_MUESTRAN_AL_VALIDAR = new Set(['FALTANTE', 'FAMILIA_SIN_ELEGIR']);
-const seMuestra = (i: Incidencia, validado: boolean): boolean => !CON_CONTROL_PROPIO.has(i.codigo) && (!SE_MUESTRAN_AL_VALIDAR.has(i.codigo) || validado);
+const seMuestra = (i: Incidencia, ctx: IncidenciasContexto): boolean => !CON_CONTROL_PROPIO.has(i.codigo) && (!SE_MUESTRAN_AL_VALIDAR.has(i.codigo) || ctx.validado || ctx.reveladas.has(i.id));
+const idMensaje = (id: string): string => `incidencia-${id.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
 export function MensajeIncidencia({ incidencia, ctx }: { incidencia: Incidencia; ctx: IncidenciasContexto }) {
   const reconocida = estaReconocida(incidencia, ctx.valores, ctx.reconocidas);
   return (
-    <Box data-testid="incidencia" data-incidencia-id={incidencia.id} data-nivel={incidencia.nivel} sx={{ mt: 0.5 }}>
+    <Box id={idMensaje(incidencia.id)} data-testid="incidencia" data-incidencia-id={incidencia.id} data-nivel={incidencia.nivel} sx={{ mt: 0.5 }}>
       <Typography variant="caption" display="block" role={incidencia.nivel === 'ERROR' ? 'alert' : undefined} sx={{ color: reconocida ? 'text.secondary' : colorDe(incidencia.nivel) }}>
         {reconocida ? 'Diferencia reconocida para este borrador: ' : ''}{incidencia.mensaje}
       </Typography>
@@ -52,7 +58,7 @@ export function MensajeIncidencia({ incidencia, ctx }: { incidencia: Incidencia;
 export function IncidenciasDeCampo({ campo }: { campo: FieldKey }) {
   const ctx = useIncidencias();
   if (!ctx) return null;
-  const propias = ctx.lista.filter((i) => seMuestra(i, ctx.validado) && (() => { const ancla = anclaDe(i, ctx.visible); return ancla.tipo === 'campo' && ancla.campo === campo; })());
+  const propias = ctx.lista.filter((i) => seMuestra(i, ctx) && (() => { const ancla = anclaDe(i, ctx.visible); return ancla.tipo === 'campo' && ancla.campo === campo; })());
   return <>{propias.map((i) => <MensajeIncidencia key={i.id} incidencia={i} ctx={ctx} />)}</>;
 }
 
@@ -60,7 +66,7 @@ export function IncidenciasDeCampo({ campo }: { campo: FieldKey }) {
 export function IncidenciasDeSeccion({ seccion, omitir = [] }: { seccion: SeccionIncidencia; omitir?: string[] }) {
   const ctx = useIncidencias();
   if (!ctx) return null;
-  const propias = ctx.lista.filter((i) => seMuestra(i, ctx.validado) && !omitir.includes(i.codigo) && (() => { const ancla = anclaDe(i, ctx.visible); return ancla.tipo === 'seccion' && ancla.seccion === seccion; })());
+  const propias = ctx.lista.filter((i) => seMuestra(i, ctx) && !omitir.includes(i.codigo) && (() => { const ancla = anclaDe(i, ctx.visible); return ancla.tipo === 'seccion' && ancla.seccion === seccion; })());
   if (propias.length === 0) return null;
   return (
     <Stack spacing={0.5} sx={{ mt: 1.5 }} aria-label={`Incidencias de ${SECCION_ETIQUETA[seccion]}`} data-testid={`incidencias-${seccion}`}>
@@ -68,7 +74,7 @@ export function IncidenciasDeSeccion({ seccion, omitir = [] }: { seccion: Seccio
         const reconocida = estaReconocida(i, ctx.valores, ctx.reconocidas);
         return i.nivel === 'ERROR' || (i.nivel === 'CONTRADICCION' && !reconocida)
           ? (
-            <Alert key={i.id} severity={i.nivel === 'ERROR' ? 'error' : 'warning'} variant="outlined" data-testid="incidencia" data-incidencia-id={i.id} data-nivel={i.nivel}
+            <Alert key={i.id} id={idMensaje(i.id)} severity={i.nivel === 'ERROR' ? 'error' : 'warning'} variant="outlined" data-testid="incidencia" data-incidencia-id={i.id} data-nivel={i.nivel}
               action={i.reconocible ? <Button size="small" color="inherit" onClick={() => ctx.reconocer(i)}>Reconocer</Button> : undefined}>{i.mensaje}</Alert>
           )
           : <MensajeIncidencia key={i.id} incidencia={i} ctx={ctx} />;
@@ -77,13 +83,25 @@ export function IncidenciasDeSeccion({ seccion, omitir = [] }: { seccion: Seccio
   );
 }
 
-function localizar(i: Incidencia, visible: (key: FieldKey) => boolean): void {
-  const ancla = anclaDe(i, visible);
-  const destino = ancla.tipo === 'campo'
-    ? document.querySelector<HTMLElement>(`[data-field="${ancla.campo}"]`)
-    : document.querySelector<HTMLElement>(`section[aria-label="${SECCION_ETIQUETA[ancla.seccion]}"]`);
-  destino?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-  destino?.querySelector<HTMLElement>('input:not([type=hidden]), textarea, [role=combobox], [role=radio]')?.focus({ preventScroll: true });
+/** Lleva al usuario al problema: muestra su aviso concreto, desplaza la pantalla, enfoca el control y lo asocia con el mensaje (aria-describedby). */
+function localizar(i: Incidencia, ctx: IncidenciasContexto): void {
+  ctx.revelar(i.id);
+  const ancla = anclaDe(i, ctx.visible);
+  const mover = (): void => {
+    const destino = ancla.tipo === 'campo'
+      ? document.querySelector<HTMLElement>(`[data-field="${ancla.campo}"]`)
+      : document.querySelector<HTMLElement>(`section[aria-label="${SECCION_ETIQUETA[ancla.seccion]}"]`);
+    destino?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    const control = destino?.querySelector<HTMLElement>('input:not([type=hidden]), textarea, [role=combobox], [role=radio]');
+    const mensaje = document.getElementById(idMensaje(i.id));
+    if (control && mensaje) {
+      const previos = (control.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+      if (!previos.includes(mensaje.id)) control.setAttribute('aria-describedby', [...previos, mensaje.id].join(' '));
+    }
+    control?.focus({ preventScroll: true });
+  };
+  // El aviso se monta tras el siguiente renderizado: se espera a que exista antes de asociarlo y enfocar.
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(mover)); else setTimeout(mover, 0);
 }
 
 /** Resumen de validación: incidencias ÚNICAS por severidad (sin repetir los mensajes) y botones para localizar el campo o la sección. */
@@ -99,7 +117,9 @@ export function ResumenIncidencias({ lista, ctx }: { lista: Incidencia[]; ctx: I
     <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, mt: 2 }} aria-label="Resumen de validación" data-testid="resumen-incidencias">
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Revisión del borrador</Typography>
-        {cuenta.total === 0 && <Chip size="small" color="success" variant="outlined" label="Sin incidencias" data-testid="resumen-vacio" />}
+        {ctx.revision === 'revisando' && <Chip size="small" variant="outlined" icon={<CircularProgress size={12} />} label="Revisando…" role="status" data-testid="resumen-revisando" />}
+        {ctx.revision === 'no-disponible' && <Chip size="small" color="warning" variant="outlined" label="Revisión técnica no disponible" data-testid="resumen-no-disponible" />}
+        {cuenta.total === 0 && ctx.revision === 'vigente' && <Chip size="small" color="success" variant="outlined" label="Sin incidencias" data-testid="resumen-vacio" />}
         {chip('ERROR', 'error')}{chip('CONTRADICCION', 'warning')}{chip('PENDIENTE', 'warning')}{chip('INFORMACION', 'default')}
         {cuenta.reconocidas > 0 && <Chip size="small" variant="outlined" label={`${cuenta.reconocidas} reconocida${cuenta.reconocidas === 1 ? '' : 's'}`} data-testid="resumen-reconocidas" />}
         {pendientesDeRevisar.length > 0 && <Button size="small" onClick={() => setAbierto((v) => !v)} sx={{ ml: 'auto' }} aria-expanded={abierto}>{abierto ? 'Ocultar detalle' : 'Ver detalle'}</Button>}
@@ -109,7 +129,7 @@ export function ResumenIncidencias({ lista, ctx }: { lista: Incidencia[]; ctx: I
           {pendientesDeRevisar.map((i) => (
             <Stack component="li" key={i.id} direction="row" spacing={1} alignItems="baseline" data-testid="resumen-item" data-incidencia-id={i.id}>
               <Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: colorDe(i.nivel) }}>{i.resumen ?? i.mensaje}</Typography>
-              <Button size="small" onClick={() => localizar(i, ctx.visible)} sx={{ minWidth: 0 }}>Ir</Button>
+              <Button size="small" onClick={() => localizar(i, ctx)} sx={{ minWidth: 0 }} aria-label={`Ir a: ${i.resumen ?? i.mensaje}`}>Ir</Button>
             </Stack>
           ))}
         </Stack>

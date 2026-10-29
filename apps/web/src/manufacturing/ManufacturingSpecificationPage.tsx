@@ -213,6 +213,8 @@ export function ManufacturingSpecificationPage() {
   const [reviewedKey, setReviewedKey] = useState('');
   const [reviewWeights, setReviewWeights] = useState(false);
   const [reconocidas, setReconocidas] = useState<Reconocimientos>({});
+  const [reveladas, setReveladas] = useState<ReadonlySet<string>>(new Set());
+  const [fallo, setFallo] = useState('');
   const controller = useRef<AbortController | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
@@ -232,6 +234,8 @@ export function ManufacturingSpecificationPage() {
     setReviewedKey('');
     setReviewWeights(false);
     setReconocidas({});
+    setReveladas(new Set());
+    setFallo('');
     if (!BIND_CODE_PATTERN.test(code.trim())) {
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
@@ -313,7 +317,9 @@ export function ManufacturingSpecificationPage() {
   const avisosVistaPrevia = todas.filter((i) => i.afectaVistaPrevia && i.codigo !== 'FALTANTE' && !estaReconocida(i, valores, reconocidas));
   const reconocer = (i: Incidencia): void => setReconocidas((r) => ({ ...r, [i.id]: huella(i, valores) }));
   const deshacer = (i: Incidencia): void => setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id)));
-  const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: validation !== null };
+  const revision: 'vigente' | 'revisando' | 'no-disponible' = !form?.family || currentAssessment ? 'vigente' : fallo === assessmentKey ? 'no-disponible' : 'revisando';
+  const revelar = (id: string): void => setReveladas((r) => (r.has(id) ? r : new Set(r).add(id)));
+  const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: validation !== null, reveladas, revelar, revision };
   const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO' && sinReconocer.length === 0;
   const colorPreset = form?.fields.colorPreset.value ?? '';
   const colorSwatch = (hex: string) => <Box aria-label="Muestra del color" role="img" data-testid="color-swatch" sx={{ width: 32, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : 'transparent', flexShrink: 0 }} />;
@@ -507,7 +513,7 @@ export function ManufacturingSpecificationPage() {
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
           <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData} avisos={avisosVistaPrevia}
             context={previewContext}
-            onAssessment={(result, key) => setAssessment(result ? { key, result } : null)} />
+            onAssessment={(result, key, estado) => { setAssessment(result ? { key, result } : null); setFallo(estado === 'error' ? key : ''); }} />
         </Box>
         </Box>
       )}
