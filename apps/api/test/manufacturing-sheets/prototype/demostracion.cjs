@@ -9,6 +9,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { interpretarProductoBind, sugerirEspecificacion, sugerirDatosPlantilla } = require('../../../dist/src/manufacturing-sheets/bind-product-interpreter');
 const { configuracionFamilias } = require('../../../dist/src/manufacturing-sheets/preview/family-registry');
+const { clasificarNovedad } = require('../../../dist/src/manufacturing-sheets/bind/recent-products');
 const { SheetPreviewService } = require('../../../dist/src/manufacturing-sheets/preview/sheet-preview.service');
 const ROOT = path.resolve(__dirname, '../../../../..');
 const WEB = path.join(ROOT, 'apps/web/dist');
@@ -30,6 +31,11 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://127.0.0.1');
     if (url.pathname === '/api/auth/me') return json(res, 200, { data: { user: { id: 'demo-local', displayName: 'DEMOSTRACIÓN SIMULADA', email: 'demo@example.invalid', role: 'GENERAL', status: 'ACTIVE', mustChangePassword: false } } });
+    if (url.pathname === '/api/manufacturing-sheets/bind-products/recent') {
+      // Novedades SIMULADAS: los mismos fixtures, con fechas de alta sintéticas descendentes, clasificados por el módulo real (no se consulta BIND).
+      const items = productos.map((p, i) => clasificarNovedad({ ...p, CreationDate: new Date(Date.UTC(2026, 9, 28 - i * 2, 15, 0, 0)).toISOString().slice(0, 19) }));
+      return json(res, 200, { data: { items, skip: 0, limit: 30, nextSkip: null, orden: 'CreationDate desc', generadoEn: new Date().toISOString(), desdeCache: false } });
+    }
     if (url.pathname === '/api/manufacturing-sheets/families') return json(res, 200, { data: configuracionFamilias() });
     if (url.pathname.startsWith('/api/manufacturing-sheets/bind-products/by-code/')) {
       const p = productos.find((p) => p.Code === decodeURIComponent(url.pathname.split('/').at(-1)));
