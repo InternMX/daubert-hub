@@ -21,6 +21,8 @@ export interface SugerenciaFamilia {
   motivo: string;
   /** Familias que los datos de BIND contradicen (para advertir si el usuario las elige). */
   incompatibles: FamiliaIncompatible[];
+  /** El producto es válido en BIND pero ninguna plantilla del prototipo le corresponde (papel, tubo): no es una familia por confirmar. */
+  sinPlantilla?: true;
 }
 
 export interface SugerenciaTexto {
@@ -79,18 +81,18 @@ function sugerirFamilia(r: ResultadoInterpretacion, t: string): SugerenciaFamili
   const dimensiones3 = /\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+(?:[.,]\d+)?\s*"?\s*X\s*\d+/.test(t);
   const fuelle = FUELLE.test(t) || (tipo.valor === 'BOLSA' && dimensiones3);
   const incompatiblesExcepto = (familia: FamiliaPosible, motivo: string): FamiliaIncompatible[] => todas.filter((f) => f !== familia).map((f) => ({ familia: f, motivo }));
-  const pendiente = (motivo: string, incompatibles: FamiliaIncompatible[] = []): SugerenciaFamilia => ({ valor: null, motivo, incompatibles });
+  const pendiente = (motivo: string, incompatibles: FamiliaIncompatible[] = [], sinPlantilla = false): SugerenciaFamilia => ({ valor: null, motivo, incompatibles, ...(sinPlantilla ? { sinPlantilla: true as const } : {}) });
   // Solo se sugiere una familia que el prototipo ya tiene habilitada (el registro es la fuente de verdad).
   const sugerida = (familia: FamiliaPosible, motivo: string, incompatibles: FamiliaIncompatible[]): SugerenciaFamilia => (
     (FAMILY_CODES as string[]).includes(familia) ? { valor: familia, motivo, incompatibles } : pendiente(`${motivo} ${NOMBRES[familia]} todavía no está disponible en el prototipo: elige la familia manualmente.`, incompatibles)
   );
 
   const esPapel = tipo.valor === 'PAPEL' || (material.valor === 'PAPEL' && material.procedencia !== 'CONTRADICCION');
-  if (esPapel) return pendiente(`Producto de papel${r.campos.claveMaterial.valor?.startsWith('PW') ? ` (clave ${r.campos.claveMaterial.valor}${material.procedencia === 'CODE' ? ', inferida del código' : ''})` : ''}: no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; no se asigna ninguna plantilla plástica.`, incompatiblesExcepto('COEX', 'Es un producto de papel.').concat([{ familia: 'COEX', motivo: 'Es un producto de papel.' }]));
+  if (esPapel) return pendiente(`Producto de papel${r.campos.claveMaterial.valor?.startsWith('PW') ? ` (clave ${r.campos.claveMaterial.valor}${material.procedencia === 'CODE' ? ', inferida del código' : ''})` : ''}: no hay una plantilla de papel disponible en este prototipo. El producto es válido en BIND; no se asigna ninguna plantilla plástica.`, incompatiblesExcepto('COEX', 'Es un producto de papel.').concat([{ familia: 'COEX', motivo: 'Es un producto de papel.' }]), true);
   if (TERMO.test(t)) return sugerida('TERMOENCOGIBLE', 'El título indica material termoencogible.', incompatiblesExcepto('TERMOENCOGIBLE', 'El título indica termoencogible.'));
   if (COEX.test(t)) return sugerida('COEX', 'El título indica coextrusión.', incompatiblesExcepto('COEX', 'El título indica coextrusión.'));
   if (ROLLO_CONTINUO.test(t)) return sugerida('ROLLO_CONTINUO', 'El título indica rollo continuo.', incompatiblesExcepto('ROLLO_CONTINUO', 'El título indica rollo continuo.'));
-  if (OTRA_FORMA.test(t)) return pendiente('El título menciona tubo: no corresponde a una familia disponible; elige la familia manualmente.', todas.map((f) => ({ familia: f, motivo: 'El título menciona tubo.' })));
+  if (OTRA_FORMA.test(t)) return pendiente('El título menciona tubo: no corresponde a una familia disponible; elige la familia manualmente.', todas.map((f) => ({ familia: f, motivo: 'El título menciona tubo.' })), true);
   if (r.advertencias.some((a) => a.codigo === 'TIPO_AMBIGUO')) return pendiente('El título menciona varios tipos de producto: elige la familia manualmente.');
   if (tipo.valor === null) return pendiente('El título no indica si el producto es una bolsa o una hoja: elige la familia manualmente.');
   if (resina.origen !== 'PENDIENTE' && (resina.valor === 'ESD' || resina.valor === 'XOW')) return pendiente(`La resina ${resina.valor} no tiene casilla de Composición en las familias disponibles: elige la familia manualmente.`);

@@ -28,6 +28,13 @@ export type BindLookupResult =
   | { kind: 'NETWORK_ERROR' }
   | { kind: 'INVALID_RESPONSE' };
 
+/** Novedades: una sola página de BIND ordenada por fecha de alta descendente, con orden verificado. */
+export type BindRecentResult = { kind: 'RECENT'; products: BindProductRaw[] } | Exclude<BindLookupResult, { kind: 'RESULTS' }>;
+
+/** Límites que BIND acepta ($top máximo 100, comprobado con la API real) y que el Hub se impone para no recorrer el catálogo. */
+export const BIND_RECENT_MAX_TOP = 100;
+export const BIND_RECENT_MAX_SKIP = 500;
+
 export interface BindClientOptions {
   timeoutMs: number;
   totalTimeoutMs: number;
@@ -77,6 +84,33 @@ export class BindErpClient {
     if (!isValidBindCode(code)) return { kind: 'BAD_REQUEST' };
     const buscado = code.trim().toLowerCase();
     return this.lookup(`Code eq '${code}'`, (p) => p.Code.trim().toLowerCase() === buscado);
+  }
+
+  /**
+   * Productos más recientes: `$orderby=CreationDate desc&$top=N&$skip=M` (sintaxis comprobada con la API real de BIND; `$top` máximo 100). Una sola página por llamada, nunca
+   * se descarga el catálogo. Si BIND no devolviera la página realmente ordenada por fecha de alta, el resultado es INVALID_RESPONSE: no se presentan productos como «recientes»
+   * sin poder comprobarlo.
+   */
+  async listRecent(skip: number, top: number): Promise<BindRecentResult> {
+    if (!Number.isInteger(skip) || !Number.isInteger(top) || skip < 0 || skip > BIND_RECENT_MAX_SKIP || top < 1 || top > BIND_RECENT_MAX_TOP) return { kind: 'BAD_REQUEST' };
+    const { baseUrl, apiKey, subscriptionKey } = this.config.get('bind', { infer: true });
+    if (!apiKey) return { kind: 'NOT_CONFIGURED' };
+    const base = new URL(baseUrl);
+    const headers: Record<string, string> = { Accept: 'application/json', Authorization: `Bearer ${apiKey}` };
+    if (subscriptionKey) headers['Ocp-Apim-Subscription-Key'] = subscriptionKey;
+    const url = `${base.origin}${PRODUCTS_PATH}?$orderby=${encodeURIComponent('CreationDate desc')}&$top=${top}&$skip=${skip}`;
+    const page = await this.requestWithRetries(url, headers, Date.now() + this.options.totalTimeoutMs);
+    if (page.kind !== 'OK') return page;
+    const parsed = parsePage(page.body);
+    if (parsed === null || parsed.products.length > top) return { kind: 'INVALID_RESPONSE' };
+    let anterior = Number.POSITIVE_INFINITY;
+    for (const p of parsed.products) {
+      if (p.CreationDate === null) continue;
+      const t = Date.parse(p.CreationDate);
+      if (Number.isNaN(t) || t > anterior) return { kind: 'INVALID_RESPONSE' };
+      anterior = t;
+    }
+    return { kind: 'RECENT', products: parsed.products };
   }
 
   private async lookup(filter: string, coincide: (p: BindProductRaw) => boolean): Promise<BindLookupResult> {
