@@ -44,7 +44,13 @@ SELECT
   NOT has_database_privilege('daubert_hub_test_user', current_database(), 'CREATE') AS app_sin_create_en_base,
   NOT EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspname NOT LIKE 'pg\_%' AND n.nspname <> 'information_schema' AND has_schema_privilege('daubert_hub_test_user', n.nspname, 'CREATE')) AS app_sin_create_en_esquemas,
   -- Hay al menos un usuario activo (la identidad de auditoría sale de security.users)
-  (SELECT count(*) FROM security.users WHERE status = 'ACTIVE') > 0              AS hay_usuarios_activos;
+  (SELECT count(*) FROM security.users WHERE status = 'ACTIVE') > 0              AS hay_usuarios_activos,
+  -- dependencias de lectura de la aplicación (rutas y políticas RLS): existen y la app puede leerlas, sin RLS que las filtre
+  to_regclass('core.empresa_roles') IS NOT NULL                                  AS existe_core_empresa_roles,
+  COALESCE(has_table_privilege('daubert_hub_test_user', to_regclass('security.users'), 'SELECT') AND has_table_privilege('daubert_hub_test_user', to_regclass('core.empresas'), 'SELECT') AND has_table_privilege('daubert_hub_test_user', to_regclass('core.empresa_roles'), 'SELECT'), false) AS app_puede_leer_users_empresas_roles,
+  NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid IN (to_regclass('security.users'), to_regclass('core.empresas'), to_regclass('core.empresa_roles')) AND c.relrowsecurity) AS sin_rls_en_tablas_leidas,
+  -- columnas que usa el gestor
+  (SELECT count(*) FROM information_schema.columns WHERE (table_schema, table_name, column_name) IN (('security','users','user_id'),('security','users','display_name'),('security','users','email'),('security','users','role'),('security','users','status'),('core','empresas','empresa_id'),('core','empresas','nombre_comercial'),('core','empresas','estatus'),('core','empresa_roles','empresa_id'),('core','empresa_roles','rol'),('core','empresa_roles','estatus'))) = 11 AS columnas_requeridas_existen;
 
 -- Comprobación consolidada.
 WITH c AS (
@@ -57,9 +63,12 @@ WITH c AS (
     NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura')                           AS f,
     NOT has_database_privilege('daubert_hub_test_user', current_database(), 'CREATE')               AS g,
     (SELECT count(*) FROM security.users WHERE status = 'ACTIVE') > 0                               AS h,
-    current_setting('row_security') = 'on'                                                          AS i
+    current_setting('row_security') = 'on'                                                          AS i,
+    to_regclass('core.empresa_roles') IS NOT NULL AND COALESCE(has_table_privilege('daubert_hub_test_user', to_regclass('security.users'), 'SELECT') AND has_table_privilege('daubert_hub_test_user', to_regclass('core.empresas'), 'SELECT') AND has_table_privilege('daubert_hub_test_user', to_regclass('core.empresa_roles'), 'SELECT'), false) AS j,
+    NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid IN (to_regclass('security.users'), to_regclass('core.empresas'), to_regclass('core.empresa_roles')) AND c.relrowsecurity) AS k,
+    (SELECT count(*) FROM information_schema.columns WHERE (table_schema, table_name, column_name) IN (('security','users','user_id'),('security','users','display_name'),('security','users','email'),('security','users','role'),('security','users','status'),('core','empresas','empresa_id'),('core','empresas','nombre_comercial'),('core','empresas','estatus'),('core','empresa_roles','empresa_id'),('core','empresa_roles','rol'),('core','empresa_roles','estatus'))) = 11 AS l
 )
-SELECT (a AND b AND c1 AND d AND e AND f AND g AND h AND i) AS all_prechecks_pass FROM c;
+SELECT (a AND b AND c1 AND d AND e AND f AND g AND h AND i AND j AND k AND l) AS all_prechecks_pass FROM c;
 
 -- LÍNEA BASE (pásela al postcheck con -v). Describe TODO lo que NO debe cambiar.
 SELECT

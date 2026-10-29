@@ -75,7 +75,7 @@ describe('bloque 2 · actualizar con control de versiones', () => {
     const v2 = await actualizar(2, v1.id, { version: 1, familia: 'HOJA_PAQ', cliente: { empresaId: '1' } });
     expect(v2.familia).toBe('HOJA_PAQ');
     expect(v2.huella).not.toBe(v1.huella);
-    expect(v2.cliente).toEqual({ nombre: 'Cliente simulado', verificado: true });
+    expect(v2.cliente).toEqual({ empresaId: '1', nombre: 'Cliente simulado', verificado: true });
     expect(v2.especificacion.datos.cliente).toBe('Cliente simulado');
   });
 

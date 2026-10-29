@@ -19,13 +19,16 @@ export interface MotivoNoLista {
 
 const http = (status: HttpStatus, code: string, message: string, extra: Record<string, unknown> = {}): HttpException => new HttpException({ code, message, ...extra }, status);
 
+/** Mismo cuerpo para toda colisión de (código, variante): no distingue entre un documento visible y uno que esta cuenta no puede ver. */
+const documentoYaExiste = (): HttpException => http(HttpStatus.CONFLICT, 'DOCUMENT_EXISTS', 'Ya existe un documento con ese código y variante. Si es tuyo, búscalo en tus borradores o en el historial del código; si no lo ves, pertenece a otra cuenta.');
+
 /** Traduce los errores de la base (triggers/restricciones del esquema `manufactura`) a respuestas claras. Nunca reenvía texto de la base a quien consulta salvo las reglas de negocio ya redactadas. */
 function traducirErrorBd(error: unknown): unknown {
   if (error instanceof HttpException) return error;
   const e = error as { code?: string; constraint?: string; message?: string };
   switch (e.code) {
     case '23505':
-      if (e.constraint === 'uq_manufactura_documentos_codigo_variante') return http(HttpStatus.CONFLICT, 'DOCUMENT_EXISTS', 'Ya existe un documento con ese código y variante.');
+      if (e.constraint === 'uq_manufactura_documentos_codigo_variante') return documentoYaExiste();
       if (e.constraint === 'uq_manufactura_revisiones_abierta') return http(HttpStatus.CONFLICT, 'OPEN_DRAFT_EXISTS', 'El documento ya tiene un borrador o una finalización en curso.');
       return http(HttpStatus.CONFLICT, 'DUPLICATE', 'La operación ya se había registrado.');
     case '42501':
@@ -66,11 +69,9 @@ export class DocumentsService {
       return await this.repo.conSesion(actor, async (c) => {
         const cliente = await this.resolverCliente(c, dto.cliente);
         const especificacion = construirEspecificacion(this.conClienteImpreso(entrada, cliente), dto.codigo);
-        const existente = await this.repo.buscarDocumento(c, dto.codigo, variante);
-        if (existente) {
-          const abierta = await this.repo.revisionAbiertaDelDocumento(c, existente.public_id);
-          throw http(HttpStatus.CONFLICT, 'DOCUMENT_EXISTS', 'Ya existe un documento con ese código y variante.', { documentoId: existente.public_id, borradorId: abierta?.public_id ?? null });
-        }
+        // Respuesta ÚNICA: sea cual sea el motivo del choque (versión finalizada, borrador propio o borrador de otra cuenta que esta no puede ver), el cuerpo es idéntico y sin
+        // identificadores; no revela quién ni qué hay detrás. Para continuar un borrador propio se usa `GET open` / `GET history?codigo=`, que la base filtra por permisos.
+        if (await this.repo.buscarDocumento(c, dto.codigo, variante)) throw documentoYaExiste();
         const documento = await this.repo.crearDocumento(c, dto.codigo, variante);
         // «Elaboró» se SUGIERE desde la cuenta autenticada, queda editable y sin confirmar: debe confirmarse expresamente antes de finalizar.
         const id = await this.repo.crearBorrador(c, documento.documento_id, { familia: dto.familia, especificacion, elaboroNombre: actor.displayName, elaboroConfirmado: false, autorizoNombre: null, ...cliente, revisorUsuarioId: null });
@@ -261,7 +262,7 @@ export class DocumentsService {
     return {
       id: fila.public_id, documentoId: fila.documento_public_id, codigo: fila.codigo_dcmx, variante: fila.variante, familia: fila.familia, estado: fila.estado,
       revision: fila.revision, revisionPrevista: fila.revision_prevista, version: fila.version,
-      cliente: fila.cliente_nombre ? { nombre: fila.cliente_nombre, verificado: fila.cliente_verificado } : null,
+      cliente: fila.cliente_nombre ? { empresaId: fila.cliente_empresa_id, nombre: fila.cliente_nombre, verificado: fila.cliente_verificado } : null,
       creadoPor: fila.creado_por_email, actualizadoEn: fila.updated_at, finalizadoEn: fila.finalizado_en, finalizadoPor: fila.finalizado_por_email,
       entorno: fila.entorno_emision, propio: fila.creado_por_usuario_id === actor.userId, asignadoComoRevisor: fila.revisor_usuario_id === actor.userId,
       pdf: fila.pdf_nombre ? { nombre: fila.pdf_nombre, sha256: fila.pdf_sha256, bytes: fila.pdf_bytes } : null
@@ -324,6 +325,13 @@ export class DocumentsService {
         if (actual.estado !== 'BORRADOR' && actual.estado !== 'FINALIZANDO') throw http(HttpStatus.CONFLICT, 'NOT_EDITABLE', 'Esta revisión ya no admite cambios.');
         if (actual.creado_por_usuario_id !== actor.userId && actor.role !== 'ADMIN') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo el creador o un ADMIN pueden finalizar.' });
         if (actual.version !== version) throw this.errorDeVersion(actual.version);
+        // El cliente vinculado debe seguir activo y con el mismo nombre que se va a imprimir: el catálogo puede cambiar entre el borrador y la finalización. Una vez finalizada, la
+        // revisión conserva su propio nombre e identificador (inmutables), pase lo que pase después con la empresa.
+        if (actual.estado === 'BORRADOR' && actual.cliente_verificado && actual.cliente_empresa_id) {
+          const empresa = await this.repo.buscarCliente(c, actual.cliente_empresa_id);
+          if (!empresa) throw http(HttpStatus.UNPROCESSABLE_ENTITY, 'CLIENTE_NO_VALIDO', 'El cliente vinculado ya no está activo. Identifica otro cliente antes de finalizar.');
+          if (empresa.nombre !== actual.cliente_nombre) throw http(HttpStatus.CONFLICT, 'CLIENTE_ACTUALIZADO', 'El nombre del cliente cambió en el catálogo. Vuelve a seleccionarlo para actualizar la hoja antes de finalizar.', { nombreActual: empresa.nombre });
+        }
         // Chrome es obligatorio: sin él no se toca el estado, no se genera nada y se informa con claridad.
         if (!this.engine.disponible) throw http(HttpStatus.NOT_IMPLEMENTED, 'PDF_NOT_AVAILABLE', 'No se puede finalizar: la generación de PDF no está disponible en este entorno.');
         const motivos = await this.motivosNoLista(actual);

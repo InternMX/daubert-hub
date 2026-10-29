@@ -2,6 +2,9 @@
 
 **Veredicto:** los cuatro scripts (más smoke e inventario) están **listos para su revisión y autorización**. **No se aplicó nada** (revisión 3, tras la segunda ronda de observaciones) a `daubert_hub_test` ni a ninguna base real. Toda la validación se hizo en instancias PostgreSQL 18 desechables (ya eliminadas).
 
+## 0a. Ajuste posterior a la aprobación de la rev. 3
+El **precheck** (único script modificado; los otros cinco conservan sus hashes) agrega tres comprobaciones de dependencias de lectura de la aplicación: existe `core.empresa_roles`, `daubert_hub_test_user` puede leer `security.users`, `core.empresas` y `core.empresa_roles` sin RLS que las filtre, y existen las 11 columnas que usa el gestor. Motivo: las rutas (cliente CLIENTE activo, revisores activos) y las políticas RLS (`fn_actor_es_admin`) leen esas tablas con los privilegios de la aplicación; si faltara el permiso, el módulo fallaría después de aplicar. Arnés: 42/42. Ver `docs/manufacturing-document-manager-test-activation-readiness.md`.
+
 ## 0. Revisión 3: respuesta a las seis observaciones
 | Observación | Resolución | Evidencia (instancia desechable) |
 |---|---|---|
@@ -74,7 +77,7 @@ Otros cambios de la rev. 3: 15 funciones (antes 12); la app recibe `EXECUTE` sob
    ```text
    4400b3248a08362da969db98640d2c8800635e6bc03d277a9a9234b5b4cf435f  20261030_101_manufactura_gestor_documental_test.down.sql
    2b9f86e4a0c6247992e513055ec148c0a7b4beb7a163d660546ca0ac1fc8bcf8  20261030_101_manufactura_gestor_documental_test.postcheck.sql
-   b6798bbefb85e70b9e45ff59fdcee1d9d54b447dfe26ce9f5db5f658030bf249  20261030_101_manufactura_gestor_documental_test.precheck.sql
+   d8335a2db930058930d64309e575988fafd73d67a29e851d4780985883e84387  20261030_101_manufactura_gestor_documental_test.precheck.sql
    1078c985f6c5d4e55d15e9cb95df5b52196d97a782e64974bf58d0dc8c8af3fa  20261030_101_manufactura_gestor_documental_test.smoke.sql
    de2a55e60b31a62549b6be0a743cb2699db3adc116349bb0ce7474c3729f4d63  20261030_101_manufactura_gestor_documental_test.up.sql
    435a3c550521deceb46a8ae70391640889b6f85d2ec75fa8f379c836943732e2  inventario_connect.readonly.sql

@@ -48,13 +48,34 @@ describe('bloque 1 · crear y recuperar borradores', () => {
     await expect(tuberia.transform(base, { type: 'body', metatype: CreateDraftDto })).resolves.toBeInstanceOf(CreateDraftDto);
   });
 
-  it('un documento (código + variante) es único; la respuesta 409 permite recuperar el borrador propio', async () => {
+  it('un documento (código + variante) es único; el 409 no trae identificadores y el borrador propio se recupera por la lista/historial', async () => {
     const codigo = codigoUnico();
     const primero = await crear(2, codigo);
     const e = await falla(crear(2, codigo));
     expect(e).toMatchObject({ status: 409, code: 'DOCUMENT_EXISTS' });
-    expect(e.body.borradorId).toBe(primero.id);
-    expect(e.body.documentoId).toBe(primero.documentoId);
+    expect(Object.keys(e.body).sort()).toEqual(['code', 'message']);
+    const hist = await service.historial(actor(2), codigo);
+    expect((hist.data as Vista[]).map((r) => r.id)).toEqual([primero.id]);
+  });
+
+  it('privacidad: el 409 es IDÉNTICO si el choque es con un borrador ajeno invisible, con uno propio o con una versión finalizada', async () => {
+    const ajeno = codigoUnico();
+    await crear(2, ajeno);
+    const propio = codigoUnico();
+    await crear(3, propio);
+    const finalizado = codigoUnico();
+    const f = await crear(2, finalizado, { cliente: { nombre: 'Cliente de prueba' } });
+    const c = await service.actualizarBorrador(actor(2), f.id, { version: 1, elaboroConfirmado: true } as never) as Vista;
+    await service.finalizar(actor(2), f.id, c.version);
+    const cuerpos = [await falla(crear(3, ajeno)), await falla(crear(3, propio)), await falla(crear(3, finalizado)), await falla(crear(1, ajeno))];
+    for (const e of cuerpos) expect(e).toMatchObject({ status: 409, code: 'DOCUMENT_EXISTS' });
+    expect(new Set(cuerpos.map((e) => JSON.stringify(e.body))).size).toBe(1);
+    // Una carrera entre dos altas simultáneas (la restricción única de la base) responde igual.
+    const codigo = codigoUnico();
+    const r = await Promise.allSettled([crear(2, codigo), crear(3, codigo)]);
+    expect(r.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
+    const perdedor = r.find((x) => x.status === 'rejected') as PromiseRejectedResult;
+    expect(perdedor.reason.getResponse()).toEqual(cuerpos[0]!.body);
   });
 
   it('otra cuenta GENERAL no ve el borrador ajeno: ni lo recupera, ni lo abre, ni se entera de su id', async () => {
@@ -112,10 +133,10 @@ describe('bloque 1 · crear y recuperar borradores', () => {
 
   it('cliente: vinculado a core.empresas (rol CLIENTE) o manual SIN verificar; un proveedor o un id inexistente se rechazan', async () => {
     const vinculado = await crear(2, codigoUnico(), { cliente: { empresaId: '1' } });
-    expect(vinculado.cliente).toEqual({ nombre: 'Cliente simulado', verificado: true });
+    expect(vinculado.cliente).toEqual({ empresaId: '1', nombre: 'Cliente simulado', verificado: true });
     expect(vinculado.especificacion.datos.cliente).toBe('Cliente simulado');
     const manual = await crear(2, codigoUnico(), { cliente: { nombre: '  Cliente   manual ' } });
-    expect(manual.cliente).toEqual({ nombre: 'Cliente manual', verificado: false });
+    expect(manual.cliente).toEqual({ empresaId: null, nombre: 'Cliente manual', verificado: false });
     expect((await falla(crear(2, codigoUnico(), { cliente: { empresaId: '2' } }))).code).toBe('CLIENTE_NO_VALIDO');
     expect((await falla(crear(2, codigoUnico(), { cliente: { empresaId: '999' } }))).code).toBe('CLIENTE_NO_VALIDO');
     const sin = await crear(2, codigoUnico());

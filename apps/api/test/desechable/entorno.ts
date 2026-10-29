@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll } from 'vitest';
 import type { DatabaseService } from '../../src/database/database.service';
@@ -33,7 +34,7 @@ let peticiones = 0;
 export function actor(n: keyof typeof CUENTAS): ActorDocumental {
   peticiones += 1;
   const c = CUENTAS[n];
-  return { userId: String(n), email: c.email, displayName: c.displayName, role: c.role, requestId: `desechable-${n}-${peticiones}` };
+  return { userId: String(n), email: c.email, displayName: c.displayName, role: c.role, requestId: `desechable-${n}-${peticiones}-${randomUUID()}` };
 }
 
 /** Motor de hojas simulado (sin Chrome): permite probar la lógica documental con evaluaciones y fallos controlados. La integración con el motor real se prueba aparte. */

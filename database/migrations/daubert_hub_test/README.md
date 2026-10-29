@@ -4,7 +4,7 @@
 
 | Archivo | Rol |
 |---|---|
-| `…101_manufactura_gestor_documental_test.precheck.sql` | Solo lectura (`READ ONLY` + `ROLLBACK`). Verifica base, rol administrativo, rol de la app sin privilegios (ni `BYPASSRLS`), dependencias y que el delta no exista; imprime la **línea base**. |
+| `…101_manufactura_gestor_documental_test.precheck.sql` | Solo lectura (`READ ONLY` + `ROLLBACK`). Verifica base, rol administrativo, rol de la app sin privilegios (ni `BYPASSRLS`), dependencias (incluido que la app lea `security.users`, `core.empresas` y `core.empresa_roles` sin RLS, y las 11 columnas que usa el gestor) y que el delta no exista; imprime la **línea base**. |
 | `….up.sql` | Transaccional. Crea el esquema `manufactura`: 5 tablas, 15 funciones, 11 triggers de integridad, 4 de auditoría (función redactora), RLS (11 políticas) y privilegios mínimos. Se revierte entero si algo falla. |
 | `….postcheck.sql` | Solo lectura. Compara contra la línea base AMPLIADA (tablas, funciones, columnas, triggers, privilegios y dueños, roles, ACL de bases y esquemas: nada fuera de `manufactura` cambió) y verifica objetos, triggers, RLS, dueños y la matriz exacta de privilegios. |
 | `….down.sql` | Elimina solo `manufactura`. **Idempotente.** Con datos exige `confirmar_borrado`; con revisiones FINALIZADAS o PDF exige además `confirmar_finalizadas`. Imprime lo que se perdería. |
