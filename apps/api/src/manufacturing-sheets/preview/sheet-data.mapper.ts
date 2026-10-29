@@ -51,6 +51,12 @@ function formatDate(value: string, avisar: Avisar): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/** Luminancia relativa (WCAG) de un #RRGGBB; > 0.5 se considera un fondo claro, sobre el que el texto o las flechas blancas no se leen. */
+function esColorClaro(hex: string): boolean {
+  const [r, g, b] = [1, 3, 5].map((i) => { const c = parseInt(hex.slice(i, i + 2), 16) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5;
+}
+
 export function mapSheetData(family: PreviewFamily, form: PreviewFormData): MappedSheetData {
   const def = FAMILIAS[family];
   const advertencias: string[] = [];
@@ -152,7 +158,8 @@ export function mapSheetData(family: PreviewFamily, form: PreviewFormData): Mapp
     visual.color_cotas_internas_hex = variante?.cotasInternasHex ?? null;
   } else if (def.fuelles) {
     const preset = def.colores.find((c) => c.hex.toLowerCase() === hex.toLowerCase());
-    visual.color_cotas_internas_hex = preset?.cotasInternasHex ?? def.cotasInternasPorDefecto;
+    // Color que no es un predefinido (p. ej. uno personalizado): las flechas internas blancas no se verían sobre un color claro, así que se usa negro; los predefinidos conservan su decisión aprobada.
+    visual.color_cotas_internas_hex = preset?.cotasInternasHex ?? (def.cotasInternasPorDefecto.toUpperCase() === '#FFFFFF' && HEX.test(hex) && esColorClaro(hex) ? '#000000' : def.cotasInternasPorDefecto);
   }
   // Cotas técnicas independientes (Rollo Continuo y Termoencogible): se imprimen con su unidad y NUNCA se calculan a partir de otras medidas.
   const cotas: Array<[FieldKey, string, string]> = [['anchoRollo', 'ancho_rollo', 'El ancho del rollo'], ['anchoDoblado', 'ancho_doblado', 'El ancho doblado'], ['medidaPliegue', 'medida_pliegue', 'La medida del pliegue'],

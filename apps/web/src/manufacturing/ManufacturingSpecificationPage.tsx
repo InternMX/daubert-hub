@@ -10,11 +10,12 @@ import { listManufacturingFamilies, type FamilyConfig } from '../services/manufa
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
+import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
-  setCoexVariante, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification,
+  setCoexVariante, setCustomColor, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification,
   type DisplayOrigin, type FamilyCode, type FieldKey, type SpecificationForm, type SpecificationValidation
 } from './specificationForm';
 
@@ -43,7 +44,7 @@ const errorMessages: Record<BindProductErrorKind, string> = {
   NETWORK: 'No se pudo comunicar con el servidor de Daubert Hub.'
 };
 
-interface TextExtra { onValue?: (value: string) => void; type?: string; placeholder?: string; helperText?: string; multiline?: boolean; minRows?: number; inputMode?: 'numeric' | 'decimal' }
+interface TextExtra { label?: string; onValue?: (value: string) => void; type?: string; placeholder?: string; helperText?: string; multiline?: boolean; minRows?: number; inputMode?: 'numeric' | 'decimal' }
 
 const sourcePresentation: Record<FuenteDato, { label: string; color: 'default' | 'success' | 'info' | 'warning' | 'error' }> = {
   TITLE: { label: 'Extraído de Title', color: 'success' },
@@ -199,6 +200,7 @@ function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
   );
 }
 
+const PERSONAL = 'PERSONAL:';
 const CANTIDAD_UNIDADES: Array<[string, string]> = [['BOLSAS', 'Bolsas'], ['HOJAS', 'Hojas']];
 
 export function ManufacturingSpecificationPage() {
@@ -216,6 +218,10 @@ export function ManufacturingSpecificationPage() {
   const [reconocidas, setReconocidas] = useState<Reconocimientos>({});
   const [reveladas, setReveladas] = useState<ReadonlySet<string>>(new Set());
   const [fallo, setFallo] = useState('');
+  const personalizados = useCustomColors();
+  const [colorError, setColorError] = useState<CustomColorError | null>(null);
+  const [editorColorAbierto, setEditorColorAbierto] = useState(false);
+  const [colorGuardado, setColorGuardado] = useState<{ nombre: string; persistido: boolean } | null>(null);
   const controller = useRef<AbortController | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
@@ -239,6 +245,7 @@ export function ManufacturingSpecificationPage() {
     setReconocidas({});
     setReveladas(new Set());
     setFallo('');
+    setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     if (!BIND_CODE_PATTERN.test(target.trim())) {
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
@@ -274,7 +281,7 @@ export function ManufacturingSpecificationPage() {
     form && has(key) && (
       <FieldFrame form={form} fieldKey={key} error={errors[key]} onRestore={restore}>
         <TextField
-          fullWidth label={FIELD_LABELS[key]} value={form.fields[key].value} error={Boolean(errors[key])} onChange={(e) => (extra.onValue ? extra.onValue(e.target.value) : setValue(key, e.target.value))}
+          fullWidth label={extra.label ?? FIELD_LABELS[key]} value={form.fields[key].value} error={Boolean(errors[key])} onChange={(e) => (extra.onValue ? extra.onValue(e.target.value) : setValue(key, e.target.value))}
           type={extra.type} placeholder={extra.placeholder} helperText={extra.helperText} multiline={extra.multiline} minRows={extra.minRows}
           slotProps={{ htmlInput: extra.inputMode ? { inputMode: extra.inputMode } : {}, inputLabel: extra.type === 'date' ? { shrink: true } : {} }}
         />
@@ -325,6 +332,22 @@ export function ManufacturingSpecificationPage() {
   const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: validation !== null, reveladas, revelar, revision };
   const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO' && sinReconocer.length === 0;
   const colorPreset = form?.fields.colorPreset.value ?? '';
+  // Un color personalizado guardado se reconoce por sus VALORES (nombre + HEX): si el usuario edita cualquiera de los dos, deja de estar «seleccionado» y vuelve el editor.
+  const personalCoincidente: CustomColor | undefined = form && colorPreset === COLOR_OTRO ? personalizados.colores.find((c) => c.id === idDeColor(form.fields.colorNombre.value, form.fields.colorHex.value)) : undefined;
+  const colorSelect = personalCoincidente && !editorColorAbierto ? `${PERSONAL}${personalCoincidente.id}` : colorPreset;
+  const elegirColor = (valor: string, cfg: FamilyConfig): void => {
+    setColorError(null); setColorGuardado(null); setEditorColorAbierto(valor === COLOR_OTRO);
+    const personal = valor.startsWith(PERSONAL) ? personalizados.colores.find((c) => `${PERSONAL}${c.id}` === valor) : undefined;
+    if (personal) update((f) => setCustomColor(f, personal.nombre, personal.hex)); else update((f) => setColorPreset(f, valor, cfg));
+  };
+  const guardarColor = (): void => {
+    if (!form) return;
+    const r = personalizados.agregar(form.fields.colorNombre.value, form.fields.colorHex.value);
+    if (!r.ok) { setColorError(r.error); setColorGuardado(null); return; }
+    setColorError(null); setEditorColorAbierto(false);
+    setColorGuardado({ nombre: r.color.nombre, persistido: r.persistido });
+    update((f) => setCustomColor(f, r.color.nombre, r.color.hex));
+  };
   const colorSwatch = (hex: string) => <Box aria-label="Muestra del color" role="img" data-testid="color-swatch" sx={{ width: 32, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : 'transparent', flexShrink: 0 }} />;
   const composiciones = (config?.composiciones ?? ['PMG', 'CP5000', 'NAT']).map((value) => ({ value, label: value === 'NAT' ? 'Natural' : value }));
 
@@ -400,10 +423,11 @@ export function ManufacturingSpecificationPage() {
                   <FieldFrame form={form} fieldKey="colorPreset" error={errors.colorPreset} onRestore={restore}>
                     <Stack direction="row" spacing={1.5} alignItems="center">
                       {colorSwatch(form.fields.colorHex.value)}
-                      <TextField select fullWidth label="Color" value={colorPreset} error={Boolean(errors.colorPreset)} onChange={(e) => update((f) => setColorPreset(f, e.target.value, config))}>
+                      <TextField select fullWidth label="Color" value={colorSelect} error={Boolean(errors.colorPreset)} onChange={(e) => elegirColor(e.target.value, config)}>
                         <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
                         {config.colores.map((c) => <MenuItem key={c.id} value={c.id}>{c.etiqueta} ({c.hex})</MenuItem>)}
-                        <MenuItem value={COLOR_OTRO}>Otro</MenuItem>
+                        {personalizados.colores.map((c) => <MenuItem key={c.id} value={`${PERSONAL}${c.id}`}>{c.nombre} ({c.hex}) · personalizado</MenuItem>)}
+                        <MenuItem value={COLOR_OTRO}>Otro color…</MenuItem>
                         {colorPreset !== '' && colorPreset !== COLOR_OTRO && !config.colores.some((c) => c.id === colorPreset) && <MenuItem value={colorPreset} disabled>{colorPreset} (no disponible en esta familia)</MenuItem>}
                       </TextField>
                     </Stack>
@@ -422,10 +446,41 @@ export function ManufacturingSpecificationPage() {
                     <Typography variant="caption" color="text.secondary" display="block">Solo existen las variantes aprobadas; un color personalizado no genera una tercera variante COEX.</Typography>
                   </FieldFrame>
                 )}
-                {text('colorNombre', { helperText: 'Texto impreso en el campo Color del documento (editable).' })}
-                {config.colorDibujo && (colorPreset === COLOR_OTRO
-                  ? text('colorHex', { placeholder: '#RRGGBB', helperText: 'Color del dibujo para «Otro».' })
+                {text('colorNombre', colorSelect === COLOR_OTRO && config.colorDibujo ? { label: 'Nombre del color', helperText: 'Se imprime en el campo Color del documento.' } : { helperText: 'Texto impreso en el campo Color del documento (editable).' })}
+                {config.colorDibujo && (colorSelect === COLOR_OTRO
+                  ? (
+                    <FieldFrame form={form} fieldKey="colorHex" error={errors.colorHex} onRestore={restore}>
+                      <Stack spacing={1.5} data-testid="color-personalizado-editor">
+                        <Stack direction="row" spacing={1.5} alignItems="center">
+                          <Box component="input" type="color" aria-label="Selector visual de color" value={/^#[0-9A-Fa-f]{6}$/.test(form.fields.colorHex.value.trim()) ? form.fields.colorHex.value.trim() : '#000000'} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setColorError(null); setColorGuardado(null); setValue('colorHex', e.target.value.toUpperCase()); }} sx={{ width: 48, height: 40, p: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'transparent', cursor: 'pointer' }} />
+                          <TextField fullWidth label="Código HEX" placeholder="#RRGGBB" value={form.fields.colorHex.value} error={Boolean(errors.colorHex) || colorError === 'HEX_INVALIDO'} onChange={(e) => { setColorError(null); setColorGuardado(null); setValue('colorHex', e.target.value); }} helperText="Color del dibujo (formato #RRGGBB); se puede editar o elegir con el selector." slotProps={{ htmlInput: { maxLength: 7, spellCheck: false } }} />
+                        </Stack>
+                        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                          <Box aria-label="Vista previa del color" role="img" data-testid="color-personalizado-muestra" sx={{ width: 48, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(form.fields.colorHex.value.trim()) ? form.fields.colorHex.value.trim() : 'transparent', flexShrink: 0 }} />
+                          <Typography variant="body2" data-testid="color-personalizado-vista">{form.fields.colorNombre.value.trim() || 'Sin nombre'} · {form.fields.colorHex.value.trim().toUpperCase() || '—'}</Typography>
+                          <Button size="small" variant="outlined" onClick={guardarColor}>Guardar color</Button>
+                        </Stack>
+                        {colorError && <FormHelperText error data-testid="color-personalizado-error">{CUSTOM_COLOR_ERRORS[colorError]}</FormHelperText>}
+                        <Typography variant="caption" color="text.secondary">Los colores personalizados se guardan solo en este navegador y no se comparten entre usuarios.</Typography>
+                      </Stack>
+                    </FieldFrame>
+                  )
                   : <Typography variant="body2" color="text.secondary" data-testid="color-hex-readonly">{colorPreset ? `Color del dibujo: ${form.fields.colorHex.value}` : 'Elige un color para el dibujo.'}</Typography>)}
+                {config.colorDibujo && (personalizados.colores.length > 0 || colorGuardado) && (
+                  <Box sx={{ gridColumn: '1 / -1' }} data-testid="color-personalizados">
+                    {colorGuardado && <Typography variant="caption" color={colorGuardado.persistido ? 'success.main' : 'warning.main'} display="block" data-testid="color-guardado">{colorGuardado.persistido ? `Color «${colorGuardado.nombre}» guardado en este navegador y aplicado a la hoja.` : `Color «${colorGuardado.nombre}» aplicado a la hoja; ${CUSTOM_COLOR_ERRORS.ALMACENAMIENTO}`}</Typography>}
+                    {personalizados.colores.length > 0 && (
+                      <>
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Colores personalizados ({personalizados.colores.length}/{CUSTOM_COLORS_MAX}) · solo en este navegador, no se comparten entre usuarios.</Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                          {personalizados.colores.map((c) => (
+                            <Chip key={c.id} size="small" variant="outlined" label={`${c.nombre} ${c.hex}`} avatar={<Box component="span" sx={{ bgcolor: c.hex, border: '1px solid', borderColor: 'divider' }} />} onClick={() => elegirColor(`${PERSONAL}${c.id}`, config)} onDelete={() => personalizados.eliminar(c.id)} deleteIcon={<span aria-label={`Eliminar ${c.nombre} del catálogo local`} role="img">✕</span>} data-testid="color-personalizado-chip" />
+                          ))}
+                        </Stack>
+                      </>
+                    )}
+                  </Box>
+                )}
               </Box>
               <IncidenciasDeSeccion seccion="color" />
             </Paper>

@@ -298,3 +298,28 @@ describe('COEX · una familia, dos variantes aprobadas, una sola plantilla', () 
     await app.close();
   });
 });
+
+describe('Colores personalizados (nombre + HEX) en la vista previa y el PDF', () => {
+  const service = new SheetPreviewService();
+  it('el nombre se imprime en el campo Color y el HEX llena el dibujo; los demás datos y la concentración no cambian', async () => {
+    const r = await service.preview('BOLSA_FUELLE', { ...FUELLE, colorNombre: 'AZUL ESPECIAL CLIENTE', colorHex: '#3778C8' });
+    expect(r.html).toMatch(/>\s*AZUL ESPECIAL CLIENTE\s*</);
+    expect(r.html).toContain('fill="#3778C8"');
+    expect(r.html).not.toContain('#538DD5');
+    expect(r.completo).toBe(true);
+    expect(r.faltantes).toEqual([]);
+  });
+  it('las flechas internas se leen sobre el color: blancas sobre uno oscuro o medio, negras sobre uno claro; los predefinidos conservan su decisión aprobada', async () => {
+    const oscuro = await service.preview('BOLSA_FUELLE', { ...FUELLE, colorNombre: 'AZUL ESPECIAL', colorHex: '#3778C8' });
+    const claro = await service.preview('BOLSA_FUELLE', { ...FUELLE, colorNombre: 'AMARILLO PASTEL', colorHex: '#FFE699' });
+    const azul = await service.preview('BOLSA_FUELLE', FUELLE);
+    expect(oscuro.html).toMatch(/class="cota-interna"[^>]*stroke="#FFFFFF"/);
+    expect(claro.html).toMatch(/class="cota-interna"[^>]*stroke="#000000"/);
+    expect(azul.html).toMatch(/class="cota-interna"[^>]*stroke="#FFFFFF"/);
+  });
+  it('un HEX inválido no se imprime como color (el dibujo queda sin color y se advierte); el nombre se escapa', async () => {
+    const r = await service.preview('BOLSA_FUELLE', { ...FUELLE, colorNombre: '<b>ROJO</b>', colorHex: '#GG0000' });
+    expect(r.html).toContain('&lt;b&gt;ROJO&lt;/b&gt;');
+    expect(r.incidencias.some((i) => i.codigo === 'VALOR_INVALIDO' && i.campos.includes('colorHex'))).toBe(true);
+  });
+});

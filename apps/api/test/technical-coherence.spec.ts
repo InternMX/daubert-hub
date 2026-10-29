@@ -67,6 +67,16 @@ describe('Coherencia del borrador (sin confirmar ni sobrescribir)', () => {
     expect(revisarCoherencia('BOLSA_FUELLE', { fuelleTotal: '10', fuelleDerecho: '4', fuelleIzquierdo: '4' }, { title: 'BOLSA PMG', code: '' }).map((a) => a.id)).toContain('FUELLE_TOTAL');
   });
 
+  describe('color personalizado (nombre + HEX) frente a un color explícito del Title', () => {
+    const titulo = { title: 'BOLSA VCI PMG 13 X 16 IN CAL. 3 MIL COLOR AZUL PAQUETE C/200 BOLSAS', code: 'DEMOFPMG001' };
+    it('un nombre que no coincide con el COLOR del Title sigue produciendo la contradicción (reconocible); uno coherente no', () => {
+      const incoherente = revisarCoherencia('BOLSA_PLANA_1', { colorHex: '#C00000', colorNombre: 'ROJO ESPECIAL' }, titulo).filter((a) => a.id.startsWith('COLOR_'));
+      expect(incoherente).toHaveLength(1);
+      expect(incoherente[0]).toMatchObject({ id: 'COLOR_AZUL:colorPreset', nivel: 'CONTRADICCION', reconocible: true });
+      expect(revisarCoherencia('BOLSA_PLANA_1', { colorHex: '#3778C8', colorNombre: 'AZUL ESPECIAL CLIENTE' }, titulo).filter((a) => a.id.startsWith('COLOR_'))).toEqual([]);
+    });
+  });
+
   describe('Bolsa Natural sugiere NATURAL: un color distinto declarado por BIND no se oculta', () => {
     const azul = { title: 'BOLSA LDPE NAT AZUL 61 X 48 X 70.9 CAL. 3 MIL', code: 'NAT61' };
     const ids = (hex: string, nombre: string, ctx: { title: string; code: string }) => revisarCoherencia('BOLSA_NATURAL', { colorHex: hex, colorNombre: nombre }, ctx).filter((a) => a.id.startsWith('COLOR_'));

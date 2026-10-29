@@ -311,12 +311,12 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Plana 1').getAttribute('srcdoc')).toContain('color=VERDE|#00B050'), { timeout: 3000 });
     await user.click(screen.getByRole('combobox', { name: /^Color/ }));
     await user.click(await screen.findByRole('option', { name: /^Otro/ }));
-    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#GG0000' } });
+    fireEvent.change(campo('Código HEX'), { target: { value: '#GG0000' } });
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Escribe el nombre del color/)).toBeInTheDocument();
     expect(screen.getByText(/El color debe tener el formato #RRGGBB/)).toBeInTheDocument();
-    fireEvent.change(campo('Texto del color en el documento'), { target: { value: 'ROJO' } });
-    fireEvent.change(campo('Color del dibujo (#RRGGBB)'), { target: { value: '#C00000' } });
+    fireEvent.change(campo('Nombre del color'), { target: { value: 'ROJO' } });
+    fireEvent.change(campo('Código HEX'), { target: { value: '#C00000' } });
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(192, 0, 0)' });
   });
 
@@ -966,5 +966,188 @@ describe('ManufacturingSpecificationPage · PDF de borrador', { timeout: 30_000 
     await user.click(screen.getAllByRole('button', { name: /Reconocer/ })[0]!);
     await waitFor(() => expect(botonPdf()).toBeEnabled());
     expect(screen.getAllByText(/COLOR CONTRADICTORIO/)).toHaveLength(1);
+  });
+});
+
+describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 40_000 }, () => {
+  const NOMBRE = 'AZUL ESPECIAL CLIENTE';
+  const HEX = '#3778C8';
+  const KEY = 'daubert-hub.manufacturing.custom-colors.v1';
+  beforeEach(() => { window.localStorage.clear(); });
+  afterEach(() => { window.localStorage.clear(); });
+
+  const selectorColor = () => screen.getByRole('combobox', { name: /^Color/ });
+  const ultimoPreview = () => previewMock.mock.calls.at(-1)![1];
+  async function abrirOtro(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(selectorColor());
+    await user.click(await screen.findByRole('option', { name: 'Otro color…' }));
+  }
+  async function guardarPersonalizado(user: ReturnType<typeof userEvent.setup>, nombre = NOMBRE, hex = HEX) {
+    await abrirOtro(user);
+    fireEvent.change(campo('Nombre del color'), { target: { value: nombre } });
+    fireEvent.change(campo('Código HEX'), { target: { value: hex } });
+    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+  }
+  async function cargarSchf(user: ReturnType<typeof userEvent.setup>, codigo = 'SCHFPMG001') {
+    await buscar(user, codigo);
+    await screen.findByRole('region', { name: 'Color' });
+  }
+
+  it('«Otro color…» muestra nombre, selector visual + HEX editable, vista previa del color y «Guardar color», con la indicación de que se guardan solo en este navegador', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await cargarSchf(user);
+    expect(screen.queryByTestId('color-personalizado-editor')).not.toBeInTheDocument();
+    await abrirOtro(user);
+    const editor = screen.getByTestId('color-personalizado-editor');
+    expect(within(editor).getByLabelText('Selector visual de color')).toHaveAttribute('type', 'color');
+    expect(within(editor).getByLabelText('Código HEX')).toBeInTheDocument();
+    expect(within(editor).getByRole('img', { name: 'Vista previa del color' })).toBeInTheDocument();
+    expect(within(editor).getByRole('button', { name: 'Guardar color' })).toBeInTheDocument();
+    expect(campo('Nombre del color')).toBeInTheDocument();
+    expect(within(editor).getByText(/se guardan solo en este navegador y no se comparten entre usuarios/)).toBeInTheDocument();
+    // la vista previa del color sigue lo que se escribe y se elige
+    fireEvent.change(campo('Nombre del color'), { target: { value: NOMBRE } });
+    fireEvent.change(within(editor).getByLabelText('Selector visual de color'), { target: { value: '#3778c8' } });
+    expect(campo('Código HEX').value).toBe(HEX);
+    expect(screen.getByTestId('color-personalizado-vista')).toHaveTextContent(`${NOMBRE} · ${HEX}`);
+    expect(screen.getByTestId('color-personalizado-muestra')).toHaveStyle({ backgroundColor: 'rgb(55, 120, 200)' });
+  });
+
+  it('nombre vacío y HEX inválido no se guardan: se explican una vez y el catálogo no cambia', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await cargarSchf(user);
+    await abrirOtro(user);
+    fireEvent.change(campo('Nombre del color'), { target: { value: '' } });
+    fireEvent.change(campo('Código HEX'), { target: { value: HEX } });
+    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+    expect(screen.getByTestId('color-personalizado-error')).toHaveTextContent('Escribe el nombre del color.');
+    fireEvent.change(campo('Nombre del color'), { target: { value: NOMBRE } });
+    fireEvent.change(campo('Código HEX'), { target: { value: '3778' } });
+    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+    expect(screen.getByTestId('color-personalizado-error')).toHaveTextContent(/formato #RRGGBB/);
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    expect(screen.queryByTestId('color-personalizados')).not.toBeInTheDocument();
+    fireEvent.change(campo('Código HEX'), { target: { value: HEX } });                              // corregir limpia el mensaje
+    expect(screen.queryByTestId('color-personalizado-error')).not.toBeInTheDocument();
+  });
+
+  it('«Guardar color»: lo incorpora a las opciones, lo selecciona, imprime su nombre y su HEX, conserva el valor y no cambia concentración ni resina VCI; solo se guardan nombre y HEX', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await cargarSchf(user);
+    expect(campo('Concentración del color (%)').value).toBe('2');
+    const resina = campo('Resina VCI').value;
+    await guardarPersonalizado(user);
+    expect(screen.getByTestId('color-guardado')).toHaveTextContent(`Color «${NOMBRE}» guardado en este navegador y aplicado a la hoja.`);
+    expect(selectorColor()).toHaveTextContent(NOMBRE);
+    expect(screen.queryByTestId('color-personalizado-editor')).not.toBeInTheDocument();             // ya está seleccionado: el editor se oculta
+    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);                                            // (la etiqueta vuelve a la normal)
+    expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(55, 120, 200)' });
+    await waitFor(() => expect(ultimoPreview()).toMatchObject({ colorNombre: NOMBRE, colorHex: HEX }), { timeout: 3000 });
+    expect(campo('Concentración del color (%)').value).toBe('2');
+    expect(campo('Resina VCI').value).toBe(resina);
+    expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual({ version: 1, colores: [{ nombre: NOMBRE, hex: HEX }] });
+    // la opción aparece en el selector y los predeterminados siguen intactos
+    await user.click(selectorColor());
+    expect(await screen.findByRole('option', { name: `${NOMBRE} (${HEX}) · personalizado` })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^Daubert Azul/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^Verde/ })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    // editar otro campo conserva el color
+    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);
+    await waitFor(() => expect(ultimoPreview()).toMatchObject({ ancho: '14', colorNombre: NOMBRE, colorHex: HEX }), { timeout: 3000 });
+  });
+
+  it('el mismo nombre y HEX no se duplica; el catálogo reaparece al recargar, se puede elegir en otro producto y se puede eliminar', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    const primera = renderPage();
+    await cargarSchf(user);
+    await guardarPersonalizado(user);
+    await guardarPersonalizadoOtraVez(user);
+    expect(JSON.parse(window.localStorage.getItem(KEY)!).colores).toHaveLength(1);
+    expect(screen.getAllByTestId('color-personalizado-chip')).toHaveLength(1);
+    primera.unmount();                                                                               // «recarga del navegador»: nueva instancia que lee el almacenamiento
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    renderPage();
+    await cargarSchf(user, 'FUELLE61');
+    expect(campo('Texto del color en el documento').value).toMatch(/DAUBERT AZUL/);                  // otro producto: sugerencia normal
+    expect(screen.getByTestId('color-personalizados')).toHaveTextContent(/Colores personalizados \(1\/20\).*solo en este navegador/);
+    await user.click(selectorColor());
+    await user.click(await screen.findByRole('option', { name: `${NOMBRE} (${HEX}) · personalizado` }));
+    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);
+    await waitFor(() => expect(ultimoPreview()).toMatchObject({ colorNombre: NOMBRE, colorHex: HEX }), { timeout: 3000 });
+    // eliminar del catálogo local no toca los predeterminados
+    await user.click(screen.getByRole('img', { name: `Eliminar ${NOMBRE} del catálogo local` }));
+    expect(screen.queryByTestId('color-personalizados')).not.toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(KEY)!).colores).toEqual([]);
+    await user.click(selectorColor());
+    expect(screen.queryByRole('option', { name: /personalizado/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^Daubert Azul/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^Verde/ })).toBeInTheDocument();
+  });
+  async function guardarPersonalizadoOtraVez(user: ReturnType<typeof userEvent.setup>) {
+    await abrirOtro(user);
+    fireEvent.change(campo('Nombre del color'), { target: { value: NOMBRE.toLowerCase() } });
+    fireEvent.change(campo('Código HEX'), { target: { value: HEX.toLowerCase() } });
+    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+  }
+
+  it('edición manual y restauración: modificar el nombre o el HEX lo deja como edición del usuario (vuelve el editor) y «Restaurar» devuelve la sugerencia de BIND o de la familia', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await cargarSchf(user);
+    await guardarPersonalizado(user);
+    fireEvent.change(campo('Texto del color en el documento'), { target: { value: `${NOMBRE} 2` } });                  // edición manual posterior
+    expect(screen.getByTestId('color-personalizado-editor')).toBeInTheDocument();
+    expect(campo('Nombre del color').value).toBe(`${NOMBRE} 2`);
+    await user.click(within(selectorColor().closest('div.MuiBox-root') as HTMLElement).getByRole('button', { name: 'Restaurar Color' }));
+    expect(campo('Texto del color en el documento').value).toBe('DAUBERT AZUL AL 2%');
+    expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(83, 141, 213)' });
+    expect(campo('Concentración del color (%)').value).toBe('2');
+    await waitFor(() => expect(ultimoPreview()).toMatchObject({ colorNombre: 'DAUBERT AZUL AL 2%', colorHex: '#538DD5' }), { timeout: 3000 });
+  });
+
+  it('cambio de familia: el color personalizado se conserva; Bolsa Natural sigue sugiriendo NATURAL cuando no hay una elección del usuario; COEX conserva sus variantes', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    renderPage();
+    await cargarSchf(user, 'FUELLE61');
+    await guardarPersonalizado(user);
+    await user.click(screen.getByRole('radio', { name: 'Bolsa Natural' }));
+    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);                             // una elección del usuario no se sobrescribe
+    await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
+    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);
+    // otro producto sin color elegido: Bolsa Natural sugiere NATURAL (el catálogo local no interviene)
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    await buscar(user, 'FUELLE61');
+    await screen.findByRole('region', { name: 'Color' });
+    await user.click(screen.getByRole('radio', { name: 'Bolsa Natural' }));
+    expect(campo('Texto del color en el documento').value).toBe('NATURAL');
+    // COEX: variantes aprobadas, sin selector de color personalizado
+    lookupMock.mockResolvedValue(coexAzul());
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Capas COEX' });
+    expect(screen.getByRole('combobox', { name: 'Variante COEX' })).toHaveTextContent('COEX Azul');
+    expect(screen.queryByRole('combobox', { name: /^Color$/ })).not.toBeInTheDocument();
+    expect(campo('Texto del color en el documento').value).toBe('AZUL');
+  });
+
+  it('un catálogo local alterado o dañado no rompe el módulo ni deja pasar valores inválidos', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(KEY, JSON.stringify({ version: 1, colores: [{ nombre: '<img src=x onerror=1>', hex: '#000000' }, { nombre: 'OK', hex: 'rojo' }, { nombre: 'VALIDO', hex: '#123456', token: 'secreto' }] }));
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await cargarSchf(user);
+    expect(screen.getAllByTestId('color-personalizado-chip')).toHaveLength(1);
+    expect(screen.getByTestId('color-personalizado-chip')).toHaveTextContent('VALIDO #123456');
+    expect(document.body.innerHTML).not.toContain('secreto');
   });
 });

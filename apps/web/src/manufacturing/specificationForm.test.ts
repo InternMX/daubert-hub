@@ -3,7 +3,7 @@ import type { BindProductLookup } from '../services/bindProducts';
 import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import {
   buildInitialForm, changedFields, colorText, configOf, confirmFamily, setCoexVariante, displayOrigin, incompatibleValues, isEdited, localIsoDate, restoreField, selectFamily, setColorConcentracion, setColorPreset,
-  setComposition, setFieldValue, setFuelleTotal, computeVciPounds, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
+  setComposition, setCustomColor, setFieldValue, setFuelleTotal, computeVciPounds, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification, type FamilyCode, type SpecificationForm
 } from './specificationForm';
 
 const HOY = '2026-10-16';
@@ -749,5 +749,72 @@ describe('Bolsa Natural · el color NATURAL sigue a la familia', () => {
     const otra = selectFamily(selectFamily(f, 'BOLSA_FUELLE', familyConfigs), 'BOLSA_NATURAL', familyConfigs);
     expect(otra.fields.colorPreset.value).toBe('DAUBERT_AZUL');
     expect(otra.fields.colorNombre.value).toBe('DAUBERT AZUL AL 2%');
+  });
+});
+
+describe('Colores personalizados (nombre + HEX)', () => {
+  const NOMBRE = 'AZUL ESPECIAL CLIENTE';
+  const HEX = '#3778C8';
+  const base = () => selectFamily(build(schfpmg001()), 'BOLSA_PLANA_1', familyConfigs);
+
+  it('aplica el nombre al campo Color impreso y el HEX al dibujo, sin tocar la concentración de colorante ni la resina VCI', () => {
+    const inicial = base();
+    expect(inicial.fields.colorConcentracion.value).toBe('2');
+    const f = setCustomColor(inicial, NOMBRE, HEX);
+    expect(f.fields.colorPreset.value).toBe('OTRO');
+    expect(f.fields.colorNombre.value).toBe(NOMBRE);                       // exactamente el nombre, sin «AL 2%» agregado
+    expect(f.fields.colorHex.value).toBe(HEX);
+    expect(f.fields.colorConcentracion.value).toBe('2');                   // no cambia automáticamente
+    expect(f.fields.resinaVci.value).toBe(inicial.fields.resinaVci.value);
+    expect(f.fields.composicion.value).toBe(inicial.fields.composicion.value);
+    expect(displayOrigin(f.fields.colorPreset)).toBe('USUARIO');
+    expect(toPreviewData(f, cfg('BOLSA_PLANA_1'))).toMatchObject({ colorNombre: NOMBRE, colorHex: HEX });
+    expect(validar(f).errors.colorPreset).toBeUndefined();
+    expect(validar(f).errors.colorNombre).toBeUndefined();
+    expect(validar(f).errors.colorHex).toBeUndefined();
+  });
+
+  it('conserva el valor al editar otros campos y al cambiar de familia (incluida Bolsa Natural, que no lo sobrescribe: es una elección del usuario)', () => {
+    let f = setCustomColor(base(), NOMBRE, HEX);
+    f = setFieldValue(setFieldValue(f, 'ancho', '14'), 'descripcion', 'Otra');
+    expect(f.fields.colorNombre.value).toBe(NOMBRE);
+    for (const familia of ['BOLSA_FUELLE', 'BOLSA_NATURAL', 'BOLSA_PLANA_1'] as const) {
+      f = selectFamily(f, familia, familyConfigs);
+      expect(f.fields.colorNombre.value).toBe(NOMBRE);
+      expect(f.fields.colorHex.value).toBe(HEX);
+    }
+    expect(f.fields.colorConcentracion.value).toBe('2');
+  });
+
+  it('restaurar vuelve a la sugerencia del sistema: la de BIND o la de la familia (NATURAL en Bolsa Natural)', () => {
+    const restaurado = restoreField(setCustomColor(base(), NOMBRE, HEX), 'colorPreset');
+    expect(restaurado.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    expect(restaurado.fields.colorNombre.value).toBe('DAUBERT AZUL AL 2%');
+    expect(restaurado.fields.colorHex.value).toBe('#538DD5');
+    expect(isEdited(restaurado.fields.colorPreset)).toBe(false);
+    const natural = selectFamily(build(bolsaFuelle()), 'BOLSA_NATURAL', familyConfigs);
+    expect(restoreField(setCustomColor(natural, NOMBRE, HEX), 'colorPreset').fields.colorNombre.value).toBe('NATURAL');
+    // con un color declarado por BIND (COLOR VERDE en el Title) la restauración vuelve al de BIND
+    const conBind = build(withSuggestion(schfpmg001(), { color: { preset: 'VERDE', concentracionPct: null, detectado: 'VERDE', regla: 'COLOR_EXPLICITO_EN_TITULO', nota: 'BIND indica color verde.' } }));
+    const r = restoreField(setCustomColor(conBind, NOMBRE, HEX), 'colorPreset');
+    expect([r.fields.colorPreset.value, r.fields.colorHex.value, r.fields.colorNombre.value]).toEqual(['VERDE', '#00B050', 'VERDE']);
+  });
+
+  it('un nombre vacío o un HEX inválido se reportan como los demás errores de color (una sola vez)', () => {
+    const sinNombre = validar(setCustomColor(base(), '', HEX));
+    expect(sinNombre.errors.colorNombre).toMatch(/Escribe el nombre del color/);
+    const hexMalo = validar(setCustomColor(base(), NOMBRE, 'azul'));
+    expect(hexMalo.errors.colorHex).toMatch(/#RRGGBB/);
+    expect(hexMalo.incidencias.filter((i) => i.campos.includes('colorHex'))).toHaveLength(1);
+  });
+
+  it('no altera los predeterminados: COEX conserva Azul y Verde y las demás familias su lista de colores', () => {
+    expect(cfg('COEX').variantes.map((v) => [v.valor, v.colorTexto, v.colorCuerpo])).toEqual([['AZUL', 'AZUL', '#558ED5'], ['VERDE', 'VERDE', '#00B050']]);
+    expect(cfg('BOLSA_PLANA_1').colores.map((c) => c.id)).toEqual(['DAUBERT_AZUL', 'VERDE']);
+    expect(cfg('BOLSA_NATURAL').colorSugerido).toBe('NATURAL');
+    expect(selectFamily(build(bolsaFuelle()), 'BOLSA_NATURAL', familyConfigs).fields.colorNombre.value).toBe('NATURAL');
+    const coex = build(coexAzul());
+    expect(coex.fields.coexVariante.value).toBe('AZUL');
+    expect(coex.fields.colorNombre.value).toBe('AZUL');
   });
 });

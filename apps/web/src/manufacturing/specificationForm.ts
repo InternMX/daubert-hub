@@ -384,13 +384,31 @@ export function setColorPreset(form: SpecificationForm, preset: ColorPreset, con
   const f = form.fields;
   const nombreAuto = f.colorNombre.value === colorText(f.colorPreset.value, f.colorConcentracion.value, config.colores) || f.colorNombre.value === '';
   const concAuto = f.colorConcentracion.value === f.colorConcentracion.base.value;
-  const conc = preset !== 'DAUBERT_AZUL' && concAuto && f.colorConcentracion.base.origin === 'SUGERIDO' ? '' : f.colorConcentracion.value;   // el 2 % sugerido es del azul
+  // El 2 % sugerido es del azul: se retira al pasar a OTRO predefinido, pero NUNCA al elegir «Otro color…» (un color personalizado no cambia automáticamente la concentración).
+  const conc = preset !== 'DAUBERT_AZUL' && preset !== COLOR_OTRO && concAuto && f.colorConcentracion.base.origin === 'SUGERIDO' ? '' : f.colorConcentracion.value;
   const def = config.colores.find((c) => c.id === preset);
   const hex = def ? def.hex : preset === COLOR_OTRO ? f.colorHex.value : '';
   const fields = { ...f, colorPreset: { ...f.colorPreset, value: preset, manual: true }, colorHex: { ...f.colorHex, value: hex, source: undefined } };
   if (conc !== f.colorConcentracion.value) fields.colorConcentracion = { ...f.colorConcentracion, value: conc, base: { ...f.colorConcentracion.base, value: conc } };
   if (nombreAuto) fields.colorNombre = systemValue(colorText(preset, conc, config.colores), 'SUGERIDO', f.colorNombre.base.note);
   return { ...form, fields };
+}
+
+/**
+ * Aplica un color PERSONALIZADO guardado (nombre + HEX): el nombre se imprime tal cual en el campo Color y el HEX pasa a los elementos visuales que usan el color seleccionado. Es una elección del
+ * usuario (no se sobrescribe al cambiar de familia ni de campos) y NO toca la concentración de colorante ni la resina VCI. «Restaurar» vuelve a la sugerencia de BIND o de la familia.
+ */
+export function setCustomColor(form: SpecificationForm, nombre: string, hex: string): SpecificationForm {
+  const f = form.fields;
+  return {
+    ...form,
+    fields: {
+      ...f,
+      colorPreset: { ...f.colorPreset, value: COLOR_OTRO, source: undefined, manual: true, confirmed: false },
+      colorHex: { ...f.colorHex, value: hex, source: undefined, manual: true, confirmed: false },
+      colorNombre: { ...f.colorNombre, value: nombre, source: undefined, manual: true, confirmed: false }
+    }
+  };
 }
 
 /** Concentración del color (independiente de la resina VCI): si el texto impreso no se editó a mano, se regenera con la nueva concentración. */
