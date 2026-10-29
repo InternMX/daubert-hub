@@ -38,38 +38,7 @@ function psql({ usuario = 'postgres', base = 'daubert_hub_test', archivo, sql, v
   return { codigo: r.status, salida: `${r.stdout}\n${r.stderr}` };
 }
 
-const INIT = `
-CREATE ROLE daubert_hub_test_user LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE;
-CREATE ROLE daubert_hub_app LOGIN PASSWORD 'scratch';
-CREATE ROLE n8n_app LOGIN PASSWORD 'scratch';
-CREATE DATABASE daubert_hub_test OWNER postgres;
-CREATE DATABASE otra_base OWNER postgres;
-\\c daubert_hub_test
-CREATE SCHEMA security; CREATE SCHEMA core; CREATE SCHEMA audit; CREATE SCHEMA ops; CREATE SCHEMA operacion;
-CREATE TABLE security.users (user_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, display_name text NOT NULL, email text NOT NULL, password_hash text NOT NULL, role text NOT NULL, status text NOT NULL DEFAULT 'ACTIVE', created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());
-CREATE TABLE core.empresas (empresa_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, tipo_empresa text NOT NULL, nombre_comercial text NOT NULL, estatus text NOT NULL DEFAULT 'ACTIVO');
-CREATE TABLE audit.cambios (cambio_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, fecha timestamptz NOT NULL DEFAULT now(), esquema text NOT NULL, tabla text NOT NULL, registro_id text, operacion text NOT NULL, usuario_id text, usuario_email text, origen text NOT NULL DEFAULT 'SISTEMA', request_id text, datos_anteriores jsonb, datos_nuevos jsonb);
-CREATE FUNCTION audit.fn_registrar_cambio() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'pg_catalog', 'audit' AS $f$
-DECLARE v_old JSONB; v_new JSONB; v_row JSONB; v_registro_id TEXT := ''; i INTEGER;
-BEGIN
-    IF TG_OP = 'INSERT' THEN v_new := TO_JSONB(NEW);
-    ELSIF TG_OP = 'UPDATE' THEN v_old := TO_JSONB(OLD); v_new := TO_JSONB(NEW); IF (v_old - 'updated_at') = (v_new - 'updated_at') THEN RETURN NEW; END IF;
-    ELSE v_old := TO_JSONB(OLD); END IF;
-    v_row := COALESCE(v_new, v_old);
-    FOR i IN 0..TG_NARGS - 1 LOOP IF i > 0 THEN v_registro_id := v_registro_id || '|'; END IF; v_registro_id := v_registro_id || TG_ARGV[i] || '=' || COALESCE(v_row ->> TG_ARGV[i], 'NULL'); END LOOP;
-    INSERT INTO audit.cambios (esquema, tabla, registro_id, operacion, usuario_id, usuario_email, origen, request_id, datos_anteriores, datos_nuevos)
-    VALUES (TG_TABLE_SCHEMA, TG_TABLE_NAME, v_registro_id, TG_OP, NULLIF(CURRENT_SETTING('app.user_id', TRUE), ''), NULLIF(CURRENT_SETTING('app.user_email', TRUE), ''), COALESCE(NULLIF(CURRENT_SETTING('app.origin', TRUE), ''), 'SISTEMA'), NULLIF(CURRENT_SETTING('app.request_id', TRUE), ''), v_old, v_new);
-    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF; RETURN NEW;
-END $f$;
-INSERT INTO security.users (display_name, email, password_hash, role, status) VALUES
-  ('Admin Uno', 'admin1@example.invalid', 'x', 'ADMIN', 'ACTIVE'), ('General Dos', 'g2@example.invalid', 'x', 'GENERAL', 'ACTIVE'),
-  ('General Tres', 'g3@example.invalid', 'x', 'GENERAL', 'ACTIVE'), ('Inactivo Cuatro', 'g4@example.invalid', 'x', 'GENERAL', 'INACTIVE'),
-  ('Admin Cinco', 'admin5@example.invalid', 'x', 'ADMIN', 'ACTIVE');
-INSERT INTO core.empresas (tipo_empresa, nombre_comercial) VALUES ('CLIENTE', 'Cliente simulado');
-GRANT USAGE ON SCHEMA security, core, audit TO daubert_hub_test_user;
-GRANT SELECT ON security.users, core.empresas TO daubert_hub_test_user;
-GRANT SELECT, INSERT ON audit.cambios TO daubert_hub_test_user;
-`;
+const { INIT } = require('./instancia-desechable.cjs');
 
 async function conectar(usuario = 'daubert_hub_test_user', password = 'scratch') {
   const c = new pg.Client({ host: HOST, port: PUERTO, user: usuario, password, database: 'daubert_hub_test' });

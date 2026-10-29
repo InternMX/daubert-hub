@@ -9,6 +9,7 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
+    "test:desechable": "vitest run --config vitest.desechable.config.ts",
     "sheets:compose": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/coex/coex.template.html --out tmp/manufacturing-sheets/coex.composed.html",
     "test:sheets-regression": "python test/manufacturing-sheets/regression/coex-confpmg04/comparar_regresion.py",
     "sheets:compose:bolsa-fuelle": "node src/manufacturing-sheets/tools/compose-template.mjs --source src/manufacturing-sheets/templates/bolsa-fuelle/bolsa-fuelle.template.html --out tmp/manufacturing-sheets/bolsa-fuelle.composed.html",
