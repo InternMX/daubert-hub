@@ -43,7 +43,7 @@ export interface VarianteDef {
   presetEquivalente: string;
 }
 
-/** Capa de coextrusión: formulación fija; peso sugerido editable desde el total, libras de VCI siempre capturadas por el usuario. */
+/** Capa de coextrusión: formulación fija; peso sugerido editable desde el total y libras de VCI calculadas por capa (editables). */
 export interface CapaDef {
   id: 'interior' | 'intermedia' | 'exterior';
   etiqueta: string;

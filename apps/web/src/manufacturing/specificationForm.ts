@@ -182,7 +182,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       modalidad: field('', 'PENDIENTE'),
       // Cotas técnicas independientes (Rollo Continuo y Termoencogible): BIND no las entrega y NO se calculan: las captura el usuario.
       anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field(),
-      // COEX: la variante requiere color declarado. Los pesos se sugieren desde el total; las libras de VCI siguen siendo manuales.
+      // COEX: la variante requiere color declarado. Los pesos y las libras de VCI de cada capa se calculan desde el total (suggestLayerWeights).
       coexVariante: sug?.coexVariante?.valor ? field(sug.coexVariante.valor, 'SUGERIDO', sug.coexVariante.nota) : field('', 'PENDIENTE', sug?.coexVariante?.nota),
       pesoCapaInterior: field(), pesoCapaIntermedia: field(), pesoCapaExterior: field(), lbVciInterior: field(), lbVciIntermedia: field(), lbVciExterior: field()
     }

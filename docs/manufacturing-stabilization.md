@@ -52,7 +52,30 @@ Los entregables de revisión están en `C:\Users\06\Documents\Daubert\Entregable
 - COEX sugiere peso total válido y positivo ÷ 3, a **cinco decimales**, con procedencia **Calculado por el sistema**. Se toma inicialmente el Weight interpretado de BIND, en libras. Sin peso válido no se inventan capas. Un total invalidado retira sugerencias automáticas anteriores, preservando campos protegidos.
 - Una edición manual protege la capa incluso si coincide con la sugerencia. Revisar expresamente el borrador también protege los pesos. Cambiar el total recalcula solo las capas automáticas; el diálogo de reemplazo muestra valores actuales y propuestos antes de sustituir capas protegidas. Cancelar conserva los datos.
 - La suma se comprueba en el backend con tolerancia **0.000015 lb** (tres redondeos de hasta 0.000005 lb). El desfase se advierte; no se fuerza la igualdad.
-- Fixture simulado COEX Verde: total 0.7540, capas 0.25133, VCI capturado de ejemplo 0.010053 / 0.005027 / 0. No cambia ninguna referencia histórica ni se automatizan libras de VCI.
+- Fixture simulado COEX Verde: total 0.7540, capas 0.25133, VCI de ejemplo 0.010053 / 0.005027 / 0. No cambia ninguna referencia histórica. *(Actualización: las libras de VCI por capa se calculan automáticamente desde `e55b4f3`; ver la sección siguiente.)*
 - La revisión visual de Termoencogible detectó una imagen relativa ausente en srcdoc. El servicio ahora incrusta el PNG aprobado del rollo (lista fija de recursos), igual que el logo, sin modificar plantilla, geometría ni CSP.
 - Verificación de estos ajustes: **1929 pruebas API**, **1279 frontend**, lint/typecheck/build OK, ocho regresiones documentales y diez impresiones integrales OK. Dieciséis capturas renovadas; inspección visual de ambos COEX, Hojas, Natural y Termoencogible.
 - Entregables adicionales: `C:\Users\06\Documents\Daubert\Entregables\Estabilizacion_Prototipo_Manufactura\Ajustes_COEX_Producto\`. PDF descargable sigue diferido.
+
+## Estado vigente tras la consolidación de incidencias y la primera ronda de correcciones
+
+- **COEX** calcula automáticamente el peso por capa (peso total ÷ 3, cinco decimales) y las libras de VCI de cada capa (peso de la capa × porcentaje de VCI ÷ 100, seis decimales; exterior = 0). Un valor editado a mano o revisado se conserva, se avisa si deja de coincidir y «Restaurar» vuelve al cálculo.
+- **Producto** es editable y recibe una sugerencia por familia desde el registro central; una denominación escrita por el usuario no se reemplaza.
+- **Advertencias:** se consolidan por incidencia (un id estable por causa, una sola aparición donde se puede corregir). El resumen indica «Revisando…» mientras no hay una respuesta vigente del backend (o «Revisión técnica no disponible» si falla) y nunca afirma «Sin incidencias» antes de tener un resultado válido. «Ir» revela el aviso concreto, desplaza, enfoca el control y lo asocia con `aria-describedby`.
+- **Bolsa Natural** sugiere el color **NATURAL** (registro central), sin heredar el azul ni la concentración del 2 %. Un color editado a mano o declarado por BIND en el Title no se sobrescribe; si BIND declara otro color se muestra la contradicción (reconocible). Al cambiar de familia las sugerencias automáticas siguen a la nueva familia. La plantilla de Bolsa Natural no se modificó.
+- **Diferido deliberadamente:** descarga PDF, persistencia, aprobación, emisión oficial y catálogo definitivo de clientes.
+- **Firmas (confirmado por Manufactura, sin implementar):** escaneadas y opcionales; Elaboró = cuenta autenticada que elaboró la hoja; Revisó = usuario que efectivamente realizó la revisión; Autorizó opcional; sin máximo formal (normalmente dos o tres); las imágenes históricas están dentro del Excel original; el gestor de firmas y el flujo de revisión quedan pendientes de diseño.
+
+## Diagnóstico de la regresión CONFPMG04 (COEX Verde) con Chrome 156
+
+Estado: **la prueba `test:sheets-regression` sigue fallando** (137 diferencias, reproducible en todas las corridas, también aislada y sin concurrencia). No se modificaron la plantilla, sus dimensiones, las referencias históricas ni la tolerancia (0.15 pt).
+
+Comprobado (2026-10-29):
+- La plantilla compuesta es idéntica byte a byte a `SHA256SUMS.txt` (`6551880e…`). Mismas fuentes incrustadas (Calibri y Calibri-Bold), mismo tamaño y cantidad de palabras (137), 1 página Carta.
+- Las medidas del DOM coinciden (diferencia máxima 0.00 pt) y la imagen rasterizada tiene **0 píxeles distintos** frente a la referencia. Las posiciones x de las 137 palabras, el origen (línea base) y el tamaño de cada texto son idénticos (diferencia 0.0).
+- Lo único que cambia es la altura del cuadro de cada palabra en el PDF (p. ej. 129.0–141.5 pt en la referencia frente a 131.1–141.3 pt ahora). Causa: el descriptor de fuente que escribe Skia/PDF cambió entre Chrome 155 y 156 (`Ascent 952.1 / Descent 268.6` frente a `Ascent 750 / Descent -250`, con `CapHeight` negativo), y PyMuPDF calcula el cuadro de cada palabra con esos valores. Es metadato de la fuente, no desplazamiento del texto impreso.
+- Descartados: concurrencia o recursos (resultado idéntico en corridas aisladas), la plantilla y las fuentes. El entorno difiere solo en la versión de Chrome (156.0.8078.48 frente a 155.0.8059.40); PyMuPDF y el sistema operativo coinciden con la línea base.
+
+Pendiente / no resuelto:
+- No se reprodujo el entorno original: no hay un Chrome 155 disponible ni se instaló uno. Que el único factor sea la versión de Chrome es una inferencia fuerte, no una comprobación directa.
+- El criterio de la prueba (cuadro de palabras de PyMuPDF con tolerancia 0.15 pt) es sensible a ese metadato. Decidir si se compara la línea base del texto en lugar del cuadro, o si se fija Chrome 155, es una decisión de Manufactura/QA; no se aplicó ninguna.
