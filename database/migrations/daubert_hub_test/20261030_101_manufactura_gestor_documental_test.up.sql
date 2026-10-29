@@ -1,11 +1,11 @@
 -- =====================================================================================================================
--- UP · manufactura · gestor documental de Hojas de Instrucción de Manufactura (SOLO TEST: daubert_hub_test)
+-- UP · manufactura · gestor documental de Hojas de Instrucción de Manufactura (SOLO TEST: daubert_hub_test)   [revisión 2]
 --
 -- ALCANCE DE LAS ESCRITURAS (todo dentro de UNA transacción; si algo falla no queda nada):
---   · CREA el esquema `manufactura` (dueño: el rol administrativo que ejecuta) con 5 tablas, sus funciones y triggers.
---   · CONCEDE al rol `daubert_hub_test_user` SOLO los privilegios de datos listados al final (sin DDL, sin DELETE).
---   · NO modifica ni lee datos de ninguna tabla existente; NO toca core, security, ops, operacion, audit (salvo
---     que los triggers de auditoría nuevos escribirán en audit.cambios cuando la aplicación use las tablas nuevas).
+--   · CREA el esquema `manufactura` (dueño: el rol administrativo que ejecuta) con 5 tablas, 12 funciones, triggers y políticas RLS.
+--   · CONCEDE al rol `daubert_hub_test_user` SOLO los privilegios de datos listados al final (sin DDL, sin DELETE, sin TRUNCATE).
+--   · NO modifica ni lee datos de ninguna tabla existente; NO toca core, security, ops, operacion ni audit (salvo que los triggers
+--     de auditoría nuevos escribirán en audit.cambios cuando la aplicación use las tablas nuevas).
 --   · NO toca roles, permisos de otras bases, daubert_global ni n8n.
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_test_user):
@@ -29,8 +29,8 @@ BEGIN
     RAISE EXCEPTION 'ABORTO: se requiere el rol administrativo (el rol actual % no es administrador).', current_user;
   END IF;
   SELECT * INTO v_app FROM pg_roles WHERE rolname = 'daubert_hub_test_user';
-  IF NOT FOUND OR v_app.rolsuper OR v_app.rolcreaterole OR v_app.rolcreatedb THEN
-    RAISE EXCEPTION 'ABORTO: el rol daubert_hub_test_user no existe o tiene privilegios que no debe tener.';
+  IF NOT FOUND OR v_app.rolsuper OR v_app.rolcreaterole OR v_app.rolcreatedb OR v_app.rolbypassrls THEN
+    RAISE EXCEPTION 'ABORTO: el rol daubert_hub_test_user no existe o tiene privilegios que no debe tener (superusuario/creación/BYPASSRLS).';
   END IF;
   IF to_regclass('security.users') IS NULL OR to_regclass('core.empresas') IS NULL OR to_regproc('audit.fn_registrar_cambio') IS NULL THEN
     RAISE EXCEPTION 'ABORTO: faltan objetos requeridos (security.users, core.empresas, audit.fn_registrar_cambio).';
@@ -41,17 +41,16 @@ BEGIN
 END $$;
 
 CREATE SCHEMA manufactura;
-COMMENT ON SCHEMA manufactura IS 'Gestor documental de Hojas de Instrucción de Manufactura (TEST). Revisiones finalizadas inmutables; PDF almacenados con SHA-256.';
+COMMENT ON SCHEMA manufactura IS 'Gestor documental de Hojas de Instrucción de Manufactura (TEST). Revisiones finalizadas inmutables; PDF almacenados con SHA-256. Nada de aquí es válido para producción.';
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 1. Funciones auxiliares
 -- ---------------------------------------------------------------------------------------------------------------------
 
--- Identidad de auditoría de la transacción: la fija la API desde la SESIÓN autenticada con set_config('app.user_id'/'app.user_email', ..., true)
+-- Identidad de la transacción: la fija la API desde la SESIÓN autenticada con set_config('app.user_id' / 'app.user_email', ..., true)
 -- (el mismo mecanismo que usa audit.fn_registrar_cambio). Sin identidad no se escribe: el actor nunca viene de columnas enviadas por el cliente.
 CREATE FUNCTION manufactura.fn_actor(OUT usuario_id bigint, OUT usuario_email text)
-LANGUAGE plpgsql STABLE
-SET search_path = pg_catalog
+LANGUAGE plpgsql STABLE SET search_path = pg_catalog
 AS $fn$
 BEGIN
   usuario_id    := NULLIF(current_setting('app.user_id', true), '')::bigint;
@@ -62,14 +61,27 @@ BEGIN
 END
 $fn$;
 
-CREATE FUNCTION manufactura.fn_hash_json(p jsonb) RETURNS text
-LANGUAGE sql STABLE
-SET search_path = pg_catalog
-AS $fn$ SELECT encode(sha256(convert_to(p::text, 'UTF8')), 'hex') $fn$;
+-- Versiones para las políticas de fila (devuelven NULL / false sin identidad: nunca lanzan).
+CREATE FUNCTION manufactura.fn_actor_id() RETURNS bigint
+LANGUAGE sql STABLE SET search_path = pg_catalog
+AS $fn$ SELECT CASE WHEN NULLIF(current_setting('app.user_id', true), '') ~ '^[0-9]{1,18}$' THEN NULLIF(current_setting('app.user_id', true), '')::bigint END $fn$;
+
+CREATE FUNCTION manufactura.fn_actor_es_admin() RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, security
+AS $fn$ SELECT EXISTS (SELECT 1 FROM security.users u WHERE u.user_id = manufactura.fn_actor_id() AND u.role = 'ADMIN' AND u.status = 'ACTIVE') $fn$;
+
+-- Huella de lo TÉCNICO de una revisión: familia + copia de la especificación. Cualquier cambio técnico cambia la huella (invalida revisiones).
+CREATE FUNCTION manufactura.fn_hash_revision(p_familia text, p_especificacion jsonb) RETURNS text
+LANGUAGE sql STABLE SET search_path = pg_catalog
+AS $fn$ SELECT encode(sha256(convert_to(p_familia || E'\n' || p_especificacion::text, 'UTF8')), 'hex') $fn$;
+
+-- Nombre del PDF finalizado: CODIGO-VARIANTE_REV01.pdf (o CODIGO_REV01.pdf sin variante). La base lo impone: el nombre y la revisión impresa no pueden divergir.
+CREATE FUNCTION manufactura.fn_nombre_pdf(p_codigo text, p_variante text, p_revision integer) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
+AS $fn$ SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, 2, '0') || '.pdf' $fn$;
 
 CREATE FUNCTION manufactura.fn_inmutable() RETURNS trigger
-LANGUAGE plpgsql
-SET search_path = pg_catalog
+LANGUAGE plpgsql SET search_path = pg_catalog
 AS $fn$
 BEGIN
   RAISE EXCEPTION '%.% es inmutable: no admite % (corrija con una nueva revisión o un nuevo registro).', TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP USING ERRCODE = 'integrity_constraint_violation';
@@ -77,8 +89,8 @@ END
 $fn$;
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- 2. Documentos: una línea de revisiones de una hoja. UN CÓDIGO DCMX puede tener VARIAS hojas (variantes: p. ej. Hojas
---    doblada / extendida, otra etiqueta o cliente). La regla es (código, variante) único; no «un documento por código».
+-- 2. Documentos: una línea de revisiones de una hoja. UN CÓDIGO DCMX puede tener VARIAS hojas (variantes: p. ej. Hojas doblada /
+--    extendida, otra etiqueta o cliente). La regla es (código, variante) único; no «un documento por código».
 -- ---------------------------------------------------------------------------------------------------------------------
 CREATE TABLE manufactura.documentos (
   documento_id          bigint GENERATED ALWAYS AS IDENTITY,
@@ -108,18 +120,20 @@ CREATE TABLE manufactura.revisiones (
   public_id                  uuid NOT NULL DEFAULT gen_random_uuid(),
   documento_id               bigint NOT NULL,
   revision                   integer,                       -- NULL hasta finalizar; 1, 2, 3… al finalizar (la asigna el trigger)
+  revision_prevista          integer,                       -- reservada al pasar a FINALIZANDO (el PDF imprime este número); es exacta porque solo hay UNA revisión abierta por documento
   estado                     text NOT NULL DEFAULT 'BORRADOR',
   version                    integer NOT NULL DEFAULT 1,    -- bloqueo optimista de edición
   familia                    text NOT NULL,
   especificacion             jsonb NOT NULL,                -- copia de la especificación (datos, procedencia, color, incidencias reconocidas, 6 campos de BIND)
-  especificacion_sha256      text NOT NULL,                 -- lo calcula el trigger (no la aplicación)
+  especificacion_sha256      text NOT NULL,                 -- huella de familia + especificación; la calcula el trigger (no la aplicación)
   elaboro_nombre             text,                          -- nombre IMPRESO (sugerido desde la sesión, editable); NO es la identidad de auditoría
-  elaboro_confirmado         boolean NOT NULL DEFAULT false,
+  elaboro_confirmado         boolean NOT NULL DEFAULT false,-- confirmación expresa: obligatoria para finalizar
   autorizo_nombre            text,                          -- opcional; sin flujo de autorización
-  revisor_usuario_id         bigint,                        -- revisor asignado (ve el borrador y puede registrar su revisión)
+  revisor_usuario_id         bigint,                        -- revisor asignado: usuario ACTIVO; solo el creador o un ADMIN lo asigna
   cliente_empresa_id         bigint,
   cliente_nombre             text,
   cliente_verificado         boolean NOT NULL DEFAULT false,-- true = vinculado a core.empresas; false = identificación manual de TEST (no apta para emisión)
+  entorno_emision            text NOT NULL DEFAULT 'PRUEBA',-- constancia: nada de este esquema es válido para producción
   basada_en_revision_id      bigint,
   creado_por_usuario_id      bigint NOT NULL,
   creado_por_email           text NOT NULL,
@@ -148,7 +162,8 @@ CREATE TABLE manufactura.revisiones (
   CONSTRAINT fk_manufactura_revisiones_finalizado FOREIGN KEY (finalizado_por_usuario_id) REFERENCES security.users (user_id) ON DELETE RESTRICT,
   CONSTRAINT ck_manufactura_revisiones_estado CHECK (estado IN ('BORRADOR', 'FINALIZANDO', 'FINALIZADA', 'DESCARTADA')),
   CONSTRAINT ck_manufactura_revisiones_version CHECK (version >= 1),
-  CONSTRAINT ck_manufactura_revisiones_revision CHECK (revision IS NULL OR revision >= 1),
+  CONSTRAINT ck_manufactura_revisiones_revision CHECK ((revision IS NULL OR revision >= 1) AND (revision_prevista IS NULL OR revision_prevista >= 1)),
+  CONSTRAINT ck_manufactura_revisiones_entorno CHECK (entorno_emision = 'PRUEBA'),
   CONSTRAINT ck_manufactura_revisiones_familia CHECK (familia IN ('BOLSA_PLANA_1', 'HOJA_PAQ', 'BOLSA_FUELLE', 'BOLSA_NATURAL', 'ROLLO_CONTINUO', 'TERMOENCOGIBLE', 'COEX')),
   CONSTRAINT ck_manufactura_revisiones_especificacion CHECK (
     jsonb_typeof(especificacion) = 'object' AND especificacion ? 'datos' AND octet_length(especificacion::text) <= 65536
@@ -164,21 +179,21 @@ CREATE TABLE manufactura.revisiones (
   CONSTRAINT ck_manufactura_revisiones_cliente CHECK (cliente_verificado = false OR cliente_empresa_id IS NOT NULL),
   CONSTRAINT ck_manufactura_revisiones_coherencia CHECK (
     CASE estado
-      WHEN 'BORRADOR'    THEN revision IS NULL AND finalizando_token IS NULL AND finalizado_en IS NULL AND finalizado_por_usuario_id IS NULL
-      WHEN 'FINALIZANDO' THEN revision IS NULL AND finalizando_token IS NOT NULL AND finalizando_desde IS NOT NULL AND finalizando_por_usuario_id IS NOT NULL AND finalizado_en IS NULL
-      WHEN 'FINALIZADA'  THEN revision IS NOT NULL AND finalizando_token IS NULL AND finalizado_en IS NOT NULL AND finalizado_por_usuario_id IS NOT NULL AND finalizado_por_email IS NOT NULL
+      WHEN 'BORRADOR'    THEN revision IS NULL AND revision_prevista IS NULL AND finalizando_token IS NULL AND finalizado_en IS NULL AND finalizado_por_usuario_id IS NULL
+      WHEN 'FINALIZANDO' THEN revision IS NULL AND revision_prevista IS NOT NULL AND finalizando_token IS NOT NULL AND finalizando_desde IS NOT NULL AND finalizando_por_usuario_id IS NOT NULL AND finalizado_en IS NULL
+      WHEN 'FINALIZADA'  THEN revision IS NOT NULL AND revision = revision_prevista AND finalizando_token IS NULL AND finalizado_en IS NOT NULL AND finalizado_por_usuario_id IS NOT NULL AND finalizado_por_email IS NOT NULL
                               AND cliente_nombre IS NOT NULL AND elaboro_nombre IS NOT NULL AND elaboro_confirmado
-      WHEN 'DESCARTADA'  THEN revision IS NULL AND finalizando_token IS NULL AND finalizado_en IS NULL
+      WHEN 'DESCARTADA'  THEN revision IS NULL AND revision_prevista IS NULL AND finalizando_token IS NULL AND finalizado_en IS NULL
       ELSE false
     END
   )
 );
--- Un solo borrador (o finalización en curso) por documento.
+-- Un solo borrador (o finalización en curso) por documento: de aquí sale que la numeración sea exacta y sin carreras.
 CREATE UNIQUE INDEX uq_manufactura_revisiones_abierta ON manufactura.revisiones (documento_id) WHERE estado IN ('BORRADOR', 'FINALIZANDO');
 CREATE INDEX ix_manufactura_revisiones_estado ON manufactura.revisiones (estado, updated_at DESC);
 CREATE INDEX ix_manufactura_revisiones_creador ON manufactura.revisiones (creado_por_usuario_id);
 CREATE INDEX ix_manufactura_revisiones_revisor ON manufactura.revisiones (revisor_usuario_id) WHERE revisor_usuario_id IS NOT NULL;
-COMMENT ON TABLE manufactura.revisiones IS 'Borradores y versiones de una hoja con la copia de la especificación. FINALIZADA es inmutable (trigger). Actor tomado de app.user_id/app.user_email.';
+COMMENT ON TABLE manufactura.revisiones IS 'Borradores y versiones de una hoja con la copia de la especificación. FINALIZADA es inmutable (trigger). Actor tomado de app.user_id/app.user_email. Visibilidad por RLS.';
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 4. PDF finalizado: metadatos (auditable) y contenido (bytea) separados; el contenido NO se audita para no copiar bytes a audit.cambios.
@@ -187,7 +202,7 @@ CREATE TABLE manufactura.pdfs (
   revision_id               bigint NOT NULL,
   pdf_sha256                text NOT NULL,
   bytes                     integer NOT NULL,
-  especificacion_sha256     text NOT NULL,                  -- hash de la copia de la que PROCEDE el PDF (debe coincidir con la revisión)
+  especificacion_sha256     text NOT NULL,                  -- huella de la copia de la que PROCEDE el PDF (debe coincidir con la revisión)
   nombre_archivo            text NOT NULL,
   generado_por_usuario_id   bigint NOT NULL,
   generado_por_email        text NOT NULL,
@@ -197,7 +212,7 @@ CREATE TABLE manufactura.pdfs (
   CONSTRAINT fk_manufactura_pdfs_usuario FOREIGN KEY (generado_por_usuario_id) REFERENCES security.users (user_id) ON DELETE RESTRICT,
   CONSTRAINT ck_manufactura_pdfs_sha CHECK (pdf_sha256 ~ '^[0-9a-f]{64}$' AND especificacion_sha256 ~ '^[0-9a-f]{64}$'),
   CONSTRAINT ck_manufactura_pdfs_bytes CHECK (bytes BETWEEN 1 AND 5242880),
-  CONSTRAINT ck_manufactura_pdfs_nombre CHECK (nombre_archivo ~ '^[A-Za-z0-9._-]{1,120}\.pdf$')
+  CONSTRAINT ck_manufactura_pdfs_nombre CHECK (nombre_archivo ~ '^[A-Za-z0-9._-]{1,120}_REV[0-9]{2,}\.pdf$')
 );
 CREATE TABLE manufactura.pdf_contenidos (
   revision_id bigint NOT NULL,
@@ -209,7 +224,7 @@ CREATE TABLE manufactura.pdf_contenidos (
 ALTER TABLE manufactura.pdf_contenidos ALTER COLUMN contenido SET STORAGE EXTERNAL;   -- un PDF ya viene comprimido: sin recompresión TOAST
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- 5. Confirmaciones de revisión: acción AUTENTICADA y vinculada al contenido (versión + hash); nunca por capturar un nombre.
+-- 5. Confirmaciones de revisión: acción AUTENTICADA y vinculada al contenido (versión + huella); nunca por capturar un nombre.
 -- ---------------------------------------------------------------------------------------------------------------------
 CREATE TABLE manufactura.confirmaciones_revision (
   confirmacion_id       bigint GENERATED ALWAYS AS IDENTITY,
@@ -218,7 +233,9 @@ CREATE TABLE manufactura.confirmaciones_revision (
   usuario_email         text NOT NULL,
   usuario_nombre        text NOT NULL,                      -- display_name en el momento de la revisión
   version               integer NOT NULL,
-  especificacion_sha256 text NOT NULL,
+  especificacion_sha256 text NOT NULL,                      -- la confirmación solo vale mientras la huella de la revisión siga siendo esta
+  es_autorrevision      boolean NOT NULL,                   -- constancia: quien revisa es quien creó el borrador (permitido en TEST)
+  como_revisor_asignado boolean NOT NULL,
   created_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT pk_manufactura_confirmaciones PRIMARY KEY (confirmacion_id),
   CONSTRAINT uq_manufactura_confirmaciones UNIQUE (revision_id, usuario_id, especificacion_sha256),
@@ -244,23 +261,32 @@ CREATE TRIGGER trg_manufactura_documentos_inmutable BEFORE UPDATE OR DELETE ON m
 CREATE FUNCTION manufactura.fn_revisiones_before_insert() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, manufactura
 AS $fn$
-DECLARE v_id bigint; v_email text;
+DECLARE v_id bigint; v_email text; v_dueno bigint;
 BEGIN
   SELECT a.usuario_id, a.usuario_email INTO v_id, v_email FROM manufactura.fn_actor() a;
   -- Solo se crean BORRADORES: una versión finalizada únicamente nace de la transición controlada (FINALIZANDO → FINALIZADA).
-  IF NEW.estado <> 'BORRADOR' OR NEW.revision IS NOT NULL THEN
+  IF NEW.estado <> 'BORRADOR' OR NEW.revision IS NOT NULL OR NEW.revision_prevista IS NOT NULL THEN
     RAISE EXCEPTION 'Una revisión solo puede crearse como BORRADOR.' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  -- Solo el creador del documento o un ADMIN agregan revisiones (las cuentas GENERAL, únicamente a documentos propios).
+  SELECT d.creado_por_usuario_id INTO v_dueno FROM manufactura.documentos d WHERE d.documento_id = NEW.documento_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'El documento no existe o no es accesible.' USING ERRCODE = 'insufficient_privilege'; END IF;
+  IF v_dueno <> v_id AND NOT manufactura.fn_actor_es_admin() THEN
+    RAISE EXCEPTION 'Solo el creador del documento o un ADMIN pueden agregar revisiones.' USING ERRCODE = 'insufficient_privilege';
   END IF;
   IF NEW.basada_en_revision_id IS NOT NULL AND NOT EXISTS (
        SELECT 1 FROM manufactura.revisiones r WHERE r.revision_id = NEW.basada_en_revision_id AND r.documento_id = NEW.documento_id AND r.estado = 'FINALIZADA') THEN
     RAISE EXCEPTION 'Una nueva revisión solo puede basarse en una versión FINALIZADA del mismo documento.' USING ERRCODE = 'integrity_constraint_violation';
   END IF;
-  NEW.version := 1;
+  IF NEW.revisor_usuario_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM security.users u WHERE u.user_id = NEW.revisor_usuario_id AND u.status = 'ACTIVE') THEN
+    RAISE EXCEPTION 'El revisor asignado debe ser un usuario ACTIVO.' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  NEW.version := 1; NEW.entorno_emision := 'PRUEBA';
   NEW.creado_por_usuario_id := v_id;      NEW.creado_por_email := v_email;      NEW.created_at := now();
   NEW.actualizado_por_usuario_id := v_id; NEW.actualizado_por_email := v_email; NEW.updated_at := now();
   NEW.finalizando_token := NULL; NEW.finalizando_por_usuario_id := NULL; NEW.finalizando_por_email := NULL; NEW.finalizando_desde := NULL;
   NEW.finalizado_por_usuario_id := NULL; NEW.finalizado_por_email := NULL; NEW.finalizado_en := NULL;
-  NEW.especificacion_sha256 := manufactura.fn_hash_json(NEW.especificacion);
+  NEW.especificacion_sha256 := manufactura.fn_hash_revision(NEW.familia, NEW.especificacion);
   RETURN NEW;
 END
 $fn$;
@@ -277,15 +303,23 @@ BEGIN
   IF OLD.estado IN ('FINALIZADA', 'DESCARTADA') THEN
     RAISE EXCEPTION 'La revisión % está % y es inmutable.', OLD.revision_id, OLD.estado USING ERRCODE = 'integrity_constraint_violation';
   END IF;
+  -- Solo el creador de la revisión o un ADMIN modifican, inician la finalización o descartan (el revisor NO modifica datos técnicos).
+  IF OLD.creado_por_usuario_id <> v_id AND NOT manufactura.fn_actor_es_admin() THEN
+    RAISE EXCEPTION 'Solo el creador de la revisión o un ADMIN pueden modificarla.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
 
   -- Identidad y origen: nunca cambian.
   IF NEW.revision_id <> OLD.revision_id OR NEW.public_id <> OLD.public_id OR NEW.documento_id <> OLD.documento_id
      OR NEW.creado_por_usuario_id <> OLD.creado_por_usuario_id OR NEW.creado_por_email <> OLD.creado_por_email OR NEW.created_at <> OLD.created_at
-     OR NEW.basada_en_revision_id IS DISTINCT FROM OLD.basada_en_revision_id THEN
+     OR NEW.basada_en_revision_id IS DISTINCT FROM OLD.basada_en_revision_id OR NEW.entorno_emision <> OLD.entorno_emision THEN
     RAISE EXCEPTION 'Las columnas de identidad y origen de una revisión no se modifican.' USING ERRCODE = 'integrity_constraint_violation';
   END IF;
+  IF NEW.revisor_usuario_id IS DISTINCT FROM OLD.revisor_usuario_id AND NEW.revisor_usuario_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM security.users u WHERE u.user_id = NEW.revisor_usuario_id AND u.status = 'ACTIVE') THEN
+    RAISE EXCEPTION 'El revisor asignado debe ser un usuario ACTIVO.' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
 
-  NEW.especificacion_sha256 := manufactura.fn_hash_json(NEW.especificacion);
+  NEW.especificacion_sha256 := manufactura.fn_hash_revision(NEW.familia, NEW.especificacion);
   v_contenido_cambia := NEW.especificacion IS DISTINCT FROM OLD.especificacion OR NEW.familia IS DISTINCT FROM OLD.familia
     OR NEW.elaboro_nombre IS DISTINCT FROM OLD.elaboro_nombre OR NEW.elaboro_confirmado IS DISTINCT FROM OLD.elaboro_confirmado
     OR NEW.autorizo_nombre IS DISTINCT FROM OLD.autorizo_nombre OR NEW.revisor_usuario_id IS DISTINCT FROM OLD.revisor_usuario_id
@@ -302,9 +336,13 @@ BEGIN
       IF v_contenido_cambia OR NEW.version <> OLD.version THEN
         RAISE EXCEPTION 'Al iniciar la finalización el contenido y la versión no pueden cambiar.' USING ERRCODE = 'integrity_constraint_violation';
       END IF;
+      -- Reserva la revisión que se imprimirá en el PDF (exacta: solo hay una revisión abierta por documento; el candado serializa).
+      PERFORM pg_advisory_xact_lock(hashtext('manufactura.revision'), OLD.documento_id::integer);
+      SELECT COALESCE(max(r.revision), 0) + 1 INTO v_siguiente FROM manufactura.revisiones r WHERE r.documento_id = OLD.documento_id;
+      NEW.revision_prevista := v_siguiente;
       NEW.finalizando_token := gen_random_uuid(); NEW.finalizando_por_usuario_id := v_id; NEW.finalizando_por_email := v_email; NEW.finalizando_desde := now();
     ELSIF NEW.estado = 'DESCARTADA' THEN
-      IF NEW.version <> OLD.version + 1 THEN NEW.version := OLD.version + 1; END IF;
+      NEW.version := OLD.version + 1;
     ELSE
       RAISE EXCEPTION 'Transición no permitida: BORRADOR → %.', NEW.estado USING ERRCODE = 'integrity_constraint_violation';
     END IF;
@@ -315,24 +353,30 @@ BEGIN
       RAISE EXCEPTION 'El contenido de una revisión en finalización está congelado.' USING ERRCODE = 'integrity_constraint_violation';
     END IF;
     IF NEW.estado = 'BORRADOR' THEN                                    -- cancelar o recuperar tras un fallo
-      NEW.finalizando_token := NULL; NEW.finalizando_por_usuario_id := NULL; NEW.finalizando_por_email := NULL; NEW.finalizando_desde := NULL;
-    ELSIF NEW.estado = 'FINALIZANDO' THEN                              -- reclamar una finalización abandonada (> 10 min)
+      IF EXISTS (SELECT 1 FROM manufactura.pdfs p WHERE p.revision_id = OLD.revision_id) THEN
+        RAISE EXCEPTION 'La revisión ya tiene un PDF registrado: no puede volver a borrador.' USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      NEW.revision_prevista := NULL; NEW.finalizando_token := NULL; NEW.finalizando_por_usuario_id := NULL; NEW.finalizando_por_email := NULL; NEW.finalizando_desde := NULL;
+    ELSIF NEW.estado = 'FINALIZANDO' THEN                              -- reclamar una finalización abandonada (> 10 min): token nuevo; el anterior queda inválido
       IF OLD.finalizando_desde > now() - interval '10 minutes' THEN
         RAISE EXCEPTION 'Hay una finalización en curso (menos de 10 minutos).' USING ERRCODE = 'lock_not_available';
       END IF;
+      NEW.revision_prevista := OLD.revision_prevista;
       NEW.finalizando_token := gen_random_uuid(); NEW.finalizando_por_usuario_id := v_id; NEW.finalizando_por_email := v_email; NEW.finalizando_desde := now();
     ELSIF NEW.estado = 'FINALIZADA' THEN
-      -- El PDF debe existir, proceder de ESTA copia exacta y estar íntegro.
+      -- El PDF debe existir, proceder de ESTA copia exacta, tener el nombre/revisión que le corresponden y estar íntegro.
       IF NOT EXISTS (
            SELECT 1 FROM manufactura.pdfs p JOIN manufactura.pdf_contenidos c USING (revision_id)
             WHERE p.revision_id = OLD.revision_id AND p.especificacion_sha256 = NEW.especificacion_sha256
               AND encode(sha256(c.contenido), 'hex') = p.pdf_sha256 AND octet_length(c.contenido) = p.bytes) THEN
         RAISE EXCEPTION 'No se finaliza sin un PDF íntegro generado desde exactamente esta especificación.' USING ERRCODE = 'integrity_constraint_violation';
       END IF;
-      -- Numeración correlativa por documento (serializada con un candado de transacción; el índice único es la red de seguridad).
       PERFORM pg_advisory_xact_lock(hashtext('manufactura.revision'), OLD.documento_id::integer);
       SELECT COALESCE(max(r.revision), 0) + 1 INTO v_siguiente FROM manufactura.revisiones r WHERE r.documento_id = OLD.documento_id;
-      NEW.revision := v_siguiente;
+      IF v_siguiente <> OLD.revision_prevista THEN
+        RAISE EXCEPTION 'La revisión prevista (%) ya no es la siguiente (%): no se finaliza.', OLD.revision_prevista, v_siguiente USING ERRCODE = 'integrity_constraint_violation';
+      END IF;
+      NEW.revision := OLD.revision_prevista; NEW.revision_prevista := OLD.revision_prevista;
       NEW.finalizado_por_usuario_id := v_id; NEW.finalizado_por_email := v_email; NEW.finalizado_en := now();
       NEW.finalizando_token := NULL;
     ELSE
@@ -348,15 +392,22 @@ CREATE TRIGGER trg_manufactura_revisiones_no_delete BEFORE DELETE ON manufactura
 CREATE FUNCTION manufactura.fn_pdfs_before_insert() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, manufactura
 AS $fn$
-DECLARE v_id bigint; v_email text; v_rev manufactura.revisiones%ROWTYPE;
+DECLARE v_id bigint; v_email text; v_rev manufactura.revisiones%ROWTYPE; v_doc manufactura.documentos%ROWTYPE;
 BEGIN
   SELECT a.usuario_id, a.usuario_email INTO v_id, v_email FROM manufactura.fn_actor() a;
   SELECT * INTO v_rev FROM manufactura.revisiones WHERE revision_id = NEW.revision_id;
   IF NOT FOUND OR v_rev.estado <> 'FINALIZANDO' THEN
     RAISE EXCEPTION 'El PDF solo se registra para una revisión en FINALIZANDO.' USING ERRCODE = 'integrity_constraint_violation';
   END IF;
+  IF v_rev.finalizando_por_usuario_id <> v_id AND NOT manufactura.fn_actor_es_admin() THEN
+    RAISE EXCEPTION 'Solo quien inició la finalización (o un ADMIN) registra el PDF.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
   IF NEW.especificacion_sha256 <> v_rev.especificacion_sha256 THEN
-    RAISE EXCEPTION 'El PDF no procede de la copia de especificación registrada (hash distinto).' USING ERRCODE = 'integrity_constraint_violation';
+    RAISE EXCEPTION 'El PDF no procede de la copia de especificación registrada (huella distinta).' USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
+  SELECT * INTO v_doc FROM manufactura.documentos WHERE documento_id = v_rev.documento_id;
+  IF NEW.nombre_archivo <> manufactura.fn_nombre_pdf(v_doc.codigo_dcmx, v_doc.variante, v_rev.revision_prevista) THEN
+    RAISE EXCEPTION 'El nombre del PDF debe ser %.', manufactura.fn_nombre_pdf(v_doc.codigo_dcmx, v_doc.variante, v_rev.revision_prevista) USING ERRCODE = 'integrity_constraint_violation';
   END IF;
   NEW.generado_por_usuario_id := v_id; NEW.generado_por_email := v_email; NEW.generado_en := now();
   RETURN NEW;
@@ -397,9 +448,16 @@ BEGIN
   END IF;
   SELECT u.display_name INTO v_nombre FROM security.users u WHERE u.user_id = v_id AND u.status = 'ACTIVE';
   IF v_nombre IS NULL THEN RAISE EXCEPTION 'La cuenta que revisa no está activa.' USING ERRCODE = 'insufficient_privilege'; END IF;
-  -- Queda vinculada al contenido exacto revisado: cualquier edición posterior (versión/hash) la deja desactualizada.
+  -- Pueden registrar su revisión: el revisor asignado, el creador (autorrevisión permitida en TEST, con constancia) y un ADMIN.
+  IF v_id IS DISTINCT FROM v_rev.revisor_usuario_id AND v_id <> v_rev.creado_por_usuario_id AND NOT manufactura.fn_actor_es_admin() THEN
+    RAISE EXCEPTION 'Solo el revisor asignado, el creador o un ADMIN pueden registrar la revisión.' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- Queda vinculada al contenido exacto revisado: cualquier cambio técnico posterior (huella/versión) la deja sin vigencia.
   NEW.usuario_id := v_id; NEW.usuario_email := v_email; NEW.usuario_nombre := v_nombre;
-  NEW.version := v_rev.version; NEW.especificacion_sha256 := v_rev.especificacion_sha256; NEW.created_at := now();
+  NEW.version := v_rev.version; NEW.especificacion_sha256 := v_rev.especificacion_sha256;
+  NEW.es_autorrevision := (v_id = v_rev.creado_por_usuario_id);
+  NEW.como_revisor_asignado := (v_id IS NOT DISTINCT FROM v_rev.revisor_usuario_id);
+  NEW.created_at := now();
   RETURN NEW;
 END
 $fn$;
@@ -408,7 +466,7 @@ CREATE TRIGGER trg_manufactura_confirmaciones_inmutable BEFORE UPDATE OR DELETE 
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 7. Auditoría: se REUTILIZA audit.fn_registrar_cambio (usuario real desde app.user_id / app.user_email, request_id, antes/después).
---    El contenido binario del PDF (pdf_contenidos) no se audita: lo cubre el INSERT de pdfs (hash, tamaño, actor).
+--    El contenido binario del PDF (pdf_contenidos) no se audita: lo cubre el INSERT de pdfs (huella, tamaño, actor).
 -- ---------------------------------------------------------------------------------------------------------------------
 CREATE TRIGGER trg_audit_manufactura_documentos     AFTER INSERT OR UPDATE OR DELETE ON manufactura.documentos             FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('documento_id');
 CREATE TRIGGER trg_audit_manufactura_revisiones     AFTER INSERT OR UPDATE OR DELETE ON manufactura.revisiones             FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('revision_id');
@@ -416,28 +474,61 @@ CREATE TRIGGER trg_audit_manufactura_pdfs           AFTER INSERT OR UPDATE OR DE
 CREATE TRIGGER trg_audit_manufactura_confirmaciones AFTER INSERT OR UPDATE OR DELETE ON manufactura.confirmaciones_revision FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('confirmacion_id');
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- 8. Privilegios: el rol de la aplicación recibe SOLO lo imprescindible. Sin DDL, sin DELETE, sin TRUNCATE; nadie más tiene acceso.
+-- 8. Visibilidad por filas (RLS), aplicada a la aplicación (el dueño/administrador la omite):
+--    · FINALIZADAS: visibles para todo usuario autenticado.
+--    · BORRADORES / FINALIZANDO / DESCARTADAS: solo su creador, su revisor asignado y un ADMIN.
+--    · Modificar: solo el creador de la revisión o un ADMIN (además del trigger).
+-- ---------------------------------------------------------------------------------------------------------------------
+ALTER TABLE manufactura.documentos              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manufactura.revisiones              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manufactura.pdfs                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manufactura.pdf_contenidos          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE manufactura.confirmaciones_revision ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY pol_revisiones_sel ON manufactura.revisiones FOR SELECT TO daubert_hub_test_user
+  USING (estado = 'FINALIZADA' OR creado_por_usuario_id = manufactura.fn_actor_id() OR revisor_usuario_id = manufactura.fn_actor_id() OR manufactura.fn_actor_es_admin());
+CREATE POLICY pol_revisiones_ins ON manufactura.revisiones FOR INSERT TO daubert_hub_test_user WITH CHECK (true);
+CREATE POLICY pol_revisiones_upd ON manufactura.revisiones FOR UPDATE TO daubert_hub_test_user
+  USING (creado_por_usuario_id = manufactura.fn_actor_id() OR manufactura.fn_actor_es_admin()) WITH CHECK (true);
+
+CREATE POLICY pol_documentos_sel ON manufactura.documentos FOR SELECT TO daubert_hub_test_user
+  USING (creado_por_usuario_id = manufactura.fn_actor_id() OR manufactura.fn_actor_es_admin()
+         OR EXISTS (SELECT 1 FROM manufactura.revisiones r WHERE r.documento_id = documentos.documento_id));   -- r ya filtra por su propia política
+CREATE POLICY pol_documentos_ins ON manufactura.documentos FOR INSERT TO daubert_hub_test_user WITH CHECK (true);
+
+CREATE POLICY pol_pdfs_sel ON manufactura.pdfs FOR SELECT TO daubert_hub_test_user USING (EXISTS (SELECT 1 FROM manufactura.revisiones r WHERE r.revision_id = pdfs.revision_id));
+CREATE POLICY pol_pdfs_ins ON manufactura.pdfs FOR INSERT TO daubert_hub_test_user WITH CHECK (true);
+CREATE POLICY pol_pdf_contenidos_sel ON manufactura.pdf_contenidos FOR SELECT TO daubert_hub_test_user USING (EXISTS (SELECT 1 FROM manufactura.revisiones r WHERE r.revision_id = pdf_contenidos.revision_id));
+CREATE POLICY pol_pdf_contenidos_ins ON manufactura.pdf_contenidos FOR INSERT TO daubert_hub_test_user WITH CHECK (true);
+CREATE POLICY pol_confirmaciones_sel ON manufactura.confirmaciones_revision FOR SELECT TO daubert_hub_test_user USING (EXISTS (SELECT 1 FROM manufactura.revisiones r WHERE r.revision_id = confirmaciones_revision.revision_id));
+CREATE POLICY pol_confirmaciones_ins ON manufactura.confirmaciones_revision FOR INSERT TO daubert_hub_test_user WITH CHECK (true);
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- 9. Privilegios: el rol de la aplicación recibe SOLO lo imprescindible. Sin DDL, sin DELETE, sin TRUNCATE; nadie más tiene acceso.
 -- ---------------------------------------------------------------------------------------------------------------------
 REVOKE ALL ON SCHEMA manufactura FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA manufactura FROM PUBLIC;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA manufactura FROM PUBLIC;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA manufactura FROM PUBLIC;
 GRANT USAGE ON SCHEMA manufactura TO daubert_hub_test_user;
 GRANT SELECT, INSERT         ON manufactura.documentos             TO daubert_hub_test_user;
-GRANT SELECT, INSERT, UPDATE ON manufactura.revisiones             TO daubert_hub_test_user;   -- UPDATE efectivo solo sobre borradores (trigger)
+GRANT SELECT, INSERT, UPDATE ON manufactura.revisiones             TO daubert_hub_test_user;   -- UPDATE efectivo solo sobre borradores del creador/ADMIN (trigger + RLS)
 GRANT SELECT, INSERT         ON manufactura.pdfs                   TO daubert_hub_test_user;
 GRANT SELECT, INSERT         ON manufactura.pdf_contenidos         TO daubert_hub_test_user;
 GRANT SELECT, INSERT         ON manufactura.confirmaciones_revision TO daubert_hub_test_user;
-GRANT EXECUTE ON FUNCTION manufactura.fn_actor(), manufactura.fn_hash_json(jsonb) TO daubert_hub_test_user;
+GRANT EXECUTE ON FUNCTION manufactura.fn_actor(), manufactura.fn_actor_id(), manufactura.fn_actor_es_admin(),
+                          manufactura.fn_hash_revision(text, jsonb), manufactura.fn_nombre_pdf(text, text, integer) TO daubert_hub_test_user;
 
 -- Validación final dentro de la transacción: si algo no cuadra, se revierte TODO.
 DO $$
 BEGIN
   IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'manufactura') <> 5 THEN RAISE EXCEPTION 'Se esperaban 5 tablas en manufactura.'; END IF;
+  IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'manufactura' AND rowsecurity) <> 5 THEN RAISE EXCEPTION 'RLS debe estar activa en las 5 tablas.'; END IF;
   IF has_table_privilege('daubert_hub_test_user', 'manufactura.revisiones', 'DELETE') OR has_table_privilege('daubert_hub_test_user', 'manufactura.pdfs', 'UPDATE') THEN
     RAISE EXCEPTION 'Privilegios de la aplicación más amplios de lo permitido.';
   END IF;
   IF has_schema_privilege('daubert_hub_test_user', 'manufactura', 'CREATE') THEN RAISE EXCEPTION 'La aplicación no debe poder crear objetos.'; END IF;
 END $$;
 
-SELECT 'UP_OK manufactura (5 tablas, 4 triggers de auditoría, privilegios mínimos)' AS resultado;
+SELECT 'UP_OK manufactura (5 tablas, RLS, 12 funciones, 4 triggers de auditoría, privilegios mínimos)' AS resultado;
 COMMIT;

@@ -31,7 +31,8 @@ SELECT
   current_setting('server_version_num')::int >= 150000                           AS version_pg_15_o_mayor,
   current_database() = 'daubert_hub_test'                                        AS base_es_test,
   -- el rol de la aplicación existe, no es superusuario y NO es el rol de producción
-  EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daubert_hub_test_user' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND rolcanlogin) AS rol_app_test_existe_y_sin_privilegios,
+  EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daubert_hub_test_user' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolbypassrls AND rolcanlogin) AS rol_app_test_existe_y_sin_privilegios,
+  current_setting('row_security') = 'on'                                           AS row_security_activa,
   -- objetos de los que dependen las tablas nuevas
   to_regclass('security.users')                  IS NOT NULL                     AS existe_security_users,
   to_regclass('core.empresas')                   IS NOT NULL                     AS existe_core_empresas,
@@ -51,13 +52,14 @@ WITH c AS (
     current_database() = 'daubert_hub_test'                                                         AS a,
     (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)                                    AS b,
     current_setting('server_version_num')::int >= 150000                                            AS c1,
-    EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daubert_hub_test_user' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND rolcanlogin) AS d,
+    EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'daubert_hub_test_user' AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolbypassrls AND rolcanlogin) AS d,
     to_regclass('security.users') IS NOT NULL AND to_regclass('core.empresas') IS NOT NULL AND to_regclass('audit.cambios') IS NOT NULL AND to_regproc('audit.fn_registrar_cambio') IS NOT NULL AS e,
     NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura')                           AS f,
     NOT has_database_privilege('daubert_hub_test_user', current_database(), 'CREATE')               AS g,
-    (SELECT count(*) FROM security.users WHERE status = 'ACTIVE') > 0                               AS h
+    (SELECT count(*) FROM security.users WHERE status = 'ACTIVE') > 0                               AS h,
+    current_setting('row_security') = 'on'                                                          AS i
 )
-SELECT (a AND b AND c1 AND d AND e AND f AND g AND h) AS all_prechecks_pass FROM c;
+SELECT (a AND b AND c1 AND d AND e AND f AND g AND h AND i) AS all_prechecks_pass FROM c;
 
 -- LÍNEA BASE (pásela al postcheck con -v). Describe TODO lo que NO debe cambiar.
 SELECT
