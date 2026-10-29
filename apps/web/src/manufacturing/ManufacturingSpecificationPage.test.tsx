@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BindProductApiError, lookupBindProductByCode } from '../services/bindProducts';
+import { listBindRecent } from '../services/bindRecent';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { previewManufacturingSheet } from '../services/sheetPreview';
@@ -11,6 +12,7 @@ import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage
 import { localIsoDate } from './specificationForm';
 
 vi.mock('../services/bindProducts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindProducts')>()), lookupBindProductByCode: vi.fn() }));
+vi.mock('../services/bindRecent', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindRecent')>()), listBindRecent: vi.fn() }));
 vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), listClients: vi.fn() }));
 vi.mock('../services/manufacturingFamilies', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/manufacturingFamilies')>()), listManufacturingFamilies: vi.fn() }));
 
@@ -18,6 +20,7 @@ vi.mock('../services/sheetPreview', async (importOriginal) => ({ ...(await impor
 const previewMock = vi.mocked(previewManufacturingSheet);
 const lookupMock = vi.mocked(lookupBindProductByCode);
 const listClientsMock = vi.mocked(listClients);
+const recentMock = vi.mocked(listBindRecent);
 const familiesMock = vi.mocked(listManufacturingFamilies);
 
 function renderPage() { return render(<MemoryRouter><ManufacturingSpecificationPage /></MemoryRouter>); }
@@ -847,5 +850,79 @@ describe('ManufacturingSpecificationPage · Bolsa Natural sugiere NATURAL', { ti
     await screen.findByRole('region', { name: 'Producto en BIND' });
     await waitFor(() => expect(screen.getAllByText(/Bolsa Natural sugiere NATURAL/)).toHaveLength(1), { timeout: 3000 });
     expect(screen.getByTestId('resumen-CONTRADICCION')).toHaveTextContent('1 contradicción');
+  });
+});
+
+describe('ManufacturingSpecificationPage · Novedades del catálogo de BIND', { timeout: 30_000 }, () => {
+  const novedad = (code: string, over: Record<string, unknown> = {}) => ({ code, title: `Título ${code}`, fechaAlta: '2026-10-22', familiaSugerida: 'BOLSA_PLANA_1' as const, motivo: 'm', compatibilidad: 'COMPATIBLE' as const, ...over });
+  const pagina = (items: ReturnType<typeof novedad>[]) => ({ items, skip: 0, limit: 30, nextSkip: null, generadoEn: '2026-10-29T18:00:00.000Z', desdeCache: false });
+  const abrirNovedades = async (user: ReturnType<typeof userEvent.setup>) => { await user.click(screen.getByRole('button', { name: /Novedades del catálogo de BIND/ })); };
+
+  it('la sección está junto a la búsqueda manual, no consulta nada al cargar la página y la búsqueda tradicional sigue funcionando igual', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    expect(screen.getByRole('button', { name: /Novedades del catálogo de BIND/ })).toBeInTheDocument();
+    expect(recentMock).not.toHaveBeenCalled();
+    await buscar(user);                                                                              // flujo manual intacto
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(lookupMock).toHaveBeenCalledWith('SCHFPMG001', expect.any(AbortSignal));
+    expect(recentMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
+  });
+
+  it('«Preparar hoja» reutiliza la búsqueda por Code: carga el formulario con las mismas sugerencias (familia provisional por confirmar) y conserva BORRADOR · SIN APROBAR · SIN FIRMA', async () => {
+    const user = userEvent.setup();
+    recentMock.mockResolvedValue(pagina([novedad('SCHFPMG001')]));
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await abrirNovedades(user);
+    await user.click(await screen.findByRole('button', { name: 'Preparar hoja de SCHFPMG001' }));
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+    expect(lookupMock).toHaveBeenCalledWith('SCHFPMG001', expect.any(AbortSignal));
+    expect(campo('Código DCMX a buscar').value).toBe('SCHFPMG001');
+    expect(screen.getByTestId('family-chip')).toHaveTextContent('Sugerida por el sistema (provisional)');      // la familia se sigue confirmando
+    expect(screen.getByRole('button', { name: 'Confirmar familia' })).toBeInTheDocument();
+    expect(campo('Código DCMX').value).toBe('SCHFPMG001');
+    expect(campo('Ancho').value).toBe('13');                                                                    // mismas interpretaciones que la búsqueda manual
+    await waitFor(() => expect(previewMock).toHaveBeenCalled(), { timeout: 3000 });
+    expect(screen.getByText('Firmas: SIN FIRMA')).toBeInTheDocument();
+    expect(screen.getAllByText('BORRADOR · SIN APROBAR').length).toBeGreaterThan(0);
+    fireEvent.change(campo('Ancho'), { target: { value: '14' } });                                              // sigue siendo editable
+    expect(campo('Ancho').value).toBe('14');
+  });
+
+  it('cambio de producto durante una solicitud: la respuesta tardía del primero no sobrescribe al seleccionado', async () => {
+    const user = userEvent.setup();
+    recentMock.mockResolvedValue(pagina([novedad('SCHFPMG001'), novedad('FUELLE61', { familiaSugerida: 'BOLSA_FUELLE' })]));
+    let resolverPrimero: (l: unknown) => void = () => undefined;
+    lookupMock.mockImplementationOnce(() => new Promise((resolve) => { resolverPrimero = resolve as never; }));
+    lookupMock.mockResolvedValueOnce(bolsaFuelle());
+    renderPage();
+    await abrirNovedades(user);
+    await user.click(await screen.findByRole('button', { name: 'Preparar hoja de SCHFPMG001' }));
+    expect(await screen.findByText('Consultando BIND…')).toBeInTheDocument();
+    await abrirNovedades(user);                                                                                  // el usuario cambia de opinión
+    await user.click(await screen.findByRole('button', { name: 'Preparar hoja de FUELLE61' }));
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    expect(campo('Código DCMX').value).toBe('FUELLE61');
+    await act(async () => { resolverPrimero(schfpmg001()); await Promise.resolve(); });                          // llega tarde
+    expect(campo('Código DCMX').value).toBe('FUELLE61');
+    expect(campo('Código DCMX a buscar').value).toBe('FUELLE61');
+  });
+
+  it('error de BIND al preparar la hoja: se informa en el flujo de búsqueda y la lista de novedades se conserva', async () => {
+    const user = userEvent.setup();
+    recentMock.mockResolvedValue(pagina([novedad('SCHFPMG001')]));
+    lookupMock.mockRejectedValue(new BindProductApiError('BIND_UNAVAILABLE', 502));
+    renderPage();
+    await abrirNovedades(user);
+    await user.click(await screen.findByRole('button', { name: 'Preparar hoja de SCHFPMG001' }));
+    expect(await screen.findByText('No se pudo consultar BIND en este momento.')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Producto en BIND' })).not.toBeInTheDocument();
+    await abrirNovedades(user);
+    expect(screen.getByRole('button', { name: 'Preparar hoja de SCHFPMG001' })).toBeInTheDocument();
+    expect(recentMock).toHaveBeenCalledTimes(1);
   });
 });

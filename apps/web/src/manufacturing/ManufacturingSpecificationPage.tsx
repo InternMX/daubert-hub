@@ -10,6 +10,7 @@ import { listManufacturingFamilies, type FamilyConfig } from '../services/manufa
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
+import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
@@ -226,7 +227,9 @@ export function ManufacturingSpecificationPage() {
     return () => abort.abort();
   }, []);
 
-  async function search(): Promise<void> {
+  // `codigo` permite iniciar la MISMA búsqueda desde «Novedades del catálogo» («Preparar hoja»): nada se interpreta aparte. Cada búsqueda anula la anterior y descarta su respuesta tardía.
+  async function search(codigo?: string): Promise<void> {
+    const target = codigo ?? code;
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
@@ -236,13 +239,13 @@ export function ManufacturingSpecificationPage() {
     setReconocidas({});
     setReveladas(new Set());
     setFallo('');
-    if (!BIND_CODE_PATTERN.test(code.trim())) {
+    if (!BIND_CODE_PATTERN.test(target.trim())) {
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
     }
     setStatus('loading'); setErrorKind(null);
     try {
-      const result = await lookupBindProductByCode(code, current.signal);
+      const result = await lookupBindProductByCode(target, current.signal);
       if (current.signal.aborted) return;
       setLookup(result); setForm(buildInitialForm(result, configs)); setStatus('ready');
     } catch (error) {
@@ -342,6 +345,13 @@ export function ManufacturingSpecificationPage() {
           <Button type="submit" variant="contained" startIcon={<SearchRoundedIcon />} disabled={status === 'loading' || code.trim() === '' || configStatus !== 'ready'} sx={{ minWidth: 190, mt: { sm: 0.5 } }}>Buscar en BIND</Button>
         </Stack>
       </Paper>
+
+      <NovedadesCatalogo
+        familyName={(c) => configs.find((x) => x.codigo === c)?.nombre ?? c}
+        activeCode={lookup?.producto.Code ?? null}
+        disabled={configStatus !== 'ready'}
+        onPrepare={(c) => { setCode(c); void search(c); }}
+      />
 
       {status === 'loading' && <Alert severity="info" sx={{ mt: 2 }}>Consultando BIND…</Alert>}
       {status === 'error' && errorKind && <Alert severity={errorKind === 'NOT_FOUND' ? 'info' : 'error'} sx={{ mt: 2 }}>{errorMessages[errorKind]}</Alert>}
