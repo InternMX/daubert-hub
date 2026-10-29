@@ -238,10 +238,10 @@ describe('cambio de familia sin contaminación de datos', () => {
     expect(plana.fields.modalidad.value).toBe('DOBLADA');
   });
 
-  it('un color que la nueva familia no ofrece se avisa y bloquea los datos técnicos hasta elegir otro', () => {
-    const natural = selectFamily(build(bolsaNatural()), 'BOLSA_NATURAL', familyConfigs);          // preset NATURAL
+  it('un color ELEGIDO por el usuario que la nueva familia no ofrece se conserva, se avisa y bloquea los datos técnicos hasta elegir otro', () => {
+    const natural = setColorPreset(selectFamily(build(bolsaNatural()), 'BOLSA_NATURAL', familyConfigs), 'NATURAL', cfg('BOLSA_NATURAL'));   // elección manual
     const plana = selectFamily(natural, 'BOLSA_PLANA_1', familyConfigs);
-    expect(plana.fields.colorPreset.value).toBe('NATURAL');        // no se borra
+    expect(plana.fields.colorPreset.value).toBe('NATURAL');        // no se borra ni se sobrescribe
     const r = validar(plana);
     expect(r.errors.colorPreset).toMatch(/Elige un color disponible/);
     expect(mensajeDe(r, 'COLOR_NO_DISPONIBLE:colorPreset')).toMatch(/NATURAL.*no está disponible/);
@@ -686,5 +686,68 @@ describe('Libras de VCI por capa COEX (peso de capa × % VCI ÷ 100)', () => {
 
   it('las libras calculadas viajan a la vista previa con seis decimales', () => {
     expect(toPreviewData(coexCon('0.3929'), cfg('COEX'))).toMatchObject({ lbVciInterior: '0.005239', lbVciIntermedia: '0.002619', lbVciExterior: '0.000000' });
+  });
+});
+
+describe('Bolsa Natural · el color NATURAL sigue a la familia', () => {
+  const pmgFuelle = () => bolsaFuelle();                       // BIND no declara color: se sugiere Daubert Azul al 2 % por la resina PMG
+  const conBindAzul = (): BindProductLookup => withSuggestion(bolsaNatural(), { color: { preset: 'DAUBERT_AZUL', concentracionPct: '2', detectado: 'AZUL', regla: 'COLOR_EXPLICITO_EN_TITULO', nota: 'BIND indica color azul.' } });
+
+  it('búsqueda: un producto PMG con azul por defecto pasa a NATURAL al elegir Bolsa Natural, sin heredar el azul ni el 2 %', () => {
+    const inicial = build(pmgFuelle());
+    expect(inicial.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    expect(inicial.fields.colorConcentracion.value).toBe('2');
+    const f = selectFamily(inicial, 'BOLSA_NATURAL', familyConfigs);
+    expect(f.fields.colorPreset.value).toBe('NATURAL');
+    expect(f.fields.colorHex.value).toBe('#FFF2CC');
+    expect(f.fields.colorNombre.value).toBe('NATURAL');
+    expect(f.fields.colorConcentracion.value).toBe('');
+    expect(displayOrigin(f.fields.colorPreset)).toBe('SUGERIDO');
+    expect(toPreviewData(f, cfg('BOLSA_NATURAL')).colorNombre).toBe('NATURAL');
+    expect(f.fields.resinaVci.value).toBe(inicial.fields.resinaVci.value);     // la resina VCI y la composición fija se rigen por sus propias reglas
+    expect(toPreviewData(f, cfg('BOLSA_NATURAL')).composicion).toBe('NAT');
+  });
+
+  it('cambio de familia: las sugerencias automáticas siguen a la familia en ambos sentidos (y el 2 % vuelve solo con el azul)', () => {
+    const natural = selectFamily(build(pmgFuelle()), 'BOLSA_NATURAL', familyConfigs);
+    const fuelle = selectFamily(natural, 'BOLSA_FUELLE', familyConfigs);
+    expect(fuelle.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    expect(fuelle.fields.colorNombre.value).toBe('DAUBERT AZUL AL 2%');
+    expect(fuelle.fields.colorConcentracion.value).toBe('2');
+    expect(selectFamily(fuelle, 'BOLSA_NATURAL', familyConfigs).fields.colorNombre.value).toBe('NATURAL');
+  });
+
+  it('edición manual: el color elegido por el usuario (o su texto) no se sobrescribe al cambiar de familia', () => {
+    const verde = setColorPreset(build(pmgFuelle()), 'VERDE', cfg('BOLSA_FUELLE'));
+    const f = selectFamily(verde, 'BOLSA_NATURAL', familyConfigs);
+    expect(f.fields.colorPreset.value).toBe('VERDE');
+    expect(f.fields.colorNombre.value).toBe('VERDE');
+    const texto = selectFamily(setFieldValue(build(pmgFuelle()), 'colorNombre', 'AZUL ESPECIAL'), 'BOLSA_NATURAL', familyConfigs);
+    expect(texto.fields.colorNombre.value).toBe('AZUL ESPECIAL');
+    expect(texto.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    const conc = selectFamily(setColorConcentracion(build(pmgFuelle()), '5', cfg('BOLSA_FUELLE')), 'BOLSA_NATURAL', familyConfigs);
+    expect(conc.fields.colorConcentracion.value).toBe('5');
+    expect(displayOrigin(texto.fields.colorNombre)).toBe('USUARIO');
+  });
+
+  it('restauración: «Restaurar» vuelve a NATURAL (preset, dibujo, texto y sin concentración) después de una edición', () => {
+    const natural = selectFamily(build(pmgFuelle()), 'BOLSA_NATURAL', familyConfigs);
+    const editado = setColorPreset(natural, 'VERDE', cfg('BOLSA_NATURAL'));
+    expect(editado.fields.colorNombre.value).toBe('VERDE');
+    const restaurado = restoreField(editado, 'colorPreset');
+    expect(restaurado.fields.colorPreset.value).toBe('NATURAL');
+    expect(restaurado.fields.colorHex.value).toBe('#FFF2CC');
+    expect(restaurado.fields.colorNombre.value).toBe('NATURAL');
+    expect(restaurado.fields.colorConcentracion.value).toBe('');
+    expect(isEdited(restaurado.fields.colorPreset)).toBe(false);
+    expect(displayOrigin(restaurado.fields.colorPreset)).toBe('SUGERIDO');
+  });
+
+  it('contradicción con BIND: un color declarado en el Title no se reemplaza por NATURAL (el backend lo advierte)', () => {
+    const f = build(conBindAzul());
+    expect(f.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    const otra = selectFamily(selectFamily(f, 'BOLSA_FUELLE', familyConfigs), 'BOLSA_NATURAL', familyConfigs);
+    expect(otra.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    expect(otra.fields.colorNombre.value).toBe('DAUBERT AZUL AL 2%');
   });
 });

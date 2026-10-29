@@ -99,6 +99,12 @@ describe('Bolsa Natural · vista previa con la plantilla aprobada', () => {
     expect(r.html).toContain('fill="#FFF2CC"');
   });
 
+  it('imprime el nombre del color NATURAL en la hoja (sin concentración de colorante)', async () => {
+    const r = await service.preview('BOLSA_NATURAL', NATURAL);
+    expect(r.html).toMatch(/>\s*NATURAL\s*</);
+    expect(r.html).not.toMatch(/NATURAL AL \d/);
+  });
+
   it('sin composición en el formulario NO falta Composición (es fija) y no se asigna formulación VCI', () => {
     const m = mapSheetData('BOLSA_NATURAL', { ...NATURAL, composicion: '' });
     expect(m.faltantes).toEqual([]);

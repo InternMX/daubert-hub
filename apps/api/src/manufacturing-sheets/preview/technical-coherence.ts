@@ -79,8 +79,13 @@ export function revisarCoherencia(family: FamilyCode, data: PreviewFormData, con
   const variante = def.variantes?.find((v) => v.valor === data.coexVariante);
   const preset = def.colores.find((c) => c.hex.toLowerCase() === data.colorHex?.toLowerCase());
   const colorHoja = variante?.colorTexto ?? preset?.nombre ?? data.colorNombre ?? '';
-  for (const color of colores) {
-    if (colorHoja && !new RegExp(`\\b${color}\\b`).test(normalizarTitulo(colorHoja))) {
+  // Bolsa Natural sugiere NATURAL: si BIND declara otro color en el Title (aunque sin la palabra COLOR) la diferencia tampoco se oculta. Misma causa e id que COLOR_<color>.
+  const colorBind = def.colorSugerido === 'NATURAL' && sug.color.regla === 'COLOR_EXPLICITO_EN_TITULO' && sug.color.detectado && sug.color.detectado !== 'NATURAL' ? sug.color.detectado : null;
+  for (const color of colorBind && !colores.includes(colorBind) ? [...colores, colorBind] : colores) {
+    if (colorHoja && color === colorBind && new RegExp(`\\b${color}\\b`).test(normalizarTitulo(colorHoja))) {
+      add(`COLOR_${color}`, `BIND indica color ${color}, pero ${def.nombre} sugiere NATURAL. Se conserva el color de BIND en la hoja; corrígelo o revisa expresamente la diferencia para este borrador.`,
+        'CONTRADICCION', { campos: ['colorPreset'], seccion: 'color', origen: 'TITLE', resumen: `${def.nombre} sugiere NATURAL y BIND indica ${color}.` });
+    } else if (colorHoja && !new RegExp(`\\b${color}\\b`).test(normalizarTitulo(colorHoja))) {
       add(`COLOR_${color}`, `BIND menciona COLOR ${color}, pero la hoja utiliza ${colorHoja}. La descripción y la etiqueta se conservan; corrige el color o revisa expresamente la diferencia para este borrador.`,
         'CONTRADICCION', { campos: [def.variantes?.length ? 'coexVariante' : 'colorPreset'], seccion: 'color', origen: 'TITLE', resumen: `El color de la hoja no coincide con el COLOR ${color} de BIND.` });
     }

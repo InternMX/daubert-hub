@@ -51,6 +51,12 @@ export interface SpecificationForm {
   layerWeightRule?: FamilyConfig['pesosCapasRegla'];
   /** Capas COEX con su porcentaje de VCI (de la configuración): base del cálculo de libras de VCI. */
   layerVci?: CapaConfig[];
+  /** BIND declaró un color en el Title: el color sugerido por la familia nunca lo reemplaza (si difieren, se advierte la contradicción). */
+  colorDeBind: boolean;
+  /** Concentración de color sugerida por BIND para el azul; el color natural (u otro) no la hereda. */
+  colorConcentracionSugerida: string;
+  /** Último color que el sistema sugirió (preset, dibujo, concentración y texto): a él vuelve «Restaurar». */
+  colorSistema?: Partial<Record<FieldKey, FieldState>>;
   /** Todos los campos viven aquí aunque la familia no los muestre: cambiar de familia NO borra lo capturado (los que no aplican solo dejan de enviarse y se avisan). */
   fields: Record<FieldKey, FieldState>;
 }
@@ -144,6 +150,8 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
     resinaRules: sug?.resinaVciPorComposicion ?? {},
     layerWeightRule: configOf(configs, family)?.pesosCapasRegla ?? null,
     layerVci: configOf(configs, family)?.capas ?? [],
+    colorDeBind: color?.detectado != null,
+    colorConcentracionSugerida: conc,
     fields: {
       codigo: field(lookup.producto.Code, 'BIND'),
       descripcion: field(lookup.producto.Title, 'BIND'),
@@ -188,7 +196,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
     form.fields.colorNombre = variante ? field(variante.colorTexto, 'SUGERIDO', 'Texto del color según la variante COEX.') : field('', 'PENDIENTE', 'Elige la variante COEX para el texto del color.');
   }
   const next = familyConfig && familyConfig.colorDibujo && familyConfig.colorSugerido && form.fields.colorPreset.value === '' && !sug?.color?.detectado ? applyColor(form, familyConfig.colorSugerido, familyConfig) : form;
-  return suggestLayerWeights(next);
+  return suggestLayerWeights(conColorDelSistema(next));
 }
 
 export function displayOrigin(state: FieldState): DisplayOrigin {
@@ -200,13 +208,24 @@ export const isEdited = (state: FieldState): boolean => Boolean(state.manual) ||
 
 export function setFieldValue(form: SpecificationForm, key: FieldKey, value: string, source?: FieldState['source'], ref?: string): SpecificationForm {
   const current = form.fields[key];
-  const protectedField = key === 'producto' || ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'].includes(key);
+  const protectedField = key === 'producto' || ['colorNombre', 'colorHex'].includes(key) || ['pesoCapaInterior', 'pesoCapaIntermedia', 'pesoCapaExterior', 'lbVciInterior', 'lbVciIntermedia', 'lbVciExterior'].includes(key);
   const next: FieldState = { ...current, value, source, ref: source === 'CATALOGO' ? ref : undefined, ...(protectedField ? { manual: true, confirmed: false } : {}) };
   const updated = { ...form, fields: { ...form.fields, [key]: next } };
   return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) ? suggestLayerWeights(updated) : updated;
 }
 
+const COLOR_GRUPO: FieldKey[] = ['colorPreset', 'colorHex', 'colorConcentracion', 'colorNombre'];
+
 export function restoreField(form: SpecificationForm, key: FieldKey): SpecificationForm {
+  if (key === 'colorPreset') {
+    // El selector de color gobierna también el color del dibujo, la concentración y el texto impreso: se restauran juntos para no dejar un estado mezclado.
+    const fields = { ...form.fields };
+    for (const k of COLOR_GRUPO) {
+      const sistema = form.colorSistema?.[k];
+      fields[k] = sistema ? { ...sistema } : { ...fields[k], value: fields[k].base.value, source: undefined, ref: undefined, manual: false, confirmed: false };
+    }
+    return { ...form, fields };
+  }
   const current = form.fields[key];
   const restored = { ...form, fields: { ...form.fields, [key]: { ...current, value: current.base.value, source: undefined, ref: undefined, manual: false, confirmed: false } } };
   return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) || form.layerVci?.some((c) => c.lbKey === key) ? suggestLayerWeights(restored) : restored;
@@ -299,7 +318,8 @@ export function selectFamily(form: SpecificationForm, family: FamilyCode | null,
   const config = configOf(configs, family);
   let next: SpecificationForm = { ...form, family, familyOrigin: family === null ? null : 'USUARIO', layerWeightRule: config?.pesosCapasRegla ?? null, layerVci: config?.capas ?? [] };
   if (config) next = { ...next, fields: { ...next.fields, producto: suggestedProduct(next.fields.producto, config) } };
-  if (config && config.colorDibujo && config.colorSugerido && form.fields.colorPreset.value === '' && form.fields.colorHex.value === '') {
+  // El color automático sigue a la familia (Natural → NATURAL, las demás → su color por defecto); un color de BIND o editado por el usuario nunca se reemplaza.
+  if (config && config.colorDibujo && config.colorSugerido && colorEsAutomatico(form)) {
     return applyColor(next, config.colorSugerido, config);
   }
   // COEX: si el color elegido antes equivale a una variante aprobada (Azul/Verde), se sugiere esa variante; un color personalizado no genera una tercera.
@@ -326,20 +346,34 @@ export function setCoexVariante(form: SpecificationForm, valor: string, config: 
 /** Acepta explícitamente la familia sugerida. */
 export const confirmFamily = (form: SpecificationForm): SpecificationForm => (form.family ? { ...form, familyOrigin: 'USUARIO' } : form);
 
+/** Recuerda el color sugerido por el sistema (BIND o la familia) para restaurarlo íntegro. */
+function conColorDelSistema(form: SpecificationForm): SpecificationForm {
+  return { ...form, colorSistema: Object.fromEntries(COLOR_GRUPO.map((k) => [k, { ...form.fields[k], manual: false, confirmed: false, value: form.fields[k].base.value }])) };
+}
+
+/** El color se puede sugerir de nuevo: BIND no lo declaró y ningún campo de color fue editado por el usuario. */
+function colorEsAutomatico(form: SpecificationForm): boolean {
+  if (form.colorDeBind) return false;
+  return COLOR_GRUPO.every((k) => form.fields[k].value === '' || isAuto(form.fields[k]));
+}
+
 function applyColor(form: SpecificationForm, preset: string, config: FamilyConfig): SpecificationForm {
   const f = form.fields;
   const def = config.colores.find((c) => c.id === preset);
   if (!def) return form;
-  const conc = f.colorConcentracion.value;
-  return {
+  // La concentración de color sugerida es del azul: el natural y los demás colores no la heredan.
+  const concAuto = f.colorConcentracion.value === '' || isAuto(f.colorConcentracion);
+  const conc = concAuto ? (preset === 'DAUBERT_AZUL' ? form.colorConcentracionSugerida : '') : f.colorConcentracion.value;
+  return conColorDelSistema({
     ...form,
     fields: {
       ...f,
       colorPreset: systemValue(preset, 'SUGERIDO', 'Color por defecto de la familia: BIND no declara otro color.'),
       colorHex: systemValue(def.hex, 'SUGERIDO'),
+      colorConcentracion: !concAuto ? f.colorConcentracion : conc === '' ? systemValue('', 'SIN_DATO') : systemValue(conc, 'SUGERIDO', 'Concentración del color; es independiente del porcentaje de la resina VCI.'),
       colorNombre: isAuto(f.colorNombre) || f.colorNombre.value === '' ? systemValue(colorText(preset, conc, config.colores), 'SUGERIDO', 'Color por defecto de la familia.') : f.colorNombre
     }
-  };
+  });
 }
 
 /**
@@ -353,7 +387,7 @@ export function setColorPreset(form: SpecificationForm, preset: ColorPreset, con
   const conc = preset !== 'DAUBERT_AZUL' && concAuto && f.colorConcentracion.base.origin === 'SUGERIDO' ? '' : f.colorConcentracion.value;   // el 2 % sugerido es del azul
   const def = config.colores.find((c) => c.id === preset);
   const hex = def ? def.hex : preset === COLOR_OTRO ? f.colorHex.value : '';
-  const fields = { ...f, colorPreset: { ...f.colorPreset, value: preset }, colorHex: { ...f.colorHex, value: hex, source: undefined } };
+  const fields = { ...f, colorPreset: { ...f.colorPreset, value: preset, manual: true }, colorHex: { ...f.colorHex, value: hex, source: undefined } };
   if (conc !== f.colorConcentracion.value) fields.colorConcentracion = { ...f.colorConcentracion, value: conc, base: { ...f.colorConcentracion.base, value: conc } };
   if (nombreAuto) fields.colorNombre = systemValue(colorText(preset, conc, config.colores), 'SUGERIDO', f.colorNombre.base.note);
   return { ...form, fields };
@@ -363,7 +397,7 @@ export function setColorPreset(form: SpecificationForm, preset: ColorPreset, con
 export function setColorConcentracion(form: SpecificationForm, value: string, config: FamilyConfig): SpecificationForm {
   const f = form.fields;
   const nombreAuto = f.colorNombre.value === colorText(f.colorPreset.value, f.colorConcentracion.value, config.colores) && f.colorPreset.value !== COLOR_OTRO;
-  const fields = { ...f, colorConcentracion: { ...f.colorConcentracion, value } };
+  const fields = { ...f, colorConcentracion: { ...f.colorConcentracion, value, manual: true } };
   if (nombreAuto) fields.colorNombre = systemValue(colorText(f.colorPreset.value, value, config.colores), 'SUGERIDO', f.colorNombre.base.note);
   return { ...form, fields };
 }

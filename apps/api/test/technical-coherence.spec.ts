@@ -67,6 +67,25 @@ describe('Coherencia del borrador (sin confirmar ni sobrescribir)', () => {
     expect(revisarCoherencia('BOLSA_FUELLE', { fuelleTotal: '10', fuelleDerecho: '4', fuelleIzquierdo: '4' }, { title: 'BOLSA PMG', code: '' }).map((a) => a.id)).toContain('FUELLE_TOTAL');
   });
 
+  describe('Bolsa Natural sugiere NATURAL: un color distinto declarado por BIND no se oculta', () => {
+    const azul = { title: 'BOLSA LDPE NAT AZUL 61 X 48 X 70.9 CAL. 3 MIL', code: 'NAT61' };
+    const ids = (hex: string, nombre: string, ctx: { title: string; code: string }) => revisarCoherencia('BOLSA_NATURAL', { colorHex: hex, colorNombre: nombre }, ctx).filter((a) => a.id.startsWith('COLOR_'));
+    it('BIND indica AZUL y la hoja conserva el azul: advierte que la familia sugiere NATURAL (reconocible, una sola vez)', () => {
+      const avisos = ids('#538DD5', 'DAUBERT AZUL', azul);
+      expect(avisos).toHaveLength(1);
+      expect(avisos[0]).toMatchObject({ id: 'COLOR_AZUL:colorPreset', nivel: 'CONTRADICCION', reconocible: true, campos: ['colorPreset'], mensaje: expect.stringContaining('sugiere NATURAL') });
+    });
+    it('BIND indica AZUL y la hoja usa NATURAL: también hay una sola contradicción', () => {
+      const avisos = ids('#FFF2CC', 'NATURAL', azul);
+      expect(avisos.map((a) => a.id)).toEqual(['COLOR_AZUL:colorPreset']);
+    });
+    it('sin color en BIND, o con NATURAL, no hay contradicción; las demás familias no cambian', () => {
+      expect(ids('#FFF2CC', 'NATURAL', { title: 'BOLSA LDPE NAT 61 X 48 X 70.9 CAL. 3 MIL', code: 'NAT61' })).toEqual([]);
+      expect(ids('#FFF2CC', 'NATURAL', { title: 'BOLSA LDPE NATURAL 61 X 48 X 70.9', code: 'NAT61' })).toEqual([]);
+      expect(revisarCoherencia('BOLSA_FUELLE', { colorHex: '#538DD5', colorNombre: 'DAUBERT AZUL' }, azul).filter((a) => a.id.startsWith('COLOR_'))).toEqual([]);
+    });
+  });
+
   it('texto extremo se detecta y conserva completo en el HTML; no reduce dibujos', async () => {
     const texto = `INICIO ${'DATOS DE PRUEBA '.repeat(25)} FINAL`;
     const r = await new SheetPreviewService().preview('BOLSA_PLANA_1', { descripcion: texto, etiqueta: texto });
