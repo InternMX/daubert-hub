@@ -12,7 +12,7 @@ import { SafeExceptionFilter } from '../src/common/http-exception.filter';
 import { IS_PUBLIC_KEY } from '../src/security/route-access.decorators';
 import { aplicarCapaBorrador, MARCA_BORRADOR, MARCA_INCOMPLETO } from '../src/manufacturing-sheets/preview/draft-layer';
 import { PDF_RENDERER_OPTIONS, resolveChromePath, SheetPdfRenderer, type PdfRendererOptions } from '../src/manufacturing-sheets/preview/sheet-pdf.renderer';
-import { nombreArchivoBorrador, SheetPdfService } from '../src/manufacturing-sheets/preview/sheet-pdf.service';
+import { codigoDcmxSeguro, NOMBRE_GENERICO, nombreArchivoBorrador, SheetPdfService } from '../src/manufacturing-sheets/preview/sheet-pdf.service';
 import { SheetPreviewRequestDto } from '../src/manufacturing-sheets/preview/sheet-preview.dto';
 import { SheetPreviewController } from '../src/manufacturing-sheets/preview/sheet-preview.controller';
 import { SheetPreviewService } from '../src/manufacturing-sheets/preview/sheet-preview.service';
@@ -70,7 +70,7 @@ describe('SheetPreviewService: una sola composición para la vista previa y el P
     const vista = await service.preview('BOLSA_FUELLE', FUELLE);
     const pdf = await service.preview('BOLSA_FUELLE', FUELLE, undefined, { capaBorrador: true });
     expect(vista.html).not.toContain('marca-borrador');
-    expect(pdf.html).toBe(aplicarCapaBorrador(vista.html, vista.completo));
+    expect(pdf.html.replace(/<title>[^<]*<\/title>/, '<title></title>')).toBe(aplicarCapaBorrador(vista.html.replace(/<title>[^<]*<\/title>/, '<title></title>'), vista.completo));
     expect({ ...pdf, html: '' }).toEqual({ ...vista, html: '' });                      // mismos datos, validaciones, incidencias y bloqueos
   });
   it('datos incompletos → el documento se identifica como INCOMPLETO; la modalidad bloqueada no genera documento', async () => {
@@ -89,15 +89,42 @@ describe('SheetPreviewService: una sola composición para la vista previa y el P
   });
 });
 
-describe('nombreArchivoBorrador', () => {
-  it('lista cerrada de caracteres, longitud acotada y sustituto fijo', () => {
-    expect(nombreArchivoBorrador('SCHFPMG001', 'BOLSA_PLANA_1', true)).toBe('BORRADOR_SCHFPMG001_BOLSA_PLANA_1.pdf');
-    expect(nombreArchivoBorrador('A/B\\C:"D"\r\nE', 'COEX', true)).toBe('BORRADOR_A_B_C__D___E_COEX.pdf');
-    expect(nombreArchivoBorrador('../../etc/passwd', 'COEX', true)).toBe('BORRADOR_etc_passwd_COEX.pdf');
-    expect(nombreArchivoBorrador('X'.repeat(200), 'COEX', true)).toBe(`BORRADOR_${'X'.repeat(40)}_COEX.pdf`);
-    expect(nombreArchivoBorrador('', 'COEX', false)).toBe('BORRADOR-INCOMPLETO_SIN-CODIGO_COEX.pdf');
-    expect(nombreArchivoBorrador(undefined, 'COEX', true)).toBe('BORRADOR_SIN-CODIGO_COEX.pdf');
-    expect(nombreArchivoBorrador('áéí ñ', 'COEX', true)).toMatch(/^BORRADOR_[A-Za-z0-9._-]+_COEX\.pdf$/);
+describe('nombre del archivo y título: el código DCMX', () => {
+  it('el nombre es <CODIGO_DCMX>.pdf, conservando el código tal cual (sin familia, descripción ni prefijos)', () => {
+    expect(nombreArchivoBorrador('SCHFPMG001')).toBe('SCHFPMG001.pdf');
+    expect(nombreArchivoBorrador('  SCHFPMG001  ')).toBe('SCHFPMG001.pdf');
+    expect(nombreArchivoBorrador('ITESFCP002')).toBe('ITESFCP002.pdf');
+    expect(nombreArchivoBorrador('DCMX-01_a.b')).toBe('DCMX-01_a.b.pdf');
+    expect(nombreArchivoBorrador('X'.repeat(64))).toBe(`${'X'.repeat(64)}.pdf`);
+  });
+  it('un código ausente o no válido (rutas, espacios, control, acentos, demasiado largo, archivos ocultos) da un nombre genérico seguro', () => {
+    for (const malo of [undefined, '', '   ', 'A/B', 'A\\B', '../../etc/passwd', 'A B', 'A:B', 'A"B', 'A\r\nB', 'áéí', 'A*B', 'X'.repeat(65), '.oculto', '..', '---', 'A\u0000B']) {
+      expect(nombreArchivoBorrador(malo as string | undefined)).toBe(`${NOMBRE_GENERICO}.pdf`);
+    }
+    expect(NOMBRE_GENERICO).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+  it('los nombres reservados de Windows no se usan tal cual', () => {
+    expect(nombreArchivoBorrador('CON')).toBe('_CON.pdf');
+    expect(nombreArchivoBorrador('nul')).toBe('_nul.pdf');
+    expect(nombreArchivoBorrador('COM1')).toBe('_COM1.pdf');
+    expect(nombreArchivoBorrador('CONSOLA1')).toBe('CONSOLA1.pdf');
+  });
+  it('codigoDcmxSeguro devuelve el mismo código válido o null', () => {
+    expect(codigoDcmxSeguro('SCHFPMG001')).toBe('SCHFPMG001');
+    expect(codigoDcmxSeguro('A B')).toBeNull();
+    expect(codigoDcmxSeguro(undefined)).toBeNull();
+  });
+  it('el título del documento (metadato del PDF) es el código; no cambia nada visible ni el resto del HTML', async () => {
+    const service = new SheetPreviewService();
+    const vista = await service.preview('BOLSA_FUELLE', FUELLE);
+    const pdf = await service.preview('BOLSA_FUELLE', FUELLE, undefined, { capaBorrador: true, tituloPdf: 'SCHFPMG001' });
+    expect(pdf.html).toContain('<title>SCHFPMG001</title>');
+    expect(vista.html).toContain('<title>Hoja de Instrucción de Manufactura</title>');
+    expect(pdf.html.replace('<title>SCHFPMG001</title>', '<title>Hoja de Instrucción de Manufactura</title>')).toBe(aplicarCapaBorrador(vista.html, vista.completo));
+    // el encabezado visible del machote («Hoja de Instrucción de Manufactura») no se toca
+    expect(pdf.html).toContain('Hoja de Instrucción de');
+    const hostil = await service.preview('BOLSA_FUELLE', FUELLE, undefined, { capaBorrador: true, tituloPdf: '</title><script>1</script>' });
+    expect(hostil.html).toContain('<title>&lt;/title&gt;&lt;script&gt;1&lt;/script&gt;</title>');
   });
 });
 
@@ -172,9 +199,12 @@ describe('SheetPdfService', () => {
   it('genera el PDF del MISMO documento que la vista previa, con nombre seguro y marca de completo', async () => {
     const r = await crear('ok').generarBorrador('BOLSA_FUELLE', FUELLE);
     expect(r.pdf.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(r.filename).toBe(`BORRADOR_${SECRETO_DE_LA_HOJA}_BOLSA_FUELLE.pdf`);
+    expect(r.filename).toBe(`${SECRETO_DE_LA_HOJA}.pdf`);
     expect(r.completo).toBe(true);
-    expect((await crear('ok').generarBorrador('BOLSA_FUELLE', { ...FUELLE, pesoLb: '' })).filename).toMatch(/^BORRADOR-INCOMPLETO_/);
+    const incompleto = await crear('ok').generarBorrador('BOLSA_FUELLE', { ...FUELLE, pesoLb: '' });
+    expect(incompleto.filename).toBe(`${SECRETO_DE_LA_HOJA}.pdf`);                       // el nombre es siempre el código; lo incompleto se indica dentro del documento
+    expect(incompleto.completo).toBe(false);
+    expect((await crear('ok').generarBorrador('BOLSA_FUELLE', { ...FUELLE, codigo: 'con espacios' })).filename).toBe('HOJA_SIN_CODIGO.pdf');
   });
   it('modalidad no autorizada → 422 sin renderizar; sin renderizador → 501; ocupado → 429; tiempo → 504; fallo → 500', async () => {
     await expect(crear('ok').generarBorrador('ROLLO_CONTINUO', { ...FUELLE, modalidad: 'EXTENDIDA' })).rejects.toMatchObject({ status: 422, response: { code: 'PDF_BLOCKED' } });
@@ -219,7 +249,7 @@ describe('POST /api/manufacturing-sheets/previews/pdf', () => {
     const r = await request(app.getHttpServer()).post('/api/manufacturing-sheets/previews/pdf').send(cuerpo).buffer(true).parse((res, cb) => { const partes: Buffer[] = []; res.on('data', (c: Buffer) => partes.push(c)); res.on('end', () => cb(null, Buffer.concat(partes))); });
     expect(r.status).toBe(200);
     expect(r.headers['content-type']).toBe('application/pdf');
-    expect(r.headers['content-disposition']).toBe(`attachment; filename="BORRADOR_${SECRETO_DE_LA_HOJA}_BOLSA_FUELLE.pdf"`);
+    expect(r.headers['content-disposition']).toBe(`attachment; filename="${SECRETO_DE_LA_HOJA}.pdf"`);
     expect(r.headers['cache-control']).toBe('no-store');
     expect(r.headers['x-content-type-options']).toBe('nosniff');
     expect(r.headers['x-draft-complete']).toBe('1');
@@ -259,6 +289,13 @@ describe('POST /api/manufacturing-sheets/previews/pdf', () => {
 
 // Con el Chrome real (si el entorno lo tiene): el documento de verdad es un PDF. La verificación completa (8 hojas, texto, posiciones y píxeles) está en test:sheets-pdf-borrador.
 const CHROME = resolveChromePath();
+/** /Title del diccionario de información del PDF (cadena literal o hexadecimal UTF-16BE). */
+function tituloDelPdf(pdf: Buffer): string | null {
+  const m = /\/Title\s*(?:<([0-9A-Fa-f\s]+)>|\(((?:\\.|[^\\)])*)\))/.exec(pdf.toString('latin1'));
+  if (!m) return null;
+  if (m[1]) { const b = Buffer.from(m[1].replace(/\s/g, ''), 'hex'); return b.subarray(0, 2).toString('hex') === 'feff' ? b.subarray(2).swap16().toString('utf16le') : b.toString('latin1'); }
+  return (m[2] ?? '').replace(/\\(.)/g, '$1');
+}
 describe.skipIf(!CHROME)('Chrome real', () => {
   it('imprime el borrador de una hoja como un PDF válido de una página y sin temporales', async () => {
     const antes = residuos();
@@ -266,6 +303,8 @@ describe.skipIf(!CHROME)('Chrome real', () => {
     expect(r.pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(r.pdf.length).toBeGreaterThan(20_000);
     expect(r.pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)).toHaveLength(1);
+    expect(r.filename).toBe(`${SECRETO_DE_LA_HOJA}.pdf`);
+    expect(tituloDelPdf(r.pdf)).toBe(SECRETO_DE_LA_HOJA);                                  // metadato /Title = código DCMX
     expect(residuos()).toEqual(antes);
   }, 60_000);
 });

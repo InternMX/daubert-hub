@@ -12,10 +12,24 @@ export interface DraftPdf {
   completo: boolean;
 }
 
-/** Nombre de archivo seguro: lista cerrada de caracteres, longitud acotada y sustituto fijo si el código falta. Nunca incluye datos libres. */
-export function nombreArchivoBorrador(codigo: string | undefined, familia: string, completo: boolean): string {
-  const limpio = (codigo ?? '').trim().replace(/[^A-Za-z0-9._-]/g, '_').replace(/^[._-]+/, '').slice(0, 40);
-  return `${completo ? 'BORRADOR' : 'BORRADOR-INCOMPLETO'}_${limpio || 'SIN-CODIGO'}_${familia}.pdf`;
+/** Mismo formato que valida la búsqueda en BIND: letras, dígitos, punto, guion y guion bajo (máximo 64). */
+const CODIGO_DCMX = /^[A-Za-z0-9._-]{1,64}$/;
+const NOMBRES_RESERVADOS_WINDOWS = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+export const NOMBRE_GENERICO = 'HOJA_SIN_CODIGO';
+
+/**
+ * Código DCMX utilizable como nombre del archivo y título del PDF, o null si falta o no es válido. El código se conserva TAL CUAL (nunca se sustituye por la descripción ni la familia); solo se
+ * rechaza lo que no es un código válido (espacios, separadores de ruta, caracteres de control…), lo que se completa con un nombre genérico en vez de «arreglarlo».
+ */
+export function codigoDcmxSeguro(codigo: string | undefined): string | null {
+  const c = (codigo ?? '').trim();
+  if (!CODIGO_DCMX.test(c) || /^[.-]+$/.test(c) || c.startsWith('.')) return null;      // sin archivos ocultos ni nombres solo de puntuación
+  return NOMBRES_RESERVADOS_WINDOWS.test(c) ? `_${c}` : c;
+}
+
+/** `<CODIGO_DCMX>.pdf`, o un nombre genérico seguro si no hay un código válido. */
+export function nombreArchivoBorrador(codigo: string | undefined): string {
+  return `${codigoDcmxSeguro(codigo) ?? NOMBRE_GENERICO}.pdf`;
 }
 
 /**
@@ -34,14 +48,14 @@ export class SheetPdfService {
   get disponible(): boolean { return this.renderer.disponible; }
 
   async generarBorrador(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext): Promise<DraftPdf> {
-    const resultado = await this.preview.preview(family, form, context, { capaBorrador: true });
+    const resultado = await this.preview.preview(family, form, context, { capaBorrador: true, tituloPdf: codigoDcmxSeguro(form.codigo) ?? NOMBRE_GENERICO });
     // Mismo criterio que la vista previa: lo que no se muestra (modalidad no autorizada) tampoco se imprime.
     if (resultado.bloqueado) throw new UnprocessableEntityException({ code: 'PDF_BLOCKED', message: `${resultado.bloqueado} No se genera un documento para no producir una hoja engañosa.` });
     const t0 = Date.now();
     const salida = await this.renderer.render(resultado.html);
     switch (salida.kind) {
       case 'OK':
-        return { pdf: salida.pdf, filename: nombreArchivoBorrador(form.codigo, family, resultado.completo), completo: resultado.completo };
+        return { pdf: salida.pdf, filename: nombreArchivoBorrador(form.codigo), completo: resultado.completo };
       case 'NO_DISPONIBLE':
         throw new HttpException({ code: 'PDF_NOT_AVAILABLE', message: 'La generación de PDF no está disponible en este entorno.' }, HttpStatus.NOT_IMPLEMENTED);
       case 'OCUPADO':

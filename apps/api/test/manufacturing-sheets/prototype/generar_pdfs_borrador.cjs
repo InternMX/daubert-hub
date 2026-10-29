@@ -23,14 +23,16 @@ const casos = JSON.parse(fs.readFileSync(path.join(__dirname, 'casos.json'), 'ut
   const resumen = [];
   const incompleto = { ...casos.find((c) => c.id === 'hojas-doblada'), id: 'incompleto-sin-peso' };
   incompleto.datos = { ...incompleto.datos, pesoLb: '', calibre: '' };
-  for (const caso of [...casos, incompleto]) {
+  const personalizado = { ...casos.find((c) => c.id === 'bolsa-fuelle'), id: 'color-personalizado' };
+  personalizado.datos = { ...personalizado.datos, colorNombre: 'AZUL ESPECIAL CLIENTE', colorHex: '#3778C8' };     // color personalizado (nombre + HEX) de la familia Bolsa Fuelle
+  for (const caso of [...casos, incompleto, personalizado]) {
     const borrador = await pdf.generarBorrador(caso.familia, caso.datos);
     fs.writeFileSync(path.join(salida, `${caso.id}.pdf`), borrador.pdf);
     const vista = await preview.preview(caso.familia, caso.datos);                       // misma composición, sin la capa de borrador
     const r = await renderer.render(vista.html);
     if (r.kind !== 'OK') throw new Error(`Vista sin capa no generada: ${caso.id} (${r.kind})`);
     fs.writeFileSync(path.join(salida, `${caso.id}.sin-capa.pdf`), r.pdf);
-    resumen.push({ id: caso.id, familia: caso.familia, archivo: borrador.filename, completo: borrador.completo, bytes: borrador.pdf.length });
+    resumen.push({ id: caso.id, familia: caso.familia, archivo: borrador.filename, completo: borrador.completo, bytes: borrador.pdf.length, datos: caso.datos });
     console.log(`OK ${caso.id} → ${borrador.filename} (${borrador.pdf.length} B, completo=${borrador.completo})`);
   }
   fs.writeFileSync(path.join(salida, 'resumen.json'), JSON.stringify(resumen, null, 2));

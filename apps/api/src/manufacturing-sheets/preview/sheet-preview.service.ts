@@ -54,10 +54,11 @@ export class SheetPreviewService {
   private componer: Promise<Componer> | null = null;
 
   /**
+   * `opciones.tituloPdf` (solo la descarga PDF) pone el código DCMX como título del documento (`<title>`, metadato del PDF): no es parte visible de la hoja ni toca el encabezado del machote.
    * `opciones.capaBorrador` (solo la descarga PDF) añade la identificación BORRADOR · SIN APROBAR dentro del propio HTML (ver draft-layer.ts); la vista previa del navegador no la lleva
    * (tiene su propia marca de interfaz). Todo lo demás —datos, plantilla, escape y validaciones— es idéntico en ambos modos: una sola composición.
    */
-  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext, opciones: { capaBorrador?: boolean } = {}): Promise<SheetPreviewResult> {
+  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext, opciones: { capaBorrador?: boolean; tituloPdf?: string } = {}): Promise<SheetPreviewResult> {
     const def = FAMILIAS[family];
     const mapped = mapSheetData(family, form);
     const coherencia = revisarCoherencia(family, form, context);
@@ -90,6 +91,7 @@ export class SheetPreviewService {
     html = html.replace('<head>', `<head>\n  ${CSP}`);
     html = this.inlineImages(family, html);
     const completo = mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0;
+    if (opciones.tituloPdf !== undefined) html = html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escapeHtml(opciones.tituloPdf as string)}</title>`);
     if (opciones.capaBorrador) html = aplicarCapaBorrador(html, completo);
     return resultado({ html, completo, advertencias: mapped.advertencias }, incidenciasValidador);
   }

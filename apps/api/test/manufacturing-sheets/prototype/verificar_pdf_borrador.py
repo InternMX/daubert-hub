@@ -52,7 +52,7 @@ def main():
     resumen = {r['id']: r for r in json.load(open(os.path.join(CARPETA, 'resumen.json'), encoding='utf-8'))}
     casos = {c['id']: c for c in json.load(open(os.path.join(AQUI, 'casos.json'), encoding='utf-8'))}
     for cid, r in resumen.items():
-        caso = casos.get(cid) or {'familia': r['familia'], 'datos': {}}
+        caso = casos.get(cid) or {'familia': r['familia'], 'datos': r.get('datos') or {}}
         d = caso['datos']
         pdf = fitz.open(os.path.join(CARPETA, cid + '.pdf')); base = fitz.open(os.path.join(CARPETA, cid + '.sin-capa.pdf'))
         pg, bg = pdf[0], base[0]
@@ -68,7 +68,10 @@ def main():
         ok('BORRADOR' in marca and 'APROBAR' in marca and 'SIN' in marca, pre + 'franja superior «BORRADOR · SIN APROBAR» dentro del PDF')
         ok(('INCOMPLETO' in marca) == incompleto, pre + ('identificado como INCOMPLETO' if incompleto else 'no marcado INCOMPLETO'))
         ok(sum(1 for x in w if x[0] == 'FIRMA') >= 3, pre + 'SIN FIRMA en los dos bloques de firma y en el pie')
-        ok('BORRADOR-INCOMPLETO' in r['archivo'] if incompleto else r['archivo'].startswith('BORRADOR_') and r['archivo'].endswith('.pdf'), pre + 'nombre de archivo seguro (%s)' % r['archivo'])
+        codigo = d.get('codigo') or casos['hojas-doblada']['datos']['codigo']      # el caso incompleto deriva de «hojas-doblada»
+        ok(r['archivo'] == codigo + '.pdf', pre + 'nombre de archivo = <CODIGO_DCMX>.pdf (%s)' % r['archivo'])
+        ok((pdf.metadata or {}).get('title') == codigo, pre + 'título del PDF (metadato) = código DCMX (%r)' % (pdf.metadata or {}).get('title'))
+        ok('Hoja de Instrucción de' in texto or 'Hoja' in texto, pre + 'el encabezado visible del machote se conserva')
         # 3. sin recortes: todo el texto dentro de la página y el contenido técnico fuera de los márgenes de la capa
         ok(all(x[1] >= 0 and x[3] <= 612 + 0.1 and x[2] >= 0 and x[4] <= 792 for x in w), pre + 'ningún texto fuera de la página')
         ok(all(en_banda(x) or x[4] <= BANDA_INF for x in w), pre + 'el contenido termina antes del pie (último texto %.1f pt)' % max(x[4] for x in w if not en_banda(x)))
@@ -107,6 +110,9 @@ def main():
         ok(distintos == 0, pre + 'cero píxeles distintos fuera de la capa (%d)' % distintos)
         # 7. colores y familias
         fills = {hex_fill(dr) for dr in dib}
+        if cid == 'color-personalizado':
+            ok('#3778C8' in fills and 'AZUL' in texto.split() and 'ESPECIAL' in texto.split() and 'CLIENTE' in texto.split(), pre + 'color personalizado: nombre impreso y HEX #3778C8 en el dibujo')
+            ok('#538DD5' not in fills, pre + 'sin rastro del color predeterminado')
         if cid == 'bolsa-natural': ok('#FFF2CC' in fills and 'NATURAL' in texto.split(), pre + 'color NATURAL (#FFF2CC) en el dibujo y el texto')
         if cid == 'coex-azul': ok({'#558ED5', '#376092', '#95B3D7', '#C6D9F1'} <= fills and '#00B050' not in fills, pre + 'COEX Azul con sus colores aprobados')
         if cid == 'coex-verde': ok({'#00B050', '#92D050', '#D7E4BD'} <= fills and '#558ED5' not in fills, pre + 'COEX Verde con sus colores aprobados')
