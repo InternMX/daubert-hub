@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,11 +37,12 @@ else { fs.writeFileSync(salida, '%PDF-1.4 simulado'); fin(0); }
 `;
 let carpeta = '';
 let guion = '';
-beforeAll(() => { carpeta = mkdtempSync(join(tmpdir(), 'chrome-simulado-')); guion = join(carpeta, 'chrome-simulado.cjs'); writeFileSync(guion, GUION); });
+let temporales = '';                                        // directorio propio de esta suite: otras suites (en paralelo) no interfieren con la comprobación de limpieza
+beforeAll(() => { carpeta = mkdtempSync(join(tmpdir(), 'chrome-simulado-')); guion = join(carpeta, 'chrome-simulado.cjs'); writeFileSync(guion, GUION); temporales = join(carpeta, 'tmp'); mkdirSync(temporales); });
 afterAll(() => { rmSync(carpeta, { recursive: true, force: true }); });
 
-const opciones = (modo: string, extra: Partial<PdfRendererOptions> = {}): PdfRendererOptions => ({ chromePath: process.execPath, argsPrefix: [guion, modo], timeoutMs: 5_000, maxConcurrent: 2, maxQueue: 1, maxHtmlBytes: 100_000, maxPdfBytes: 1_000_000, ...extra });
-const residuos = () => readdirSync(tmpdir()).filter((n) => n.startsWith('daubert-pdf-'));
+const opciones = (modo: string, extra: Partial<PdfRendererOptions> = {}): PdfRendererOptions => ({ chromePath: process.execPath, argsPrefix: [guion, modo], tmpDir: temporales, timeoutMs: 5_000, maxConcurrent: 2, maxQueue: 1, maxHtmlBytes: 100_000, maxPdfBytes: 1_000_000, ...extra });
+const residuos = () => readdirSync(temporales).filter((n) => n.startsWith('daubert-pdf-'));
 
 describe('capa de borrador (dentro del documento, no una superposición de la interfaz)', () => {
   it('añade BORRADOR · SIN APROBAR (o INCOMPLETO) y el pie con SIN FIRMA, como texto fijo antes de </body>', () => {
@@ -299,7 +300,7 @@ function tituloDelPdf(pdf: Buffer): string | null {
 describe.skipIf(!CHROME)('Chrome real', () => {
   it('imprime el borrador de una hoja como un PDF válido de una página y sin temporales', async () => {
     const antes = residuos();
-    const r = await new SheetPdfService(new SheetPreviewService(), { chromePath: CHROME, timeoutMs: 30_000, maxConcurrent: 1, maxQueue: 0, maxHtmlBytes: 2_000_000, maxPdfBytes: 10_000_000 }).generarBorrador('BOLSA_FUELLE', FUELLE);
+    const r = await new SheetPdfService(new SheetPreviewService(), { chromePath: CHROME, tmpDir: temporales, timeoutMs: 30_000, maxConcurrent: 1, maxQueue: 0, maxHtmlBytes: 2_000_000, maxPdfBytes: 10_000_000 }).generarBorrador('BOLSA_FUELLE', FUELLE);
     expect(r.pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(r.pdf.length).toBeGreaterThan(20_000);
     expect(r.pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)).toHaveLength(1);

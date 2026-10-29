@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FAMILIAS, modalidadesDe, type FamilyCode } from './family-registry';
 import { mapSheetData, type PreviewFamily, type PreviewFormData } from './sheet-data.mapper';
-import { aplicarCapaBorrador } from './draft-layer';
+import { aplicarCapaBorrador, aplicarCapaFinalizada, type InfoFinalizada } from './draft-layer';
 import { consolidarIncidencias, incidencia, type Incidencia } from './incidencias';
 import { revisarCoherencia, type BindReviewContext } from './technical-coherence';
 
@@ -58,7 +58,7 @@ export class SheetPreviewService {
    * `opciones.capaBorrador` (solo la descarga PDF) añade la identificación BORRADOR · SIN APROBAR dentro del propio HTML (ver draft-layer.ts); la vista previa del navegador no la lleva
    * (tiene su propia marca de interfaz). Todo lo demás —datos, plantilla, escape y validaciones— es idéntico en ambos modos: una sola composición.
    */
-  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext, opciones: { capaBorrador?: boolean; tituloPdf?: string } = {}): Promise<SheetPreviewResult> {
+  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext, opciones: { capaBorrador?: boolean; capaFinalizada?: InfoFinalizada; tituloPdf?: string } = {}): Promise<SheetPreviewResult> {
     const def = FAMILIAS[family];
     const mapped = mapSheetData(family, form);
     const coherencia = revisarCoherencia(family, form, context);
@@ -93,6 +93,7 @@ export class SheetPreviewService {
     const completo = mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0;
     if (opciones.tituloPdf !== undefined) html = html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escapeHtml(opciones.tituloPdf as string)}</title>`);
     if (opciones.capaBorrador) html = aplicarCapaBorrador(html, completo);
+    else if (opciones.capaFinalizada) html = aplicarCapaFinalizada(html, opciones.capaFinalizada);
     return resultado({ html, completo, advertencias: mapped.advertencias }, incidenciasValidador);
   }
 

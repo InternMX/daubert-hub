@@ -30,6 +30,8 @@ export interface PdfRendererOptions {
   maxQueue: number;
   maxHtmlBytes: number;
   maxPdfBytes: number;
+  /** Directorio base de los temporales (por omisión el del sistema); permite a las pruebas aislar y comprobar la limpieza. */
+  tmpDir?: string;
 }
 
 export const PDF_RENDERER_OPTIONS = 'PDF_RENDERER_OPTIONS';
@@ -90,7 +92,7 @@ export class SheetPdfRenderer {
   }
 
   private async imprimir(html: string): Promise<PdfRenderOutcome> {
-    const carpeta = await mkdtemp(join(tmpdir(), 'daubert-pdf-'));
+    const carpeta = await mkdtemp(join(this.options.tmpDir ?? tmpdir(), 'daubert-pdf-'));
     try {
       const entrada = join(carpeta, 'hoja.html');
       const salida = join(carpeta, 'hoja.pdf');

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpException, HttpStatus, UnprocessableEntityException } from '@nestjs/common';
 import type { PreviewFamily, PreviewFormData } from './sheet-data.mapper';
 import { SheetPdfRenderer, PDF_RENDERER_OPTIONS, type PdfRendererOptions } from './sheet-pdf.renderer';
+import type { InfoFinalizada } from './draft-layer';
 import { SheetPreviewService } from './sheet-preview.service';
 import type { BindReviewContext } from './technical-coherence';
 
@@ -27,6 +28,22 @@ export function codigoDcmxSeguro(codigo: string | undefined): string | null {
   return NOMBRES_RESERVADOS_WINDOWS.test(c) ? `_${c}` : c;
 }
 
+/** Variante en forma de nombre de archivo: mayúsculas, solo [A-Z0-9-] (misma regla que `manufactura.fn_nombre_pdf` en la base). */
+export function varianteParaArchivo(variante: string | null | undefined): string | null {
+  const v = (variante ?? '').trim();
+  if (v === '') return null;
+  return v.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').toUpperCase() || null;
+}
+
+/** Nombre del PDF FINALIZADO: `CODIGO-VARIANTE_REV01.pdf`, o `CODIGO_REV01.pdf` sin variante. Coincide EXACTAMENTE con `manufactura.fn_nombre_pdf` (la base lo exige). */
+export function nombreArchivoFinalizado(codigo: string, variante: string | null | undefined, revision: number): string {
+  const seguro = codigoDcmxSeguro(codigo);
+  if (seguro === null) throw new Error('El código DCMX no es válido para nombrar el PDF.');
+  if (!Number.isInteger(revision) || revision < 1) throw new Error('Revisión no válida.');
+  const v = varianteParaArchivo(variante);
+  return `${seguro}${v ? `-${v}` : ''}_REV${String(revision).padStart(2, '0')}.pdf`;
+}
+
 /** `<CODIGO_DCMX>.pdf`, o un nombre genérico seguro si no hay un código válido. */
 export function nombreArchivoBorrador(codigo: string | undefined): string {
   return `${codigoDcmxSeguro(codigo) ?? NOMBRE_GENERICO}.pdf`;
@@ -46,6 +63,24 @@ export class SheetPdfService {
   }
 
   get disponible(): boolean { return this.renderer.disponible; }
+
+  /**
+   * PDF de una versión FINALIZADA (TEST) generado desde la COPIA de especificación registrada (nunca desde datos del cliente). Chrome es OBLIGATORIO: sin él no se genera nada y se informa 501,
+   * de modo que la revisión no pueda marcarse como finalizada sin su documento. Mismo método de composición que la vista previa; solo cambia la capa (PRUEBA · NO VÁLIDO PARA PRODUCCIÓN).
+   */
+  async generarFinalizada(family: PreviewFamily, form: PreviewFormData, context: BindReviewContext | undefined, info: InfoFinalizada, variante?: string | null): Promise<DraftPdf> {
+    if (!this.disponible) throw new HttpException({ code: 'PDF_NOT_AVAILABLE', message: 'No se puede finalizar: la generación de PDF no está disponible en este entorno.' }, HttpStatus.NOT_IMPLEMENTED);
+    const nombre = nombreArchivoFinalizado(form.codigo ?? '', variante, info.revision);
+    const resultado = await this.preview.preview(family, form, context, { capaFinalizada: info, tituloPdf: codigoDcmxSeguro(form.codigo) ?? NOMBRE_GENERICO });
+    if (resultado.bloqueado) throw new UnprocessableEntityException({ code: 'PDF_BLOCKED', message: `${resultado.bloqueado} No se genera un documento para no producir una hoja engañosa.` });
+    if (!resultado.completo) throw new UnprocessableEntityException({ code: 'FINALIZACION_INCOMPLETA', message: 'Faltan datos técnicos para esta familia: no se finaliza.' });
+    const salida = await this.renderer.render(resultado.html);
+    if (salida.kind === 'OK') return { pdf: salida.pdf, filename: nombre, completo: true };
+    if (salida.kind === 'NO_DISPONIBLE') throw new HttpException({ code: 'PDF_NOT_AVAILABLE', message: 'No se puede finalizar: la generación de PDF no está disponible en este entorno.' }, HttpStatus.NOT_IMPLEMENTED);
+    if (salida.kind === 'OCUPADO') throw new HttpException({ code: 'PDF_BUSY', message: 'Hay varios PDF en proceso. Intenta de nuevo en unos segundos.', retryAfterSeconds: 5 }, HttpStatus.TOO_MANY_REQUESTS);
+    if (salida.kind === 'TIMEOUT') throw new HttpException({ code: 'PDF_TIMEOUT', message: 'La generación del PDF tardó demasiado.' }, HttpStatus.GATEWAY_TIMEOUT);
+    throw new HttpException({ code: 'PDF_FAILED', message: 'No se pudo generar el PDF.' }, HttpStatus.INTERNAL_SERVER_ERROR);
+  }
 
   async generarBorrador(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext): Promise<DraftPdf> {
     const resultado = await this.preview.preview(family, form, context, { capaBorrador: true, tituloPdf: codigoDcmxSeguro(form.codigo) ?? NOMBRE_GENERICO });
