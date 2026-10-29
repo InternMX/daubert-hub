@@ -98,4 +98,5 @@ Otros cambios de la rev. 3: 15 funciones (antes 12); la app recibe `EXECUTE` sob
 | `nombreArchivoFinalizado` (`CODIGO-VARIANTE_REVNN.pdf`), idéntico a `fn_nombre_pdf` | Hecho + pruebas (mismos ejemplos que el smoke) |
 | `SheetPdfService.generarFinalizada`: **Chrome obligatorio** (501 sin Chrome, antes de componer ni renderizar), desde la copia registrada, 422 si incompleto/bloqueado, título = código DCMX | Hecho + pruebas (con Chrome real y simulado) |
 | Evidencia: 3 PDF finalizados de ejemplo (Bolsa Plana REV01, COEX Verde REV03 con «Revisó», Hojas Extendida REV02) | `Entregables\Fase5_Gestor_Documental\PDF_finalizado_TEST\` — Carta, 1 página, título = código, «PRUEBA…» arriba, sin «BORRADOR»/«APROBADA», 3 × «SIN FIRMA» |
-| Repositorio/servicio/endpoints de documentos, frontend (guardar/abrir/finalizar/historial) | **No iniciados**: dependen de las tablas; se construirán contra una instancia desechable una vez autorizada la migración |
+| Repositorio, servicio y controlador de documentos (`apps/api/src/manufacturing-documents/`, **sin registrar en `AppModule`**) | Hecho y validado **solo en instancias desechables** (61 casos con el UP real + 24 del controlador); ver `docs/manufacturing-document-manager-application.md` |
+| Frontend (guardar/abrir/finalizar/historial) | **No iniciado**: depende de la migración autorizada |
