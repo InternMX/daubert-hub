@@ -116,17 +116,27 @@ async function main() {
     const pre = psql({ archivo: 'precheck.sql', tuplas: true });
     registrar(pre.codigo === 0 && /(^|\n)t\n[\s\S]*\|/.test(pre.salida) || /all_prechecks_pass|^t$/m.test(pre.salida), 'precheck correcto (solo lectura)');
     const base = psql({ archivo: 'precheck.sql', tuplas: true }).salida.trim().split('\n').filter((l) => l.includes('|')).pop().split('|');
-    const [bUsers, bEmp, bAud, bTab, bFun] = base;
-    registrar(base.length === 5, 'precheck imprime la línea base (5 valores)', base.join(' '));
+    const NOMBRES_BASE = ['baseline_users', 'baseline_empresas', 'baseline_audit_cambios', 'baseline_tablas_fp', 'baseline_funciones_fp', 'baseline_columnas_fp', 'baseline_triggers_fp', 'baseline_privilegios_fp', 'baseline_roles_fp', 'baseline_acl_bases_fp', 'baseline_esquemas_acl_fp'];
+    registrar(base.length === NOMBRES_BASE.length && base.every((v) => v !== ''), `precheck imprime la línea base ampliada (${NOMBRES_BASE.length} valores)`);
+    const VARS_BASE = Object.fromEntries(NOMBRES_BASE.map((n, i) => [n, base[i]]));
+    // Respaldo previo (procedimiento del operador): pg_dump en formato custom, verificable con pg_restore --list y con sha256.
+    const respaldo = docker(['exec', '-e', 'PGPASSWORD=scratch', CONTENEDOR, 'sh', '-c', 'pg_dump -h 127.0.0.1 -U postgres -d daubert_hub_test -F c -f /tmp/antes.dump && pg_restore --list /tmp/antes.dump | wc -l && sha256sum /tmp/antes.dump | cut -c1-16 && wc -c < /tmp/antes.dump']);
+    const [lineasLista, huellaDump, bytesDump0] = String(respaldo.stdout).trim().split('\n').map((l) => l.trim());
+    registrar(respaldo.status === 0 && Number(lineasLista) > 10 && Number(bytesDump0) > 1000, 'respaldo previo (pg_dump -F c) creado y verificable con pg_restore --list y sha256', `${lineasLista} objetos, ${bytesDump0} bytes, sha256 ${huellaDump}…`);
     const up = psql({ archivo: 'up.sql' });
     registrar(up.codigo === 0 && /UP_OK/.test(up.salida) && /COMMIT/.test(up.salida), 'UP aplicado');
-    const post = psql({ archivo: 'postcheck.sql', tuplas: true, vars: { baseline_users: bUsers, baseline_empresas: bEmp, baseline_audit_cambios: bAud, baseline_tablas_fp: bTab, baseline_funciones_fp: bFun } });
+    const post = psql({ archivo: 'postcheck.sql', tuplas: true, vars: VARS_BASE });
     const filaPost = post.salida.split('\n').find((l) => l.includes('|')) ?? '';
     registrar(post.codigo === 0 && filaPost.split('|').every((v) => v === 't' || v === ''), 'postcheck: todas las comprobaciones en t', `${filaPost.split('|').filter((v) => v === 't').length} comprobaciones`);
     const smoke = psql({ usuario: 'daubert_hub_test_user', archivo: 'smoke.sql', tuplas: true });
     const lineas = smoke.salida.split('\n').filter((l) => /^\d+\|/.test(l));
     const fallosSmoke = lineas.filter((l) => l.endsWith('|f'));
     registrar(smoke.codigo === 0 && lineas.length > 0 && fallosSmoke.length === 0, `smoke con el rol de la app: ${lineas.length} pruebas`, fallosSmoke.join(' / '));
+    registrar(/(^|\n)t\|t(\n|$)/.test(smoke.salida), 'el smoke comprueba por sí mismo que no dejó residuos de negocio ni de auditoría');
+    const residuos = psql({ sql: "SELECT (SELECT count(*) FROM manufactura.documentos) + (SELECT count(*) FROM manufactura.revisiones) + (SELECT count(*) FROM manufactura.pdfs) + (SELECT count(*) FROM manufactura.pdf_contenidos) + (SELECT count(*) FROM manufactura.confirmaciones_revision) || '|' || (SELECT count(*) FROM audit.cambios WHERE esquema = 'manufactura')", tuplas: true });
+    registrar(residuos.salida.trim() === '0|0', 'tras el smoke (visto como administrador, sin RLS) las 5 tablas y la auditoría de manufactura están vacías', residuos.salida.trim());
+    const huecos = psql({ sql: "SELECT last_value FROM pg_sequences s WHERE false UNION ALL SELECT (pg_sequence_last_value('manufactura.documentos_documento_id_seq'))", tuplas: true });
+    console.log(`   (lo único permanente del smoke: huecos en los ids; última identidad de documentos consumida = ${huecos.salida.trim().split('\n').pop()})`);
 
     // ---------------------------------------------------------------- 2. negativas
     for (const [t, vars] of [['up', {}], ['precheck', {}], ['down', {}], ['smoke', {}]]) {
@@ -256,6 +266,10 @@ async function main() {
     registrar(sinId.rows[0].n === 0, 'sin identidad de sesión no se ven borradores (solo finalizadas)');
     await cApp.end();
 
+    const redaccion = psql({ sql: "SELECT count(*) FILTER (WHERE tabla = 'revisiones') || '|' || count(*) FILTER (WHERE tabla = 'revisiones' AND (datos_nuevos ?| ARRAY['especificacion','elaboro_nombre','cliente_nombre'])) || '|' || count(*) FILTER (WHERE tabla = 'documentos' AND datos_nuevos ?| ARRAY['codigo_dcmx','variante']) FROM audit.cambios WHERE esquema = 'manufactura'", tuplas: true });
+    const [nRevAud, nRevFuga, nDocFuga] = redaccion.salida.trim().split('|').map(Number);
+    registrar(nRevAud > 5 && nRevFuga === 0 && nDocFuga === 0, 'auditoría redactora con operaciones reales: filas de revisiones auditadas sin especificación, nombres ni cliente; documentos sin código', `${nRevAud} filas de revisiones`);
+
     // ---------------------------------------------------------------- 5. crecimiento y respaldo de PDF en PostgreSQL
     const adm = new pg.Client({ host: HOST, port: PUERTO, user: 'postgres', password: 'scratch', database: 'daubert_hub_test' }); await adm.connect();
     await adm.query('BEGIN'); await adm.query("SET LOCAL session_replication_role = replica");     // medición: inserción masiva sin triggers (solo en la instancia desechable)
@@ -293,6 +307,17 @@ async function main() {
     registrar(up2.codigo === 0 && /UP_OK/.test(up2.salida), 'UP tras un DOWN completo vuelve a funcionar (ciclo UP→DOWN→UP)');
     const d4 = psql({ archivo: 'down.sql' });
     registrar(d4.codigo === 0 && /DOWN_OK/.test(d4.salida), 'DOWN sin datos no requiere confirmaciones');
+    // Reversibilidad: tras UP + pruebas + DOWN, TODO lo que existe fuera de manufactura es idéntico a la línea base (columnas, triggers, privilegios y dueños, roles, ACL de bases y esquemas).
+    const despues = psql({ archivo: 'precheck.sql', tuplas: true }).salida.trim().split('\n').filter((l) => l.includes('|')).pop().split('|');
+    const iguales = NOMBRES_BASE.map((n, i) => [n, base[i] === despues[i]]).filter(([n]) => n !== 'baseline_audit_cambios');
+    registrar(iguales.every(([, ok]) => ok), 'tras UP→pruebas→DOWN nada fuera de manufactura cambió (columnas, triggers, privilegios y dueños, roles, ACL de bases y esquemas)', iguales.filter(([, ok]) => !ok).map(([n]) => n).join(', '));
+    // Recuperación: el respaldo previo se restaura en una base NUEVA (nunca sobre la original) y coincide con la línea base.
+    psql({ base: 'postgres', sql: 'CREATE DATABASE ensayo_restauracion' });
+    const rest = docker(['exec', '-e', 'PGPASSWORD=scratch', CONTENEDOR, 'pg_restore', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'ensayo_restauracion', '--no-owner', '/tmp/antes.dump']);
+    const textoBase = fs.readFileSync(path.join(DIR, `${PREFIJO}.precheck.sql`), 'utf8');
+    const consultaBase = textoBase.slice(textoBase.indexOf('SELECT\n  (SELECT count(*) FROM security.users)'), textoBase.lastIndexOf('ROLLBACK;'));
+    const enRestaurada = psql({ base: 'ensayo_restauracion', sql: consultaBase, tuplas: true }).salida.trim().split('\n').filter((l) => l.includes('|')).pop().split('|');
+    registrar(rest.status === 0 && enRestaurada.length === NOMBRES_BASE.length && NOMBRES_BASE.every((n, i) => n === 'baseline_acl_bases_fp' || enRestaurada[i] === base[i]), 'recuperación: el respaldo previo restaurado en una base nueva reproduce la línea base (sin tocar la original)', rest.status === 0 ? '' : String(rest.stderr).slice(-200));
   } finally {
     docker(['stop', CONTENEDOR]);
     await esperar(1500);

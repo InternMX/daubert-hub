@@ -1,8 +1,8 @@
 -- =====================================================================================================================
--- UP · manufactura · gestor documental de Hojas de Instrucción de Manufactura (SOLO TEST: daubert_hub_test)   [revisión 2]
+-- UP · manufactura · gestor documental de Hojas de Instrucción de Manufactura (SOLO TEST: daubert_hub_test)   [revisión 3]
 --
 -- ALCANCE DE LAS ESCRITURAS (todo dentro de UNA transacción; si algo falla no queda nada):
---   · CREA el esquema `manufactura` (dueño: el rol administrativo que ejecuta) con 5 tablas, 12 funciones, triggers y políticas RLS.
+--   · CREA el esquema `manufactura` (dueño: el rol administrativo que ejecuta) con 5 tablas, 15 funciones, triggers y políticas RLS.
 --   · CONCEDE al rol `daubert_hub_test_user` SOLO los privilegios de datos listados al final (sin DDL, sin DELETE, sin TRUNCATE).
 --   · NO modifica ni lee datos de ninguna tabla existente; NO toca core, security, ops, operacion ni audit (salvo que los triggers
 --     de auditoría nuevos escribirán en audit.cambios cuando la aplicación use las tablas nuevas).
@@ -79,6 +79,54 @@ AS $fn$ SELECT encode(sha256(convert_to(p_familia || E'\n' || p_especificacion::
 CREATE FUNCTION manufactura.fn_nombre_pdf(p_codigo text, p_variante text, p_revision integer) RETURNS text
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
 AS $fn$ SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, 2, '0') || '.pdf' $fn$;
+
+-- Validación ESTRUCTURAL de la copia de la especificación (revisión 3). NO examina el texto de los valores: una descripción legítima («TOKEN», «SECRET», «PASSWORD»…)
+-- se acepta. Se rechazan únicamente: claves con nombre de credencial en cualquier nivel (authorization, bearer, api key, password, secret, token, cookie…), claves que no
+-- sean identificadores simples, claves de primer nivel desconocidas y claves de `bind` fuera de los 6 campos permitidos (sin ID, costos ni credenciales).
+CREATE FUNCTION manufactura.fn_claves_validas(p jsonb) RETURNS boolean
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
+AS $fn$
+  -- jsonb_path_query(p, '$.**') enumera TODOS los nodos (objetos, arreglos y valores) de cualquier nivel.
+  SELECT NOT EXISTS (
+    SELECT 1 FROM jsonb_path_query(p, 'lax $.**') AS nodo(v), LATERAL jsonb_object_keys(CASE WHEN jsonb_typeof(nodo.v) = 'object' THEN nodo.v ELSE '{}'::jsonb END) AS clave(k)
+     WHERE clave.k !~ '^[A-Za-z][A-Za-z0-9_]{0,63}$' OR clave.k ~* '(authorization|bearer|api_?key|subscription|password|passwd|secret|token|credential|cookie)')
+$fn$;
+
+CREATE FUNCTION manufactura.fn_especificacion_valida(p jsonb) RETURNS boolean
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, manufactura
+AS $fn$
+  SELECT jsonb_typeof(p) = 'object' AND p ? 'datos' AND octet_length(p::text) <= 65536
+     AND NOT EXISTS (SELECT 1 FROM jsonb_object_keys(p) k WHERE k <> ALL (ARRAY['datos', 'bind', 'procedencia', 'colorPersonalizado', 'incidenciasReconocidas']))
+     AND (NOT p ? 'bind' OR (jsonb_typeof(p -> 'bind') = 'object' AND NOT EXISTS (SELECT 1 FROM jsonb_object_keys(p -> 'bind') k WHERE k <> ALL (ARRAY['Code', 'Title', 'Description', 'Weight', 'CreationDate']))))
+     AND manufactura.fn_claves_validas(p)
+$fn$;
+
+-- Auditoría de manufactura (revisión 3). Misma tabla (audit.cambios), mismas variables de sesión (app.user_id / app.user_email / app.request_id / app.origin) y misma semántica
+-- que audit.fn_registrar_cambio, PERO sin copiar columnas privadas: la aplicación puede LEER audit.cambios, y la función original copia la fila completa (incluida la copia de la
+-- especificación de un borrador ajeno), lo que anularía la visibilidad por filas. Argumentos del trigger: 1.º = columna clave; los demás = columnas a omitir.
+-- SECURITY DEFINER (como la original) con search_path fijo y dueño administrador.
+CREATE FUNCTION manufactura.fn_auditar_manufactura() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, audit
+AS $fn$
+DECLARE
+  v_old jsonb; v_new jsonb; v_row jsonb; v_omitir text[] := ARRAY(SELECT unnest(TG_ARGV[2:TG_NARGS - 1])); v_clave text := TG_ARGV[0];
+BEGIN
+  IF TG_NARGS < 1 THEN RAISE EXCEPTION 'fn_auditar_manufactura requiere la columna clave.'; END IF;
+  IF TG_OP = 'INSERT' THEN v_new := to_jsonb(NEW) - v_omitir;
+  ELSIF TG_OP = 'UPDATE' THEN
+    v_old := to_jsonb(OLD) - v_omitir; v_new := to_jsonb(NEW) - v_omitir;
+    IF (v_old - 'updated_at') = (v_new - 'updated_at') AND (to_jsonb(OLD) - 'updated_at') = (to_jsonb(NEW) - 'updated_at') THEN RETURN NEW; END IF;
+  ELSE v_old := to_jsonb(OLD) - v_omitir;
+  END IF;
+  v_row := COALESCE(v_new, v_old);
+  INSERT INTO audit.cambios (esquema, tabla, registro_id, operacion, usuario_id, usuario_email, origen, request_id, datos_anteriores, datos_nuevos)
+  VALUES (TG_TABLE_SCHEMA, TG_TABLE_NAME, v_clave || '=' || COALESCE(v_row ->> v_clave, 'NULL'), TG_OP,
+          NULLIF(current_setting('app.user_id', true), ''), NULLIF(current_setting('app.user_email', true), ''),
+          COALESCE(NULLIF(current_setting('app.origin', true), ''), 'SISTEMA'), NULLIF(current_setting('app.request_id', true), ''), v_old, v_new);
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END
+$fn$;
 
 CREATE FUNCTION manufactura.fn_inmutable() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog
@@ -165,11 +213,8 @@ CREATE TABLE manufactura.revisiones (
   CONSTRAINT ck_manufactura_revisiones_revision CHECK ((revision IS NULL OR revision >= 1) AND (revision_prevista IS NULL OR revision_prevista >= 1)),
   CONSTRAINT ck_manufactura_revisiones_entorno CHECK (entorno_emision = 'PRUEBA'),
   CONSTRAINT ck_manufactura_revisiones_familia CHECK (familia IN ('BOLSA_PLANA_1', 'HOJA_PAQ', 'BOLSA_FUELLE', 'BOLSA_NATURAL', 'ROLLO_CONTINUO', 'TERMOENCOGIBLE', 'COEX')),
-  CONSTRAINT ck_manufactura_revisiones_especificacion CHECK (
-    jsonb_typeof(especificacion) = 'object' AND especificacion ? 'datos' AND octet_length(especificacion::text) <= 65536
-    -- defensa en profundidad: ninguna credencial ni token de BIND/sesión entra en la copia
-    AND especificacion::text !~* '(authorization|bearer[[:space:]]|api[_-]?key|subscription[_-]?key|password|passwd|secret|token)'
-  ),
+  -- Validación ESTRUCTURAL (claves), no del texto de los valores: las descripciones de productos pueden contener cualquier palabra.
+  CONSTRAINT ck_manufactura_revisiones_especificacion CHECK (manufactura.fn_especificacion_valida(especificacion)),
   CONSTRAINT ck_manufactura_revisiones_hash CHECK (especificacion_sha256 ~ '^[0-9a-f]{64}$'),
   CONSTRAINT ck_manufactura_revisiones_nombres CHECK (
     (elaboro_nombre IS NULL OR (btrim(elaboro_nombre) <> '' AND char_length(elaboro_nombre) <= 120))
@@ -465,13 +510,15 @@ CREATE TRIGGER trg_manufactura_confirmaciones_insert BEFORE INSERT ON manufactur
 CREATE TRIGGER trg_manufactura_confirmaciones_inmutable BEFORE UPDATE OR DELETE ON manufactura.confirmaciones_revision FOR EACH ROW EXECUTE FUNCTION manufactura.fn_inmutable();
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- 7. Auditoría: se REUTILIZA audit.fn_registrar_cambio (usuario real desde app.user_id / app.user_email, request_id, antes/después).
+-- 7. Auditoría en audit.cambios con la función REDACTORA manufactura.fn_auditar_manufactura (usuario real desde app.user_id / app.user_email, request_id, antes/después).
 --    El contenido binario del PDF (pdf_contenidos) no se audita: lo cubre el INSERT de pdfs (huella, tamaño, actor).
 -- ---------------------------------------------------------------------------------------------------------------------
-CREATE TRIGGER trg_audit_manufactura_documentos     AFTER INSERT OR UPDATE OR DELETE ON manufactura.documentos             FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('documento_id');
-CREATE TRIGGER trg_audit_manufactura_revisiones     AFTER INSERT OR UPDATE OR DELETE ON manufactura.revisiones             FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('revision_id');
-CREATE TRIGGER trg_audit_manufactura_pdfs           AFTER INSERT OR UPDATE OR DELETE ON manufactura.pdfs                   FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('revision_id');
-CREATE TRIGGER trg_audit_manufactura_confirmaciones AFTER INSERT OR UPDATE OR DELETE ON manufactura.confirmaciones_revision FOR EACH ROW EXECUTE FUNCTION audit.fn_registrar_cambio('confirmacion_id');
+-- Se omiten las columnas privadas de borradores: código/variante del documento (el documento_id los identifica) y, en revisiones, la copia de la especificación y los nombres
+-- impresos / cliente. Se auditan identidad, estado, versión, huella, familia, actores y fechas.
+CREATE TRIGGER trg_audit_manufactura_documentos     AFTER INSERT OR UPDATE OR DELETE ON manufactura.documentos             FOR EACH ROW EXECUTE FUNCTION manufactura.fn_auditar_manufactura('documento_id', 'omitir', 'codigo_dcmx', 'codigo_clave', 'variante', 'variante_clave');
+CREATE TRIGGER trg_audit_manufactura_revisiones     AFTER INSERT OR UPDATE OR DELETE ON manufactura.revisiones             FOR EACH ROW EXECUTE FUNCTION manufactura.fn_auditar_manufactura('revision_id', 'omitir', 'especificacion', 'elaboro_nombre', 'autorizo_nombre', 'cliente_nombre');
+CREATE TRIGGER trg_audit_manufactura_pdfs           AFTER INSERT OR UPDATE OR DELETE ON manufactura.pdfs                   FOR EACH ROW EXECUTE FUNCTION manufactura.fn_auditar_manufactura('revision_id', 'omitir');
+CREATE TRIGGER trg_audit_manufactura_confirmaciones AFTER INSERT OR UPDATE OR DELETE ON manufactura.confirmaciones_revision FOR EACH ROW EXECUTE FUNCTION manufactura.fn_auditar_manufactura('confirmacion_id', 'omitir');
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 8. Visibilidad por filas (RLS), aplicada a la aplicación (el dueño/administrador la omite):
@@ -517,7 +564,8 @@ GRANT SELECT, INSERT         ON manufactura.pdfs                   TO daubert_hu
 GRANT SELECT, INSERT         ON manufactura.pdf_contenidos         TO daubert_hub_test_user;
 GRANT SELECT, INSERT         ON manufactura.confirmaciones_revision TO daubert_hub_test_user;
 GRANT EXECUTE ON FUNCTION manufactura.fn_actor(), manufactura.fn_actor_id(), manufactura.fn_actor_es_admin(),
-                          manufactura.fn_hash_revision(text, jsonb), manufactura.fn_nombre_pdf(text, text, integer) TO daubert_hub_test_user;
+                          manufactura.fn_hash_revision(text, jsonb), manufactura.fn_nombre_pdf(text, text, integer),
+                          manufactura.fn_especificacion_valida(jsonb), manufactura.fn_claves_validas(jsonb) TO daubert_hub_test_user;   -- los CHECK se evalúan con los privilegios de quien escribe
 
 -- Validación final dentro de la transacción: si algo no cuadra, se revierte TODO.
 DO $$
@@ -530,5 +578,5 @@ BEGIN
   IF has_schema_privilege('daubert_hub_test_user', 'manufactura', 'CREATE') THEN RAISE EXCEPTION 'La aplicación no debe poder crear objetos.'; END IF;
 END $$;
 
-SELECT 'UP_OK manufactura (5 tablas, RLS, 12 funciones, 4 triggers de auditoría, privilegios mínimos)' AS resultado;
+SELECT 'UP_OK manufactura (5 tablas, RLS, 15 funciones, 4 triggers de auditoría redactores, privilegios mínimos)' AS resultado;
 COMMIT;

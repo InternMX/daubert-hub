@@ -1,9 +1,9 @@
 -- =====================================================================================================================
 -- SMOKE · manufactura (SOLO TEST, OPCIONAL, tras el postcheck) — comportamiento de integridad y permisos con el ROL DE LA APLICACIÓN
--- [revisión 2: tres identidades (ADMIN y dos GENERAL), RLS, revisión prevista, nombre de PDF, revisión autenticada]
+-- [revisión 3: validación estructural de la copia (palabras legítimas aceptadas), auditoría redactora y comprobación de que NO quedan residuos]
 --
--- Se ejecuta con el rol de la app (NO administrador) y TODO queda dentro de una transacción que termina en ROLLBACK: no deja filas
--- (las identidades/secuencias consumen números; es normal). Requiere ≥ 1 usuario ADMIN activo y ≥ 2 usuarios GENERAL activos.
+-- Se ejecuta con el rol de la app (NO administrador) y TODO queda dentro de una transacción que termina en ROLLBACK: no deja filas, ni de negocio ni de auditoría
+-- (lo único permanente son los números que consumen las secuencias de identidad: huecos en los ids). Al terminar, el propio script lo comprueba. Requiere ≥ 1 usuario ADMIN activo y ≥ 2 usuarios GENERAL activos.
 --
 --   psql -h localhost -p 5432 -d daubert_hub_test -U daubert_hub_test_user -X -w -v ON_ERROR_STOP=1 \
 --        -f 20261030_101_manufactura_gestor_documental_test.smoke.sql
@@ -11,6 +11,15 @@
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off
+DO $$
+BEGIN
+  IF current_database() <> 'daubert_hub_test' THEN RAISE EXCEPTION 'ABORTO: solo daubert_hub_test (base actual: %).', current_database(); END IF;
+END $$;
+
+-- Línea base de residuos (antes de escribir nada): filas de auditoría de manufactura y filas visibles sin identidad (solo finalizadas).
+SELECT (SELECT count(*) FROM audit.cambios WHERE esquema = 'manufactura') AS audit_antes,
+       (SELECT count(*) FROM manufactura.documentos) AS docs_antes, (SELECT count(*) FROM manufactura.revisiones) AS revs_antes,
+       (SELECT count(*) FROM manufactura.pdfs) AS pdfs_antes \gset
 BEGIN;
 
 DO $$
@@ -97,8 +106,17 @@ BEGIN
   EXCEPTION WHEN integrity_constraint_violation THEN INSERT INTO _res (prueba, ok) VALUES ('edición con versión incorrecta se rechaza', true); END;
   BEGIN UPDATE manufactura.revisiones SET creado_por_usuario_id = v_g2, version = version + 1 WHERE revision_id = v_rev; INSERT INTO _res (prueba, ok) VALUES ('no se reescribe el creador', false);
   EXCEPTION WHEN integrity_constraint_violation THEN INSERT INTO _res (prueba, ok) VALUES ('no se reescribe el creador', true); END;
-  BEGIN UPDATE manufactura.revisiones SET especificacion = jsonb_set(especificacion, '{bind,Authorization}', '"Bearer abc"'), version = version + 1 WHERE revision_id = v_rev; INSERT INTO _res (prueba, ok) VALUES ('la copia rechaza credenciales/tokens', false);
-  EXCEPTION WHEN check_violation THEN INSERT INTO _res (prueba, ok) VALUES ('la copia rechaza credenciales/tokens', true); END;
+  -- (revisión 3) las descripciones legítimas con palabras como TOKEN, SECRET o PASSWORD se ACEPTAN: solo se valida la estructura (claves), no el texto de los valores
+  UPDATE manufactura.revisiones SET especificacion = jsonb_set(especificacion, '{datos,descripcion}', '"BOLSA TOKEN SECRET PASSWORD AUTHORIZATION BEARER KEY 20 X 30"'), version = version + 1 WHERE revision_id = v_rev; GET DIAGNOSTICS v_filas = ROW_COUNT;
+  INSERT INTO _res (prueba, ok) VALUES ('una descripción legítima con TOKEN/SECRET/PASSWORD/AUTHORIZATION/BEARER se acepta', v_filas = 1);
+  BEGIN UPDATE manufactura.revisiones SET especificacion = jsonb_set(especificacion, '{bind,Authorization}', '"Bearer abc"'), version = version + 1 WHERE revision_id = v_rev; INSERT INTO _res (prueba, ok) VALUES ('la copia rechaza una clave Authorization en bind', false);
+  EXCEPTION WHEN check_violation THEN INSERT INTO _res (prueba, ok) VALUES ('la copia rechaza una clave Authorization en bind', true); END;
+  BEGIN UPDATE manufactura.revisiones SET especificacion = jsonb_set(especificacion, '{datos,apiToken}', '"x"'), version = version + 1 WHERE revision_id = v_rev; INSERT INTO _res (prueba, ok) VALUES ('la copia rechaza una clave con nombre de credencial en cualquier nivel', false);
+  EXCEPTION WHEN check_violation THEN INSERT INTO _res (prueba, ok) VALUES ('la copia rechaza una clave con nombre de credencial en cualquier nivel', true); END;
+  BEGIN UPDATE manufactura.revisiones SET especificacion = jsonb_set(especificacion, '{bind,Cost}', '99'), version = version + 1 WHERE revision_id = v_rev; INSERT INTO _res (prueba, ok) VALUES ('bind solo admite los 6 campos permitidos (sin costos ni ID)', false);
+  EXCEPTION WHEN check_violation THEN INSERT INTO _res (prueba, ok) VALUES ('bind solo admite los 6 campos permitidos (sin costos ni ID)', true); END;
+  BEGIN UPDATE manufactura.revisiones SET especificacion = especificacion || '{"extra":1}', version = version + 1 WHERE revision_id = v_rev; INSERT INTO _res (prueba, ok) VALUES ('no se admiten claves de primer nivel desconocidas', false);
+  EXCEPTION WHEN check_violation THEN INSERT INTO _res (prueba, ok) VALUES ('no se admiten claves de primer nivel desconocidas', true); END;
   BEGIN INSERT INTO manufactura.revisiones (documento_id, familia, especificacion, creado_por_usuario_id, creado_por_email, actualizado_por_usuario_id, actualizado_por_email, especificacion_sha256) VALUES (v_doc, 'COEX', v_spec, 1, 'x', 1, 'x', repeat('0', 64));
     INSERT INTO _res (prueba, ok) VALUES ('un solo borrador abierto por documento', false);
   EXCEPTION WHEN unique_violation THEN INSERT INTO _res (prueba, ok) VALUES ('un solo borrador abierto por documento', true); END;
@@ -203,6 +221,8 @@ BEGIN
   SELECT count(*) INTO v_n FROM audit.cambios WHERE esquema = 'manufactura' AND usuario_id = v_g1::text AND request_id = 'smoke-' || v_g1;
   INSERT INTO _res (prueba, ok) VALUES ('auditoría: filas en audit.cambios con el usuario y request reales (' || v_n || ')', v_n >= 10);
   INSERT INTO _res (prueba, ok) SELECT 'auditoría: el contenido binario del PDF NO se copia a audit.cambios', NOT EXISTS (SELECT 1 FROM audit.cambios WHERE esquema = 'manufactura' AND tabla = 'pdf_contenidos');
+  INSERT INTO _res (prueba, ok) SELECT 'auditoría redactora: ninguna fila de revisiones copia la especificación, los nombres impresos ni el cliente (borradores privados)', NOT EXISTS (SELECT 1 FROM audit.cambios WHERE esquema = 'manufactura' AND tabla = 'revisiones' AND (COALESCE(datos_nuevos, '{}'::jsonb) ?| ARRAY['especificacion', 'elaboro_nombre', 'autorizo_nombre', 'cliente_nombre'] OR COALESCE(datos_anteriores, '{}'::jsonb) ?| ARRAY['especificacion', 'elaboro_nombre', 'autorizo_nombre', 'cliente_nombre']));
+  INSERT INTO _res (prueba, ok) SELECT 'auditoría redactora: no se copian el código ni la variante del documento (se identifica por documento_id)', NOT EXISTS (SELECT 1 FROM audit.cambios WHERE esquema = 'manufactura' AND tabla = 'documentos' AND datos_nuevos ?| ARRAY['codigo_dcmx', 'variante']);
   INSERT INTO _res (prueba, ok) SELECT 'auditoría: la finalización queda registrada con el actor (UPDATE de revisiones)', EXISTS (SELECT 1 FROM audit.cambios WHERE esquema = 'manufactura' AND tabla = 'revisiones' AND operacion = 'UPDATE' AND usuario_id = v_g1::text AND datos_nuevos ->> 'estado' = 'FINALIZADA');
 
   -- T12. sin DDL
@@ -214,3 +234,7 @@ SELECT n, prueba, ok FROM _res ORDER BY n;
 SELECT bool_and(ok) AS smoke_all_pass, count(*) AS pruebas FROM _res;
 
 ROLLBACK;
+
+-- Comprobación de RESIDUOS tras el ROLLBACK: nada de negocio ni de auditoría quedó guardado (solo huecos en los ids de las secuencias).
+SELECT (SELECT count(*) FROM audit.cambios WHERE esquema = 'manufactura') = :audit_antes AS sin_residuos_de_auditoria,
+       (SELECT count(*) FROM manufactura.documentos) = :docs_antes AND (SELECT count(*) FROM manufactura.revisiones) = :revs_antes AND (SELECT count(*) FROM manufactura.pdfs) = :pdfs_antes AS sin_residuos_de_negocio;

@@ -1,7 +1,7 @@
 -- =====================================================================================================================
 -- DOWN · manufactura · gestor documental (SOLO TEST: daubert_hub_test)   [revisión 2: idempotente y con doble confirmación]
 --
--- ALCANCE: elimina EXCLUSIVAMENTE el esquema `manufactura` (sus 5 tablas, 12 funciones, políticas, triggers e índices) y los privilegios
+-- ALCANCE: elimina EXCLUSIVAMENTE el esquema `manufactura` (sus 5 tablas, 15 funciones, políticas, triggers e índices) y los privilegios
 -- concedidos sobre él. No toca ningún otro objeto. NO borra filas de audit.cambios (el historial de auditoría se conserva).
 --
 -- SEGURIDAD (aborta si hay datos que perder):
@@ -79,6 +79,9 @@ DROP FUNCTION IF EXISTS manufactura.fn_revisiones_before_update();
 DROP FUNCTION IF EXISTS manufactura.fn_revisiones_before_insert();
 DROP FUNCTION IF EXISTS manufactura.fn_documentos_before_insert();
 DROP FUNCTION IF EXISTS manufactura.fn_inmutable();
+DROP FUNCTION IF EXISTS manufactura.fn_auditar_manufactura();
+DROP FUNCTION IF EXISTS manufactura.fn_especificacion_valida(jsonb);
+DROP FUNCTION IF EXISTS manufactura.fn_claves_validas(jsonb);
 DROP FUNCTION IF EXISTS manufactura.fn_nombre_pdf(text, text, integer);
 DROP FUNCTION IF EXISTS manufactura.fn_hash_revision(text, jsonb);
 DROP FUNCTION IF EXISTS manufactura.fn_actor_es_admin();

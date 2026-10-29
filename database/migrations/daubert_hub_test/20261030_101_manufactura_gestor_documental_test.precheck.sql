@@ -69,6 +69,16 @@ SELECT
   (SELECT md5(string_agg(table_schema || '.' || table_name, ',' ORDER BY table_schema, table_name))
      FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema'))  AS baseline_tablas_fp,
   (SELECT md5(string_agg(p.oid::regprocedure::text || md5(pg_get_functiondef(p.oid)), ',' ORDER BY p.oid::regprocedure::text))
-     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname IN ('audit', 'core', 'security', 'ops', 'operacion')) AS baseline_funciones_fp;
+     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname IN ('audit', 'core', 'security', 'ops', 'operacion')) AS baseline_funciones_fp,
+  -- Línea base AMPLIADA (revisión 3): todo lo que existe FUERA de `manufactura` debe quedar idéntico tras el UP y tras el DOWN.
+  (SELECT md5(string_agg(c.table_schema || '.' || c.table_name || '.' || c.column_name || ':' || c.data_type || ':' || c.is_nullable || ':' || COALESCE(c.column_default, ''), ',' ORDER BY c.table_schema, c.table_name, c.ordinal_position))
+     FROM information_schema.columns c WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema', 'manufactura'))   AS baseline_columnas_fp,
+  (SELECT md5(COALESCE(string_agg(n.nspname || '.' || c.relname || '.' || t.tgname || ':' || pg_get_triggerdef(t.oid), ',' ORDER BY n.nspname, c.relname, t.tgname), ''))
+     FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE NOT t.tgisinternal AND n.nspname <> 'manufactura') AS baseline_triggers_fp,
+  (SELECT md5(string_agg(n.nspname || '.' || c.relname || ':' || COALESCE(c.relacl::text, '') || ':' || pg_get_userbyid(c.relowner), ',' ORDER BY n.nspname, c.relname))
+     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT LIKE 'pg\_%' AND n.nspname NOT IN ('information_schema', 'manufactura') AND c.relkind IN ('r', 'v', 'm', 'S', 'p')) AS baseline_privilegios_fp,
+  (SELECT md5(string_agg(rolname || ':' || rolsuper::text || rolcreatedb::text || rolcreaterole::text || rolcanlogin::text || rolbypassrls::text || rolconnlimit::text, ',' ORDER BY rolname)) FROM pg_roles WHERE rolname !~ '^pg_') AS baseline_roles_fp,
+  (SELECT md5(string_agg(datname || ':' || COALESCE(datacl::text, ''), ',' ORDER BY datname)) FROM pg_database)         AS baseline_acl_bases_fp,
+  (SELECT md5(string_agg(n.nspname || ':' || COALESCE(n.nspacl::text, ''), ',' ORDER BY n.nspname)) FROM pg_namespace n WHERE n.nspname NOT LIKE 'pg\_%' AND n.nspname NOT IN ('information_schema', 'manufactura')) AS baseline_esquemas_acl_fp;
 
 ROLLBACK;
