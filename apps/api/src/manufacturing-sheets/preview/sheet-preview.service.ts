@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FAMILIAS, modalidadesDe, type FamilyCode } from './family-registry';
 import { mapSheetData, type PreviewFamily, type PreviewFormData } from './sheet-data.mapper';
+import { aplicarCapaBorrador } from './draft-layer';
 import { consolidarIncidencias, incidencia, type Incidencia } from './incidencias';
 import { revisarCoherencia, type BindReviewContext } from './technical-coherence';
 
@@ -52,7 +53,11 @@ export class SheetPreviewService {
   private readonly composed = new Map<FamilyCode, string>();
   private componer: Promise<Componer> | null = null;
 
-  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext): Promise<SheetPreviewResult> {
+  /**
+   * `opciones.capaBorrador` (solo la descarga PDF) añade la identificación BORRADOR · SIN APROBAR dentro del propio HTML (ver draft-layer.ts); la vista previa del navegador no la lleva
+   * (tiene su propia marca de interfaz). Todo lo demás —datos, plantilla, escape y validaciones— es idéntico en ambos modos: una sola composición.
+   */
+  async preview(family: PreviewFamily, form: PreviewFormData, context?: BindReviewContext, opciones: { capaBorrador?: boolean } = {}): Promise<SheetPreviewResult> {
     const def = FAMILIAS[family];
     const mapped = mapSheetData(family, form);
     const coherencia = revisarCoherencia(family, form, context);
@@ -84,7 +89,9 @@ export class SheetPreviewService {
     });
     html = html.replace('<head>', `<head>\n  ${CSP}`);
     html = this.inlineImages(family, html);
-    return resultado({ html, completo: mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0, advertencias: mapped.advertencias }, incidenciasValidador);
+    const completo = mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0;
+    if (opciones.capaBorrador) html = aplicarCapaBorrador(html, completo);
+    return resultado({ html, completo, advertencias: mapped.advertencias }, incidenciasValidador);
   }
 
   private async validar(validador: { archivo: string; funcion: string } | null, family: FamilyCode, modalidad: string, datos: Record<string, string>): Promise<string[]> {

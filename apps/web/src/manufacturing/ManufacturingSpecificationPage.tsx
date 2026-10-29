@@ -522,6 +522,7 @@ export function ManufacturingSpecificationPage() {
         </IncidenciasProvider>
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
           <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData} avisos={avisosVistaPrevia}
+            pdfBloqueo={sinReconocer.length > 0 ? `Corrige o reconoce las contradicciones técnicas (${sinReconocer.length}) para descargar el PDF.` : null}
             context={previewContext}
             onAssessment={(result, key, estado) => { setAssessment(result ? { key, result } : null); setFallo(estado === 'error' ? key : ''); }} />
         </Box>

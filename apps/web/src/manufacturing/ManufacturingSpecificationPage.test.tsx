@@ -6,7 +6,7 @@ import { BindProductApiError, lookupBindProductByCode } from '../services/bindPr
 import { listBindRecent } from '../services/bindRecent';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
-import { previewManufacturingSheet } from '../services/sheetPreview';
+import { downloadDraftPdf, previewManufacturingSheet } from '../services/sheetPreview';
 import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, productoPapel, resinaContradictoria, resinaCorroborada, resinaInferidaDeCode, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
 import { localIsoDate } from './specificationForm';
@@ -16,8 +16,9 @@ vi.mock('../services/bindRecent', async (importOriginal) => ({ ...(await importO
 vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), listClients: vi.fn() }));
 vi.mock('../services/manufacturingFamilies', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/manufacturingFamilies')>()), listManufacturingFamilies: vi.fn() }));
 
-vi.mock('../services/sheetPreview', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/sheetPreview')>()), previewManufacturingSheet: vi.fn() }));
+vi.mock('../services/sheetPreview', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/sheetPreview')>()), previewManufacturingSheet: vi.fn(), downloadDraftPdf: vi.fn() }));
 const previewMock = vi.mocked(previewManufacturingSheet);
+const pdfMock = vi.mocked(downloadDraftPdf);
 const lookupMock = vi.mocked(lookupBindProductByCode);
 const listClientsMock = vi.mocked(listClients);
 const recentMock = vi.mocked(listBindRecent);
@@ -924,5 +925,46 @@ describe('ManufacturingSpecificationPage · Novedades del catálogo de BIND', { 
     await abrirNovedades(user);
     expect(screen.getByRole('button', { name: 'Preparar hoja de SCHFPMG001' })).toBeInTheDocument();
     expect(recentMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ManufacturingSpecificationPage · PDF de borrador', { timeout: 30_000 }, () => {
+  const completa = { html: '<p>x</p>', familia: 'BOLSA_PLANA_1' as const, borrador: true as const, firmas: 'SIN_FIRMA' as const, completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null };
+  const botonPdf = () => screen.getByRole('button', { name: /Descargar PDF de borrador/ });
+
+  it('recorrido completo: el PDF se ofrece junto a la vista previa para la hoja que se está viendo, con los mismos datos que la vista previa', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    pdfMock.mockResolvedValue({ blob: new Blob(['%PDF-1.4 x'], { type: 'application/pdf' }), filename: 'BORRADOR_SCHFPMG001_BOLSA_PLANA_1.pdf', completo: true });
+    URL.createObjectURL = vi.fn(() => 'blob:simulado'); URL.revokeObjectURL = vi.fn();
+    const clic = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    renderPage();
+    await buscar(user);
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    await waitFor(() => expect(botonPdf()).toBeEnabled(), { timeout: 4000 });
+    expect(within(screen.getByRole('region', { name: 'Vista previa de la hoja' })).getByTestId('pdf-borrador')).toBeInTheDocument();
+    await user.click(botonPdf());
+    expect(pdfMock).toHaveBeenCalledTimes(1);
+    expect(pdfMock.mock.calls[0]![0]).toBe(previewMock.mock.calls.at(-1)![0]);
+    expect(pdfMock.mock.calls[0]![1]).toEqual(previewMock.mock.calls.at(-1)![1]);                      // los mismos datos que se previsualizaron
+    expect(pdfMock.mock.calls[0]![3]).toEqual(previewMock.mock.calls.at(-1)![3]);
+    expect(clic).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('pdf-listo')).toHaveTextContent('BORRADOR_SCHFPMG001_BOLSA_PLANA_1.pdf');
+    clic.mockRestore();
+  });
+
+  it('una contradicción técnica sin reconocer impide el PDF; al reconocerla (mecanismo actual) se habilita sin duplicar avisos', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    previewMock.mockResolvedValue({ ...completa, incidencias: [{ id: 'COLOR_AZUL:colorPreset', codigo: 'COLOR_AZUL', nivel: 'CONTRADICCION', campos: ['colorPreset'], seccion: 'color', mensaje: 'COLOR CONTRADICTORIO', origen: 'TITLE', afectaVistaPrevia: false, reconocible: true }] });
+    renderPage();
+    await buscar(user);
+    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    await waitFor(() => expect(screen.getAllByText('COLOR CONTRADICTORIO')).toHaveLength(1), { timeout: 4000 });
+    expect(botonPdf()).toBeDisabled();
+    expect(screen.getByText(/Corrige o reconoce las contradicciones técnicas \(1\) para descargar el PDF/)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /Reconocer/ })[0]!);
+    await waitFor(() => expect(botonPdf()).toBeEnabled());
+    expect(screen.getAllByText(/COLOR CONTRADICTORIO/)).toHaveLength(1);
   });
 });

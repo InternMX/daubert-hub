@@ -74,3 +74,49 @@ export async function previewManufacturingSheet(familia: PreviewFamilyCode, dato
   if (!isPreview(body)) throw new SheetPreviewError('INVALID_RESPONSE', response.status);
   return body.data;
 }
+
+// ---------------------------------------------------------------- PDF de borrador
+// POST /api/manufacturing-sheets/previews/pdf: el backend recompone el MISMO documento de la vista previa (mismo DTO, plantilla y validaciones), le añade la identificación de borrador y lo
+// imprime. El navegador solo envía los datos actuales y entrega el archivo; no genera ni modifica el documento.
+
+export type SheetPdfErrorKind = 'BLOCKED' | 'NOT_AVAILABLE' | 'BUSY' | 'TIMEOUT' | 'INVALID_DATA' | 'UNAUTHENTICATED' | 'FAILED' | 'INVALID_RESPONSE' | 'NETWORK';
+
+export class SheetPdfError extends Error {
+  constructor(public readonly kind: SheetPdfErrorKind, public readonly status: number, public readonly detail?: string) {
+    super('Sheet PDF failed');
+  }
+}
+
+export interface DraftPdf { blob: Blob; filename: string; completo: boolean }
+
+const SAFE_FILENAME = /^[A-Za-z0-9._-]{1,120}\.pdf$/;
+
+function pdfKindForStatus(status: number): SheetPdfErrorKind {
+  if (status === 400) return 'INVALID_DATA';
+  if (status === 401) return 'UNAUTHENTICATED';
+  if (status === 422) return 'BLOCKED';
+  if (status === 429) return 'BUSY';
+  if (status === 501) return 'NOT_AVAILABLE';
+  if (status === 504) return 'TIMEOUT';
+  return 'FAILED';
+}
+
+export async function downloadDraftPdf(familia: PreviewFamilyCode, datos: Record<string, string>, signal?: AbortSignal, contexto?: BindReviewContext): Promise<DraftPdf> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/manufacturing-sheets/previews/pdf`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ familia, datos, ...(contexto ? { contexto } : {}) }), signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new SheetPdfError('NETWORK', 0);
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
+    throw new SheetPdfError(pdfKindForStatus(response.status), response.status, response.status === 422 && typeof body?.message === 'string' ? body.message : undefined);
+  }
+  if (!(response.headers.get('content-type') ?? '').toLowerCase().startsWith('application/pdf')) throw new SheetPdfError('INVALID_RESPONSE', response.status);
+  const blob = await response.blob().catch(() => null);
+  if (blob === null || blob.size === 0) throw new SheetPdfError('INVALID_RESPONSE', response.status);
+  const nombre = /filename="([^"]+)"/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? '';
+  return { blob, filename: SAFE_FILENAME.test(nombre) ? nombre : 'BORRADOR.pdf', completo: response.headers.get('x-draft-complete') !== '0' };
+}
+

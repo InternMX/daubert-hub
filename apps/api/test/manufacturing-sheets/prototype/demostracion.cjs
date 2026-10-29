@@ -10,6 +10,8 @@ const { spawn } = require('node:child_process');
 const { interpretarProductoBind, sugerirEspecificacion, sugerirDatosPlantilla } = require('../../../dist/src/manufacturing-sheets/bind-product-interpreter');
 const { configuracionFamilias } = require('../../../dist/src/manufacturing-sheets/preview/family-registry');
 const { clasificarNovedad } = require('../../../dist/src/manufacturing-sheets/bind/recent-products');
+const { SheetPdfService } = require('../../../dist/src/manufacturing-sheets/preview/sheet-pdf.service');
+const { DEFAULT_PDF_RENDERER_OPTIONS, resolveChromePath } = require('../../../dist/src/manufacturing-sheets/preview/sheet-pdf.renderer');
 const { SheetPreviewService } = require('../../../dist/src/manufacturing-sheets/preview/sheet-preview.service');
 const ROOT = path.resolve(__dirname, '../../../../..');
 const WEB = path.join(ROOT, 'apps/web/dist');
@@ -18,6 +20,7 @@ const salidaArg = process.argv.indexOf('--salida');
 const salida = path.resolve(salidaArg >= 0 ? process.argv[salidaArg + 1] : path.join(__dirname, 'test-results/demo'));
 fs.mkdirSync(salida, { recursive: true });
 const service = new SheetPreviewService();
+const pdfService = new SheetPdfService(service, { ...DEFAULT_PDF_RENDERER_OPTIONS, chromePath: resolveChromePath() });
 const productos = casos.map((c) => ({ ID: `simulado-${c.id}`, Code: c.datos.codigo, Title: c.datos.descripcion, Weight: c.datos.pesoLb, Description: 'FIXTURE SIMULADO para demostración local; no consultado a BIND real.', CreationDate: null }));
 productos.push({ ID: 'simulado-paper', Code: 'TARPPW3301', Title: 'PAPEL VCI PW33 100 X 200 MM PAQUETE C/100 HOJAS', Weight: null, Description: 'FIXTURE SIMULADO: detección de papel sin plantilla.', CreationDate: null });
 productos.push({ ID: 'simulado-color', Code: 'DEMOFPMG001', Title: 'BOLSA VCI PMG 13 X 16 IN CAL. 3 MIL COLOR AZUL PAQUETE C/200 BOLSAS', Weight: '0.0428', Description: 'FIXTURE SIMULADO: cambiar a Verde para revisar una contradicción explícita de color.', CreationDate: null });
@@ -40,6 +43,17 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/manufacturing-sheets/bind-products/by-code/')) {
       const p = productos.find((p) => p.Code === decodeURIComponent(url.pathname.split('/').at(-1)));
       return json(res, p ? 200 : 404, p ? { data: lookup(p) } : { code: 'BIND_PRODUCT_NOT_FOUND' });
+    }
+    if (url.pathname === '/api/manufacturing-sheets/previews/pdf' && req.method === 'POST') {
+      // PDF de borrador: el MISMO servicio y renderizador que el backend real (Chrome local), sobre fixtures simulados.
+      let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 20000) return json(res, 413, {}); }
+      const body = JSON.parse(raw);
+      if (!configuracionFamilias().some((c) => c.codigo === body.familia)) return json(res, 400, {});
+      try {
+        const documento = await pdfService.generarBorrador(body.familia, body.datos, body.contexto);
+        res.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${documento.filename}"`, 'x-draft-complete': documento.completo ? '1' : '0', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return res.end(documento.pdf);
+      } catch (e) { return json(res, e.getStatus?.() ?? 500, { message: e.response?.message ?? 'Error' }); }
     }
     if (url.pathname === '/api/manufacturing-sheets/previews' && req.method === 'POST') {
       let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 20000) return json(res, 413, {}); }

@@ -1,7 +1,8 @@
 import OpenInFullRoundedIcon from '@mui/icons-material/OpenInFullRounded';
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
-import { previewManufacturingSheet, SheetPreviewError, type Incidencia, type SheetPreviewResponse, type BindReviewContext } from '../services/sheetPreview';
+import { downloadDraftPdf, previewManufacturingSheet, SheetPdfError, SheetPreviewError, type Incidencia, type SheetPdfErrorKind, type SheetPreviewResponse, type BindReviewContext } from '../services/sheetPreview';
 import type { FamilyCode } from './specificationForm';
 
 // Documento de vista previa en CSS px. La hoja carta mide 816 x 1056 (8.5 x 11 in a 96 ppp), pero las plantillas aprobadas aplican su diseño MÓVIL con ventanas de 816 px o menos
@@ -10,6 +11,18 @@ import type { FamilyCode } from './specificationForm';
 const PAGE_WIDTH = 817;
 const PAGE_HEIGHT = 1120;
 export const PREVIEW_DEBOUNCE_MS = 400;
+
+const pdfErrorTexts: Record<SheetPdfErrorKind, string> = {
+  BLOCKED: 'El documento no puede generarse.',
+  NOT_AVAILABLE: 'La generación de PDF no está disponible en este entorno. La vista previa y el formulario siguen funcionando.',
+  BUSY: 'Hay varios PDF en proceso. Intenta de nuevo en unos segundos.',
+  TIMEOUT: 'La generación del PDF tardó demasiado. Intenta de nuevo.',
+  INVALID_DATA: 'Algún dato del formulario no es válido para generar el PDF (revisa longitudes y opciones).',
+  UNAUTHENTICATED: 'Tu sesión expiró. Inicia sesión de nuevo.',
+  FAILED: 'No se pudo generar el PDF. Intenta de nuevo.',
+  INVALID_RESPONSE: 'El servidor no devolvió un PDF válido. Intenta de nuevo.',
+  NETWORK: 'No se pudo comunicar con el servidor de Daubert Hub.'
+};
 
 const errorTexts: Record<string, string> = {
   INVALID_DATA: 'Algún dato del formulario no es válido para la vista previa (revisa longitudes y opciones).',
@@ -48,17 +61,21 @@ interface SheetPreviewPanelProps {
   context?: BindReviewContext;
   /** Incidencias vigentes que afectan directamente la representación del documento (valor que no se imprime, texto que puede desbordarse…). Los datos faltantes vienen de la respuesta. */
   avisos?: Incidencia[];
+  /** Motivo por el que NO se puede descargar el PDF todavía (p. ej. contradicciones sin reconocer); null = permitido si la revisión vigente lo permite. */
+  pdfBloqueo?: string | null;
   /** `result` null: la revisión de estos datos está en curso (`estado` ausente) o no pudo obtenerse (`estado` = 'error'). */
   onAssessment?: (result: SheetPreviewResponse | null, key: string, estado?: 'error') => void;
 }
 
-export function SheetPreviewPanel({ family, familyLabel, data, context, avisos = [], onAssessment }: SheetPreviewPanelProps) {
+export function SheetPreviewPanel({ family, familyLabel, data, context, avisos = [], pdfBloqueo = null, onAssessment }: SheetPreviewPanelProps) {
   const [result, setResult] = useState<SheetPreviewResponse | null>(null);
   const [resultKey, setResultKey] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorKind, setErrorKind] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState(420);
+  const [pdf, setPdf] = useState<{ estado: 'idle' | 'generando' | 'listo' | 'error'; archivo?: string; completo?: boolean; error?: SheetPdfErrorKind; detalle?: string }>({ estado: 'idle' });
+  const pdfController = useRef<AbortController | null>(null);
   const container = useRef<HTMLDivElement | null>(null);
   const sequence = useRef(0);
   const payloadKey = family ? JSON.stringify({ family, data, context }) : '';
@@ -88,6 +105,14 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, avisos =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payloadKey]);
 
+  // El PDF siempre corresponde a los datos que se ven: cualquier cambio cancela la generación en curso (su archivo nunca se entrega) y retira el aviso del PDF anterior.
+  useEffect(() => {
+    pdfController.current?.abort();
+    pdfController.current = null;
+    setPdf({ estado: 'idle' });
+  }, [payloadKey]);
+  useEffect(() => () => pdfController.current?.abort(), []);
+
   useEffect(() => {
     const node = container.current;
     if (!node || typeof ResizeObserver === 'undefined') return undefined;
@@ -99,6 +124,30 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, avisos =
 
   // El resultado solo habla de SUS datos: mientras llega la respuesta del cambio más reciente, sus mensajes (faltantes, bloqueo) no se muestran. El documento anterior sigue visible.
   const actual = result !== null && resultKey === payloadKey ? result : null;
+  const puedeDescargar = Boolean(family) && actual !== null && !actual.bloqueado && status === 'ready' && pdfBloqueo === null;
+  const motivoNoPdf = !family ? null : actual?.bloqueado ? 'El documento está bloqueado: no se genera un PDF.' : pdfBloqueo ? pdfBloqueo : actual === null ? 'Esperando la revisión de los datos actuales…' : null;
+
+  async function descargar(): Promise<void> {
+    if (!family || !puedeDescargar || pdfController.current !== null) return;               // una sola generación a la vez: sin descargas duplicadas
+    const controller = new AbortController();
+    pdfController.current = controller;
+    setPdf({ estado: 'generando' });
+    try {
+      const resultado = await downloadDraftPdf(family, data, controller.signal, context);
+      if (controller.signal.aborted) return;                                              // los datos cambiaron mientras se generaba: no se entrega un PDF de una versión anterior
+      const url = URL.createObjectURL(resultado.blob);
+      const enlace = document.createElement('a');
+      enlace.href = url; enlace.download = resultado.filename; enlace.rel = 'noopener';
+      document.body.appendChild(enlace); enlace.click(); enlace.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setPdf({ estado: 'listo', archivo: resultado.filename, completo: resultado.completo });
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return;
+      setPdf({ estado: 'error', error: error instanceof SheetPdfError ? error.kind : 'NETWORK', detalle: error instanceof SheetPdfError ? error.detail : undefined });
+    } finally {
+      if (pdfController.current === controller) pdfController.current = null;
+    }
+  }
   const scale = Math.min(1, Math.max(0.2, (width - 2) / PAGE_WIDTH));
   const fullScale = Math.min(1.25, Math.max(0.4, (Math.min(typeof window === 'undefined' ? 1000 : window.innerWidth, 1100) - 96) / PAGE_WIDTH));
 
@@ -113,6 +162,25 @@ export function SheetPreviewPanel({ family, familyLabel, data, context, avisos =
         {result && family && !result.bloqueado && <Button size="small" startIcon={<OpenInFullRoundedIcon />} onClick={() => setExpanded(true)} sx={{ ml: 'auto' }}>Ampliar</Button>}
       </Stack>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>Borrador sin aprobar: no es una hoja emitida ni lleva firmas reales. Los datos solo existen en memoria.</Typography>
+
+      {family && (
+        <Box sx={{ mb: 1.5 }} data-testid="pdf-borrador">
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Button size="small" variant="outlined" startIcon={pdf.estado === 'generando' ? <CircularProgress size={14} /> : <PictureAsPdfRoundedIcon />} disabled={!puedeDescargar || pdf.estado === 'generando'} onClick={() => void descargar()} aria-describedby="pdf-borrador-nota">
+              {pdf.estado === 'generando' ? 'Generando PDF…' : 'Descargar PDF de borrador'}
+            </Button>
+            <Typography id="pdf-borrador-nota" variant="caption" color="text.secondary">
+              {motivoNoPdf ?? (actual && !actual.completo ? 'Faltan datos técnicos: el PDF saldrá marcado «BORRADOR INCOMPLETO».' : 'El PDF es el mismo documento de la vista previa, marcado «BORRADOR · SIN APROBAR».')}
+            </Typography>
+          </Stack>
+          {pdf.estado === 'listo' && <Alert severity={pdf.completo ? 'success' : 'warning'} sx={{ mt: 1 }} data-testid="pdf-listo">Se generó y descargó «{pdf.archivo}»{pdf.completo ? '.' : ' marcado como borrador INCOMPLETO.'}</Alert>}
+          {pdf.estado === 'error' && pdf.error && (
+            <Alert severity="error" sx={{ mt: 1 }} data-testid="pdf-error" action={pdf.error !== 'NOT_AVAILABLE' && pdf.error !== 'BLOCKED' ? <Button color="inherit" size="small" onClick={() => void descargar()} disabled={!puedeDescargar}>Reintentar</Button> : undefined}>
+              {pdf.error === 'BLOCKED' && pdf.detalle ? pdf.detalle : pdfErrorTexts[pdf.error]}
+            </Alert>
+          )}
+        </Box>
+      )}
 
       <div ref={container}>
         {!family && <Alert severity="info">Selecciona la familia de manufactura para ver la vista previa con su plantilla.</Alert>}

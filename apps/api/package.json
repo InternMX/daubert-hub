@@ -26,6 +26,7 @@
     "test:sheets-bolsa-natural": "python test/manufacturing-sheets/bolsa-natural/verificar_bolsa_natural.py",
     "test:sheets-termoencogible": "python test/manufacturing-sheets/termoencogible/verificar_termoencogible.py",
     "test:sheets-prototype": "python test/manufacturing-sheets/prototype/verificar_prototipo.py",
+    "test:sheets-pdf-borrador": "node test/manufacturing-sheets/prototype/generar_pdfs_borrador.cjs test/manufacturing-sheets/prototype/test-results/pdf-borrador && python test/manufacturing-sheets/prototype/verificar_pdf_borrador.py",
     "bind:smoke": "ts-node --transpile-only scripts/bind-product-smoke.ts",
     "security:bootstrap-admin": "ts-node --transpile-only scripts/bootstrap-admin.ts",
     "security:bootstrap-admin:prod": "ts-node --transpile-only scripts/bootstrap-admin-prod.ts",

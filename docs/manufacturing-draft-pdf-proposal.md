@@ -1,5 +1,7 @@
 # Bloque D · Descarga PDF de borrador: pendiente de revisión
 
+> **Actualización (Fase 3):** esta evaluación quedó superada. La descarga de PDF de borrador está implementada con un renderizador local y opcional que no cambia la imagen de producción; ver `manufacturing-pdf-draft.md`. Lo que sigue se conserva como registro histórico.
+
 ## Decisión en esta etapa
 
 **No se implementó descarga PDF desde la interfaz.** Se activa la condición de parada solicitada: el mecanismo existente requiere cambios de infraestructura para exponerse desde la API con garantías equivalentes a la vista previa.
