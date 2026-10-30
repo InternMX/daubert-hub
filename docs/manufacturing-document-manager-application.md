@@ -1,6 +1,6 @@
 # Gestor documental de Hojas de Instrucción · capa de aplicación (TEST)
 
-**Estado:** implementada y validada **solo contra instancias PostgreSQL desechables**. **No** está registrada en `AppModule`, **no** se ejecutó nada contra `daubert_hub_test` ni `daubert_global`, y no hay frontend todavía. Nada de esto es válido para producción.
+**Estado:** implementada y validada **solo contra instancias PostgreSQL desechables**; el frontend está integrado y probado con servicios simulados (apagado por defecto). **No** está registrada en `AppModule`, **no** se ejecutó nada contra `daubert_hub_test` ni `daubert_global`. Nada de esto es válido para producción.
 
 Código: `apps/api/src/manufacturing-documents/` (módulo separado de `manufacturing-sheets`).
 
@@ -39,13 +39,34 @@ Código: `apps/api/src/manufacturing-documents/` (módulo separado de `manufactu
 | `npm test` | Suite normal (incluye `manufacturing-documents.controller.spec.ts`, sin base de datos). Excluye `test/desechable/**`. |
 | `npm run test:desechable` | Requiere Docker. Levanta un contenedor **temporal** `postgres:18-alpine` en `127.0.0.1:55434`, crea la réplica mínima, aplica el **UP real** de la migración y ejecuta 5 archivos (61 casos: borradores, versiones/Elaboró/actor, revisión y finalización, historial y nuevas revisiones, motor real con Chrome). Host, puerto y credenciales están fijos en `test/desechable/*`: no lee `DATABASE_*` ni `TEST_DATABASE_URL`, así que no puede conectarse a TEST ni a PROD. Elimina el contenedor al terminar. |
 
+## Resultados de validación (2026-10-30, sin tocar TEST ni producción)
+| Verificación | Resultado |
+|---|---|
+| Typecheck, lint, build (API y Web) | Sin errores |
+| Web completa | 96 archivos / todas las pruebas en verde (incluye 7 de integración del gestor, 24 del panel y 10 de `documentSpec`) |
+| API completa, `--no-file-parallelism` | 141 archivos en verde |
+| `npm run test:desechable` (contenedor temporal) | 65 pruebas en verde, 1 omitida |
+| Regresiones documentales (`test:sheets-*`) | Todas OK **salvo** `test:sheets-regression` (CONFPMG04), que falla por desplazamientos verticales de ~2 pt en las palabras del encabezado; se reporta aparte y no se tocó. `test:sheets-common` informa el caso de estrés de 2 páginas como límite detectado (no es fallo) |
+| `ECONNRESET` intermitente (`read ECONNRESET` en el primer `supertest` de un archivo, p. ej. `sheet-preview.spec.ts` o `families-preview.spec.ts`) | Aparece solo al ejecutar los archivos **en paralelo** (3 de 3 corridas completas, y con 4 trabajadores) y en un archivo distinto cada vez; con `--no-file-parallelism` la suite pasa completa y cada archivo aislado pasa. Se atribuye a la carga de conexiones locales en paralelo (Node 24 / Windows), no a este cambio (los archivos afectados no importan el gestor documental). No se modificaron timeouts ni infraestructura; queda pendiente de análisis |
+| Web: tiempos de 5 s en `ProviderForm*` | Dos pruebas de proveedores agotaron el tiempo por defecto en una corrida completa con otra carga concurrente; pasan al repetir la suite web sola |
+
 ## Para activarlo (cuando se autorice la migración en `daubert_hub_test`)
 1. El operador aplica `manufactura` (ver `database/migrations/daubert_hub_test/README.md`).
 2. Registrar `ManufacturingDocumentsModule` en `AppModule`.
 3. Verificar en TEST con el smoke de la migración y una prueba funcional acordada.
-4. Construir el frontend (guardar/abrir/finalizar/historial) sobre estas rutas.
+4. Encender el panel en el build web con `VITE_MANUFACTURING_DOCUMENTS=true` (apagado por defecto; sin esa variable la página de especificación conserva su comportamiento anterior, solo en memoria).
+
+## Frontend (integrado en la página de especificación)
+Archivos: `services/manufacturingDocuments.ts` (cliente HTTP y errores), `manufacturing/documentSpec.ts` (empaquetar el formulario y reabrir un guardado), `DocumentPanel.tsx`, `DocumentHistoryDialog.tsx`, `documentLabels.ts`, `downloadFile.ts`; la página los usa solo cuando `DOCUMENTOS_ACTIVOS` (o la prop `documentos`) es verdadero.
+
+- **Abrir un documento:** se vuelve a consultar BIND por el código (la misma búsqueda de siempre) y encima se colocan los valores **guardados**, que mandan: cantidades, dimensiones, calibre literal, composición, pesos y cálculos COEX no se sobrescriben con datos nuevos de BIND. Un color personalizado se recupera desde el propio documento (nombre y HEX), **sin depender del catálogo local** (`localStorage`).
+- **Respuestas tardías:** solo la solicitud más reciente del panel puede reemplazar el documento abierto; la lectura de BIND anterior se aborta al abrir otro documento.
+- **Permisos:** los botones se habilitan según los `permisos` que devuelve el backend, pero ocultar o deshabilitar un control **no es autorización**: la base y el servicio vuelven a validar cada acción.
+- **Errores:** conflicto de versión (409) ofrece recargar la versión vigente; los requisitos de finalización se listan; ningún cuerpo crudo de respuesta se muestra.
 
 ## Límites conocidos
+- **Dependencia de BIND al abrir:** hoy **no se puede abrir un borrador si BIND no responde** (la reconstrucción del formulario necesita la interpretación de BIND). Se muestra el error de BIND y no se presenta un formulario a medias. Un mecanismo de recuperación sin BIND (p. ej. reconstruir desde la copia guardada) queda **fuera de este alcance** y requiere decisión.
+- Tras descartar el único borrador de un documento, su creador (o un ADMIN) puede abrir otro en el **mismo** documento; otra cuenta sigue recibiendo el 409 uniforme.
 - Ver «Riesgos residuales» del informe de aprobación (identidad por variables de sesión, FK hacia `security.users`/`core.empresas`, sin retención de PDF).
 - `409 DOCUMENT_EXISTS` revela que existe un documento con ese código y variante aunque su borrador sea ajeno (sin identificarlo).
 - La fecha impresa en el PDF usa la zona `America/Mexico_City`; la base guarda el instante.
