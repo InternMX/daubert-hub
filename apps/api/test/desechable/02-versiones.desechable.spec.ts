@@ -101,6 +101,22 @@ describe('bloque 2 · actualizar con control de versiones', () => {
   });
 });
 
+describe('bloque 2b · borradores INCOMPLETOS (base del guardado automático)', () => {
+  it('la base acepta un borrador con solo código y familia (sin datos técnicos), y se completa por versiones sin inventar valores ni confirmar «Elaboró»', async () => {
+    const codigo = codigoUnico();
+    const v1 = await service.crearBorrador(actor(2), { codigo, familia: 'BOLSA_PLANA_1', datos: {} } as never) as Vista;
+    expect(v1.estado).toBe('BORRADOR');
+    expect(v1.version).toBe(1);
+    expect(Object.keys(v1.especificacion.datos)).toEqual(['codigo']);               // el único dato es el código del documento; nada técnico inventado
+    expect(v1.elaboro.confirmado).toBe(false);
+    const v2 = await actualizar(2, v1.id, { version: 1, datos: { ancho: '13', largo: '' } });
+    expect(v2.version).toBe(2);
+    expect(v2.especificacion.datos.ancho).toBe('13');
+    expect(v2.elaboro.confirmado).toBe(false);                                       // el guardado automático nunca confirma «Elaboró»
+    expect((await falla(actualizar(2, v1.id, { version: 1, datos: { ancho: '14' } }))).code).toBe('VERSION_CONFLICT');   // sin sobrescribir con una versión vieja
+  });
+});
+
 describe('bloque 3 · «Elaboró»: sugerido desde la cuenta autenticada, editable, confirmado expresamente', () => {
   it('se sugiere el nombre de la cuenta, nace sin confirmar y se puede editar; confirmar es una acción explícita', async () => {
     const v1 = await crear(2, codigoUnico());

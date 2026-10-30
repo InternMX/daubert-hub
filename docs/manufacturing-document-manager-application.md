@@ -72,6 +72,18 @@ La página «Hojas de manufactura» es **una sola experiencia** basada en el có
 4. **«Mis hojas»** (botón junto al buscador): borradores accesibles, hojas finalizadas e historial por código, para abrir un documento sin recordar su código (reutiliza el diálogo documental).
 5. **«Novedades del catálogo de BIND»** se conserva como opción secundaria: «Preparar hoja» entra en el mismo flujo de búsqueda.
 
+### Guardado automático de borradores
+No hay botón «Guardar»: la hoja se guarda sola y la pantalla lo indica con discreción.
+
+- **Análisis de la base (sin migración):** un borrador solo exige código válido, familia válida y una copia estructural de la especificación; **todos los campos técnicos son opcionales** (la completitud se exige únicamente al finalizar). La instancia desechable lo confirma (`02-versiones`, bloque 2b: borrador con solo código y familia, completado por versiones). Por eso no se inventa ningún valor y no se requiere una migración nueva.
+- **Cuándo se crea:** nunca por buscar ni por consultar BIND. Al pulsar «Preparar una hoja nueva» la hoja existe solo en pantalla («Hoja preparada · sin guardar»); el borrador se crea **una sola vez** cuando el usuario ya **confirmó la familia** (el dato mínimo). La variante se define al preparar (junto al botón; una variante ya existente se avisa antes) porque no cambia después de crear el documento; si el servidor responde con el conflicto uniforme (`DOCUMENT_EXISTS`) aparece el campo «Variante» en el encabezado y se reintenta al cambiarla.
+- **Cuándo se actualiza:** con debounce (≈1,5 s tras la última edición; una petición por pausa, no por tecla), usando `version` (bloqueo optimista). Las peticiones se encadenan: nunca hay dos guardados a la vez, y lo escrito durante un guardado se envía después con la versión nueva. **Abrir un documento no guarda** (solo cuentan las ediciones reales del usuario, aunque el formulario normalice datos al abrir).
+- **Estados visibles:** «Cambios sin guardar…», «Guardando…», «Cambios guardados» (solo tras la respuesta del servidor), «Error al guardar» con «Reintentar» (sin reintentos automáticos en bucle), «Conflicto de versión» y «Ya existe esa hoja».
+- **Conflictos:** un 409 detiene el guardado, avisa y ofrece «Recargar la versión vigente»; **nunca sobrescribe** cambios ajenos. Una respuesta tardía de un documento anterior se descarta.
+- **Salir sin perder cambios:** con cambios sin persistir se advierte al cerrar o recargar la página (`beforeunload`), se intenta guardar al ocultar la pestaña o salir de la pantalla, y abrir otra hoja guarda antes la actual (si no se puede guardar, no se abre).
+- **Lo que nunca se hace solo:** confirmar «Elaboró», registrar revisiones, firmas o finalizar. **«Finalizar y generar PDF»** sigue siendo explícito: primero verifica que todo esté persistido (guarda lo pendiente) y solo entonces finaliza; si el guardado falla, no finaliza.
+- **Con `autoguardar` apagado** (uso del componente `DocumentPanel` sin la página) se conservan los botones «Guardar borrador/cambios».
+
 Reglas: ningún documento se crea por consultar BIND ni por buscar; solo «Guardar borrador» crea; una revisión finalizada nunca se sobrescribe (se crea una nueva); mientras un documento está en finalización o el servidor no permite editar, el formulario queda en solo lectura. Componentes: `HojasDelCodigo.tsx` (lista y «Mis hojas»), `DocumentPanel.tsx` (`DocumentoProvider` con el estado, `BarraDocumento`, `ResponsablesDocumento`), `DocumentHistoryDialog.tsx` (diálogo «Mis hojas»). Pruebas de aceptación: `ManufacturingDocuments.integration.test.tsx`.
 
 ## Frontend: apertura de documentos y detalles técnicos

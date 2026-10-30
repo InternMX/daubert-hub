@@ -1,7 +1,7 @@
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from '@mui/material';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import type { ResumenDocumento } from '../services/manufacturingDocuments';
 import { etiquetaRevision } from './documentLabels';
@@ -42,9 +42,16 @@ export function HojasDelCodigo({ codigo, hojas, estado, error, producto, bindErr
   const nombre = (h: ResumenDocumento): string => `${h.codigo}${h.variante ? ` ${h.variante}` : ''} ${etiquetaRevision(h)}`;
   // Preparar otra hoja descartaría lo que está en pantalla sin guardar: solo se ofrece cuando no hay cambios pendientes.
   const puedeIniciar = puedePreparar && !d.sucio;
+  // La variante se define al preparar la hoja (no se puede cambiar una vez creado el documento). Una variante ya existente para este código (incluida «sin variante») se avisa antes de crear.
+  const varianteNorm = d.variante.trim().toLowerCase();
+  const varianteRepetida = visibles.some((h) => (h.variante ?? '').toLowerCase() === varianteNorm);
 
   const preparar = (
-    <Button variant="contained" size="small" onClick={() => { d.cerrar(); onPreparar(); }} disabled={!puedeIniciar || d.ocupado}>Preparar una hoja nueva</Button>
+    <Stack direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
+      <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 200 }} slotProps={{ htmlInput: { maxLength: 40 } }}
+        error={varianteRepetida && varianteNorm !== ''} helperText={varianteRepetida ? (varianteNorm === '' ? 'Ya existe una hoja sin variante: escribe una variante para preparar otra.' : 'Ya hay una hoja con esta variante: escribe otra.') : 'Ej.: Doblada, Extendida'} />
+      <Button variant="contained" size="small" sx={{ mt: 0.5 }} onClick={() => { const v = d.variante; d.cerrar(); d.setVariante(v); onPreparar(); }} disabled={!puedeIniciar || d.ocupado || varianteRepetida}>Preparar una hoja nueva</Button>
+    </Stack>
   );
   const ayudaPreparar = !puedePreparar ? 'Se necesita la información del producto en BIND (busca el código) para preparar una hoja nueva.' : d.sucio ? 'Guarda los cambios de la hoja abierta antes de preparar otra.' : '';
 

@@ -237,7 +237,7 @@ const CANTIDAD_UNIDADES: Array<[string, string]> = [['BOLSAS', 'Bolsas'], ['HOJA
 /** El gestor documental (guardar, revisar, finalizar) solo se muestra cuando el backend lo tiene activo: `VITE_MANUFACTURING_DOCUMENTS=true`. Apagado por defecto. */
 export const DOCUMENTOS_ACTIVOS = import.meta.env.VITE_MANUFACTURING_DOCUMENTS === 'true';
 
-export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS }: { documentos?: boolean } = {}) {
+export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS, retardoAutoguardado = 1500 }: { documentos?: boolean; retardoAutoguardado?: number } = {}) {
   const [configs, setConfigs] = useState<FamilyConfig[]>([]);
   const [configStatus, setConfigStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [code, setCode] = useState('');
@@ -246,6 +246,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const [lookup, setLookup] = useState<BindProductLookup | null>(null);
   const [desdeGuardado, setDesdeGuardado] = useState(false);
   // Búsqueda unificada (gestor documental activo): código buscado, hojas accesibles y producto de BIND de ESA búsqueda (para preparar hojas nuevas).
+  const [ediciones, setEdiciones] = useState(0);   // ediciones reales del usuario (el guardado automático no se dispara por lo que el formulario normaliza al abrir)
   const [busqueda, setBusqueda] = useState<string | null>(null);
   const [hojas, setHojas] = useState<ResumenDocumento[] | null>(null);
   const [hojasEstado, setHojasEstado] = useState<'cargando' | 'listo' | 'error'>('listo');
@@ -370,6 +371,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   }
 
   const update = (updater: (previous: SpecificationForm) => SpecificationForm): void => {
+    setEdiciones((n) => n + 1);
     setForm((previous) => (previous ? updater(previous) : previous));
     setValidation(null);
     setReviewedKey('');
@@ -432,8 +434,8 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     : [];
   const sinReconocer = todas.filter((i) => i.nivel === 'CONTRADICCION' && !estaReconocida(i, valores, reconocidas));
   const avisosVistaPrevia = todas.filter((i) => i.afectaVistaPrevia && i.codigo !== 'FALTANTE' && !estaReconocida(i, valores, reconocidas));
-  const reconocer = (i: Incidencia): void => setReconocidas((r) => ({ ...r, [i.id]: huella(i, valores) }));
-  const deshacer = (i: Incidencia): void => setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id)));
+  const reconocer = (i: Incidencia): void => { setEdiciones((n) => n + 1); setReconocidas((r) => ({ ...r, [i.id]: huella(i, valores) })); };
+  const deshacer = (i: Incidencia): void => { setEdiciones((n) => n + 1); setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id))); };
   const revision: 'vigente' | 'revisando' | 'no-disponible' = !form?.family || currentAssessment ? 'vigente' : fallo === assessmentKey ? 'no-disponible' : 'revisando';
   const revelar = (id: string): void => setReveladas((r) => (r.has(id) ? r : new Set(r).add(id)));
   const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: validation !== null, reveladas, revelar, revision };
@@ -710,7 +712,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     </Box>
   );
   return documentos ? (
-    <DocumentoProvider codigo={busqueda} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual}>
+    <DocumentoProvider codigo={busqueda} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} autoguardar puedeCrear={form?.familyOrigin === 'USUARIO'} ediciones={ediciones} retardoMs={retardoAutoguardado}>
       {contenido}
     </DocumentoProvider>
   ) : contenido;

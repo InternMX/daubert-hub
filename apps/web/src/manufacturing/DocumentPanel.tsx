@@ -1,3 +1,4 @@
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
@@ -6,7 +7,7 @@ import {
   actualizarBorrador, asignarRevisor, cancelarFinalizacion, crearBorrador, crearRevisionNueva, descargarPdfFinalizado, descartarBorrador, DocumentApiError, documentErrorText, finalizarDocumento,
   listarRevisores, obtenerDocumento, registrarRevision, type DocumentoVista, type MotivoNoLista, type UsuarioRevisor
 } from '../services/manufacturingDocuments';
-import { Contexto, useDocumento, type Aviso, type Documento } from './documentoContexto';
+import { Contexto, useDocumento, type Aviso, type Documento, type EstadoGuardado } from './documentoContexto';
 import { claveDeCarga, claveDeDocumento, type CargaDocumento } from './documentSpec';
 import { etiquetaRevision } from './documentLabels';
 import { DocumentHistoryDialog } from './DocumentHistoryDialog';
@@ -27,10 +28,18 @@ interface ProviderProps {
   onAbrirDocumento: (doc: DocumentoVista) => void;
   /** Informa a la página del documento vigente (estado y permisos), para que el formulario se ponga en solo lectura cuando corresponda. */
   onDocumentoCambio?: (doc: DocumentoVista | null) => void;
+  /** Guardado automático de borradores (sin botón «Guardar»). Apagado por defecto. */
+  autoguardar?: boolean;
+  /** Datos mínimos conocidos para CREAR el borrador (familia confirmada por el usuario). Nunca se inventan valores técnicos. */
+  puedeCrear?: boolean;
+  /** Contador de ediciones del usuario: distingue lo que escribió de lo que el formulario normaliza al abrir (abrir no guarda ni crea versiones). */
+  ediciones?: number;
+  /** Retardo del debounce en ms (una petición por pausa de escritura, no por tecla). */
+  retardoMs?: number;
   children?: ReactNode;
 }
 
-export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumentoCambio, children }: ProviderProps) {
+export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumentoCambio, autoguardar = false, puedeCrear = false, ediciones = 0, retardoMs = 1500, children }: ProviderProps) {
   const [doc, setDoc] = useState<DocumentoVista | null>(null);
   const [variante, setVariante] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -61,6 +70,90 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
 
   const sucio = doc ? doc.estado === 'BORRADOR' && claveDeCarga(carga) !== claveDeDocumento(doc) : carga !== null;
 
+  // ---------------------------------------------------------------- guardado automático de borradores
+  // Reglas: no se crea nada por buscar ni por consultar BIND; el borrador se crea una sola vez cuando el usuario ya confirmó la familia (datos mínimos de la base; no se inventa ningún valor);
+  // los cambios posteriores se guardan con debounce usando el control de versiones (409 = conflicto, nunca se sobrescribe); «guardado» solo se muestra tras la respuesta del servidor; una
+  // respuesta tardía de otro documento se descarta; no se confirma «Elaboró», revisiones ni firmas.
+  const [guardado, setGuardado] = useState<EstadoGuardado>('inactivo');
+  const [guardadoEn, setGuardadoEn] = useState<Date | null>(null);
+  const [autoOcupado, setAutoOcupado] = useState(false);
+  const [baseEd, setBaseEd] = useState(ediciones);
+  const [errorEd, setErrorEd] = useState(-1);
+  const [creacionIntentada, setCreacionIntentada] = useState(false);
+  const [varianteFallida, setVarianteFallida] = useState<string | null>(null);
+  const espejo = useRef({ doc, carga, codigo, variante, ediciones, baseEd, puedeCrear });
+  useEffect(() => { espejo.current = { doc, carga, codigo, variante, ediciones, baseEd, puedeCrear }; });
+  const enVuelo = useRef<Promise<unknown> | null>(null);
+  const gen = useRef(0);
+
+  const errorSinNuevasEdiciones = guardado === 'error' && ediciones <= errorEd;
+  const elegible = autoguardar && carga !== null && guardado !== 'conflicto' && !errorSinNuevasEdiciones && (doc
+    ? doc.estado === 'BORRADOR' && doc.permisos.editar && sucio && ediciones > baseEd
+    : puedeCrear && (!creacionIntentada || (guardado === 'existe' && variante.trim() !== varianteFallida)));
+  const pendiente = elegible && guardado !== 'guardando';
+  const riesgo = autoguardar && carga !== null && (guardado === 'guardando' || guardado === 'error' || guardado === 'conflicto' || pendiente || (!doc && ediciones > baseEd));
+  const riesgoRef = useRef(false);
+  useEffect(() => { riesgoRef.current = riesgo; });
+
+  /** Guarda (crea o actualiza). Las llamadas se encadenan: nunca hay dos peticiones de guardado a la vez. Devuelve `ok` y el documento vigente. */
+  function guardarAuto(forzar: boolean): Promise<{ ok: boolean; doc: DocumentoVista | null }> {
+    const previo = enVuelo.current;
+    const trabajo = (async (): Promise<{ ok: boolean; doc: DocumentoVista | null }> => {
+      if (previo) await previo.catch(() => undefined);
+      const e = espejo.current;
+      const g = gen.current;
+      const d = e.doc;
+      if (!e.carga || !e.codigo) return { ok: true, doc: d };
+      if (d) {
+        if (d.estado !== 'BORRADOR' || !d.permisos.editar) return { ok: true, doc: d };
+        if (claveDeCarga(e.carga) === claveDeDocumento(d)) return { ok: true, doc: d };
+        if (!forzar && e.ediciones <= e.baseEd) return { ok: true, doc: d };
+      } else if (!forzar && !e.puedeCrear) return { ok: true, doc: null };
+      const snapEd = e.ediciones;
+      setGuardado('guardando'); setAutoOcupado(true);
+      if (!d) setCreacionIntentada(true);
+      try {
+        const r = d
+          ? await actualizarBorrador(d.id, { version: d.version, ...e.carga })
+          : await crearBorrador({ codigo: e.codigo, ...(e.variante.trim() ? { variante: e.variante.trim() } : {}), ...e.carga });
+        if (!montado.current || g !== gen.current) return { ok: false, doc: d };      // respuesta tardía de otro documento: se ignora
+        setDoc(r); setBaseEd(snapEd); setGuardado('guardado'); setGuardadoEn(new Date()); setAviso(null); setConflicto(false);
+        return { ok: true, doc: r };
+      } catch (error) {
+        if (!montado.current || g !== gen.current) return { ok: false, doc: d };
+        const tipo = error instanceof DocumentApiError ? error.kind : 'NETWORK';
+        setErrorEd(snapEd);
+        if (tipo === 'VERSION_CONFLICT') { setGuardado('conflicto'); setConflicto(true); }
+        else if (tipo === 'DOCUMENT_EXISTS' && !d) { setGuardado('existe'); setVarianteFallida(e.variante.trim()); }
+        else { setGuardado('error'); if (!d) setCreacionIntentada(false); }
+        setAviso({ tipo: 'error', texto: documentErrorText[tipo] });
+        return { ok: false, doc: d };
+      } finally { if (montado.current && g === gen.current) setAutoOcupado(false); }
+    })();
+    enVuelo.current = trabajo;
+    void trabajo.finally(() => { if (enVuelo.current === trabajo) enVuelo.current = null; });
+    return trabajo;
+  }
+
+  const claveCarga = claveDeCarga(carga);
+  useEffect(() => {
+    if (!elegible || guardado === 'guardando') return undefined;
+    const t = setTimeout(() => { void guardarAuto(false); }, retardoMs);
+    return () => clearTimeout(t);
+  }, [elegible, claveCarga, ediciones, guardado, doc?.version, variante]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cambios sin persistir: se advierte al cerrar/recargar la página y se intenta guardar al ocultarla o al salir de la pantalla.
+  useEffect(() => {
+    if (!riesgo) return undefined;
+    const advertir = (ev: BeforeUnloadEvent): void => { ev.preventDefault(); ev.returnValue = ''; };
+    const oculto = (): void => { if (document.visibilityState === 'hidden') void guardarAuto(false); };
+    window.addEventListener('beforeunload', advertir);
+    document.addEventListener('visibilitychange', oculto);
+    return () => { window.removeEventListener('beforeunload', advertir); document.removeEventListener('visibilitychange', oculto); };
+  }, [riesgo]);  
+  useEffect(() => () => { if (riesgoRef.current) void guardarAuto(false); }, []);  
+  /** Tras abrir otro documento: nueva línea base (abrir no guarda) y cualquier respuesta de guardado del documento anterior queda obsoleta. */
+  const reiniciarBase = (): void => { gen.current += 1; setBaseEd(espejo.current.ediciones); setErrorEd(-1); setGuardado('inactivo'); setCreacionIntentada(false); setVarianteFallida(null); setAutoOcupado(false); };
+
   /** Ejecuta una acción del servidor: bloquea los botones, muestra el resultado y traduce los errores (sin mostrar nunca el cuerpo crudo de la respuesta). */
   async function ejecutar(accion: () => Promise<DocumentoVista | void>, exito?: (d: DocumentoVista | void) => Aviso | null, abrir = false): Promise<void> {
     // Solo la solicitud MÁS RECIENTE puede reemplazar el documento abierto: una respuesta tardía de una solicitud anterior se descarta (no cambia el panel ni el formulario).
@@ -69,7 +162,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     try {
       const r = await accion();
       if (!montado.current || mia !== solicitud.current) return;
-      if (r) { setDoc(r); if (abrir) onAbrirDocumento(r); }
+      if (r) { setDoc(r); if (abrir) { onAbrirDocumento(r); reiniciarBase(); } }
       setAviso(exito ? exito(r) : null);
     } catch (e) {
       if (!montado.current || mia !== solicitud.current) return;
@@ -88,7 +181,15 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     return ejecutar(() => actualizarBorrador(doc.id, { version: doc.version, ...carga }), () => ({ tipo: 'success', texto: 'Cambios guardados.' }));
   };
   const recargar = (): Promise<void> => (doc ? ejecutar(() => obtenerDocumento(doc.id), () => ({ tipo: 'info', texto: 'Se cargó la versión vigente del servidor.' }), true) : Promise.resolve());
-  const abrirPorId = (id: string): Promise<void> => ejecutar(() => obtenerDocumento(id), (d) => ({ tipo: 'info', texto: `Documento abierto: ${d ? `${d.codigo} · ${etiquetaRevision(d)}` : ''}` }), true).then(() => setHistorial((h) => ({ ...h, abierto: false })));
+  const abrirPorId = async (id: string): Promise<void> => {
+    // Con guardado automático, los cambios pendientes se guardan antes de abrir otra hoja; si no se pueden guardar, no se abre (no se pierde nada).
+    if (autoguardar && riesgoRef.current) {
+      const r = await guardarAuto(false);
+      if (!r.ok) { setAviso({ tipo: 'error', texto: 'No se pudieron guardar los cambios de la hoja abierta; no se abrió otra para no perderlos.' }); return; }
+    }
+    await ejecutar(() => obtenerDocumento(id), (d) => ({ tipo: 'info', texto: `Documento abierto: ${d ? `${d.codigo} · ${etiquetaRevision(d)}` : ''}` }), true);
+    setHistorial((h) => ({ ...h, abierto: false }));
+  };
   const descargarPorId = (id: string): Promise<void> => ejecutar(async () => { const p = await descargarPdfFinalizado(id); guardarArchivo(p.blob, p.filename); }, () => ({ tipo: 'success', texto: 'PDF descargado.' }));
   const descargar = (): Promise<void> => (doc ? descargarPorId(doc.id) : Promise.resolve());
   const nuevaRevisionDe = (documentoId: string): Promise<void> => ejecutar(() => crearRevisionNueva(documentoId), () => ({ tipo: 'success', texto: 'Nueva revisión creada como borrador a partir de la última versión finalizada.' }), true);
@@ -97,19 +198,30 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   const guardarAutorizo = (): Promise<void> => (doc ? ejecutar(() => actualizarBorrador(doc.id, { version: doc.version, autorizoNombre: autorizo }), () => ({ tipo: 'success', texto: 'Autorizó actualizado (opcional; no hay flujo de autorización).' })) : Promise.resolve());
   const asignar = (): Promise<void> => (doc ? ejecutar(() => asignarRevisor(doc.id, doc.version, revisorSel === '' ? null : revisorSel), () => ({ tipo: 'success', texto: revisorSel === '' ? 'Revisor retirado.' : 'Revisor asignado.' })) : Promise.resolve());
   const registrar = (): Promise<void> => (doc ? ejecutar(() => registrarRevision(doc.id, doc.version), () => ({ tipo: 'success', texto: 'Tu revisión quedó registrada sobre esta versión.' })) : Promise.resolve());
-  const finalizar = (): Promise<void> => (doc ? ejecutar(() => finalizarDocumento(doc.id, doc.version), () => ({ tipo: 'success', texto: 'Hoja finalizada. El PDF quedó almacenado.' })) : Promise.resolve());
+  const finalizar = async (): Promise<void> => {
+    if (!doc) return;
+    let actual = doc;
+    // «Finalizar y generar PDF»: primero se verifica que todos los cambios estén persistidos (se guardan ahora si hace falta); si no se pueden guardar, NO se finaliza.
+    if (autoguardar && (sucio || riesgoRef.current)) {
+      const r = await guardarAuto(true);
+      if (!r.ok || !r.doc) { setConfirmando(null); return; }
+      actual = r.doc;
+    }
+    await ejecutar(() => finalizarDocumento(actual.id, actual.version), () => ({ tipo: 'success', texto: 'Hoja finalizada. El PDF quedó almacenado.' }));
+  };
   const descartar = (): Promise<void> => (doc ? ejecutar(() => descartarBorrador(doc.id, doc.version), () => ({ tipo: 'info', texto: 'Borrador descartado.' })) : Promise.resolve());
   const cancelarFin = (): Promise<void> => (doc ? ejecutar(() => cancelarFinalizacion(doc.id, doc.version), () => ({ tipo: 'info', texto: 'Finalización cancelada: vuelve a ser borrador.' })) : Promise.resolve());
   const reintentarFin = (): Promise<void> => (doc ? ejecutar(() => finalizarDocumento(doc.id, doc.version), () => ({ tipo: 'success', texto: 'Hoja finalizada.' })) : Promise.resolve());
-  const cerrar = (): void => { solicitud.current += 1; setDoc(null); setAviso(null); setMotivos([]); setConflicto(false); setOcupado(false); setVariante(''); };
+  const cerrar = (): void => { solicitud.current += 1; setDoc(null); setAviso(null); setMotivos([]); setConflicto(false); setOcupado(false); setVariante(''); reiniciarBase(); };
 
   const vigentes = doc?.confirmaciones.filter((k) => k.vigente) ?? [];
   const obsoletas = (doc?.confirmaciones.length ?? 0) - vigentes.length;
   const elaboroCambiado = doc ? (elaboro.trim() || null) !== doc.elaboro.nombre : false;
 
   const valor: Documento = {
-    doc, codigo, carga, variante, setVariante, ocupado, aviso, motivos, conflicto, revisores, revisorSel, setRevisorSel, elaboro, setElaboro, autorizo, setAutorizo, sucio, vigentes, obsoletas, elaboroCambiado,
+    doc, codigo, carga, variante, setVariante, ocupado: ocupado || autoOcupado, aviso, motivos, conflicto, revisores, revisorSel, setRevisorSel, elaboro, setElaboro, autorizo, setAutorizo, sucio, vigentes, obsoletas, elaboroCambiado,
     confirmando, setConfirmando, guardar, recargar, abrirPorId, descargar, descargarPorId, nuevaRevisionDe, confirmarElaboro, guardarAutorizo, asignar, registrar, finalizar, descartar, cancelarFin, reintentarFin,
+    autoguardar, guardado: guardado === 'guardando' ? 'guardando' : pendiente ? 'pendiente' : guardado, guardadoEn, guardarAhora: async () => { await guardarAuto(true); },
     abrirHistorial: (porCodigo) => setHistorial({ abierto: true, codigo: porCodigo ? (codigo ?? '') : '' }), cerrar
   };
 
@@ -140,6 +252,19 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   );
 }
 
+/** Indicador discreto del guardado automático. «Cambios guardados» solo aparece tras la confirmación del servidor. */
+function IndicadorGuardado() {
+  const d = useDocumento();
+  const hora = d.guardadoEn ? d.guardadoEn.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '';
+  if (d.guardado === 'guardando') return <Stack direction="row" spacing={0.75} alignItems="center" role="status"><CircularProgress size={14} /><Typography variant="body2" color="text.secondary">Guardando…</Typography></Stack>;
+  if (d.guardado === 'pendiente') return <Typography variant="body2" color="text.secondary" role="status">Cambios sin guardar…</Typography>;
+  if (d.guardado === 'guardado') return <Stack direction="row" spacing={0.5} alignItems="center" role="status" title={hora ? `Guardado a las ${hora}` : undefined}><CheckRoundedIcon sx={{ fontSize: 16 }} color="success" /><Typography variant="body2" color="text.secondary">Cambios guardados</Typography></Stack>;
+  if (d.guardado === 'error') return <Stack direction="row" spacing={1} alignItems="center" role="status"><Typography variant="body2" color="error">Error al guardar</Typography><Button size="small" onClick={() => void d.guardarAhora()}>Reintentar</Button></Stack>;
+  if (d.guardado === 'conflicto') return <Typography variant="body2" color="error" role="status">Conflicto de versión: no se guardó</Typography>;
+  if (d.guardado === 'existe') return <Typography variant="body2" color="error" role="status">Ya existe esa hoja</Typography>;
+  return null;
+}
+
 /**
  * Encabezado del formulario (sin tarjeta propia): estado de la hoja y acciones contextuales. Distingue una hoja PREPARADA pero no guardada (solo vive en pantalla) de un borrador
  * PERSISTIDO en PostgreSQL (TEST), y ofrece solo las acciones que corresponden a ese estado.
@@ -155,33 +280,64 @@ export function BarraDocumento() {
         {doc && <Chip size="small" color={doc.estado === 'FINALIZADA' ? 'success' : 'default'} label={nombre} data-testid="estado-guardado" />}
         {doc && doc.estado !== 'DESCARTADA' && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
         {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (manual de TEST)" />}
-        {d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
+        {!d.autoguardar && d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
+        {d.autoguardar && doc?.estado === 'BORRADOR' && <IndicadorGuardado />}
         <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" />
         <Box sx={{ flex: 1 }} />
         <Button size="small" startIcon={<HistoryRoundedIcon />} onClick={() => d.abrirHistorial(true)}>Historial de este código</Button>
       </Stack>
 
       {/* ------------------------------------------------------------- acciones según el estado */}
-      {(!doc || doc.estado === 'BORRADOR') && (
-        <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-          {!doc && <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 220 }} slotProps={{ htmlInput: { maxLength: 40 } }} />}
-          <Button variant="contained" onClick={() => void d.guardar()} disabled={d.ocupado || !d.carga || !d.codigo || (Boolean(doc) && !d.sucio) || (doc ? !doc.permisos.editar : false)}>
-            {d.ocupado ? <CircularProgress size={18} color="inherit" /> : doc ? 'Guardar cambios' : 'Guardar borrador'}
-          </Button>
-          {doc?.estado === 'BORRADOR' && <Button variant="contained" color="success" disabled={d.ocupado || d.sucio || !doc.permisos.finalizar} onClick={() => d.setConfirmando('finalizar')} aria-describedby="finalizar-ayuda">Finalizar hoja</Button>}
-          {doc?.estado === 'BORRADOR' && <Button color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>}
-        </Stack>
-      )}
-      {!doc && (
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-          {d.carga ? 'Esta hoja todavía no existe en la base de datos: se crea al pulsar «Guardar borrador». Variante: ej. Doblada, Extendida (un código puede tener varias hojas).' : 'Elige la familia para poder guardar. Esta hoja todavía no existe en la base de datos.'}
-        </Typography>
-      )}
-      {doc?.estado === 'BORRADOR' && (
-        <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-          {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
-          {d.sucio ? 'Guarda los cambios antes de finalizar: el PDF se genera desde la copia guardada. ' : ''}Para finalizar: «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas.
-        </Typography>
+      {d.autoguardar ? (
+        <>
+          {(!doc || doc.estado === 'BORRADOR') && (
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+              {!doc && <IndicadorGuardado />}
+              {!doc && d.guardado === 'existe' && (
+                <TextField size="small" label="Variante" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 200 }} slotProps={{ htmlInput: { maxLength: 40 } }}
+                  helperText="Ya existe una hoja con este código y variante: usa otra variante o ábrela desde la lista." />
+              )}
+              <Box sx={{ flex: 1 }} />
+              {doc?.estado === 'BORRADOR' && <Button variant="contained" color="success" disabled={d.ocupado || !doc.permisos.finalizar || d.guardado === 'conflicto'} onClick={() => d.setConfirmando('finalizar')} aria-describedby="finalizar-ayuda">Finalizar y generar PDF</Button>}
+              {doc?.estado === 'BORRADOR' && <Button color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>}
+            </Stack>
+          )}
+          {!doc && d.guardado === 'inactivo' && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+              {d.carga ? 'Esta hoja se guardará sola como borrador en cuanto confirmes la familia. Aún no existe en la base de datos.' : 'Elige la familia para empezar. La hoja se guardará sola como borrador; aún no existe en la base de datos.'}
+            </Typography>
+          )}
+          {doc?.estado === 'BORRADOR' && (
+            <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+              {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
+              «Finalizar y generar PDF» guarda antes los cambios pendientes y requiere «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas.
+            </Typography>
+          )}
+        </>
+      ) : (
+        <>
+          {(!doc || doc.estado === 'BORRADOR') && (
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+              {!doc && <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 220 }} slotProps={{ htmlInput: { maxLength: 40 } }} />}
+              <Button variant="contained" onClick={() => void d.guardar()} disabled={d.ocupado || !d.carga || !d.codigo || (Boolean(doc) && !d.sucio) || (doc ? !doc.permisos.editar : false)}>
+                {d.ocupado ? <CircularProgress size={18} color="inherit" /> : doc ? 'Guardar cambios' : 'Guardar borrador'}
+              </Button>
+              {doc?.estado === 'BORRADOR' && <Button variant="contained" color="success" disabled={d.ocupado || d.sucio || !doc.permisos.finalizar} onClick={() => d.setConfirmando('finalizar')} aria-describedby="finalizar-ayuda">Finalizar hoja</Button>}
+              {doc?.estado === 'BORRADOR' && <Button color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>}
+            </Stack>
+          )}
+          {!doc && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+              {d.carga ? 'Esta hoja todavía no existe en la base de datos: se crea al pulsar «Guardar borrador». Variante: ej. Doblada, Extendida (un código puede tener varias hojas).' : 'Elige la familia para poder guardar. Esta hoja todavía no existe en la base de datos.'}
+            </Typography>
+          )}
+          {doc?.estado === 'BORRADOR' && (
+            <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+              {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
+              {d.sucio ? 'Guarda los cambios antes de finalizar: el PDF se genera desde la copia guardada. ' : ''}Para finalizar: «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas.
+            </Typography>
+          )}
+        </>
       )}
 
       {d.aviso && <Alert severity={d.aviso.tipo} sx={{ mt: 1 }} role={d.aviso.tipo === 'error' ? 'alert' : 'status'}>{d.aviso.texto}</Alert>}

@@ -4,6 +4,9 @@ import type { CargaDocumento } from './documentSpec';
 
 // Estado compartido del gestor documental dentro de la hoja: lo crea `DocumentoProvider` y lo consumen la barra de acciones, la sección de responsables y la lista de hojas del código.
 
+/** Estado visible del guardado automático. `pendiente`: hay cambios que aún no se enviaron; `guardado` solo tras la confirmación del servidor. */
+export type EstadoGuardado = 'inactivo' | 'pendiente' | 'guardando' | 'guardado' | 'error' | 'conflicto' | 'existe';
+
 export type Aviso = { tipo: 'success' | 'error' | 'info' | 'warning'; texto: string };
 
 export interface Documento {
@@ -17,6 +20,12 @@ export interface Documento {
   guardar: () => Promise<void>; recargar: () => Promise<void>; abrirPorId: (id: string) => Promise<void>; descargar: () => Promise<void>; descargarPorId: (id: string) => Promise<void>;
   nuevaRevisionDe: (documentoId: string) => Promise<void>; confirmarElaboro: () => Promise<void>; guardarAutorizo: () => Promise<void>; asignar: () => Promise<void>;
   registrar: () => Promise<void>; finalizar: () => Promise<void>; descartar: () => Promise<void>; cancelarFin: () => Promise<void>; reintentarFin: () => Promise<void>;
+  /** Guardado automático activo (la hoja se guarda sola; no hay botón «Guardar»). */
+  autoguardar: boolean;
+  guardado: EstadoGuardado;
+  guardadoEn: Date | null;
+  /** Guarda ya (sin esperar el retardo): «Reintentar» / «Guardar ahora». */
+  guardarAhora: () => Promise<void>;
   /** Abre «Mis hojas»; con `porCodigo` muestra además el historial de ese código. */
   abrirHistorial: (porCodigo: boolean) => void;
   /** Deja el panel «sin guardar» (para preparar una hoja nueva). */
