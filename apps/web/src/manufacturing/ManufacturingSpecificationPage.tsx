@@ -7,10 +7,13 @@ import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
+import type { DocumentoVista } from '../services/manufacturingDocuments';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
+import { aplicarGuardado, construirCarga, reconocimientosDe } from './documentSpec';
+import { DocumentPanel } from './DocumentPanel';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
@@ -203,7 +206,10 @@ function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
 const PERSONAL = 'PERSONAL:';
 const CANTIDAD_UNIDADES: Array<[string, string]> = [['BOLSAS', 'Bolsas'], ['HOJAS', 'Hojas']];
 
-export function ManufacturingSpecificationPage() {
+/** El gestor documental (guardar, revisar, finalizar) solo se muestra cuando el backend lo tiene activo: `VITE_MANUFACTURING_DOCUMENTS=true`. Apagado por defecto. */
+export const DOCUMENTOS_ACTIVOS = import.meta.env.VITE_MANUFACTURING_DOCUMENTS === 'true';
+
+export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS }: { documentos?: boolean } = {}) {
   const [configs, setConfigs] = useState<FamilyConfig[]>([]);
   const [configStatus, setConfigStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [code, setCode] = useState('');
@@ -255,6 +261,24 @@ export function ManufacturingSpecificationPage() {
       const result = await lookupBindProductByCode(target, current.signal);
       if (current.signal.aborted) return;
       setLookup(result); setForm(buildInitialForm(result, configs)); setStatus('ready');
+    } catch (error) {
+      if (current.signal.aborted) return;
+      setLookup(null); setForm(null); setStatus('error');
+      setErrorKind(error instanceof BindProductApiError ? error.kind : 'NETWORK');
+    }
+  }
+
+  // Abrir un documento guardado: se reconstruye la interpretación de BIND por su código (la misma búsqueda de siempre) y encima se colocan los valores GUARDADOS, que mandan.
+  async function abrirDocumento(doc: DocumentoVista): Promise<void> {
+    controller.current?.abort();
+    const current = new AbortController();
+    controller.current = current;
+    setValidation(null); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
+    setCode(doc.codigo); setStatus('loading'); setErrorKind(null);
+    try {
+      const result = await lookupBindProductByCode(doc.codigo, current.signal);
+      if (current.signal.aborted) return;
+      setLookup(result); setForm(aplicarGuardado(buildInitialForm(result, configs), doc, configs)); setReconocidas(reconocimientosDe(doc)); setStatus('ready');
     } catch (error) {
       if (current.signal.aborted) return;
       setLookup(null); setForm(null); setStatus('error');
@@ -354,7 +378,9 @@ export function ManufacturingSpecificationPage() {
   return (
     <Box sx={{ maxWidth: 1500, minWidth: 0 }}>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Automatizaciones', to: '/automations' }, { label: 'Hojas de manufactura' }]} />
-      <PageHeader title="Especificación de manufactura" description="Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Los datos solo existen en memoria: no se guardan ni se emite ninguna hoja." />
+      <PageHeader title="Especificación de manufactura" description={documentos
+        ? 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Puedes guardar la hoja como borrador, revisarla y finalizarla: todo documento es de PRUEBA y no es válido para producción.'
+        : 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Los datos solo existen en memoria: no se guardan ni se emite ninguna hoja.'} />
 
       {configStatus === 'error' && <Alert severity="error" sx={{ mt: 2 }}>No se pudo cargar la configuración de las familias de manufactura. Recarga la página.</Alert>}
 
@@ -375,6 +401,8 @@ export function ManufacturingSpecificationPage() {
         disabled={configStatus !== 'ready'}
         onPrepare={(c) => { setCode(c); void search(c); }}
       />
+
+      {documentos && <DocumentPanel codigo={status === 'ready' && lookup ? lookup.producto.Code : null} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={(doc) => { void abrirDocumento(doc); }} />}
 
       {status === 'loading' && <Alert severity="info" sx={{ mt: 2 }}>Consultando BIND…</Alert>}
       {status === 'error' && errorKind && <Alert severity={errorKind === 'NOT_FOUND' ? 'info' : 'error'} sx={{ mt: 2 }}>{errorMessages[errorKind]}</Alert>}
