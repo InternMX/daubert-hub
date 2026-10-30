@@ -7,13 +7,14 @@ import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
-import type { DocumentoVista } from '../services/manufacturingDocuments';
+import { DocumentApiError, documentErrorText, historialPorCodigo, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
 import { abrirSinBind, construirCarga } from './documentSpec';
-import { DocumentPanel } from './DocumentPanel';
+import { BarraDocumento, DocumentoProvider, ResponsablesDocumento } from './DocumentPanel';
+import { BotonMisHojas, HojasDelCodigo } from './HojasDelCodigo';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
@@ -233,6 +234,13 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const [errorKind, setErrorKind] = useState<BindProductErrorKind | null>(null);
   const [lookup, setLookup] = useState<BindProductLookup | null>(null);
   const [desdeGuardado, setDesdeGuardado] = useState(false);
+  // Búsqueda unificada (gestor documental activo): código buscado, hojas accesibles y producto de BIND de ESA búsqueda (para preparar hojas nuevas).
+  const [busqueda, setBusqueda] = useState<string | null>(null);
+  const [hojas, setHojas] = useState<ResumenDocumento[] | null>(null);
+  const [hojasEstado, setHojasEstado] = useState<'cargando' | 'listo' | 'error'>('listo');
+  const [hojasError, setHojasError] = useState('');
+  const [bindBusqueda, setBindBusqueda] = useState<BindProductLookup | null>(null);
+  const busquedaRef = useRef<string | null>(null);
   const [docActual, setDocActual] = useState<DocumentoVista | null>(null);
   const [bindActual, setBindActual] = useState<BindActual>({ estado: 'inactivo' });
   const bindController = useRef<AbortController | null>(null);
@@ -277,6 +285,19 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       return;
     }
     setStatus('loading'); setErrorKind(null); setDesdeGuardado(false); setBindActual({ estado: 'inactivo' });
+    if (documentos) {
+      // Punto de entrada unificado: hojas accesibles del código (endpoint documental existente) + producto en BIND, en paralelo. Ninguna de las dos cosas crea ni modifica nada.
+      const clave = target.trim();
+      busquedaRef.current = clave;
+      setBusqueda(clave); setHojas(null); setHojasEstado('cargando'); setHojasError(''); setBindBusqueda(null); setLookup(null); setForm(null);
+      const [h, b] = await Promise.allSettled([historialPorCodigo(clave, current.signal), lookupBindProductByCode(clave, current.signal)]);
+      if (current.signal.aborted) return;
+      if (h.status === 'fulfilled') { setHojas(h.value.data); setHojasEstado('listo'); }
+      else { setHojas(null); setHojasEstado('error'); setHojasError(h.reason instanceof DocumentApiError ? documentErrorText[h.reason.kind] : documentErrorText.NETWORK); }
+      if (b.status === 'fulfilled') { setBindBusqueda(b.value); setLookup(b.value); setStatus('ready'); }
+      else { setLookup(null); setStatus('error'); setErrorKind(b.reason instanceof BindProductApiError ? b.reason.kind : 'NETWORK'); }
+      return;
+    }
     try {
       const result = await lookupBindProductByCode(target, current.signal);
       if (current.signal.aborted) return;
@@ -295,6 +316,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     const abierto = abrirSinBind(doc, configs);
     setValidation(null); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setCode(doc.codigo); setErrorKind(null);
+    if (documentos && busquedaRef.current?.toLowerCase() !== doc.codigo.toLowerCase()) { busquedaRef.current = doc.codigo; setBusqueda(doc.codigo); setBindBusqueda(null); void recargarHojas(doc.codigo); }
     setLookup(abierto.lookup); setForm(abierto.form); setReconocidas(abierto.reconocidas); setDesdeGuardado(true); setStatus('ready');
   }
 
@@ -313,6 +335,28 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   }
 
   const soloLectura = documentos && docActual !== null && (docActual.estado !== 'BORRADOR' || !docActual.permisos.editar);
+
+  async function recargarHojas(codigo: string): Promise<void> {
+    try {
+      const r = await historialPorCodigo(codigo);
+      if (busquedaRef.current?.toLowerCase() === codigo.toLowerCase()) { setHojas(r.data); setHojasEstado('listo'); }
+    } catch (error) {
+      if (busquedaRef.current?.toLowerCase() === codigo.toLowerCase()) { setHojasEstado('error'); setHojasError(error instanceof DocumentApiError ? documentErrorText[error.kind] : documentErrorText.NETWORK); }
+    }
+  }
+  // Los cambios del documento (guardar, finalizar, nueva revisión…) se reflejan en la lista de hojas del código.
+  useEffect(() => {
+    if (documentos && busquedaRef.current && docActual) void recargarHojas(busquedaRef.current);
+  }, [docActual?.id, docActual?.estado, docActual?.version]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // «Preparar una hoja nueva»: formulario inicial desde BIND (la búsqueda ya lo trajo). No guarda nada hasta «Guardar borrador».
+  function prepararNueva(): void {
+    if (!bindBusqueda) return;
+    controller.current?.abort();
+    setValidation(null); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
+    setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false);
+    setLookup(bindBusqueda); setForm(buildInitialForm(bindBusqueda, configs)); setStatus('ready');
+  }
 
   const update = (updater: (previous: SpecificationForm) => SpecificationForm): void => {
     setForm((previous) => (previous ? updater(previous) : previous));
@@ -403,11 +447,11 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const colorSwatch = (hex: string) => <Box aria-label="Muestra del color" role="img" data-testid="color-swatch" sx={{ width: 32, height: 32, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : 'transparent', flexShrink: 0 }} />;
   const composiciones = (config?.composiciones ?? ['PMG', 'CP5000', 'NAT']).map((value) => ({ value, label: value === 'NAT' ? 'Natural' : value }));
 
-  return (
+  const contenido = (
     <Box sx={{ maxWidth: 1500, minWidth: 0 }}>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Automatizaciones', to: '/automations' }, { label: 'Hojas de manufactura' }]} />
       <PageHeader title="Especificación de manufactura" description={documentos
-        ? 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Puedes guardar la hoja como borrador, revisarla y finalizarla: todo documento es de PRUEBA y no es válido para producción.'
+        ? 'Escribe el código DCMX del producto: verás sus hojas guardadas y podrás continuar una, ver su historial y PDF, crear una nueva revisión o preparar una hoja nueva. Todo documento es de PRUEBA y no es válido para producción.'
         : 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Los datos solo existen en memoria: no se guardan ni se emite ninguna hoja.'} />
 
       {configStatus === 'error' && <Alert severity="error" sx={{ mt: 2 }}>No se pudo cargar la configuración de las familias de manufactura. Recarga la página.</Alert>}
@@ -416,10 +460,11 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'flex-start' }}>
           <TextField
             label="Código DCMX a buscar" value={code} onChange={(e) => setCode(e.target.value)} fullWidth autoComplete="off" placeholder="Ej. SCHFPMG001"
-            helperText="Búsqueda exacta por código en BIND (solo lectura)."
+            helperText={documentos ? 'Búsqueda exacta por código DCMX: hojas guardadas y producto en BIND (solo lectura).' : 'Búsqueda exacta por código en BIND (solo lectura).'}
             slotProps={{ htmlInput: { maxLength: 64 }, input: { endAdornment: status === 'loading' ? <InputAdornment position="end"><CircularProgress size={18} aria-label="Buscando" /></InputAdornment> : undefined } }}
           />
-          <Button type="submit" variant="contained" startIcon={<SearchRoundedIcon />} disabled={status === 'loading' || code.trim() === '' || configStatus !== 'ready'} sx={{ minWidth: 190, mt: { sm: 0.5 } }}>Buscar en BIND</Button>
+          <Button type="submit" variant="contained" startIcon={<SearchRoundedIcon />} disabled={status === 'loading' || code.trim() === '' || configStatus !== 'ready'} sx={{ minWidth: 190, mt: { sm: 0.5 } }}>{documentos ? 'Buscar' : 'Buscar en BIND'}</Button>
+          {documentos && <BotonMisHojas />}
         </Stack>
       </Paper>
 
@@ -430,16 +475,25 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         onPrepare={(c) => { setCode(c); void search(c); }}
       />
 
-      {documentos && <DocumentPanel codigo={status === 'ready' && lookup ? lookup.producto.Code : null} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} />}
+      {documentos && busqueda && (
+        <HojasDelCodigo
+          codigo={busqueda} hojas={hojas} estado={hojasEstado} error={hojasError}
+          producto={bindBusqueda ? { Code: bindBusqueda.producto.Code, Title: bindBusqueda.producto.Title } : null}
+          bindError={status === 'error' && errorKind && errorKind !== 'INVALID_CODE' ? errorMessages[errorKind] : null}
+          puedePreparar={Boolean(bindBusqueda) && configStatus === 'ready'} onPreparar={prepararNueva}
+        />
+      )}
+      {documentos && form && <BarraDocumento />}
 
       {status === 'loading' && <Alert severity="info" sx={{ mt: 2 }}>Consultando BIND…</Alert>}
-      {status === 'error' && errorKind && <Alert severity={errorKind === 'NOT_FOUND' ? 'info' : 'error'} sx={{ mt: 2 }}>{errorMessages[errorKind]}</Alert>}
+      {status === 'error' && errorKind && !(documentos && busqueda) && <Alert severity={errorKind === 'NOT_FOUND' ? 'info' : 'error'} sx={{ mt: 2 }}>{errorMessages[errorKind]}</Alert>}
 
       {status === 'ready' && lookup && form && (
         <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) minmax(420px, 520px)' }, alignItems: 'start' }}>
         <IncidenciasProvider value={ctx}>
         {/* Una revisión finalizada (o un borrador que esta cuenta no puede editar) se abre en solo lectura: el fieldset deshabilita todos los controles; el servidor sigue siendo la autoridad. */}
-        <Box component="fieldset" disabled={soloLectura} data-testid="formulario-documento" sx={{ minWidth: 0, order: { xs: 2, lg: 1 }, border: 0, p: 0, m: 0 }}>
+        <Box sx={{ minWidth: 0, order: { xs: 2, lg: 1 } }}>
+        <Box component="fieldset" disabled={soloLectura} data-testid="formulario-documento" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
           <BindProductPanel lookup={lookup} guardado={desdeGuardado} actual={bindActual} onConsultar={() => { void consultarBindActual(); }} />
           {live && <ResumenIncidencias lista={todas} ctx={ctx} />}
 
@@ -631,6 +685,8 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             <DialogActions><Button onClick={() => setReviewWeights(false)}>Cancelar</Button><Button onClick={() => { update((f) => suggestLayerWeights(f, true)); setReviewWeights(false); }}>Reemplazar pesos por sugerencias actuales</Button></DialogActions>
           </Dialog>
         </Box>
+        {documentos && <ResponsablesDocumento />}
+        </Box>
         </IncidenciasProvider>
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
           <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData} avisos={avisosVistaPrevia}
@@ -642,4 +698,9 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       )}
     </Box>
   );
+  return documentos ? (
+    <DocumentoProvider codigo={busqueda} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual}>
+      {contenido}
+    </DocumentoProvider>
+  ) : contenido;
 }

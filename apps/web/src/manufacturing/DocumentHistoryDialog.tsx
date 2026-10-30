@@ -5,7 +5,7 @@ import { descargarPdfFinalizado, DocumentApiError, documentErrorText, historialP
 import { etiquetaRevision } from './documentLabels';
 import { guardarArchivo } from './downloadFile';
 
-// «Mis borradores e historial»: trabajo en curso que la base deja ver a esta cuenta y versiones finalizadas por código DCMX (todas las variantes). Nada se filtra en el navegador: la
+// «Mis hojas»: trabajo en curso que la base deja ver a esta cuenta y versiones finalizadas por código DCMX (todas las variantes). Nada se filtra en el navegador: la
 // visibilidad la decide el backend (permisos y RLS).
 
 const ESTADO: Record<ResumenDocumento['estado'], { texto: string; color: 'default' | 'warning' | 'success' | 'info' }> = {
@@ -64,7 +64,7 @@ export function DocumentHistoryDialog({ abierto, codigoInicial, onClose, onAbrir
 
   return (
     <Dialog open={abierto} onClose={onClose} fullWidth maxWidth="md" aria-labelledby="historial-titulo">
-      <DialogTitle id="historial-titulo">Mis borradores e historial documental</DialogTitle>
+      <DialogTitle id="historial-titulo">Mis hojas</DialogTitle>
       <DialogContent>
         <Alert severity="info" role="note" sx={{ mb: 2 }}>Documentos de PRUEBA (TEST): no válidos para producción. Solo ves los borradores propios, los que te asignaron para revisar y, si eres administrador, todos. Las versiones finalizadas las ve cualquier cuenta autenticada.</Alert>
         {error && <Alert severity="error" sx={{ mb: 2 }} role="alert">{error}</Alert>}

@@ -303,8 +303,8 @@ describe('DocumentPanel · historial documental', () => {
     m.listarAbiertos.mockResolvedValue({ data: [resumen()] });
     m.historialPorCodigo.mockResolvedValue({ data: [resumen({ id: 'rev-5', codigo: 'DOC001', variante: null, estado: 'FINALIZADA', revision: 1, finalizadoEn: '2026-10-29T11:00:00Z', finalizadoPor: 'g2@example.invalid', pdf: { nombre: 'DOC001_REV01.pdf', sha256: 'c'.repeat(64), bytes: 10 }, propio: false })] });
     const { user, onAbrirDocumento } = montar();
-    await user.click(boton('Mis borradores e historial'));
-    const dialogo = await screen.findByRole('dialog', { name: 'Mis borradores e historial documental' });
+    await user.click(boton('Historial de este código'));
+    const dialogo = await screen.findByRole('dialog', { name: 'Mis hojas' });
     await within(dialogo).findByText('DOC009');
     expect(within(dialogo).getByText('Borrador · Borrador')).toBeInTheDocument();
     await within(dialogo).findByText('Finalizada · REV01');
@@ -324,7 +324,7 @@ describe('DocumentPanel · historial documental', () => {
   it('valida el código antes de buscar y no filtra nada en el navegador: lo que el backend no devuelve no se muestra', async () => {
     m.listarAbiertos.mockResolvedValue({ data: [] });
     const { user } = montar({ codigo: null });
-    await user.click(boton('Mis borradores e historial'));
+    await user.click(boton('Historial de este código'));
     const dialogo = await screen.findByRole('dialog');
     await within(dialogo).findByText('No tienes borradores ni finalizaciones en curso.');
     await user.type(within(dialogo).getByLabelText('Código DCMX'), '../x');

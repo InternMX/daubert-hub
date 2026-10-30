@@ -56,14 +56,32 @@ Código: `apps/api/src/manufacturing-documents/` (módulo separado de `manufactu
 3. Verificar en TEST con el smoke de la migración y una prueba funcional acordada.
 4. Encender el panel en el build web con `VITE_MANUFACTURING_DOCUMENTS=true` (apagado por defecto; sin esa variable la página de especificación conserva su comportamiento anterior, solo en memoria).
 
-## Frontend (integrado en la página de especificación)
+## Experiencia unificada (una sola herramienta: buscar el código DCMX)
+La página «Hojas de manufactura» es **una sola experiencia** basada en el código DCMX; el gestor documental ya no es un panel aparte. Con `VITE_MANUFACTURING_DOCUMENTS=true`:
+
+1. **Buscar** un código (campo «Código DCMX a buscar», botón «Buscar»). En paralelo se consultan las hojas accesibles (endpoint existente `GET …/documents/history?codigo=`, autenticado y con RLS; no se creó ningún endpoint nuevo) y el producto en BIND. Ninguna de las dos consultas crea ni modifica nada.
+2. **«Hojas de este código»** (`HojasDelCodigo`): producto, y las hojas agrupadas por **variante** (incluida «Sin variante»), cada una con acciones según su estado:
+   - *Borrador propio:* «Continuar editando» (si es ajeno y visible para un revisor o ADMIN: «Abrir», con las operaciones que el servidor permita).
+   - *En finalización:* «Ver» (sin edición).
+   - *Finalizada:* «Ver hoja» (solo lectura), «Descargar PDF» (el almacenado, verificado por el servidor) y «Crear nueva revisión» (solo si es del usuario y no hay otra abierta; el servidor tiene la última palabra).
+   - *Sin hojas accesibles:* se ofrece «Preparar una hoja nueva» con los datos de BIND. El texto aclara que las hojas de otras cuentas que no corresponde ver no aparecen; la respuesta de conflicto del backend (`DOCUMENT_EXISTS`) sigue siendo genérica.
+   - Si BIND no responde, las hojas guardadas se abren igualmente; solo queda deshabilitado «Preparar una hoja nueva».
+3. **Formulario de edición** (el existente). Las funciones del antiguo panel se reparten dentro del mismo formulario, sin cambiar la lógica de confirmaciones ni de validación:
+   - *Barra de estado y acciones* (arriba del formulario): estado/revisión/versión, «Guardar borrador/Guardar cambios», «Finalizar hoja», «Descartar borrador», «Descargar PDF finalizado», «Crear nueva revisión» y «Historial de este código».
+   - *«Responsables y revisión»* (sección del formulario): «Elaboró», «Autorizó», revisor y «Registrar mi revisión». Estas acciones quedan fuera de la zona de solo lectura para que un revisor pueda actuar sobre un borrador ajeno.
+4. **«Mis hojas»** (botón junto al buscador): borradores accesibles, hojas finalizadas e historial por código, para abrir un documento sin recordar su código (reutiliza el diálogo documental).
+5. **«Novedades del catálogo de BIND»** se conserva como opción secundaria: «Preparar hoja» entra en el mismo flujo de búsqueda.
+
+Reglas: ningún documento se crea por consultar BIND ni por buscar; solo «Guardar borrador» crea; una revisión finalizada nunca se sobrescribe (se crea una nueva); mientras un documento está en finalización o el servidor no permite editar, el formulario queda en solo lectura. Componentes: `HojasDelCodigo.tsx` (lista y «Mis hojas»), `DocumentPanel.tsx` (`DocumentoProvider` con el estado, `BarraDocumento`, `ResponsablesDocumento`), `DocumentHistoryDialog.tsx` (diálogo «Mis hojas»). Pruebas de aceptación: `ManufacturingDocuments.integration.test.tsx`.
+
+## Frontend: apertura de documentos y detalles técnicos
 Archivos: `services/manufacturingDocuments.ts` (cliente HTTP y errores), `manufacturing/documentSpec.ts` (empaquetar el formulario y reabrir un guardado), `DocumentPanel.tsx`, `DocumentHistoryDialog.tsx`, `documentLabels.ts`, `downloadFile.ts`; la página los usa solo cuando `DOCUMENTOS_ACTIVOS` (o la prop `documentos`) es verdadero.
 
 - **Abrir un documento NO consulta BIND.** El formulario se reconstruye con el motor de especificaciones (`buildInitialForm`) sobre una copia de BIND tomada del propio documento (`especificacion.bind`: Code, Title, Description, Weight, CreationDate) y encima se colocan los valores **guardados**, que mandan: familia, dimensiones, unidades, calibre literal, composición, cantidades, peso y cálculos COEX no se recalculan ni se sobrescriben con sugerencias. Cada campo recupera su procedencia guardada (BIND, sugerido, calculado, usuario). Un color personalizado se recupera del propio documento (nombre y HEX), **sin depender de `localStorage`**. Abrir no llama a ningún endpoint de escritura: la versión documental solo cambia cuando el usuario guarda, y «Elaboró» no se confirma automáticamente.
 - **Consulta opcional a BIND:** el botón «Consultar BIND ahora (solo lectura)» consulta los datos actuales y muestra Title/Weight y si difieren de la copia guardada. No modifica el formulario ni el borrador, no marca la hoja como modificada y, si BIND no responde, solo muestra el error. Un **comparador completo** (diferencias campo por campo y aplicación selectiva) queda como **pendiente**.
 - **Solo lectura:** una revisión finalizada, un documento en finalización o un borrador que esta cuenta no puede editar (según los `permisos` del servidor) se abre con el formulario deshabilitado (`fieldset disabled`); el servidor sigue siendo la autoridad.
 - **Sin reinterpretación al abrir:** como no hay interpretación de BIND, las incidencias que dependen de ella (contradicciones título↔código) no se recalculan en el navegador al abrir sin BIND; los reconocimientos guardados (`{id, huella}`) se conservan tal cual y nunca se reconocen contradicciones nuevas automáticamente. El servidor recalcula la huella al revisar y al finalizar.
-- **Respuestas tardías:** solo la solicitud más reciente del panel puede reemplazar el documento abierto; la lectura de BIND anterior se aborta al abrir otro documento.
+- **Respuestas tardías:** solo la solicitud más reciente puede reemplazar el documento abierto; la lectura de BIND anterior se aborta al abrir otro documento.
 - **Permisos:** los botones se habilitan según los `permisos` que devuelve el backend, pero ocultar o deshabilitar un control **no es autorización**: la base y el servicio vuelven a validar cada acción.
 - **Errores:** conflicto de versión (409) ofrece recargar la versión vigente; los requisitos de finalización se listan; ningún cuerpo crudo de respuesta se muestra.
 
