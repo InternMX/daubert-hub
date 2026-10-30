@@ -55,12 +55,12 @@ async function conDocumento(doc: DocumentoVista, props: Partial<Parameters<typeo
 const boton = (nombre: string | RegExp) => screen.getByRole('button', { name: nombre });
 
 describe('DocumentPanel · guardar y recuperar', () => {
-  it('sin guardar: marca de PRUEBA, «Sin guardar», y el botón se activa solo con familia elegida', async () => {
+  it('sin guardar: marca de PRUEBA, «Hoja preparada · sin guardar», y el botón se activa solo con familia elegida', async () => {
     const { rerender, onAbrirDocumento } = montar({ carga: null });
     expect(screen.getByText('PRUEBA · NO VÁLIDO PARA PRODUCCIÓN')).toBeInTheDocument();
-    expect(screen.getByText('Sin guardar')).toBeInTheDocument();
+    expect(screen.getByText('Hoja preparada · sin guardar')).toBeInTheDocument();
     expect(boton('Guardar borrador')).toBeDisabled();
-    expect(screen.getByText('Elige la familia para poder guardar.')).toBeInTheDocument();
+    expect(screen.getByText(/Elige la familia para poder guardar/)).toBeInTheDocument();
     rerender(<DocumentPanel codigo="DOC001" carga={CARGA} onAbrirDocumento={onAbrirDocumento} />);
     expect(boton('Guardar borrador')).toBeEnabled();
   });
@@ -84,7 +84,7 @@ describe('DocumentPanel · guardar y recuperar', () => {
     const alerta = await screen.findByRole('alert');
     expect(alerta).toHaveTextContent('Ya existe un documento con ese código y variante');
     expect(alerta).not.toHaveTextContent('interno');
-    expect(screen.getByText('Sin guardar')).toBeInTheDocument();
+    expect(screen.getByText('Hoja preparada · sin guardar')).toBeInTheDocument();
   });
 
   it('si el gestor aún no está activo en la API lo dice con claridad', async () => {
@@ -126,7 +126,7 @@ describe('DocumentPanel · guardar y recuperar', () => {
     const { rerender, onAbrirDocumento } = await conDocumento(vista());
     expect(screen.getByText('DOC001 · Borrador · v1')).toBeInTheDocument();
     rerender(<DocumentPanel codigo="OTRO77" carga={CARGA} onAbrirDocumento={onAbrirDocumento} />);
-    await waitFor(() => expect(screen.getByText('Sin guardar')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Hoja preparada · sin guardar')).toBeInTheDocument());
   });
 });
 

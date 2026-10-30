@@ -45,7 +45,8 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   const [conflicto, setConflicto] = useState(false);
   const montado = useRef(true);
   const solicitud = useRef(0);
-  useEffect(() => () => { montado.current = false; }, []);
+  // StrictMode (desarrollo) monta, desmonta y vuelve a montar: la marca debe volver a `true` al re-montar o las respuestas se descartan y el indicador de carga queda activo.
+  useEffect(() => { montado.current = true; return () => { montado.current = false; }; }, []);
 
   // Un documento abierto pertenece a su código: si el usuario busca otro producto, el panel vuelve a «sin guardar».
   useEffect(() => { if (doc && codigo !== null && doc.codigo.toLowerCase() !== codigo.toLowerCase()) { setDoc(null); setAviso(null); setMotivos([]); } }, [codigo, doc]);
@@ -139,48 +140,57 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   );
 }
 
-/** Estado de la hoja y acciones contextuales según ese estado. */
+/**
+ * Encabezado del formulario (sin tarjeta propia): estado de la hoja y acciones contextuales. Distingue una hoja PREPARADA pero no guardada (solo vive en pantalla) de un borrador
+ * PERSISTIDO en PostgreSQL (TEST), y ofrece solo las acciones que corresponden a ese estado.
+ */
 export function BarraDocumento() {
   const d = useDocumento();
   const { doc } = d;
+  const nombre = doc ? `${doc.codigo}${doc.variante ? ` · ${doc.variante}` : ''} · ${etiquetaRevision(doc)} · v${doc.version}` : '';
   return (
-    <Paper component="section" aria-labelledby="gestor-doc-titulo" sx={{ p: 2, mt: 2 }} data-testid="document-panel">
-      <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mb: 1 }}>
-        <Typography id="gestor-doc-titulo" variant="h6" component="h2">Estado de la hoja</Typography>
-        <Chip size="small" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" />
-        {doc ? <Chip size="small" color={doc.estado === 'FINALIZADA' ? 'success' : 'default'} label={`${doc.codigo}${doc.variante ? ` · ${doc.variante}` : ''} · ${etiquetaRevision(doc)} · v${doc.version}`} /> : <Chip size="small" variant="outlined" label="Sin guardar" />}
+    <Box component="section" aria-label="Estado y acciones de la hoja" data-testid="document-panel" sx={{ mt: 2, pb: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+        {!doc && <Chip size="small" color="warning" variant="outlined" label="Hoja preparada · sin guardar" data-testid="estado-sin-guardar" />}
+        {doc && <Chip size="small" color={doc.estado === 'FINALIZADA' ? 'success' : 'default'} label={nombre} data-testid="estado-guardado" />}
+        {doc && doc.estado !== 'DESCARTADA' && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
         {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (manual de TEST)" />}
         {d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
+        <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" />
         <Box sx={{ flex: 1 }} />
         <Button size="small" startIcon={<HistoryRoundedIcon />} onClick={() => d.abrirHistorial(true)}>Historial de este código</Button>
       </Stack>
 
-      {d.aviso && <Alert severity={d.aviso.tipo} sx={{ mb: 1 }} role={d.aviso.tipo === 'error' ? 'alert' : 'status'}>{d.aviso.texto}</Alert>}
-      {d.conflicto && <Button size="small" sx={{ mb: 1 }} onClick={() => void d.recargar()} disabled={d.ocupado}>Recargar la versión vigente (reemplaza lo que ves en pantalla)</Button>}
-      {d.motivos.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 1 }} aria-label="Requisitos pendientes">
-          <b>Requisitos pendientes:</b>
-          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{d.motivos.map((m) => <li key={m.codigo}>{m.mensaje}{m.detalle && m.detalle.length > 0 ? ` (${m.detalle.join('; ')})` : ''}</li>)}</ul>
-        </Alert>
-      )}
-
-      {/* ------------------------------------------------------------- guardar / actualizar / finalizar (borrador) */}
+      {/* ------------------------------------------------------------- acciones según el estado */}
       {(!doc || doc.estado === 'BORRADOR') && (
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} useFlexGap flexWrap="wrap" sx={{ mb: 1 }}>
-          {!doc && <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} helperText="Ej.: Doblada, Extendida. Un código puede tener varias hojas." sx={{ minWidth: 220 }} />}
+        <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+          {!doc && <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 220 }} slotProps={{ htmlInput: { maxLength: 40 } }} />}
           <Button variant="contained" onClick={() => void d.guardar()} disabled={d.ocupado || !d.carga || !d.codigo || (Boolean(doc) && !d.sucio) || (doc ? !doc.permisos.editar : false)}>
-            {d.ocupado ? <CircularProgress size={18} /> : doc ? 'Guardar cambios' : 'Guardar borrador'}
+            {d.ocupado ? <CircularProgress size={18} color="inherit" /> : doc ? 'Guardar cambios' : 'Guardar borrador'}
           </Button>
           {doc?.estado === 'BORRADOR' && <Button variant="contained" color="success" disabled={d.ocupado || d.sucio || !doc.permisos.finalizar} onClick={() => d.setConfirmando('finalizar')} aria-describedby="finalizar-ayuda">Finalizar hoja</Button>}
           {doc?.estado === 'BORRADOR' && <Button color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>}
-          {!d.carga && <Typography variant="body2" color="text.secondary">Elige la familia para poder guardar.</Typography>}
-          {doc && !doc.permisos.editar && <Typography variant="body2" color="text.secondary">Solo el creador o un administrador pueden modificar este borrador.</Typography>}
         </Stack>
       )}
-      {doc?.estado === 'BORRADOR' && (
-        <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block">
-          {d.sucio ? 'Guarda los cambios antes de finalizar: el PDF se genera desde la copia guardada. ' : ''}Requiere «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas. Genera el PDF de PRUEBA y fija la revisión.
+      {!doc && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+          {d.carga ? 'Esta hoja todavía no existe en la base de datos: se crea al pulsar «Guardar borrador». Variante: ej. Doblada, Extendida (un código puede tener varias hojas).' : 'Elige la familia para poder guardar. Esta hoja todavía no existe en la base de datos.'}
         </Typography>
+      )}
+      {doc?.estado === 'BORRADOR' && (
+        <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+          {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
+          {d.sucio ? 'Guarda los cambios antes de finalizar: el PDF se genera desde la copia guardada. ' : ''}Para finalizar: «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas.
+        </Typography>
+      )}
+
+      {d.aviso && <Alert severity={d.aviso.tipo} sx={{ mt: 1 }} role={d.aviso.tipo === 'error' ? 'alert' : 'status'}>{d.aviso.texto}</Alert>}
+      {d.conflicto && <Button size="small" sx={{ mt: 1 }} onClick={() => void d.recargar()} disabled={d.ocupado}>Recargar la versión vigente (reemplaza lo que ves en pantalla)</Button>}
+      {d.motivos.length > 0 && (
+        <Alert severity="warning" sx={{ mt: 1 }} aria-label="Requisitos pendientes">
+          <b>Requisitos pendientes:</b>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{d.motivos.map((m) => <li key={m.codigo}>{m.mensaje}{m.detalle && m.detalle.length > 0 ? ` (${m.detalle.join('; ')})` : ''}</li>)}</ul>
+        </Alert>
       )}
 
       {doc?.estado === 'FINALIZANDO' && (
@@ -193,7 +203,6 @@ export function BarraDocumento() {
         </Alert>
       )}
 
-      {/* ------------------------------------------------------------- versión finalizada */}
       {doc?.estado === 'FINALIZADA' && (
         <Stack spacing={1} sx={{ mt: 1 }}>
           <Alert severity="success">
@@ -201,15 +210,14 @@ export function BarraDocumento() {
           </Alert>
           {doc.pdf && <Typography variant="caption" color="text.secondary">Archivo: {doc.pdf.nombre} · SHA-256 {doc.pdf.sha256.slice(0, 16)}…</Typography>}
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Button variant="contained" startIcon={d.ocupado ? <CircularProgress size={16} /> : <PictureAsPdfRoundedIcon />} onClick={() => void d.descargar()} disabled={d.ocupado || !doc.permisos.descargarPdf}>Descargar PDF finalizado</Button>
+            <Button variant="contained" startIcon={d.ocupado ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdfRoundedIcon />} onClick={() => void d.descargar()} disabled={d.ocupado || !doc.permisos.descargarPdf}>Descargar PDF finalizado</Button>
             <Button variant="outlined" onClick={() => void d.nuevaRevisionDe(doc.documentoId)} disabled={d.ocupado || !doc.permisos.crearRevisionNueva}>Crear nueva revisión</Button>
           </Stack>
           {!doc.permisos.crearRevisionNueva && <Typography variant="caption" color="text.secondary">Solo el creador del documento o un administrador pueden crear una nueva revisión.</Typography>}
         </Stack>
       )}
       {doc?.estado === 'DESCARTADA' && <Alert severity="info" sx={{ mt: 1 }}>Este borrador fue descartado.</Alert>}
-      {doc === null && !d.carga && <Typography variant="body2" color="text.secondary">Prepara una hoja nueva o abre una existente para guardarla.</Typography>}
-    </Paper>
+    </Box>
   );
 }
 

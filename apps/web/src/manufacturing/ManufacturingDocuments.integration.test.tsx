@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BindProductApiError, lookupBindProductByCode } from '../services/bindProducts';
@@ -86,15 +87,23 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     pagina(true);
     const lista = await buscar(user);
     expect(m.historialPorCodigo).toHaveBeenCalledWith('SCHFPMG001', expect.anything());
-    expect(await within(lista).findByText(/No hay hojas guardadas accesibles/)).toBeInTheDocument();
+    expect(await within(lista).findByText(/Sin hojas guardadas accesibles/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Ancho')).not.toBeInTheDocument();                // todavía no hay formulario
     expect(m.crearBorrador).not.toHaveBeenCalled();                                  // consultar BIND no crea documentos
     await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
     await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
     expect(m.crearBorrador).not.toHaveBeenCalled();
+    // Una hoja PREPARADA (solo en pantalla) se distingue de un borrador guardado en PostgreSQL; el producto se muestra compacto y sin una tarjeta «Estado de la hoja».
+    expect(screen.getByTestId('estado-sin-guardar')).toHaveTextContent('Hoja preparada · sin guardar');
+    expect(screen.queryByText('Guardada en PostgreSQL (TEST)')).not.toBeInTheDocument();
+    expect(screen.getByTestId('bind-codigo')).toHaveTextContent('SCHFPMG001');
+    expect(screen.getByTestId('bind-descripcion')).not.toBeEmptyDOMElement();
+    expect(screen.queryByRole('heading', { name: 'Estado de la hoja' })).not.toBeInTheDocument();
     m.crearBorrador.mockResolvedValue(guardado());
     await user.click(await screen.findByRole('button', { name: 'Guardar borrador' }));
     await screen.findByText('Borrador guardado.');
+    expect(screen.getByText('Guardada en PostgreSQL (TEST)')).toBeInTheDocument();
+    expect(screen.queryByTestId('estado-sin-guardar')).not.toBeInTheDocument();
     const enviado = m.crearBorrador.mock.calls[0]![0];
     expect(enviado).toMatchObject({ codigo: 'SCHFPMG001', familia: 'BOLSA_PLANA_1', bind: { Code: 'SCHFPMG001' } });
     expect(Object.keys(enviado)).not.toEqual(expect.arrayContaining(['usuario', 'estado', 'revision']));
@@ -199,6 +208,8 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(m.crearRevisionNueva).toHaveBeenCalledWith('doc-1');
     expect((await ancho()).value).toBe('77');
     expect(screen.getByTestId('document-panel')).toHaveTextContent(/Borrador/);
+    // Con el formulario abierto la sección de hojas se pliega sola; se vuelve a desplegar para comprobar que REV01 se conserva.
+    await user.click(within(screen.getByTestId('hojas-del-codigo')).getByRole('button', { name: /Mostrar hojas de este código/ }));
     await waitFor(() => expect(within(screen.getByTestId('hojas-del-codigo')).getByRole('button', { name: /Ver hoja SCHFPMG001 REV01/ })).toBeInTheDocument());
   });
 
@@ -284,5 +295,18 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await new Promise((r) => setTimeout(r, 50));
     expect((screen.getByLabelText('Ancho') as HTMLInputElement).value).toBe('22');
     expect(screen.getByTestId('document-panel')).toHaveTextContent('Doblada');
+  });
+  it('en desarrollo (React StrictMode) las acciones del documento terminan: el indicador de carga no queda activo y «Preparar una hoja nueva» sigue disponible', async () => {
+    const user = userEvent.setup();
+    render(<StrictMode><MemoryRouter><ManufacturingSpecificationPage documentos /></MemoryRouter></StrictMode>);
+    const doc = guardado();
+    m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+    m.obtenerDocumento.mockResolvedValue(doc);
+    const lista = await buscar(user);
+    expect(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' })).toBeEnabled();
+    await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+    expect((await ancho()).value).toBe('77');                                           // la respuesta se aplicó (no se ignoró)
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();       // el botón no quedó mostrando el indicador de carga
   });
 });

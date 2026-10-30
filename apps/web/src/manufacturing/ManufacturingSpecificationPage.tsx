@@ -1,6 +1,7 @@
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
@@ -184,26 +185,20 @@ function BindProductPanel({ lookup, guardado, actual, onConsultar }: BindPanelPr
     ['Fecha de alta en BIND', formatDate(producto.CreationDate)]
   ];
   return (
-    <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Producto en BIND">
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>{guardado ? 'Producto en BIND (copia guardada con el documento)' : 'Producto en BIND'}</Typography>
-        <Chip size="small" label="Solo lectura" />
-        <Chip size="small" color="warning" label="Especificación no confirmada" />
+    <Paper component="section" variant="outlined" sx={{ p: { xs: 1.5, sm: 2 }, mt: 2 }} aria-label="Producto en BIND">
+      <Stack direction="row" spacing={1.5} alignItems="baseline" flexWrap="wrap" useFlexGap>
+        <Typography variant="h2" sx={{ fontSize: '1.25rem', fontWeight: 700 }} data-testid="bind-codigo">{producto.Code}</Typography>
+        <Typography variant="body1" sx={{ overflowWrap: 'anywhere' }} data-testid="bind-descripcion">{producto.Title}</Typography>
+        <Chip size="small" label={guardado ? 'Copia de BIND guardada con la hoja' : 'Solo lectura'} />
+        <Chip size="small" color="warning" variant="outlined" label="Especificación no confirmada" />
       </Stack>
-      <Box component="dl" sx={{ m: 0, mt: 1.5, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(180px, 30%) 1fr' }, columnGap: 2, rowGap: 0.75 }}>
-        {rows.map(([label, value]) => (
-          <Box key={label} sx={{ display: 'contents' }}>
-            <Typography component="dt" variant="body2" color="text.secondary">{label}</Typography>
-            <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere' }}>{value}</Typography>
-          </Box>
-        ))}
-      </Box>
-      <MaterialRow lookup={lookup} />
       {guardado && (
-        <Box sx={{ mt: 1.5 }} data-testid="bind-guardado">
-          <Typography variant="body2" color="text.secondary">Estos datos son los que BIND tenía al guardar; el documento se abrió sin consultar BIND y ninguna consulta posterior los reemplaza.</Typography>
-          <Button size="small" variant="outlined" sx={{ mt: 1 }} onClick={onConsultar} disabled={actual.estado === 'cargando'}>Consultar BIND ahora (solo lectura)</Button>
-          {actual.estado === 'cargando' && <Typography variant="body2" sx={{ mt: 1 }}>Consultando BIND…</Typography>}
+        <Box sx={{ mt: 1 }} data-testid="bind-guardado">
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Typography variant="caption" color="text.secondary">La hoja se abrió sin consultar BIND; ninguna consulta posterior reemplaza lo guardado.</Typography>
+            <Button size="small" onClick={onConsultar} disabled={actual.estado === 'cargando'}>Consultar BIND ahora (solo lectura)</Button>
+          </Stack>
+          {actual.estado === 'cargando' && <Typography variant="body2" sx={{ mt: 0.5 }}>Consultando BIND…</Typography>}
           {actual.estado === 'error' && <Alert severity="warning" sx={{ mt: 1 }}>{actual.mensaje} El documento abierto no se ve afectado.</Alert>}
           {actual.estado === 'listo' && (
             <Alert severity="info" sx={{ mt: 1 }} data-testid="bind-actual">
@@ -214,7 +209,23 @@ function BindProductPanel({ lookup, guardado, actual, onConsultar }: BindPanelPr
         </Box>
       )}
       <IncidenciasDeSeccion seccion="bind" />
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>La fecha de alta es la del producto en BIND, no la fecha de emisión de la hoja. Estos datos no se modifican desde esta pantalla.</Typography>
+      <Accordion disableGutters elevation={0} sx={{ mt: 1, '&:before': { display: 'none' }, bgcolor: 'transparent' }}>
+        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} sx={{ px: 0, minHeight: 36, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+          <Typography variant="body2" color="text.secondary">Detalles del producto en BIND</Typography>
+        </AccordionSummary>
+        <AccordionDetails sx={{ px: 0, pt: 0 }}>
+          <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(180px, 30%) 1fr' }, columnGap: 2, rowGap: 0.75 }}>
+            {rows.map(([label, value]) => (
+              <Box key={label} sx={{ display: 'contents' }}>
+                <Typography component="dt" variant="body2" color="text.secondary">{label}</Typography>
+                <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere' }}>{value}</Typography>
+              </Box>
+            ))}
+          </Box>
+          <MaterialRow lookup={lookup} />
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>La fecha de alta es la del producto en BIND, no la fecha de emisión de la hoja. Estos datos no se modifican desde esta pantalla.</Typography>
+        </AccordionDetails>
+      </Accordion>
     </Paper>
   );
 }
@@ -480,10 +491,9 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
           codigo={busqueda} hojas={hojas} estado={hojasEstado} error={hojasError}
           producto={bindBusqueda ? { Code: bindBusqueda.producto.Code, Title: bindBusqueda.producto.Title } : null}
           bindError={status === 'error' && errorKind && errorKind !== 'INVALID_CODE' ? errorMessages[errorKind] : null}
-          puedePreparar={Boolean(bindBusqueda) && configStatus === 'ready'} onPreparar={prepararNueva}
+          puedePreparar={Boolean(bindBusqueda) && configStatus === 'ready'} formAbierto={Boolean(form)} onPreparar={prepararNueva}
         />
       )}
-      {documentos && form && <BarraDocumento />}
 
       {status === 'loading' && <Alert severity="info" sx={{ mt: 2 }}>Consultando BIND…</Alert>}
       {status === 'error' && errorKind && !(documentos && busqueda) && <Alert severity={errorKind === 'NOT_FOUND' ? 'info' : 'error'} sx={{ mt: 2 }}>{errorMessages[errorKind]}</Alert>}
@@ -493,6 +503,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         <IncidenciasProvider value={ctx}>
         {/* Una revisión finalizada (o un borrador que esta cuenta no puede editar) se abre en solo lectura: el fieldset deshabilita todos los controles; el servidor sigue siendo la autoridad. */}
         <Box sx={{ minWidth: 0, order: { xs: 2, lg: 1 } }}>
+        {documentos && <BarraDocumento />}
         <Box component="fieldset" disabled={soloLectura} data-testid="formulario-documento" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
           <BindProductPanel lookup={lookup} guardado={desdeGuardado} actual={bindActual} onConsultar={() => { void consultarBindActual(); }} />
           {live && <ResumenIncidencias lista={todas} ctx={ctx} />}
