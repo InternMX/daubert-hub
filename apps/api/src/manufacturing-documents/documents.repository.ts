@@ -94,6 +94,16 @@ export class DocumentsRepository {
     return r.rows[0] ?? null;
   }
 
+  /** Documento propio (o de cualquiera si es ADMIN) cuyas revisiones fueron TODAS descartadas: puede abrirse un borrador nuevo en él sin duplicar el documento. */
+  async documentoReanudable(c: PoolClient, codigo: string, variante: string | null): Promise<{ documento_id: string } | null> {
+    const r = await c.query<{ documento_id: string }>(
+      `SELECT d.documento_id::text FROM manufactura.documentos d
+        WHERE d.codigo_clave = lower($1) AND d.variante_clave = lower(coalesce($2::text, ''))
+          AND (d.creado_por_usuario_id = manufactura.fn_actor_id() OR manufactura.fn_actor_es_admin())
+          AND NOT EXISTS (SELECT 1 FROM manufactura.revisiones r WHERE r.documento_id = d.documento_id AND r.estado <> 'DESCARTADA')`, [codigo, variante]);
+    return r.rows[0] ?? null;
+  }
+
   async crearDocumento(c: PoolClient, codigo: string, variante: string | null): Promise<{ documento_id: string; public_id: string }> {
     const r = await c.query<{ documento_id: string; public_id: string }>(
       'INSERT INTO manufactura.documentos (codigo_dcmx, variante) VALUES ($1, $2) RETURNING documento_id::text, public_id::text', [codigo, variante]);

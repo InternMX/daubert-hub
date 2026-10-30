@@ -71,8 +71,11 @@ export class DocumentsService {
         const especificacion = construirEspecificacion(this.conClienteImpreso(entrada, cliente), dto.codigo);
         // Respuesta ÚNICA: sea cual sea el motivo del choque (versión finalizada, borrador propio o borrador de otra cuenta que esta no puede ver), el cuerpo es idéntico y sin
         // identificadores; no revela quién ni qué hay detrás. Para continuar un borrador propio se usa `GET open` / `GET history?codigo=`, que la base filtra por permisos.
-        if (await this.repo.buscarDocumento(c, dto.codigo, variante)) throw documentoYaExiste();
-        const documento = await this.repo.crearDocumento(c, dto.codigo, variante);
+        const existente = await this.repo.buscarDocumento(c, dto.codigo, variante);
+        // Único caso en que un documento existente admite un borrador nuevo: es del propio creador (o ADMIN) y todas sus revisiones fueron descartadas. En cualquier otro, respuesta uniforme.
+        const reanudable = existente ? await this.repo.documentoReanudable(c, dto.codigo, variante) : null;
+        if (existente && !reanudable) throw documentoYaExiste();
+        const documento = reanudable ?? await this.repo.crearDocumento(c, dto.codigo, variante);
         // «Elaboró» se SUGIERE desde la cuenta autenticada, queda editable y sin confirmar: debe confirmarse expresamente antes de finalizar.
         const id = await this.repo.crearBorrador(c, documento.documento_id, { familia: dto.familia, especificacion, elaboroNombre: actor.displayName, elaboroConfirmado: false, autorizoNombre: null, ...cliente, revisorUsuarioId: null });
         return this.vistaDe(c, actor, id);

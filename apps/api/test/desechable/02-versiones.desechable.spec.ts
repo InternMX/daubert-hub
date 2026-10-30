@@ -85,6 +85,20 @@ describe('bloque 2 · actualizar con control de versiones', () => {
     expect(d.estado).toBe('DESCARTADA');
     expect((await falla(actualizar(2, v1.id, { version: d.version, datos: v1.especificacion.datos }))).code).toBe('NOT_EDITABLE');
   });
+
+  it('tras descartar el único borrador, su creador (o un ADMIN) puede abrir otro en el MISMO documento; otra cuenta sigue recibiendo el 409 uniforme', async () => {
+    const codigo = codigoUnico();
+    const v1 = await crear(2, codigo);
+    await service.descartarBorrador(actor(2), v1.id, 1);
+    expect((await falla(crear(3, codigo))).code).toBe('DOCUMENT_EXISTS');
+    const otro = await crear(2, codigo);
+    expect(otro.estado).toBe('BORRADOR');
+    expect(otro.documentoId).toBe(v1.documentoId);
+    expect(otro.id).not.toBe(v1.id);
+    expect((await falla(crear(2, codigo))).code).toBe('DOCUMENT_EXISTS');   // ya hay un borrador abierto
+    const historial = await service.historial(actor(2), codigo);
+    expect((historial.data as Vista[]).map((r) => r.estado)).toEqual(['BORRADOR']);
+  });
 });
 
 describe('bloque 3 · «Elaboró»: sugerido desde la cuenta autenticada, editable, confirmado expresamente', () => {
