@@ -72,6 +72,16 @@ La página «Hojas de manufactura» es **una sola experiencia** basada en el có
 4. **«Mis hojas»** (botón junto al buscador): borradores accesibles, hojas finalizadas e historial por código, para abrir un documento sin recordar su código (reutiliza el diálogo documental).
 5. **«Novedades del catálogo de BIND»** se conserva como opción secundaria: «Preparar hoja» entra en el mismo flujo de búsqueda.
 
+### Recorrido y ubicación de las acciones
+**Buscar código → Completar instrucciones → Revisar la vista previa → Finalizar y generar PDF.** El guardado y la validación técnica son automáticos.
+
+- **Encabezado** (solo informa): estado documental, indicador de guardado automático e «Historial de este código»; debajo, código y descripción del producto. Sin acciones de finalizar ni descartar.
+- **Cuerpo:** la configuración técnica (el formulario y su vista previa), con las advertencias junto a sus campos.
+- **«Responsables y revisión»:** «Elaboró» (confirmación explícita; el backend la exige), «Autorizó» (opcional) y la **revisión humana opcional** en una sección plegable («Revisión del borrador (opcional)»): «Registrar mi revisión» (trazable, ligada a la huella de la especificación; pierde vigencia si cambia algo técnico) y «Confirmar revisión del borrador» (revisión de los datos en pantalla, p. ej. pesos por capa; no queda registrada). Ninguna se confirma sola y ninguna es requisito para finalizar.
+- **«Finalizar hoja»** (sección final, única ubicación del botón): resumen compacto (Todo guardado / Guardando…, Datos completos / Faltan datos obligatorios / Hay observaciones por revisar / Comprobando datos…, contradicciones por reconocer, «Elaboró» confirmado) y **«Finalizar y generar PDF»**. Si hay un bloqueo conocido (datos obligatorios, cliente, contradicciones sin reconocer, «Elaboró» sin confirmar) se explica qué falta con «Ir al campo» y no se abre la confirmación; si no, se confirma y la finalización **guarda antes lo pendiente y el servidor vuelve a validar la versión guardada** (datos obligatorios, contradicciones reconocidas, «Elaboró», PDF); si el guardado falla o el servidor rechaza, no se finaliza y el borrador sigue intacto. «Descartar borrador» es secundario y pide confirmación.
+
+**Validación automática.** Ya no existe el botón «Validar especificación» en esta pantalla: la comprobación local es inmediata y la del servidor (vista previa) se solicita con retardo al cambiar los datos relevantes; solo vale la respuesta que corresponde a los datos actuales (una respuesta tardía se descarta) y mientras no llega se muestra «Comprobando datos…», nunca «Datos completos». No genera documentos, no modifica el borrador, no confirma revisiones ni crea PDF. Los faltantes se marcan en su campo al intentar finalizar o al navegar a ellos. (Sin el gestor documental, `VITE_MANUFACTURING_DOCUMENTS` apagado, la pantalla clásica conserva su tarjeta de validación.)
+
 ### Guardado automático de borradores
 No hay botón «Guardar»: la hoja se guarda sola y la pantalla lo indica con discreción.
 

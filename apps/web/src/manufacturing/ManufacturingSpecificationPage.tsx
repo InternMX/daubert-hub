@@ -11,10 +11,11 @@ import { listManufacturingFamilies, type FamilyConfig } from '../services/manufa
 import { DocumentApiError, documentErrorText, historialPorCodigo, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
+import { localizar } from './incidenciasNavegacion';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
 import { abrirSinBind, construirCarga } from './documentSpec';
-import { BarraDocumento, DocumentoProvider, ResponsablesDocumento } from './DocumentPanel';
+import { BarraDocumento, DocumentoProvider, FinalizarHojaDocumento, ResponsablesDocumento, type BloqueoFinal, type EstadoDatos } from './DocumentPanel';
 import { BotonMisHojas, HojasDelCodigo } from './HojasDelCodigo';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
@@ -258,6 +259,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const bindController = useRef<AbortController | null>(null);
   const [form, setForm] = useState<SpecificationForm | null>(null);
   const [validation, setValidation] = useState<SpecificationValidation | null>(null);
+  const [intentoFinal, setIntentoFinal] = useState(false);   // gestor documental: el usuario intentó finalizar y había bloqueos
   const [assessment, setAssessment] = useState<{ key: string; result: SheetPreviewResponse } | null>(null);
   const [reviewedKey, setReviewedKey] = useState('');
   const [reviewWeights, setReviewWeights] = useState(false);
@@ -326,7 +328,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   function abrirDocumento(doc: DocumentoVista): void {
     controller.current?.abort();            // una búsqueda a BIND en curso no debe pisar el documento abierto
     const abierto = abrirSinBind(doc, configs);
-    setValidation(null); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
+    setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setCode(doc.codigo); setErrorKind(null);
     if (documentos && busquedaRef.current?.toLowerCase() !== doc.codigo.toLowerCase()) { busquedaRef.current = doc.codigo; setBusqueda(doc.codigo); setBindBusqueda(null); void recargarHojas(doc.codigo); }
     setLookup(abierto.lookup); setForm(abierto.form); setReconocidas(abierto.reconocidas); setDesdeGuardado(true); setStatus('ready');
@@ -365,7 +367,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   function prepararNueva(): void {
     if (!bindBusqueda) return;
     controller.current?.abort();
-    setValidation(null); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
+    setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false);
     setLookup(bindBusqueda); setForm(buildInitialForm(bindBusqueda, configs)); setStatus('ready');
   }
@@ -438,8 +440,19 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const deshacer = (i: Incidencia): void => { setEdiciones((n) => n + 1); setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id))); };
   const revision: 'vigente' | 'revisando' | 'no-disponible' = !form?.family || currentAssessment ? 'vigente' : fallo === assessmentKey ? 'no-disponible' : 'revisando';
   const revelar = (id: string): void => setReveladas((r) => (r.has(id) ? r : new Set(r).add(id)));
-  const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: validation !== null, reveladas, revelar, revision };
+  const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: intentoFinal || validation !== null, reveladas, revelar, revision };
   const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO' && sinReconocer.length === 0;
+  // Validación automática (modo gestor documental): ninguna acción manual. Mientras no haya respuesta VIGENTE del servidor para estos datos no se afirma que estén completos.
+  const faltantesFinal = todas.filter((i) => i.nivel === 'ERROR' || ['FALTANTE', 'FAMILIA_SIN_ELEGIR', 'CLIENTE_SIN_IDENTIFICAR'].includes(i.codigo));
+  const estadoDatos: EstadoDatos = !form || revision === 'revisando' ? 'comprobando'
+    : revision === 'no-disponible' ? 'no-disponible'
+      : faltantesFinal.length > 0 || (currentAssessment !== null && !currentAssessment.completo) ? 'faltan'
+        : sinReconocer.length > 0 || avisosVistaPrevia.length > 0 ? 'observaciones' : 'completos';
+  const bloqueosFinal: BloqueoFinal[] = [
+    ...faltantesFinal.map((i) => ({ clave: i.id, texto: i.resumen ?? i.mensaje, irA: () => localizar(i, ctx) })),
+    ...sinReconocer.map((i) => ({ clave: i.id, texto: `Contradicción por reconocer: ${i.resumen ?? i.mensaje}`, irA: () => localizar(i, ctx) })),
+    ...(faltantesFinal.length === 0 && currentAssessment !== null && !currentAssessment.completo ? [{ clave: 'hoja-incompleta', texto: 'La hoja está incompleta según la comprobación del servidor.' }] : [])
+  ];
   const colorPreset = form?.fields.colorPreset.value ?? '';
   // Un color personalizado guardado se reconoce por sus VALORES (nombre + HEX): si el usuario edita cualquiera de los dos, deja de estar «seleccionado» y vuelve el editor.
   const personalCoincidente: CustomColor | undefined = form && colorPreset === COLOR_OTRO ? personalizados.colores.find((c) => c.id === idDeColor(form.fields.colorNombre.value, form.fields.colorHex.value)) : undefined;
@@ -661,6 +674,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             </SectionCard>
           )}
 
+          {!documentos && (
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Validación">
             {live && (
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }} aria-label="Estado de la especificación">
@@ -689,6 +703,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
               </Stack>
             )}
           </Paper>
+          )}
           <Dialog open={reviewWeights && Boolean(config?.pesosCapasRegla)} onClose={() => setReviewWeights(false)} aria-labelledby="review-layer-weights-title">
             <DialogTitle id="review-layer-weights-title">Revisar reemplazo de pesos por capa</DialogTitle>
             <DialogContent>
@@ -698,7 +713,19 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             <DialogActions><Button onClick={() => setReviewWeights(false)}>Cancelar</Button><Button onClick={() => { update((f) => suggestLayerWeights(f, true)); setReviewWeights(false); }}>Reemplazar pesos por sugerencias actuales</Button></DialogActions>
           </Dialog>
         </Box>
-        {documentos && <ResponsablesDocumento />}
+        {documentos && (
+          <ResponsablesDocumento revisionDatos={(
+            <Box sx={{ mt: 2 }}>
+              <Button variant="outlined" size="small" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO' || sinReconocer.length > 0}
+                onClick={() => { const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>Confirmar revisión del borrador</Button>
+              {reviewed && <Chip size="small" color="success" variant="outlined" sx={{ ml: 1 }} label="Revisión de datos confirmada en pantalla" />}
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                Confirma la revisión de los datos que ves (por ejemplo, los pesos por capa). No queda registrada, no es la validación del sistema ni un requisito para finalizar; la revisión trazable es «Registrar mi revisión».
+              </Typography>
+            </Box>
+          )} />
+        )}
+        {documentos && <FinalizarHojaDocumento datos={estadoDatos} bloqueos={bloqueosFinal} faltantes={faltantesFinal.length} contradicciones={sinReconocer.length} onIntentar={() => setIntentoFinal(true)} />}
         </Box>
         </IncidenciasProvider>
         <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>

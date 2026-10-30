@@ -1,7 +1,8 @@
 import { Alert, Box, Button, Chip, CircularProgress, Collapse, Paper, Stack, Typography } from '@mui/material';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { FieldKey } from '../services/manufacturingFamilies';
-import { anclaDe, estaReconocida, NIVEL_ETIQUETA, ORDEN_NIVEL, resumir, SECCION_ETIQUETA, type Incidencia, type NivelIncidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
+import { idMensaje, localizar, type IncidenciasContexto } from './incidenciasNavegacion';
+import { anclaDe, estaReconocida, NIVEL_ETIQUETA, ORDEN_NIVEL, resumir, SECCION_ETIQUETA, type Incidencia, type NivelIncidencia, type SeccionIncidencia } from './incidencias';
 
 // Presentación de las incidencias (ver incidencias.ts). Regla: cada causa se muestra UNA vez donde se puede corregir (campo o sección), y el resumen solo la cuenta y permite
 // localizarla. Los chips de procedencia (BIND, Code, sugerido, calculado, editado) son otra cosa y no pasan por aquí. Los colores de alerta solo se usan para errores y
@@ -10,21 +11,6 @@ import { anclaDe, estaReconocida, NIVEL_ETIQUETA, ORDEN_NIVEL, resumir, SECCION_
 // Representadas ya por su propio control (chip «Sugerida por el sistema» + botón «Confirmar familia»; ayuda del campo Cliente): se cuentan en el resumen, pero no se repiten como texto.
 const CON_CONTROL_PROPIO = new Set(['FAMILIA_NO_CONFIRMADA', 'CLIENTE_SIN_IDENTIFICAR']);
 
-interface IncidenciasContexto {
-  lista: Incidencia[];
-  visible: (key: FieldKey) => boolean;
-  valores: (key: FieldKey) => string;
-  reconocidas: Reconocimientos;
-  reconocer: (i: Incidencia) => void;
-  deshacer: (i: Incidencia) => void;
-  /** Tras pulsar «Validar especificación» también se muestran los datos faltantes en su campo. */
-  validado: boolean;
-  /** Ids de las incidencias a las que el usuario navegó con «Ir»: su aviso concreto se muestra aunque aún no haya validado. */
-  reveladas: ReadonlySet<string>;
-  revelar: (id: string) => void;
-  /** Estado de la revisión del backend: mientras no hay respuesta vigente no se afirma que no hay incidencias. */
-  revision: 'vigente' | 'revisando' | 'no-disponible';
-}
 
 const Contexto = createContext<IncidenciasContexto | null>(null);
 export function IncidenciasProvider({ value, children }: { value: IncidenciasContexto; children: ReactNode }) {
@@ -38,7 +24,6 @@ const colorDe = (nivel: NivelIncidencia): 'error' | 'warning.main' | 'text.secon
 // Los datos faltantes no se marcan en rojo hasta que el usuario valida (el resumen ya los cuenta); un valor no válido sí se señala al escribirlo.
 const SE_MUESTRAN_AL_VALIDAR = new Set(['FALTANTE', 'FAMILIA_SIN_ELEGIR']);
 const seMuestra = (i: Incidencia, ctx: IncidenciasContexto): boolean => !CON_CONTROL_PROPIO.has(i.codigo) && (!SE_MUESTRAN_AL_VALIDAR.has(i.codigo) || ctx.validado || ctx.reveladas.has(i.id));
-const idMensaje = (id: string): string => `incidencia-${id.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
 export function MensajeIncidencia({ incidencia, ctx }: { incidencia: Incidencia; ctx: IncidenciasContexto }) {
   const reconocida = estaReconocida(incidencia, ctx.valores, ctx.reconocidas);
@@ -81,27 +66,6 @@ export function IncidenciasDeSeccion({ seccion, omitir = [] }: { seccion: Seccio
       })}
     </Stack>
   );
-}
-
-/** Lleva al usuario al problema: muestra su aviso concreto, desplaza la pantalla, enfoca el control y lo asocia con el mensaje (aria-describedby). */
-function localizar(i: Incidencia, ctx: IncidenciasContexto): void {
-  ctx.revelar(i.id);
-  const ancla = anclaDe(i, ctx.visible);
-  const mover = (): void => {
-    const destino = ancla.tipo === 'campo'
-      ? document.querySelector<HTMLElement>(`[data-field="${ancla.campo}"]`)
-      : document.querySelector<HTMLElement>(`section[aria-label="${SECCION_ETIQUETA[ancla.seccion]}"]`);
-    destino?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-    const control = destino?.querySelector<HTMLElement>('input:not([type=hidden]), textarea, [role=combobox], [role=radio]');
-    const mensaje = document.getElementById(idMensaje(i.id));
-    if (control && mensaje) {
-      const previos = (control.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
-      if (!previos.includes(mensaje.id)) control.setAttribute('aria-describedby', [...previos, mensaje.id].join(' '));
-    }
-    control?.focus({ preventScroll: true });
-  };
-  // El aviso se monta tras el siguiente renderizado: se espera a que exista antes de asociarlo y enfocar.
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(mover)); else setTimeout(mover, 0);
 }
 
 /** Resumen de validación: incidencias ÚNICAS por severidad (sin repetir los mensajes) y botones para localizar el campo o la sección. */

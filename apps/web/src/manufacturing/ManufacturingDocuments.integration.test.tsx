@@ -167,26 +167,65 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(cambios).toMatchObject({ version: 3, datos: { ancho: '99', largo: '88', calibre: '2.5 MIL', colorNombre: 'Azul Cielo Especial', colorHex: '#3778c8' } });
   });
 
-  it('5) finalizar genera REV01 desde el mismo formulario y la hoja queda en solo lectura', async () => {
+  it('5) «Finalizar y generar PDF» está en la sección final; con bloqueos explica qué falta (sin abrir la confirmación ni finalizar) y ofrece ir al campo', async () => {
     const user = userEvent.setup();
     pagina(true);
-    const doc = guardado({ elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' } });
+    const doc = guardado();
     m.historialPorCodigo.mockResolvedValue({ data: [doc] });
     m.obtenerDocumento.mockResolvedValue(doc);
     const lista = await buscar(user);
     await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
     await ancho();
-    // El borrador mínimo de la prueba no incluye todos los campos del formulario: «Finalizar y generar PDF» verifica que todo esté persistido (guarda ahora lo pendiente) y solo entonces finaliza.
-    m.actualizarBorrador.mockImplementation(async (_id, cambios) => guardado({ version: 4, elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' }, especificacion: { datos: cambios.datos ?? {}, incidenciasReconocidas: cambios.incidenciasReconocidas ?? [] } }));
-    m.finalizarDocumento.mockResolvedValue(finalizada());
-    await user.click(await screen.findByRole('button', { name: 'Finalizar y generar PDF' }));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
-    expect(m.actualizarBorrador).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(m.finalizarDocumento).toHaveBeenCalledWith('rev-1', 4));   // con la versión que devolvió el guardado
-    await screen.findByText(/Finalizada en TEST como/);
-    expect(screen.getByTestId('document-panel')).toHaveTextContent(/REV01/);
-    expect(screen.getByLabelText('Ancho')).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Finalizar y generar PDF' })).not.toBeInTheDocument();
+    const encabezado = screen.getByRole('region', { name: 'Estado y acciones de la hoja' });
+    const seccion = screen.getByRole('region', { name: 'Finalizar hoja' });
+    expect(within(encabezado).queryByRole('button', { name: /Finalizar y generar PDF|Descartar borrador/ })).not.toBeInTheDocument();   // el encabezado no tiene acciones de finalizar
+    expect(screen.getAllByRole('button', { name: 'Finalizar y generar PDF' })).toHaveLength(1);                                         // un solo botón de finalización
+    const responsables = screen.getByRole('region', { name: 'Responsables y revisión' });
+    expect(responsables.compareDocumentPosition(seccion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();                              // después de los responsables
+    await user.click(within(seccion).getByRole('button', { name: 'Finalizar y generar PDF' }));
+    const bloqueos = await screen.findByTestId('final-bloqueos');
+    expect(bloqueos).toHaveTextContent('Falta confirmar «Elaboró».');
+    expect(within(bloqueos).getAllByRole('button', { name: /Ir al campo/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(m.finalizarDocumento).not.toHaveBeenCalled();
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    expect((await screen.findAllByTestId('incidencia')).length).toBeGreaterThan(0);                   // las observaciones/faltantes quedan junto a sus campos
+  });
+
+  it('la validación es automática: no existe «Validar especificación»; el estado de los datos se comprueba solo y nunca dice «Datos completos» sin respuesta vigente', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    vi.mocked(previewManufacturingSheet).mockImplementation(() => new Promise(() => undefined));   // el servidor aún no responde
+    const doc = guardado();
+    m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+    m.obtenerDocumento.mockResolvedValue(doc);
+    const lista = await buscar(user);
+    await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+    await ancho();
+    expect(screen.queryByRole('button', { name: 'Validar especificación' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('final-datos')).toHaveTextContent('Comprobando datos…');
+    expect(screen.queryByText('Datos completos')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('status-reviewed')).not.toBeInTheDocument();                         // no hay «Datos revisados» como si una persona hubiera revisado
+  });
+
+  it('la revisión humana es opcional y secundaria: plegada, sin confirmar sola y dentro de «Responsables y revisión»', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    const doc = guardado();
+    m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+    m.obtenerDocumento.mockResolvedValue(doc);
+    const lista = await buscar(user);
+    await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+    await ancho();
+    const responsables = screen.getByRole('region', { name: 'Responsables y revisión' });
+    expect(within(responsables).getByText('Revisión del borrador (opcional)')).toBeInTheDocument();
+    expect(within(responsables).getByText('No es requisito para finalizar')).toBeInTheDocument();
+    expect(within(responsables).queryByRole('button', { name: 'Registrar mi revisión' })).not.toBeInTheDocument();   // plegada por defecto (no accesible)
+    await user.click(within(responsables).getByRole('button', { name: /Revisión del borrador \(opcional\)/ }));
+    expect(await within(responsables).findByRole('button', { name: 'Registrar mi revisión' })).toBeInTheDocument();
+    expect(within(responsables).getByRole('button', { name: 'Confirmar revisión del borrador' })).toBeInTheDocument();
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    expect(screen.queryByText(/^Revisó:/)).not.toBeInTheDocument();                                   // nada se confirma automáticamente
   });
 
   it('6) una hoja finalizada se encuentra de nuevo y se descarga su PDF almacenado', async () => {
@@ -463,19 +502,14 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(m.actualizarBorrador.mock.calls[1]![1]).toMatchObject({ version: 3, datos: { ancho: '13' } });   // conserva lo capturado antes del error
     });
 
-    it('no se finaliza mientras haya cambios sin persistir: si el guardado previo falla, NO se llama a finalizar', async () => {
+    it('mientras hay un error de guardado la sección final lo indica y no ofrece finalizar como si todo estuviera guardado', async () => {
       const user = userEvent.setup();
       await abrirBorrador(user, guardado({ elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' } }));
       m.actualizarBorrador.mockRejectedValue(new docs.DocumentApiError('INVALID_DATA', 400, { fields: ['datos.largo'] }));
       fireEvent.change(await ancho(), { target: { value: '5' } });
       await screen.findByText('Error al guardar');
-      m.finalizarDocumento.mockResolvedValue(finalizada());
-      await user.click(screen.getByRole('button', { name: 'Finalizar y generar PDF' }));
-      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
-      await waitFor(() => expect(m.actualizarBorrador.mock.calls.length).toBeGreaterThanOrEqual(2));   // intentó guardar antes de finalizar
-      await esperar();
+      expect(screen.getByTestId('final-guardado')).toHaveTextContent('No se pudo guardar');
       expect(m.finalizarDocumento).not.toHaveBeenCalled();
-      expect(screen.queryByText(/Finalizada en TEST como/)).not.toBeInTheDocument();
     });
 
     it('con cambios sin persistir advierte antes de cerrar la página; sin cambios pendientes no', async () => {

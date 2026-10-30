@@ -1,7 +1,8 @@
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   actualizarBorrador, asignarRevisor, cancelarFinalizacion, crearBorrador, crearRevisionNueva, descargarPdfFinalizado, descartarBorrador, DocumentApiError, documentErrorText, finalizarDocumento,
@@ -282,7 +283,7 @@ export function BarraDocumento() {
         {doc && doc.estado !== 'DESCARTADA' && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
         {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (manual de TEST)" />}
         {!d.autoguardar && d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
-        {d.autoguardar && doc?.estado === 'BORRADOR' && <IndicadorGuardado />}
+        {d.autoguardar && <IndicadorGuardado />}
         <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" />
         <Box sx={{ flex: 1 }} />
         <Button size="small" startIcon={<HistoryRoundedIcon />} onClick={() => d.abrirHistorial(true)}>Historial de este código</Button>
@@ -291,27 +292,15 @@ export function BarraDocumento() {
       {/* ------------------------------------------------------------- acciones según el estado */}
       {d.autoguardar ? (
         <>
-          {(!doc || doc.estado === 'BORRADOR') && (
+          {!doc && d.guardado === 'existe' && (
             <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-              {!doc && <IndicadorGuardado />}
-              {!doc && d.guardado === 'existe' && (
-                <TextField size="small" label="Variante" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 200 }} slotProps={{ htmlInput: { maxLength: 40 } }}
-                  helperText="Ya existe una hoja con este código y variante: usa otra variante o ábrela desde la lista." />
-              )}
-              <Box sx={{ flex: 1 }} />
-              {doc?.estado === 'BORRADOR' && <Button variant="contained" color="success" disabled={d.ocupado || !doc.permisos.finalizar || d.guardado === 'conflicto'} onClick={() => d.setConfirmando('finalizar')} aria-describedby="finalizar-ayuda">Finalizar y generar PDF</Button>}
-              {doc?.estado === 'BORRADOR' && <Button color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>}
+              <TextField size="small" label="Variante" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 200 }} slotProps={{ htmlInput: { maxLength: 40, autoComplete: 'off' } }}
+                helperText="Ya existe una hoja con este código y variante: usa otra variante o ábrela desde la lista." />
             </Stack>
           )}
           {!doc && d.guardado === 'inactivo' && (
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
               {d.carga ? 'Esta hoja se guardará sola como borrador en cuanto confirmes la familia. Aún no existe en la base de datos.' : 'Elige la familia para empezar. La hoja se guardará sola como borrador; aún no existe en la base de datos.'}
-            </Typography>
-          )}
-          {doc?.estado === 'BORRADOR' && (
-            <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-              {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
-              «Finalizar y generar PDF» guarda antes los cambios pendientes y requiere «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas.
             </Typography>
           )}
         </>
@@ -343,7 +332,7 @@ export function BarraDocumento() {
 
       {d.aviso && <Alert severity={d.aviso.tipo} sx={{ mt: 1 }} role={d.aviso.tipo === 'error' ? 'alert' : 'status'}>{d.aviso.texto}</Alert>}
       {d.conflicto && <Button size="small" sx={{ mt: 1 }} onClick={() => void d.recargar()} disabled={d.ocupado}>Recargar la versión vigente (reemplaza lo que ves en pantalla)</Button>}
-      {d.motivos.length > 0 && (
+      {!d.autoguardar && d.motivos.length > 0 && (
         <Alert severity="warning" sx={{ mt: 1 }} aria-label="Requisitos pendientes">
           <b>Requisitos pendientes:</b>
           <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{d.motivos.map((m) => <li key={m.codigo}>{m.mensaje}{m.detalle && m.detalle.length > 0 ? ` (${m.detalle.join('; ')})` : ''}</li>)}</ul>
@@ -378,13 +367,40 @@ export function BarraDocumento() {
   );
 }
 
-/** «Elaboró», «Autorizó», revisor y revisión: sección del mismo formulario (solo mientras la hoja es un borrador). */
-export function ResponsablesDocumento() {
+/**
+ * «Elaboró», «Autorizó», revisor y revisión: sección del mismo formulario (solo mientras la hoja es un borrador). La revisión humana es OPCIONAL y secundaria: con guardado automático queda
+ * en una sección plegable (la revisión registrada es trazable y está ligada a la huella de la especificación; no es la validación técnica del sistema). `revisionDatos` es la ranura de la
+ * confirmación de revisión de datos en pantalla que ofrece el formulario.
+ */
+export function ResponsablesDocumento({ revisionDatos }: { revisionDatos?: ReactNode } = {}) {
   const d = useDocumento();
   const { doc } = d;
   if (doc?.estado !== 'BORRADOR') return null;
+  const revision = (
+    <Box>
+      {doc.permisos.asignarRevisor && (
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+          <TextField select size="small" label="Revisor asignado" value={d.revisorSel} onChange={(e) => d.setRevisorSel(e.target.value)} sx={{ minWidth: 280 }}>
+            <MenuItem value=""><em>Sin revisor</em></MenuItem>
+            {d.revisores.map((u) => <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>)}
+          </TextField>
+          <Button variant="outlined" size="small" onClick={() => void d.asignar()} disabled={d.ocupado || d.revisorSel === (doc.revisor?.id ?? '')}>Asignar revisor</Button>
+        </Stack>
+      )}
+      {!doc.permisos.asignarRevisor && <Typography variant="body2">Revisor asignado: {doc.revisor?.nombre ?? 'ninguno'}</Typography>}
+      <Box sx={{ mt: 1 }}>
+        <Button variant="outlined" size="small" onClick={() => void d.registrar()} disabled={d.ocupado || d.sucio || !doc.permisos.registrarRevision} aria-describedby="revision-ayuda">Registrar mi revisión</Button>
+        <Typography id="revision-ayuda" variant="caption" display="block" color="text.secondary">
+          {d.sucio ? 'Guarda los cambios antes de revisar: la revisión se liga a la versión guardada. ' : ''}La registra tu cuenta (no se escribe ningún nombre) y pierde vigencia si cambia algo técnico. {doc.confirmaciones.some((k) => k.autorrevision) ? 'Hay una autorrevisión: queda constancia.' : ''}
+        </Typography>
+        {d.vigentes.map((k) => <Chip key={`${k.usuario}-${k.registradaEn}`} size="small" color="success" sx={{ mr: 0.5, mt: 0.5 }} label={`Revisó: ${k.usuario}${k.autorrevision && !k.comoRevisorAsignado ? ' (autorrevisión)' : ''}`} />)}
+        {d.obsoletas > 0 && <Chip size="small" variant="outlined" sx={{ mt: 0.5 }} label={`${d.obsoletas} revisión(es) sin vigencia por cambios técnicos`} />}
+      </Box>
+      {revisionDatos}
+    </Box>
+  );
   return (
-    <Paper component="section" variant="outlined" aria-label="Responsables y revisión" sx={{ p: 2, mt: 2 }}>
+    <Paper component="section" variant="outlined" aria-label="Responsables y revisión" id="responsables-seccion" sx={{ p: 2, mt: 2 }}>
       <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Responsables y revisión</Typography>
       <Stack spacing={2}>
         <Box>
@@ -401,28 +417,91 @@ export function ResponsablesDocumento() {
             <Button variant="outlined" size="small" onClick={() => void d.guardarAutorizo()} disabled={d.ocupado || !doc.permisos.editar || (d.autorizo.trim() || null) === doc.autorizo}>Guardar Autorizó</Button>
           </Stack>
         </Box>
-        <Box>
-          <Typography variant="subtitle2" component="h3">Revisión (opcional)</Typography>
-          {doc.permisos.asignarRevisor && (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-              <TextField select size="small" label="Revisor asignado" value={d.revisorSel} onChange={(e) => d.setRevisorSel(e.target.value)} sx={{ minWidth: 280 }}>
-                <MenuItem value=""><em>Sin revisor</em></MenuItem>
-                {d.revisores.map((u) => <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>)}
-              </TextField>
-              <Button variant="outlined" size="small" onClick={() => void d.asignar()} disabled={d.ocupado || d.revisorSel === (doc.revisor?.id ?? '')}>Asignar revisor</Button>
-            </Stack>
-          )}
-          {!doc.permisos.asignarRevisor && <Typography variant="body2">Revisor asignado: {doc.revisor?.nombre ?? 'ninguno'}</Typography>}
-          <Box sx={{ mt: 1 }}>
-            <Button variant="outlined" size="small" onClick={() => void d.registrar()} disabled={d.ocupado || d.sucio || !doc.permisos.registrarRevision} aria-describedby="revision-ayuda">Registrar mi revisión</Button>
-            <Typography id="revision-ayuda" variant="caption" display="block" color="text.secondary">
-              {d.sucio ? 'Guarda los cambios antes de revisar: la revisión se liga a la versión guardada. ' : ''}La registra tu cuenta (no se escribe ningún nombre) y pierde vigencia si cambia algo técnico. {doc.confirmaciones.some((k) => k.autorrevision) ? 'Hay una autorrevisión: queda constancia.' : ''}
-            </Typography>
-            {d.vigentes.map((k) => <Chip key={`${k.usuario}-${k.registradaEn}`} size="small" color="success" sx={{ mr: 0.5, mt: 0.5 }} label={`Revisó: ${k.usuario}${k.autorrevision && !k.comoRevisorAsignado ? ' (autorrevisión)' : ''}`} />)}
-            {d.obsoletas > 0 && <Chip size="small" variant="outlined" sx={{ mt: 0.5 }} label={`${d.obsoletas} revisión(es) sin vigencia por cambios técnicos`} />}
+        {d.autoguardar ? (
+          <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} aria-controls="revision-opcional" id="revision-opcional-cabecera">
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography variant="subtitle2" component="h3">Revisión del borrador (opcional)</Typography>
+                {d.vigentes.length > 0 ? <Chip size="small" color="success" label={`${d.vigentes.length} ${d.vigentes.length === 1 ? 'revisión registrada' : 'revisiones registradas'}`} /> : <Typography variant="body2" color="text.secondary">No es requisito para finalizar</Typography>}
+              </Stack>
+            </AccordionSummary>
+            <AccordionDetails id="revision-opcional">{revision}</AccordionDetails>
+          </Accordion>
+        ) : (
+          <Box>
+            <Typography variant="subtitle2" component="h3">Revisión (opcional)</Typography>
+            {revision}
           </Box>
-        </Box>
+        )}
       </Stack>
+    </Paper>
+  );
+}
+
+export type EstadoDatos = 'comprobando' | 'faltan' | 'observaciones' | 'completos' | 'no-disponible';
+export interface BloqueoFinal { clave: string; texto: string; irA?: () => void }
+
+/**
+ * Sección final «Finalizar hoja»: resume en una línea el estado (guardado, datos, contradicciones, «Elaboró»), ofrece la ÚNICA acción «Finalizar y generar PDF» y, si hay algún bloqueo
+ * conocido, explica qué falta con navegación al campo. La finalización real siempre vuelve a validar en el servidor sobre la versión ya guardada (`finalizar` guarda antes lo pendiente).
+ * «Descartar borrador» es secundario y pide confirmación.
+ */
+export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicciones, onIntentar }: { datos: EstadoDatos; bloqueos: BloqueoFinal[]; faltantes: number; contradicciones: number; onIntentar?: () => void }) {
+  const d = useDocumento();
+  const { doc } = d;
+  const [mostrar, setMostrar] = useState(false);
+  if (doc?.estado !== 'BORRADOR') return null;
+  const elaboroOk = doc.elaboro.confirmado && !d.elaboroCambiado;
+  const irAElaboro = (): void => { const s = document.getElementById('responsables-seccion'); s?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); s?.querySelector<HTMLElement>('input')?.focus(); };
+  const lista: BloqueoFinal[] = [...bloqueos, ...(elaboroOk ? [] : [{ clave: 'elaboro', texto: 'Falta confirmar «Elaboró».', irA: irAElaboro }])];
+  const intentar = (): void => {
+    if (lista.length > 0) { setMostrar(true); onIntentar?.(); return; }
+    setMostrar(false);
+    d.setConfirmando('finalizar');
+  };
+  // Textos propios de esta sección (el encabezado ya muestra el indicador de guardado automático con otras palabras).
+  const guardado = d.guardado === 'guardando' ? { t: 'Guardando cambios…', c: 'default' as const }
+    : d.guardado === 'pendiente' ? { t: 'Hay cambios por guardar', c: 'default' as const }
+      : d.guardado === 'error' ? { t: 'No se pudo guardar', c: 'error' as const }
+        : d.guardado === 'conflicto' ? { t: 'Versión desactualizada', c: 'error' as const }
+          : d.guardado === 'guardado' || !d.sucio ? { t: 'Todo guardado', c: 'success' as const } : { t: 'Se guardará al finalizar', c: 'default' as const };
+  const estadoDatos = datos === 'completos' ? { t: 'Datos completos', c: 'success' as const }
+    : datos === 'faltan' ? { t: faltantes > 0 ? `Faltan datos obligatorios (${faltantes})` : 'Faltan datos obligatorios', c: 'warning' as const }
+      : datos === 'observaciones' ? { t: 'Hay observaciones por revisar', c: 'warning' as const }
+        : datos === 'no-disponible' ? { t: 'No se pudo comprobar ahora (se comprobará al finalizar)', c: 'default' as const }
+          : { t: 'Comprobando datos…', c: 'default' as const };
+  return (
+    <Paper component="section" variant="outlined" aria-label="Finalizar hoja" sx={{ p: 2, mt: 2 }}>
+      <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Finalizar hoja</Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }} role="status" aria-label="Estado para finalizar">
+        <Chip size="small" color={guardado.c} variant={guardado.c === 'default' ? 'outlined' : 'filled'} label={guardado.t} data-testid="final-guardado" />
+        <Chip size="small" color={estadoDatos.c} variant={estadoDatos.c === 'default' ? 'outlined' : 'filled'} label={estadoDatos.t} data-testid="final-datos" />
+        <Chip size="small" color={contradicciones > 0 ? 'warning' : 'success'} variant={contradicciones > 0 ? 'filled' : 'outlined'} label={contradicciones > 0 ? `${contradicciones} ${contradicciones === 1 ? 'contradicción por reconocer' : 'contradicciones por reconocer'}` : 'Sin contradicciones pendientes'} data-testid="final-contradicciones" />
+        <Chip size="small" color={elaboroOk ? 'success' : 'warning'} variant={elaboroOk ? 'outlined' : 'filled'} label={elaboroOk ? 'Elaboró confirmado' : 'Falta confirmar «Elaboró»'} data-testid="final-elaboro" />
+      </Stack>
+      {d.motivos.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 1 }} aria-label="Requisitos pendientes">
+          <b>El servidor no pudo finalizar todavía:</b>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{d.motivos.map((m) => <li key={m.codigo}>{m.mensaje}{m.detalle && m.detalle.length > 0 ? ` (${m.detalle.join('; ')})` : ''}</li>)}</ul>
+        </Alert>
+      )}
+      {mostrar && lista.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 1 }} data-testid="final-bloqueos">
+          <b>Antes de finalizar falta:</b>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+            {lista.map((b) => <li key={b.clave}>{b.texto}{b.irA ? <> <Button size="small" onClick={b.irA} aria-label={`Ir al campo: ${b.texto}`}>Ir al campo</Button></> : null}</li>)}
+          </ul>
+        </Alert>
+      )}
+      <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+        <Button variant="contained" color="success" disabled={d.ocupado || !doc.permisos.finalizar || d.guardado === 'conflicto'} onClick={intentar} aria-describedby="finalizar-ayuda">Finalizar y generar PDF</Button>
+        <Box sx={{ flex: 1 }} />
+        <Button size="small" color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>
+      </Stack>
+      <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+        {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
+        Al finalizar se guardan los cambios pendientes y el servidor vuelve a comprobar la hoja (datos obligatorios, contradicciones reconocidas y «Elaboró») antes de generar el PDF de PRUEBA.
+      </Typography>
     </Paper>
   );
 }
