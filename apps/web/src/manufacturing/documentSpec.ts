@@ -1,9 +1,9 @@
-import type { BindProductLookup } from '../services/bindProducts';
+import type { BindProductLookup, CampoInterpretado, InterpretacionBind } from '../services/bindProducts';
 import type { FamilyConfig } from '../services/manufacturingFamilies';
 import type { BorradorNuevo, DocumentoVista, IncidenciaReconocida } from '../services/manufacturingDocuments';
 import type { Reconocimientos } from './incidencias';
 import {
-  ALL_FIELDS, confirmFamily, configOf, displayOrigin, selectFamily, setCustomColor, setFieldValue, toPreviewData, type FamilyCode, type SpecificationForm
+  ALL_FIELDS, buildInitialForm, confirmFamily, configOf, displayOrigin, selectFamily, setCustomColor, setFieldValue, toPreviewData, type BaseOrigin, type FamilyCode, type SpecificationForm
 } from './specificationForm';
 
 // Traducción entre el formulario de la especificación y la copia que guarda el gestor documental. NO compone hojas ni interpreta BIND: solo empaqueta lo que el usuario ya ve y, al abrir
@@ -53,21 +53,63 @@ export function claveDeDocumento(doc: Pick<DocumentoVista, 'familia' | 'especifi
 
 export const reconocimientosDe = (doc: Pick<DocumentoVista, 'especificacion'>): Reconocimientos => Object.fromEntries((doc.especificacion.incidenciasReconocidas ?? []).map((r) => [r.id, r.huella]));
 
+const ORIGENES_BASE: ReadonlySet<string> = new Set<BaseOrigin>(['BIND', 'SUGERIDO', 'CALCULADO', 'PENDIENTE', 'SIN_DATO']);
+
 /**
- * Coloca los valores GUARDADOS sobre un formulario recién construido desde BIND (la búsqueda por código ya reconstruyó la interpretación y las reglas). Los valores guardados mandan; cada
- * campo que difiere queda como «editado por el usuario». La familia se confirma porque ya fue elegida al guardar.
+ * Coloca los valores GUARDADOS sobre un formulario base. Los valores guardados mandan y NUNCA se reemplazan por sugerencias: cada campo recupera su procedencia guardada (BIND, sugerido,
+ * calculado… se restauran como valor de origen; USUARIO o sin dato guardado queda «editado por el usuario»). La familia se confirma porque ya fue elegida al guardar.
  */
 export function aplicarGuardado(form: SpecificationForm, doc: Pick<DocumentoVista, 'familia' | 'especificacion' | 'cliente'>, configs: FamilyConfig[]): SpecificationForm {
   let f = confirmFamily(selectFamily(form, doc.familia as FamilyCode, configs));
   const datos = doc.especificacion.datos;
+  const procedencia = doc.especificacion.procedencia ?? {};
   for (const key of ALL_FIELDS) {
     if (key === 'codigo' || key === 'cliente' || key === 'colorNombre' || key === 'colorHex') continue;
     const valor = datos[key];
-    if (valor !== undefined && f.fields[key].value !== valor) f = setFieldValue(f, key, valor);
+    if (valor === undefined) continue;
+    const origen = procedencia[key];
+    if (origen !== undefined && ORIGENES_BASE.has(origen)) {
+      // Valor de origen (no editado): se restaura tal cual, sin pasar por las reglas de sugerencia que podrían recalcularlo.
+      if (f.fields[key].value !== valor || f.fields[key].base.origin !== origen) f = { ...f, fields: { ...f.fields, [key]: { ...f.fields[key], value: valor, manual: false, confirmed: false, source: undefined, base: { ...f.fields[key].base, value: valor, origin: origen as BaseOrigin } } } };
+    } else if (f.fields[key].value !== valor) f = setFieldValue(f, key, valor);
   }
   const config = configOf(configs, doc.familia as FamilyCode);
   if (config?.colorDibujo && (datos.colorNombre !== undefined || datos.colorHex !== undefined)
     && (f.fields.colorNombre.value !== (datos.colorNombre ?? '') || f.fields.colorHex.value !== (datos.colorHex ?? ''))) f = setCustomColor(f, datos.colorNombre ?? '', datos.colorHex ?? '');
   if (doc.cliente) f = doc.cliente.empresaId ? setFieldValue(f, 'cliente', doc.cliente.nombre, 'CATALOGO', doc.cliente.empresaId) : setFieldValue(f, 'cliente', doc.cliente.nombre, 'PROVISIONAL');
   return f;
+}
+
+const vacio = <T,>(): CampoInterpretado<T> => ({ valor: null, origen: 'PENDIENTE', fuente: null });
+
+/**
+ * Copia de BIND tomada del PROPIO documento guardado (Code, Title, Description, Weight, CreationDate): permite abrir un borrador sin llamar a BIND. No contiene interpretación ni sugerencias
+ * (eso solo lo calcula el backend a partir de una consulta a BIND): todo el contenido técnico viene de los datos guardados.
+ */
+export function lookupDesdeGuardado(doc: Pick<DocumentoVista, 'codigo' | 'especificacion'>): BindProductLookup {
+  const b = doc.especificacion.bind ?? {};
+  const campos: InterpretacionBind['campos'] = {
+    codigoDcmx: vacio(), tipo: vacio(), resina: vacio(), ancho: vacio(), largo: vacio(), fuelleTotal: vacio(), fuelleDerecho: vacio(), fuelleIzquierdo: vacio(),
+    unidadDimensiones: vacio(), calibre: vacio(), presentacion: vacio(), cantidad: vacio(), pesoLb: vacio()
+  };
+  return {
+    origen: 'BIND',
+    producto: { ID: '', Code: b.Code ?? doc.codigo, Title: b.Title ?? '', Description: b.Description ?? null, Weight: b.Weight ?? null, CreationDate: b.CreationDate ?? null },
+    interpretacion: { campos, familia: { valor: null, estado: 'PENDIENTE_CONFIRMACION', posiblesEstaFase: [] }, pendientes: [], advertencias: [] },
+    datosSugeridosPlantilla: {},
+    familiaSugerida: [],
+    sugerencias: {
+      familia: { valor: null, motivo: '', incompatibles: [] }, resinaVci: { valor: null, regla: null, nota: '' }, resinaVciPorComposicion: {},
+      color: { preset: null, concentracionPct: null, detectado: null, regla: null, nota: '' }, etiqueta: { valor: null, regla: null, nota: '' }
+    },
+    pendientes: [],
+    advertencias: [],
+    especificacionConfirmada: false
+  };
+}
+
+/** Abre un documento guardado SIN consultar BIND: formulario del motor de especificaciones sobre la copia guardada, con los valores guardados encima. */
+export function abrirSinBind(doc: DocumentoVista, configs: FamilyConfig[]): { lookup: BindProductLookup; form: SpecificationForm; reconocidas: Reconocimientos } {
+  const lookup = lookupDesdeGuardado(doc);
+  return { lookup, form: aplicarGuardado(buildInitialForm(lookup, configs), doc, configs), reconocidas: reconocimientosDe(doc) };
 }

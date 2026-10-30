@@ -12,7 +12,7 @@ import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
-import { aplicarGuardado, construirCarga, reconocimientosDe } from './documentSpec';
+import { abrirSinBind, construirCarga } from './documentSpec';
 import { DocumentPanel } from './DocumentPanel';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
@@ -174,17 +174,18 @@ function MaterialRow({ lookup }: { lookup: BindProductLookup }) {
   );
 }
 
-function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
+interface BindPanelProps { lookup: BindProductLookup; guardado: boolean; actual: BindActual; onConsultar: () => void }
+function BindProductPanel({ lookup, guardado, actual, onConsultar }: BindPanelProps) {
   const { producto } = lookup;
   const rows: Array<[string, string]> = [
-    ['ID en BIND', producto.ID], ['Código (Code)', producto.Code], ['Descripción comercial (Title)', producto.Title],
+    ...(guardado ? [] : [['ID en BIND', producto.ID] as [string, string]]), ['Código (Code)', producto.Code], ['Descripción comercial (Title)', producto.Title],
     ['Información adicional (Description)', producto.Description ?? '—'], ['Peso (Weight, lb)', producto.Weight === null ? '—' : String(producto.Weight)],
     ['Fecha de alta en BIND', formatDate(producto.CreationDate)]
   ];
   return (
     <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Producto en BIND">
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Producto en BIND</Typography>
+        <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>{guardado ? 'Producto en BIND (copia guardada con el documento)' : 'Producto en BIND'}</Typography>
         <Chip size="small" label="Solo lectura" />
         <Chip size="small" color="warning" label="Especificación no confirmada" />
       </Stack>
@@ -197,12 +198,27 @@ function BindProductPanel({ lookup }: { lookup: BindProductLookup }) {
         ))}
       </Box>
       <MaterialRow lookup={lookup} />
+      {guardado && (
+        <Box sx={{ mt: 1.5 }} data-testid="bind-guardado">
+          <Typography variant="body2" color="text.secondary">Estos datos son los que BIND tenía al guardar; el documento se abrió sin consultar BIND y ninguna consulta posterior los reemplaza.</Typography>
+          <Button size="small" variant="outlined" sx={{ mt: 1 }} onClick={onConsultar} disabled={actual.estado === 'cargando'}>Consultar BIND ahora (solo lectura)</Button>
+          {actual.estado === 'cargando' && <Typography variant="body2" sx={{ mt: 1 }}>Consultando BIND…</Typography>}
+          {actual.estado === 'error' && <Alert severity="warning" sx={{ mt: 1 }}>{actual.mensaje} El documento abierto no se ve afectado.</Alert>}
+          {actual.estado === 'listo' && (
+            <Alert severity="info" sx={{ mt: 1 }} data-testid="bind-actual">
+              <b>BIND hoy</b> (informativo; no se aplicó nada al borrador): Title «{actual.producto.Title}» · Weight {actual.producto.Weight === null ? '—' : String(actual.producto.Weight)} lb.
+              {actual.producto.Title !== producto.Title || String(actual.producto.Weight ?? '') !== String(producto.Weight ?? '') ? ' Difiere de la copia guardada.' : ' Coincide con la copia guardada.'}
+            </Alert>
+          )}
+        </Box>
+      )}
       <IncidenciasDeSeccion seccion="bind" />
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>La fecha de alta es la del producto en BIND, no la fecha de emisión de la hoja. Estos datos no se modifican desde esta pantalla.</Typography>
     </Paper>
   );
 }
 
+type BindActual = { estado: 'inactivo' } | { estado: 'cargando' } | { estado: 'error'; mensaje: string } | { estado: 'listo'; producto: BindProductLookup['producto'] };
 const PERSONAL = 'PERSONAL:';
 const CANTIDAD_UNIDADES: Array<[string, string]> = [['BOLSAS', 'Bolsas'], ['HOJAS', 'Hojas']];
 
@@ -216,6 +232,10 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorKind, setErrorKind] = useState<BindProductErrorKind | null>(null);
   const [lookup, setLookup] = useState<BindProductLookup | null>(null);
+  const [desdeGuardado, setDesdeGuardado] = useState(false);
+  const [docActual, setDocActual] = useState<DocumentoVista | null>(null);
+  const [bindActual, setBindActual] = useState<BindActual>({ estado: 'inactivo' });
+  const bindController = useRef<AbortController | null>(null);
   const [form, setForm] = useState<SpecificationForm | null>(null);
   const [validation, setValidation] = useState<SpecificationValidation | null>(null);
   const [assessment, setAssessment] = useState<{ key: string; result: SheetPreviewResponse } | null>(null);
@@ -256,7 +276,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       setStatus('error'); setErrorKind('INVALID_CODE'); setLookup(null); setForm(null);
       return;
     }
-    setStatus('loading'); setErrorKind(null);
+    setStatus('loading'); setErrorKind(null); setDesdeGuardado(false); setBindActual({ estado: 'inactivo' });
     try {
       const result = await lookupBindProductByCode(target, current.signal);
       if (current.signal.aborted) return;
@@ -268,23 +288,31 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     }
   }
 
-  // Abrir un documento guardado: se reconstruye la interpretación de BIND por su código (la misma búsqueda de siempre) y encima se colocan los valores GUARDADOS, que mandan.
-  async function abrirDocumento(doc: DocumentoVista): Promise<void> {
-    controller.current?.abort();
-    const current = new AbortController();
-    controller.current = current;
+  // Abrir un documento guardado: NO consulta BIND. El formulario se reconstruye con el motor de especificaciones sobre la copia guardada (Code/Title/etc. de BIND incluidos en el documento) y los
+  // valores guardados mandan. Abrir no modifica nada: la versión documental solo cambia cuando el usuario guarda.
+  function abrirDocumento(doc: DocumentoVista): void {
+    controller.current?.abort();            // una búsqueda a BIND en curso no debe pisar el documento abierto
+    const abierto = abrirSinBind(doc, configs);
     setValidation(null); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
-    setCode(doc.codigo); setStatus('loading'); setErrorKind(null);
+    setBindActual({ estado: 'inactivo' }); setCode(doc.codigo); setErrorKind(null);
+    setLookup(abierto.lookup); setForm(abierto.form); setReconocidas(abierto.reconocidas); setDesdeGuardado(true); setStatus('ready');
+  }
+
+  // Consulta EXPLÍCITA de los datos actuales de BIND, solo lectura: no toca el formulario, el borrador ni lo guardado, y su indisponibilidad no afecta al documento abierto.
+  async function consultarBindActual(): Promise<void> {
+    if (!lookup) return;
+    const current = new AbortController();
+    bindController.current?.abort(); bindController.current = current;
+    setBindActual({ estado: 'cargando' });
     try {
-      const result = await lookupBindProductByCode(doc.codigo, current.signal);
-      if (current.signal.aborted) return;
-      setLookup(result); setForm(aplicarGuardado(buildInitialForm(result, configs), doc, configs)); setReconocidas(reconocimientosDe(doc)); setStatus('ready');
+      const result = await lookupBindProductByCode(lookup.producto.Code, current.signal);
+      if (!current.signal.aborted) setBindActual({ estado: 'listo', producto: result.producto });
     } catch (error) {
-      if (current.signal.aborted) return;
-      setLookup(null); setForm(null); setStatus('error');
-      setErrorKind(error instanceof BindProductApiError ? error.kind : 'NETWORK');
+      if (!current.signal.aborted) setBindActual({ estado: 'error', mensaje: errorMessages[error instanceof BindProductApiError ? error.kind : 'NETWORK'] });
     }
   }
+
+  const soloLectura = documentos && docActual !== null && (docActual.estado !== 'BORRADOR' || !docActual.permisos.editar);
 
   const update = (updater: (previous: SpecificationForm) => SpecificationForm): void => {
     setForm((previous) => (previous ? updater(previous) : previous));
@@ -402,7 +430,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         onPrepare={(c) => { setCode(c); void search(c); }}
       />
 
-      {documentos && <DocumentPanel codigo={status === 'ready' && lookup ? lookup.producto.Code : null} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={(doc) => { void abrirDocumento(doc); }} />}
+      {documentos && <DocumentPanel codigo={status === 'ready' && lookup ? lookup.producto.Code : null} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} />}
 
       {status === 'loading' && <Alert severity="info" sx={{ mt: 2 }}>Consultando BIND…</Alert>}
       {status === 'error' && errorKind && <Alert severity={errorKind === 'NOT_FOUND' ? 'info' : 'error'} sx={{ mt: 2 }}>{errorMessages[errorKind]}</Alert>}
@@ -410,8 +438,9 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       {status === 'ready' && lookup && form && (
         <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) minmax(420px, 520px)' }, alignItems: 'start' }}>
         <IncidenciasProvider value={ctx}>
-        <Box sx={{ minWidth: 0, order: { xs: 2, lg: 1 } }}>
-          <BindProductPanel lookup={lookup} />
+        {/* Una revisión finalizada (o un borrador que esta cuenta no puede editar) se abre en solo lectura: el fieldset deshabilita todos los controles; el servidor sigue siendo la autoridad. */}
+        <Box component="fieldset" disabled={soloLectura} data-testid="formulario-documento" sx={{ minWidth: 0, order: { xs: 2, lg: 1 }, border: 0, p: 0, m: 0 }}>
+          <BindProductPanel lookup={lookup} guardado={desdeGuardado} actual={bindActual} onConsultar={() => { void consultarBindActual(); }} />
           {live && <ResumenIncidencias lista={todas} ctx={ctx} />}
 
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Familia de manufactura">

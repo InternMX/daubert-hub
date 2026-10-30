@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DocumentoVista } from '../services/manufacturingDocuments';
 import { coexAzul, familyConfigs, schfpmg001 } from '../test/bindProductFixtures';
-import { aplicarGuardado, claveDeCarga, claveDeDocumento, construirCarga, reconocimientosDe } from './documentSpec';
+import { abrirSinBind, aplicarGuardado, claveDeCarga, claveDeDocumento, construirCarga, reconocimientosDe } from './documentSpec';
 import { buildInitialForm, configOf, selectFamily, setCustomColor, setFieldValue, confirmFamily, type FieldKey } from './specificationForm';
 
 const lookup = schfpmg001();
@@ -129,5 +129,45 @@ describe('recuperación fiel de datos técnicos y colores personalizados', () =>
     igualesALoGuardado(reabierto, carga.datos);
     expect(reabierto.fields.pesoCapaInterior.value).toBe('0.111');
     expect(reabierto.fields.lbVciInterior.value).toBe('0.0222');
+  });
+});
+
+describe('abrir sin BIND (copia guardada en el documento)', () => {
+  const docDe = (carga: NonNullable<ReturnType<typeof construirCarga>>) =>
+    ({ codigo: carga.bind!.Code, familia: carga.familia, especificacion: { datos: carga.datos, procedencia: carga.procedencia, bind: carga.bind, incidenciasReconocidas: carga.incidenciasReconocidas }, cliente: null }) as unknown as DocumentoVista;
+
+  it('reconstruye el formulario con el motor de especificaciones sin ninguna llamada a BIND y conserva Code/Title guardados', () => {
+    const f = setFieldValue(formulario(), 'ancho', '77');
+    const carga = construirCarga(f, cfg, lookup, { 'A:b': 'h1' })!;
+    const abierto = abrirSinBind(docDe(carga), familyConfigs);
+    expect(abierto.lookup.producto).toMatchObject({ Code: lookup.producto.Code, Title: lookup.producto.Title, ID: '' });
+    expect(abierto.form.family).toBe('BOLSA_PLANA_1');
+    expect(abierto.form.fields.ancho.value).toBe('77');
+    expect(abierto.form.fields.descripcion.value).toBe(carga.datos.descripcion);
+    expect(abierto.reconocidas).toEqual({ 'A:b': 'h1' });
+    expect(claveDeCarga(construirCarga(abierto.form, cfg, abierto.lookup, abierto.reconocidas))).toBe(claveDeCarga(carga));   // abrir no produce cambios
+  });
+
+  it('restaura la procedencia guardada: lo de BIND sigue siendo de BIND y solo lo editado queda como del usuario', () => {
+    const carga = construirCarga(setFieldValue(formulario(), 'ancho', '77'), cfg, lookup, {})!;
+    expect(carga.procedencia).toMatchObject({ ancho: 'USUARIO' });
+    const abierto = abrirSinBind(docDe(carga), familyConfigs).form;
+    expect(abierto.fields.ancho.base.origin).not.toBe('BIND');
+    const otraClave = Object.entries(carga.procedencia!).find(([k, o]) => o === 'BIND' && k in abierto.fields)?.[0];
+    expect(otraClave).toBeDefined();
+    expect(abierto.fields[otraClave as FieldKey].base.origin).toBe('BIND');
+    expect(abierto.fields[otraClave as FieldKey].manual).not.toBe(true);
+  });
+
+  it('COEX: variante, pesos por capa y libras de VCI se recuperan tal cual, sin recalcular con sugerencias', () => {
+    const coex = coexAzul();
+    const cfgCoex = configOf(familyConfigs, 'COEX')!;
+    let f = confirmFamily(selectFamily(buildInitialForm(coex, familyConfigs, '2026-10-29'), 'COEX', familyConfigs));
+    f = setFieldValue(setFieldValue(f, 'pesoCapaInterior', '0.111'), 'lbVciInterior', '0.0222');
+    const carga = construirCarga(f, cfgCoex, coex, {})!;
+    const abierto = abrirSinBind(docDe(carga), familyConfigs).form;
+    expect(abierto.family).toBe('COEX');
+    for (const k of ['coexVariante', 'pesoCapaInterior', 'lbVciInterior', 'pesoLb', 'calibre'] as const) expect(abierto.fields[k].value, k).toBe(carga.datos[k]);
+    expect(abierto.fields.pesoCapaInterior.value).toBe('0.111');
   });
 });

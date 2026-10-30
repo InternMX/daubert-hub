@@ -78,7 +78,7 @@ describe('gestor documental dentro de la especificación de manufactura', { time
     expect(screen.getByText(/SCHFPMG001 · Borrador · v3/)).toBeInTheDocument();
   });
 
-  it('abrir un borrador desde el historial reconstruye el formulario con los valores guardados (BIND se consulta de nuevo por el código)', async () => {
+  it('abrir un borrador desde el historial reconstruye el formulario con los valores guardados SIN consultar BIND, aunque BIND esté disponible', async () => {
     const user = userEvent.setup();
     pagina(true);
     await screen.findByTestId('document-panel');
@@ -88,7 +88,7 @@ describe('gestor documental dentro de la especificación de manufactura', { time
     const dialogo = await screen.findByRole('dialog');
     await user.click(await within(dialogo).findByRole('button', { name: /Abrir SCHFPMG001/ }));
     await cerrado();
-    await waitFor(() => expect(lookupMock).toHaveBeenCalledWith('SCHFPMG001', expect.anything()));
+    expect(lookupMock).not.toHaveBeenCalled();
     const ancho = await screen.findByLabelText('Ancho') as HTMLInputElement;
     expect(ancho.value).toBe('77');
     expect((screen.getByLabelText('Largo') as HTMLInputElement).value).toBe('88');
@@ -116,7 +116,7 @@ describe('gestor documental dentro de la especificación de manufactura', { time
     expect(screen.getByTestId('color-personalizado-muestra')).toHaveStyle({ backgroundColor: 'rgb(55, 120, 200)' });
   });
 
-  it('si BIND no responde NO se puede abrir el borrador: se explica el error y no se muestra ningún formulario a medias (dependencia conocida)', async () => {
+  it('con BIND caído el borrador SÍ se abre y se edita; la consulta explícita falla sin afectar al documento', async () => {
     const user = userEvent.setup();
     pagina(true);
     await screen.findByTestId('document-panel');
@@ -124,8 +124,66 @@ describe('gestor documental dentro de la especificación de manufactura', { time
     m.obtenerDocumento.mockResolvedValue(guardado());
     lookupMock.mockRejectedValue(new BindProductApiError('BIND_UNAVAILABLE', 503));
     await abrirDesdeHistorial(user, /Abrir SCHFPMG001/);
-    expect(await screen.findByText('No se pudo consultar BIND en este momento.')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Ancho')).not.toBeInTheDocument();
+    expect(((await screen.findByLabelText('Ancho')) as HTMLInputElement).value).toBe('77');
+    expect(lookupMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('bind-guardado')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Consultar BIND ahora (solo lectura)' }));
+    expect(await screen.findByText(/No se pudo consultar BIND en este momento\./)).toBeInTheDocument();
+    expect((screen.getByLabelText('Ancho') as HTMLInputElement).value).toBe('77');
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+  });
+
+  it('valores históricos distintos a BIND hoy: la consulta explícita informa la diferencia pero no modifica el borrador ni lo marca como cambiado', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    await screen.findByTestId('document-panel');
+    const doc = guardado({ especificacion: { datos: { codigo: 'SCHFPMG001', ancho: '77', largo: '88' }, bind: { Code: 'SCHFPMG001', Title: 'TITULO HISTORICO', Weight: 1.5 } } });
+    m.listarAbiertos.mockResolvedValue({ data: [doc as never] });
+    m.obtenerDocumento.mockResolvedValue(doc);
+    await abrirDesdeHistorial(user, /Abrir SCHFPMG001/);
+    await screen.findByLabelText('Ancho');
+    const sinCambiosAntes = screen.queryByText('Cambios sin guardar');
+    await user.click(screen.getByRole('button', { name: 'Consultar BIND ahora (solo lectura)' }));
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('bind-actual')).toHaveTextContent(/Difiere de la copia guardada/);
+    expect((screen.getByLabelText('Ancho') as HTMLInputElement).value).toBe('77');
+    expect(screen.getByTestId('bind-guardado')).toHaveTextContent(/copia guardada/);
+    expect(screen.queryByText('Cambios sin guardar')).toBe(sinCambiosAntes);
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+  });
+
+  it('abrir no cambia la versión ni confirma «Elaboró»; se muestran responsables y revisiones vigentes', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    await screen.findByTestId('document-panel');
+    const doc = guardado({
+      version: 7, revisor: { id: '3', nombre: 'General Tres' },
+      confirmaciones: [{ usuario: 'General Tres', correo: 'g3@example.invalid', version: 7, vigente: true, autorrevision: false, comoRevisorAsignado: true, registradaEn: '2026-10-29T10:30:00Z' }],
+      especificacion: { datos: { codigo: 'SCHFPMG001', ancho: '77' }, incidenciasReconocidas: [{ id: 'A:b', huella: 'h' }] }
+    });
+    m.listarAbiertos.mockResolvedValue({ data: [doc as never] });
+    m.obtenerDocumento.mockResolvedValue(doc);
+    await abrirDesdeHistorial(user, /Abrir SCHFPMG001/);
+    await screen.findByLabelText('Ancho');
+    expect(screen.getByTestId('document-panel')).toHaveTextContent(/SCHFPMG001 · Borrador · v7/);
+    expect(screen.getByRole('button', { name: 'Confirmar «Elaboró»' })).toBeEnabled();
+    expect(screen.getByText(/Revisó: General Tres/)).toBeInTheDocument();
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    expect(m.crearBorrador).not.toHaveBeenCalled();
+  });
+
+  it('una revisión finalizada se abre en solo lectura: no se puede editar el formulario', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    await screen.findByTestId('document-panel');
+    const fin = guardado({ estado: 'FINALIZADA', revision: 1, permisos: { editar: false, finalizar: false, asignarRevisor: false, registrarRevision: false, crearRevisionNueva: true, descargarPdf: true }, pdf: { nombre: 'x.pdf', sha256: 'c'.repeat(64), bytes: 10 } });
+    m.listarAbiertos.mockResolvedValue({ data: [fin as never] });
+    m.obtenerDocumento.mockResolvedValue(fin);
+    await abrirDesdeHistorial(user, /Abrir SCHFPMG001/);
+    expect(await screen.findByLabelText('Ancho')).toBeDisabled();
+    expect(screen.getByTestId('formulario-documento')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
   });
 
   it('una respuesta tardía de un documento abierto ANTES no reemplaza al borrador abierto DESPUÉS', async () => {
@@ -157,7 +215,7 @@ describe('gestor documental dentro de la especificación de manufactura', { time
     m.listarAbiertos.mockResolvedValue({ data: [ajeno as never] });
     m.obtenerDocumento.mockResolvedValue(ajeno);
     await abrirDesdeHistorial(user, /Abrir SCHFPMG001/);
-    await screen.findByLabelText('Ancho');
+    expect(await screen.findByLabelText('Ancho')).toBeDisabled();       // borrador ajeno: formulario en solo lectura
     expect(screen.getByLabelText('Elaboró')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Confirmar «Elaboró»' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Finalizar hoja' })).toBeDisabled();

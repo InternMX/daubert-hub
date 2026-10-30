@@ -39,12 +39,12 @@ Código: `apps/api/src/manufacturing-documents/` (módulo separado de `manufactu
 | `npm test` | Suite normal (incluye `manufacturing-documents.controller.spec.ts`, sin base de datos). Excluye `test/desechable/**`. |
 | `npm run test:desechable` | Requiere Docker. Levanta un contenedor **temporal** `postgres:18-alpine` en `127.0.0.1:55434`, crea la réplica mínima, aplica el **UP real** de la migración y ejecuta 5 archivos (61 casos: borradores, versiones/Elaboró/actor, revisión y finalización, historial y nuevas revisiones, motor real con Chrome). Host, puerto y credenciales están fijos en `test/desechable/*`: no lee `DATABASE_*` ni `TEST_DATABASE_URL`, así que no puede conectarse a TEST ni a PROD. Elimina el contenedor al terminar. |
 
-## Resultados de validación (2026-10-30, sin tocar TEST ni producción)
+## Resultados de validación (2026-10-30; apertura sin BIND verificada, sin tocar TEST ni producción)
 | Verificación | Resultado |
 |---|---|
 | Typecheck, lint, build (API y Web) | Sin errores |
-| Web completa | 96 archivos / todas las pruebas en verde (incluye 7 de integración del gestor, 24 del panel y 10 de `documentSpec`) |
-| API completa, `--no-file-parallelism` | 141 archivos en verde |
+| Web completa | 96 archivos / 1 494 pruebas en verde (incluye las del gestor: apertura sin BIND, BIND caído, valores históricos, solo lectura, respuestas tardías, permisos) |
+| API completa, `--no-file-parallelism` | 141 archivos / 2 089 pruebas en verde |
 | `npm run test:desechable` (contenedor temporal) | 65 pruebas en verde, 1 omitida |
 | Regresiones documentales (`test:sheets-*`) | Todas OK **salvo** `test:sheets-regression` (CONFPMG04), que falla por desplazamientos verticales de ~2 pt en las palabras del encabezado; se reporta aparte y no se tocó. `test:sheets-common` informa el caso de estrés de 2 páginas como límite detectado (no es fallo) |
 | `ECONNRESET` intermitente (`read ECONNRESET` en el primer `supertest` de un archivo, p. ej. `sheet-preview.spec.ts` o `families-preview.spec.ts`) | Aparece solo al ejecutar los archivos **en paralelo** (3 de 3 corridas completas, y con 4 trabajadores) y en un archivo distinto cada vez; con `--no-file-parallelism` la suite pasa completa y cada archivo aislado pasa. Se atribuye a la carga de conexiones locales en paralelo (Node 24 / Windows), no a este cambio (los archivos afectados no importan el gestor documental). No se modificaron timeouts ni infraestructura; queda pendiente de análisis |
@@ -59,13 +59,16 @@ Código: `apps/api/src/manufacturing-documents/` (módulo separado de `manufactu
 ## Frontend (integrado en la página de especificación)
 Archivos: `services/manufacturingDocuments.ts` (cliente HTTP y errores), `manufacturing/documentSpec.ts` (empaquetar el formulario y reabrir un guardado), `DocumentPanel.tsx`, `DocumentHistoryDialog.tsx`, `documentLabels.ts`, `downloadFile.ts`; la página los usa solo cuando `DOCUMENTOS_ACTIVOS` (o la prop `documentos`) es verdadero.
 
-- **Abrir un documento:** se vuelve a consultar BIND por el código (la misma búsqueda de siempre) y encima se colocan los valores **guardados**, que mandan: cantidades, dimensiones, calibre literal, composición, pesos y cálculos COEX no se sobrescriben con datos nuevos de BIND. Un color personalizado se recupera desde el propio documento (nombre y HEX), **sin depender del catálogo local** (`localStorage`).
+- **Abrir un documento NO consulta BIND.** El formulario se reconstruye con el motor de especificaciones (`buildInitialForm`) sobre una copia de BIND tomada del propio documento (`especificacion.bind`: Code, Title, Description, Weight, CreationDate) y encima se colocan los valores **guardados**, que mandan: familia, dimensiones, unidades, calibre literal, composición, cantidades, peso y cálculos COEX no se recalculan ni se sobrescriben con sugerencias. Cada campo recupera su procedencia guardada (BIND, sugerido, calculado, usuario). Un color personalizado se recupera del propio documento (nombre y HEX), **sin depender de `localStorage`**. Abrir no llama a ningún endpoint de escritura: la versión documental solo cambia cuando el usuario guarda, y «Elaboró» no se confirma automáticamente.
+- **Consulta opcional a BIND:** el botón «Consultar BIND ahora (solo lectura)» consulta los datos actuales y muestra Title/Weight y si difieren de la copia guardada. No modifica el formulario ni el borrador, no marca la hoja como modificada y, si BIND no responde, solo muestra el error. Un **comparador completo** (diferencias campo por campo y aplicación selectiva) queda como **pendiente**.
+- **Solo lectura:** una revisión finalizada, un documento en finalización o un borrador que esta cuenta no puede editar (según los `permisos` del servidor) se abre con el formulario deshabilitado (`fieldset disabled`); el servidor sigue siendo la autoridad.
+- **Sin reinterpretación al abrir:** como no hay interpretación de BIND, las incidencias que dependen de ella (contradicciones título↔código) no se recalculan en el navegador al abrir sin BIND; los reconocimientos guardados (`{id, huella}`) se conservan tal cual y nunca se reconocen contradicciones nuevas automáticamente. El servidor recalcula la huella al revisar y al finalizar.
 - **Respuestas tardías:** solo la solicitud más reciente del panel puede reemplazar el documento abierto; la lectura de BIND anterior se aborta al abrir otro documento.
 - **Permisos:** los botones se habilitan según los `permisos` que devuelve el backend, pero ocultar o deshabilitar un control **no es autorización**: la base y el servicio vuelven a validar cada acción.
 - **Errores:** conflicto de versión (409) ofrece recargar la versión vigente; los requisitos de finalización se listan; ningún cuerpo crudo de respuesta se muestra.
 
 ## Límites conocidos
-- **Dependencia de BIND al abrir:** hoy **no se puede abrir un borrador si BIND no responde** (la reconstrucción del formulario necesita la interpretación de BIND). Se muestra el error de BIND y no se presenta un formulario a medias. Un mecanismo de recuperación sin BIND (p. ej. reconstruir desde la copia guardada) queda **fuera de este alcance** y requiere decisión.
+- **Abrir sin BIND (resuelto):** los borradores se abren desde la copia guardada en PostgreSQL aunque BIND no responda. Para crear un borrador **nuevo** sigue haciendo falta consultar BIND por el código. Si el documento se guardó sin `bind`, se abre con el Code del documento y Title vacío.
 - Tras descartar el único borrador de un documento, su creador (o un ADMIN) puede abrir otro en el **mismo** documento; otra cuenta sigue recibiendo el 409 uniforme.
 - Ver «Riesgos residuales» del informe de aprobación (identidad por variables de sesión, FK hacia `security.users`/`core.empresas`, sin retención de PDF).
 - `409 DOCUMENT_EXISTS` revela que existe un documento con ese código y variante aunque su borrador sea ajeno (sin identificarlo).

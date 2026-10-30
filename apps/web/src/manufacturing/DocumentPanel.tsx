@@ -21,11 +21,13 @@ interface Props {
   carga: CargaDocumento | null;
   /** Se invoca al abrir un documento guardado para que el formulario lo muestre. */
   onAbrirDocumento: (doc: DocumentoVista) => void;
+  /** Informa a la página del documento vigente del panel (estado y permisos), para que el formulario se ponga en solo lectura cuando corresponda. */
+  onDocumentoCambio?: (doc: DocumentoVista | null) => void;
 }
 
 type Aviso = { tipo: 'success' | 'error' | 'info' | 'warning'; texto: string };
 
-export function DocumentPanel({ codigo, carga, onAbrirDocumento }: Props) {
+export function DocumentPanel({ codigo, carga, onAbrirDocumento, onDocumentoCambio }: Props) {
   const [doc, setDoc] = useState<DocumentoVista | null>(null);
   const [variante, setVariante] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -44,6 +46,7 @@ export function DocumentPanel({ codigo, carga, onAbrirDocumento }: Props) {
 
   // Un documento abierto pertenece a su código: si el usuario busca otro producto, el panel vuelve a «sin guardar».
   useEffect(() => { if (doc && codigo !== null && doc.codigo.toLowerCase() !== codigo.toLowerCase()) { setDoc(null); setAviso(null); setMotivos([]); } }, [codigo, doc]);
+  useEffect(() => { onDocumentoCambio?.(doc); }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (doc) { setElaboro(doc.elaboro.nombre ?? doc.elaboro.sugerido); setAutorizo(doc.autorizo ?? ''); setRevisorSel(doc.revisor?.id ?? ''); } }, [doc]);
   useEffect(() => {
     if (!doc || doc.estado !== 'BORRADOR' || !doc.permisos.asignarRevisor) return undefined;
