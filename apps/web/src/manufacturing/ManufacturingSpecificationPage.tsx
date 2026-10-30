@@ -108,7 +108,7 @@ function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
 
 interface ClientOption { id: string; name: string }
 
-function ClientField({ form, onChange, onRestore }: { form: SpecificationForm; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
+function ClientField({ form, onChange, onRestore, requerido }: { form: SpecificationForm; requerido?: boolean; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
   const [options, setOptions] = useState<ClientOption[]>([]);
   const [input, setInput] = useState(form.fields.cliente.value);
   useEffect(() => {
@@ -139,7 +139,9 @@ function ClientField({ form, onChange, onRestore }: { form: SpecificationForm; o
           if (reason === 'clear') onChange('', undefined);
         }}
         onChange={(_event, value) => { if (value !== null && typeof value !== 'string') onChange(value.name, 'CATALOGO', value.id); }}
-        renderInput={(params) => <TextField {...params} label="Cliente (opcional)" helperText="Elige un cliente del catálogo. Puede quedar vacío en la demostración; una emisión futura lo exigirá. No se infiere por el prefijo del código." />}
+        renderInput={(params) => requerido
+          ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Elige un cliente del catálogo o escribe su nombre (en TEST queda como cliente sin verificar). No se infiere por el prefijo del código." />
+          : <TextField {...params} label="Cliente (opcional)" helperText="Elige un cliente del catálogo. Puede quedar vacío en la demostración; una emisión futura lo exigirá. No se infiere por el prefijo del código." />}
       />
     </FieldFrame>
   );
@@ -440,16 +442,18 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const deshacer = (i: Incidencia): void => { setEdiciones((n) => n + 1); setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id))); };
   const revision: 'vigente' | 'revisando' | 'no-disponible' = !form?.family || currentAssessment ? 'vigente' : fallo === assessmentKey ? 'no-disponible' : 'revisando';
   const revelar = (id: string): void => setReveladas((r) => (r.has(id) ? r : new Set(r).add(id)));
-  const ctx = { lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: intentoFinal || validation !== null, reveladas, revelar, revision };
+  // Datos obligatorios pendientes para finalizar. Coincide con el servidor: el cliente es obligatorio (texto libre válido en TEST); el catálogo solo lo verifica. Ver `motivosNoLista`.
+  const faltantesFinal = todas.filter((i) => i.nivel === 'ERROR' || i.codigo === 'FALTANTE' || (i.codigo === 'CLIENTE_SIN_IDENTIFICAR' && valores('cliente').trim() === ''));
+  const pendientes = documentos ? new Set(faltantesFinal.map((i) => i.id)) : undefined;
+  const ctx = { pendientes, lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: intentoFinal || validation !== null, reveladas, revelar, revision };
   const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO' && sinReconocer.length === 0;
   // Validación automática (modo gestor documental): ninguna acción manual. Mientras no haya respuesta VIGENTE del servidor para estos datos no se afirma que estén completos.
-  const faltantesFinal = todas.filter((i) => i.nivel === 'ERROR' || ['FALTANTE', 'FAMILIA_SIN_ELEGIR', 'CLIENTE_SIN_IDENTIFICAR'].includes(i.codigo));
   const estadoDatos: EstadoDatos = !form || revision === 'revisando' ? 'comprobando'
     : revision === 'no-disponible' ? 'no-disponible'
       : faltantesFinal.length > 0 || (currentAssessment !== null && !currentAssessment.completo) ? 'faltan'
         : sinReconocer.length > 0 || avisosVistaPrevia.length > 0 ? 'observaciones' : 'completos';
   const bloqueosFinal: BloqueoFinal[] = [
-    ...faltantesFinal.map((i) => ({ clave: i.id, texto: i.resumen ?? i.mensaje, irA: () => localizar(i, ctx) })),
+    ...faltantesFinal.map((i) => ({ clave: i.id, texto: i.codigo === 'CLIENTE_SIN_IDENTIFICAR' ? 'Falta identificar al cliente.' : i.resumen ?? i.mensaje, irA: () => localizar(i, ctx) })),
     ...sinReconocer.map((i) => ({ clave: i.id, texto: `Contradicción por reconocer: ${i.resumen ?? i.mensaje}`, irA: () => localizar(i, ctx) })),
     ...(faltantesFinal.length === 0 && currentAssessment !== null && !currentAssessment.completo ? [{ clave: 'hoja-incompleta', texto: 'La hoja está incompleta según la comprobación del servidor.' }] : [])
   ];
@@ -547,7 +551,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             {text('codigo')}
             {text('descripcion', { multiline: true, minRows: 2 })}
             {text('producto')}
-            <ClientField form={form} onRestore={restore} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
+            <ClientField form={form} requerido={documentos} onRestore={restore} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
             {text('fechaEmision', { type: 'date', helperText: 'Fecha local sugerida; editable. No es la fecha de alta en BIND ni la emisión definitiva.' })}
             {text('resinaVci', { helperText: 'Editable. Sugerencia según la composición; el porcentaje no es una obligación.' })}
           </SectionCard>

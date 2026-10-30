@@ -82,6 +82,11 @@ La página «Hojas de manufactura» es **una sola experiencia** basada en el có
 
 **Validación automática.** Ya no existe el botón «Validar especificación» en esta pantalla: la comprobación local es inmediata y la del servidor (vista previa) se solicita con retardo al cambiar los datos relevantes; solo vale la respuesta que corresponde a los datos actuales (una respuesta tardía se descarta) y mientras no llega se muestra «Comprobando datos…», nunca «Datos completos». No genera documentos, no modifica el borrador, no confirma revisiones ni crea PDF. Los faltantes se marcan en su campo al intentar finalizar o al navegar a ellos. (Sin el gestor documental, `VITE_MANUFACTURING_DOCUMENTS` apagado, la pantalla clásica conserva su tarjeta de validación.)
 
+### Datos obligatorios pendientes: qué falta y dónde
+«Faltan datos obligatorios (N)» es desplegable: lista cada pendiente con su nombre claro y «Ir al campo» (desplaza, enfoca y resalta el control). Junto al campo se muestra solo una marca discreta «Pendiente para finalizar» (el detalle no se repite). «Falta confirmar Elaboró» es independiente y su chip lleva a su sección. Las listas se derivan de los datos actuales (sin resultados obsoletos).
+
+**Cliente.** El servidor exige un cliente al finalizar (`CLIENTE_REQUERIDO`); un nombre escrito a mano es válido en TEST (queda sin verificar) y el catálogo solo lo verifica. Con el gestor documental el campo se rotula «Cliente (obligatorio para finalizar)»; la pantalla clásica conserva «(opcional)». Un cliente en texto libre ya no cuenta como pendiente.
+
 ### Guardado automático de borradores
 No hay botón «Guardar»: la hoja se guarda sola y la pantalla lo indica con discreción.
 

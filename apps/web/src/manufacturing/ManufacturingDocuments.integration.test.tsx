@@ -208,6 +208,72 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(screen.queryByTestId('status-reviewed')).not.toBeInTheDocument();                         // no hay «Datos revisados» como si una persona hubiera revisado
   });
 
+  describe('datos obligatorios pendientes: qué falta y dónde', () => {
+    async function abrir(user: ReturnType<typeof userEvent.setup>) {
+      pagina(true);
+      const doc = guardado();
+      m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+      m.obtenerDocumento.mockResolvedValue(doc);
+      const lista = await buscar(user);
+      await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+      await ancho();
+    }
+
+    it('«Faltan datos obligatorios (N)» se despliega con los nombres claros y «Ir al campo»; el cliente es obligatorio y su rótulo lo dice', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      const chip = screen.getByTestId('final-datos');
+      await waitFor(() => expect(chip).toHaveTextContent(/Faltan datos obligatorios \(\d+\)/));
+      expect(screen.queryByTestId('final-pendientes')).not.toBeInTheDocument();
+      await user.click(chip);
+      const lista = await screen.findByTestId('final-pendientes');
+      expect(within(lista).getByText(/Falta identificar al cliente\./)).toBeInTheDocument();
+      expect(within(lista).getAllByRole('button', { name: /Ir al campo/ }).length).toBe(Number(/\((\d+)\)/.exec(chip.textContent ?? '')?.[1]));   // un acceso por cada pendiente contado
+      expect(screen.getByLabelText('Cliente (obligatorio para finalizar)')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Cliente (opcional)')).not.toBeInTheDocument();
+    });
+
+    it('«Ir al campo» desplaza, enfoca y destaca el control; el campo muestra una marca discreta (no el mensaje completo)', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      const marcaCliente = within(document.querySelector<HTMLElement>('[data-field="cliente"]') as HTMLElement).getByTestId('campo-pendiente');
+      expect(marcaCliente).toHaveTextContent('Pendiente para finalizar');
+      expect(screen.queryByText(/Falta identificar al cliente\./)).not.toBeInTheDocument();   // el detalle solo está en «Finalizar hoja»
+      await user.click(screen.getByTestId('final-datos'));
+      const lista = await screen.findByTestId('final-pendientes');
+      await user.click(within(lista).getByRole('button', { name: /Ir al campo: Falta identificar al cliente/ }));
+      const entrada = screen.getByLabelText('Cliente (obligatorio para finalizar)');
+      await waitFor(() => expect(entrada).toHaveFocus());
+      expect((document.querySelector('[data-field="cliente"]') as HTMLElement).style.outline).toContain('solid');
+      expect(entrada.getAttribute('aria-describedby') ?? '').toContain(marcaCliente.id);
+    });
+
+    it('se actualiza solo al corregir: con el cliente escrito (texto libre, válido en TEST) desaparece el pendiente y su marca, sin resultados obsoletos', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      const antes = Number(/\((\d+)\)/.exec(screen.getByTestId('final-datos').textContent ?? '')?.[1]);
+      await user.click(screen.getByTestId('final-datos'));
+      await screen.findByTestId('final-pendientes');
+      await user.type(screen.getByLabelText('Cliente (obligatorio para finalizar)'), 'Cliente Demo');
+      await waitFor(() => expect(within(document.querySelector<HTMLElement>('[data-field="cliente"]') as HTMLElement).queryByTestId('campo-pendiente')).toBeNull());
+      const chip = screen.getByTestId('final-datos');
+      if (antes > 1) expect(chip).toHaveTextContent(`(${antes - 1})`);
+      else expect(chip).not.toHaveTextContent(/Faltan datos obligatorios/);
+      expect(screen.queryByText(/Falta identificar al cliente\./)).not.toBeInTheDocument();
+    });
+
+    it('«Falta confirmar Elaboró» es independiente (no cuenta como dato obligatorio) y su chip lleva a su sección', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      const elaboro = screen.getByTestId('final-elaboro');
+      expect(elaboro).toHaveTextContent('Falta confirmar «Elaboró»');
+      await user.click(screen.getByTestId('final-datos'));
+      expect(within(await screen.findByTestId('final-pendientes')).queryByText(/Elaboró/)).not.toBeInTheDocument();
+      await user.click(elaboro);
+      expect((document.getElementById('responsables-seccion') as HTMLElement).contains(document.activeElement)).toBe(true);
+    });
+  });
+
   it('la revisión humana es opcional y secundaria: plegada, sin confirmar sola y dentro de «Responsables y revisión»', async () => {
     const user = userEvent.setup();
     pagina(true);

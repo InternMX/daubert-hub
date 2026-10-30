@@ -18,6 +18,18 @@ export interface IncidenciasContexto {
   revelar: (id: string) => void;
   /** Estado de la revisión del backend: mientras no hay respuesta vigente no se afirma que no hay incidencias. */
   revision: 'vigente' | 'revisando' | 'no-disponible';
+  /** Gestor documental: ids de los datos obligatorios pendientes para finalizar; su campo muestra una indicación discreta aunque aún no se haya intentado finalizar. */
+  pendientes?: ReadonlySet<string>;
+}
+
+/** Resalta un momento el control al que se navega (se restaura el estilo previo). */
+function destacar(destino: HTMLElement | null | undefined): void {
+  if (!destino) return;
+  const { outline, outlineOffset, borderRadius } = destino.style;
+  destino.style.outline = '2px solid #ed6c02';
+  destino.style.outlineOffset = '4px';
+  destino.style.borderRadius = '4px';
+  setTimeout(() => { destino.style.outline = outline; destino.style.outlineOffset = outlineOffset; destino.style.borderRadius = borderRadius; }, 2500);
 }
 
 export const idMensaje = (id: string): string => `incidencia-${id.replace(/[^A-Za-z0-9_-]/g, '_')}`;
@@ -38,6 +50,7 @@ export function localizar(i: Incidencia, ctx: IncidenciasContexto): void {
       if (!previos.includes(mensaje.id)) control.setAttribute('aria-describedby', [...previos, mensaje.id].join(' '));
     }
     control?.focus({ preventScroll: true });
+    destacar(destino);
   };
   // El aviso se monta tras el siguiente renderizado: se espera a que exista antes de asociarlo y enfocar.
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(mover)); else setTimeout(mover, 0);

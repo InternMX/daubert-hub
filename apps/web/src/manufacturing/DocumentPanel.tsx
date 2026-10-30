@@ -450,6 +450,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
   const d = useDocumento();
   const { doc } = d;
   const [mostrar, setMostrar] = useState(false);
+  const [verPendientes, setVerPendientes] = useState(false);
   if (doc?.estado !== 'BORRADOR') return null;
   const elaboroOk = doc.elaboro.confirmado && !d.elaboroCambiado;
   const irAElaboro = (): void => { const s = document.getElementById('responsables-seccion'); s?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); s?.querySelector<HTMLElement>('input')?.focus(); };
@@ -475,10 +476,20 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
       <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Finalizar hoja</Typography>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }} role="status" aria-label="Estado para finalizar">
         <Chip size="small" color={guardado.c} variant={guardado.c === 'default' ? 'outlined' : 'filled'} label={guardado.t} data-testid="final-guardado" />
-        <Chip size="small" color={estadoDatos.c} variant={estadoDatos.c === 'default' ? 'outlined' : 'filled'} label={estadoDatos.t} data-testid="final-datos" />
+        <Chip size="small" color={estadoDatos.c} variant={estadoDatos.c === 'default' ? 'outlined' : 'filled'} label={estadoDatos.t} data-testid="final-datos"
+          {...(faltantes > 0 ? { onClick: () => setVerPendientes((v) => !v), 'aria-expanded': verPendientes, title: 'Ver cuáles son' } : {})} />
         <Chip size="small" color={contradicciones > 0 ? 'warning' : 'success'} variant={contradicciones > 0 ? 'filled' : 'outlined'} label={contradicciones > 0 ? `${contradicciones} ${contradicciones === 1 ? 'contradicción por reconocer' : 'contradicciones por reconocer'}` : 'Sin contradicciones pendientes'} data-testid="final-contradicciones" />
-        <Chip size="small" color={elaboroOk ? 'success' : 'warning'} variant={elaboroOk ? 'outlined' : 'filled'} label={elaboroOk ? 'Elaboró confirmado' : 'Falta confirmar «Elaboró»'} data-testid="final-elaboro" />
+        <Chip size="small" color={elaboroOk ? 'success' : 'warning'} variant={elaboroOk ? 'outlined' : 'filled'} label={elaboroOk ? 'Elaboró confirmado' : 'Falta confirmar «Elaboró»'} data-testid="final-elaboro"
+          {...(elaboroOk ? {} : { onClick: irAElaboro, title: 'Ir a «Elaboró»' })} />
       </Stack>
+      {verPendientes && !mostrar && bloqueos.length > 0 && (
+        <Alert severity="info" variant="outlined" sx={{ mb: 1 }} data-testid="final-pendientes">
+          <b>Pendiente en la hoja:</b>
+          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+            {bloqueos.map((b) => <li key={b.clave}>{b.texto}{b.irA ? <> <Button size="small" onClick={b.irA} aria-label={`Ir al campo: ${b.texto}`}>Ir al campo</Button></> : null}</li>)}
+          </ul>
+        </Alert>
+      )}
       {d.motivos.length > 0 && (
         <Alert severity="warning" sx={{ mb: 1 }} aria-label="Requisitos pendientes">
           <b>El servidor no pudo finalizar todavía:</b>

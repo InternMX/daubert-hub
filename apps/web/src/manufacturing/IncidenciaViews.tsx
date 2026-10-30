@@ -43,8 +43,16 @@ export function MensajeIncidencia({ incidencia, ctx }: { incidencia: Incidencia;
 export function IncidenciasDeCampo({ campo }: { campo: FieldKey }) {
   const ctx = useIncidencias();
   if (!ctx) return null;
-  const propias = ctx.lista.filter((i) => seMuestra(i, ctx) && (() => { const ancla = anclaDe(i, ctx.visible); return ancla.tipo === 'campo' && ancla.campo === campo; })());
-  return <>{propias.map((i) => <MensajeIncidencia key={i.id} incidencia={i} ctx={ctx} />)}</>;
+  const delCampo = (i: Incidencia): boolean => { const ancla = anclaDe(i, ctx.visible); return ancla.tipo === 'campo' && ancla.campo === campo; };
+  const propias = ctx.lista.filter((i) => seMuestra(i, ctx) && delCampo(i));
+  // Dato obligatorio pendiente cuyo mensaje completo aún no se muestra: solo una marca discreta (el detalle está en «Finalizar hoja»).
+  const marcas = ctx.lista.filter((i) => ctx.pendientes?.has(i.id) && !seMuestra(i, ctx) && delCampo(i));
+  return (
+    <>
+      {propias.map((i) => <MensajeIncidencia key={i.id} incidencia={i} ctx={ctx} />)}
+      {marcas.map((i) => <Typography key={i.id} id={idMensaje(i.id)} variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }} data-testid="campo-pendiente">Pendiente para finalizar</Typography>)}
+    </>
+  );
 }
 
 /** Incidencias propias de una sección (varios campos, ninguno o un campo que la familia no muestra). Alerta solo para errores y contradicciones. */
