@@ -126,7 +126,8 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
         if (tipo === 'VERSION_CONFLICT') { setGuardado('conflicto'); setConflicto(true); }
         else if (tipo === 'DOCUMENT_EXISTS' && !d) { setGuardado('existe'); setVarianteFallida(e.variante.trim()); }
         else { setGuardado('error'); if (!d) setCreacionIntentada(false); }
-        setAviso({ tipo: 'error', texto: documentErrorText[tipo] });
+        const campos = error instanceof DocumentApiError ? error.campos : [];
+        setAviso({ tipo: 'error', texto: documentErrorText[tipo] + (tipo === 'INVALID_DATA' && campos.length > 0 ? ` Revisa: ${campos.map((c) => c.replace(/^datos\./, '')).join(', ')}.` : '') });
         return { ok: false, doc: d };
       } finally { if (montado.current && g === gen.current) setAutoOcupado(false); }
     })();
@@ -169,7 +170,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
       if (e instanceof DocumentApiError) {
         setMotivos(e.motivos);
         setConflicto(e.kind === 'VERSION_CONFLICT');
-        const extra = e.kind === 'CLIENTE_ACTUALIZADO' && e.nombreActual ? ` Nombre vigente: «${e.nombreActual}».` : '';
+        const extra = e.kind === 'CLIENTE_ACTUALIZADO' && e.nombreActual ? ` Nombre vigente: «${e.nombreActual}».` : e.kind === 'INVALID_DATA' && e.campos.length > 0 ? ` Revisa: ${e.campos.map((c) => c.replace(/^datos\./, '')).join(', ')}.` : '';
         setAviso({ tipo: 'error', texto: documentErrorText[e.kind] + extra });
       } else setAviso({ tipo: 'error', texto: documentErrorText.NETWORK });
     } finally { if (montado.current && mia === solicitud.current) { setOcupado(false); setConfirmando(null); } }

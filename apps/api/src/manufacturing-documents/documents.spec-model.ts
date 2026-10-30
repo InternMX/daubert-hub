@@ -23,7 +23,9 @@ function claveValida(clave: string): boolean {
 /** Solo textos (los campos de la hoja son cadenas); los valores NO se inspeccionan: una descripción puede contener cualquier palabra. */
 function soloTextos(origen: Record<string, unknown> | undefined, maxLongitud: number, maxEntradas: number, nombre: string): Record<string, string> {
   const salida: Record<string, string> = {};
-  const entradas = Object.entries(origen ?? {});
+  // `undefined` = campo opcional NO enviado. Con `transform: true` el ValidationPipe entrega una instancia del DTO cuyas propiedades opcionales ausentes existen con valor `undefined`
+  // (p. ej. `modalidad` en Bolsa Plana 1); no son datos del usuario y no se guardan. Cualquier valor DEFINIDO que no sea texto (número, null, objeto…) sigue rechazándose.
+  const entradas = Object.entries(origen ?? {}).filter(([, valor]) => valor !== undefined);
   if (entradas.length > maxEntradas) throw new BadRequestException(`«${nombre}» tiene demasiados campos.`);
   for (const [clave, valor] of entradas) {
     if (!claveValida(clave)) throw new BadRequestException(`«${nombre}» contiene un nombre de campo no permitido.`);

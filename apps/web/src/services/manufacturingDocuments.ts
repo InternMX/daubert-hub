@@ -69,6 +69,8 @@ export class DocumentApiError extends Error {
   get motivos(): MotivoNoLista[] { return Array.isArray(this.body.motivos) ? (this.body.motivos as MotivoNoLista[]) : []; }
   get nombreActual(): string | null { return typeof this.body.nombreActual === 'string' ? this.body.nombreActual : null; }
   get borradorId(): string | null { return typeof this.body.borradorId === 'string' ? this.body.borradorId : null; }
+  /** Campos que el servidor rechazó en un 400 de validación (solo nombres; nunca valores). */
+  get campos(): string[] { return Array.isArray(this.body.fields) ? (this.body.fields as unknown[]).filter((c): c is string => typeof c === 'string' && /^[A-Za-z][A-Za-z0-9_.[\]]{0,80}$/.test(c)).slice(0, 10) : []; }
 }
 
 function errorFor(status: number, body: unknown): DocumentApiError {

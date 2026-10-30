@@ -12,6 +12,7 @@ import { AssignReviewerDto, CreateDraftDto, UpdateDraftDto, VersionDto } from '.
 import { DocumentsService } from '../src/manufacturing-documents/documents.service';
 import { ManufacturingDocumentsModule } from '../src/manufacturing-documents/manufacturing-documents.module';
 import { TestOnlyGuard } from '../src/manufacturing-documents/test-only.guard';
+import { campoDeMensaje } from '../src/manufacturing-documents/validation-detail.filter';
 
 // El controlador no decide permisos (los decide el servicio y la base): aquí se prueba que la IDENTIDAD solo sale de la sesión autenticada, que los DTO rechazan campos de actor y que las rutas
 // validan sus identificadores. Sin base de datos (servicio simulado).
@@ -67,6 +68,22 @@ describe('POST /api/manufacturing-sheets/documents/drafts', () => {
       expect((await request(app.getHttpServer()).post('/api/manufacturing-sheets/documents/drafts').send({ ...cuerpo, ...mal })).status).toBe(400);
     }
     expect(servicio.crearBorrador).not.toHaveBeenCalled();
+  });
+
+  it('un 400 de validación nombra los CAMPOS rechazados (nunca sus valores) para que la pantalla pueda indicarlos', async () => {
+    const mal = await request(app.getHttpServer()).post('/api/manufacturing-sheets/documents/drafts').send({ ...cuerpo, datos: { ...cuerpo.datos, pesoLb: '12345678901234567', composicion: 'SECRETO-XYZ' }, intruso: 'VALOR-PRIVADO' });
+    expect(mal.status).toBe(400);
+    expect(mal.body).toMatchObject({ statusCode: 400, code: 'INVALID_DATA' });
+    expect(mal.body.fields).toEqual(expect.arrayContaining(['datos.pesoLb', 'datos.composicion', 'intruso']));
+    expect(JSON.stringify(mal.body)).not.toMatch(/12345678901234567|SECRETO-XYZ|VALOR-PRIVADO/);
+    expect(servicio.crearBorrador).not.toHaveBeenCalled();
+  });
+
+  it('campoDeMensaje solo extrae nombres de campo válidos', () => {
+    expect(campoDeMensaje('datos.pesoLb must be shorter than or equal to 16 characters')).toBe('datos.pesoLb');
+    expect(campoDeMensaje('property intruso should not exist')).toBe('intruso');
+    expect(campoDeMensaje('«datos.ancho» es demasiado largo.')).toBe('datos.ancho');
+    expect(campoDeMensaje('algo raro; DROP TABLE x')).toBeNull();
   });
 
   it('sin sesión autenticada responde 401 sin invocar al servicio', async () => {

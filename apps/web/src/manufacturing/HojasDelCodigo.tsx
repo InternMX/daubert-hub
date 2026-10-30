@@ -48,7 +48,7 @@ export function HojasDelCodigo({ codigo, hojas, estado, error, producto, bindErr
 
   const preparar = (
     <Stack direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
-      <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 200 }} slotProps={{ htmlInput: { maxLength: 40 } }}
+      <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 200 }} slotProps={{ htmlInput: { maxLength: 40, autoComplete: 'off' } }}
         error={varianteRepetida && varianteNorm !== ''} helperText={varianteRepetida ? (varianteNorm === '' ? 'Ya existe una hoja sin variante: escribe una variante para preparar otra.' : 'Ya hay una hoja con esta variante: escribe otra.') : 'Ej.: Doblada, Extendida'} />
       <Button variant="contained" size="small" sx={{ mt: 0.5 }} onClick={() => { const v = d.variante; d.cerrar(); d.setVariante(v); onPreparar(); }} disabled={!puedeIniciar || d.ocupado || varianteRepetida}>Preparar una hoja nueva</Button>
     </Stack>

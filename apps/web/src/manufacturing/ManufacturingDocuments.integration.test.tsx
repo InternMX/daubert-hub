@@ -425,6 +425,59 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(m.crearBorrador.mock.calls[1]![0]).toMatchObject({ variante: 'Extendida' });
     });
 
+    it('un 400 en el PRIMER guardado nombra el campo, no bloquea el guardado: «Reintentar» reenvía los mismos datos y no se duplica el borrador', async () => {
+      const user = userEvent.setup();
+      pagina(true);
+      m.crearBorrador.mockRejectedValueOnce(new docs.DocumentApiError('INVALID_DATA', 400, { fields: ['datos.pesoLb'] }));
+      const lista = await buscar(user);
+      await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
+      await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+      expect(await screen.findByText('Error al guardar')).toBeInTheDocument();
+      expect(screen.getByText(/Revisa: pesoLb/)).toBeInTheDocument();                 // identifica el campo rechazado
+      expect(screen.queryByText('Cambios guardados')).not.toBeInTheDocument();       // jamás «guardado» sin respuesta exitosa
+      await esperar();
+      expect(m.crearBorrador).toHaveBeenCalledTimes(1);                               // sin bucle de reintentos
+      const primero = m.crearBorrador.mock.calls[0]![0];
+      m.crearBorrador.mockResolvedValue(guardado());
+      await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+      expect(await screen.findByText('Cambios guardados')).toBeInTheDocument();
+      expect(m.crearBorrador).toHaveBeenCalledTimes(2);
+      expect(m.crearBorrador.mock.calls[1]![0]).toEqual(primero);                     // se reenviaron los datos que el usuario ya había capturado
+      await esperar();
+      expect(m.crearBorrador).toHaveBeenCalledTimes(2);                               // un solo borrador
+    });
+
+    it('tras un 400, corregir el campo reactiva el guardado automático sin pulsar nada', async () => {
+      const user = userEvent.setup();
+      await abrirBorrador(user);
+      m.actualizarBorrador.mockRejectedValueOnce(new docs.DocumentApiError('INVALID_DATA', 400, { fields: ['datos.ancho'] }));
+      fireEvent.change(await ancho(), { target: { value: '99999999999999999' } });
+      expect(await screen.findByText('Error al guardar')).toBeInTheDocument();
+      expect(screen.getByText(/Revisa: ancho/)).toBeInTheDocument();
+      await esperar();
+      expect(m.actualizarBorrador).toHaveBeenCalledTimes(1);
+      m.actualizarBorrador.mockResolvedValue(guardado({ version: 4 }));
+      fireEvent.change(await ancho(), { target: { value: '13' } });                    // el usuario corrige el valor
+      expect(await screen.findByText('Cambios guardados')).toBeInTheDocument();
+      expect(m.actualizarBorrador).toHaveBeenCalledTimes(2);
+      expect(m.actualizarBorrador.mock.calls[1]![1]).toMatchObject({ version: 3, datos: { ancho: '13' } });   // conserva lo capturado antes del error
+    });
+
+    it('no se finaliza mientras haya cambios sin persistir: si el guardado previo falla, NO se llama a finalizar', async () => {
+      const user = userEvent.setup();
+      await abrirBorrador(user, guardado({ elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' } }));
+      m.actualizarBorrador.mockRejectedValue(new docs.DocumentApiError('INVALID_DATA', 400, { fields: ['datos.largo'] }));
+      fireEvent.change(await ancho(), { target: { value: '5' } });
+      await screen.findByText('Error al guardar');
+      m.finalizarDocumento.mockResolvedValue(finalizada());
+      await user.click(screen.getByRole('button', { name: 'Finalizar y generar PDF' }));
+      fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      await waitFor(() => expect(m.actualizarBorrador.mock.calls.length).toBeGreaterThanOrEqual(2));   // intentó guardar antes de finalizar
+      await esperar();
+      expect(m.finalizarDocumento).not.toHaveBeenCalled();
+      expect(screen.queryByText(/Finalizada en TEST como/)).not.toBeInTheDocument();
+    });
+
     it('con cambios sin persistir advierte antes de cerrar la página; sin cambios pendientes no', async () => {
       const user = userEvent.setup();
       await abrirBorrador(user);
