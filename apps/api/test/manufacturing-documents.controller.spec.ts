@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +11,7 @@ import { actorDeSolicitud, DocumentsController, HistoryQueryDto } from '../src/m
 import { AssignReviewerDto, CreateDraftDto, UpdateDraftDto, VersionDto } from '../src/manufacturing-documents/documents.dto';
 import { DocumentsService } from '../src/manufacturing-documents/documents.service';
 import { ManufacturingDocumentsModule } from '../src/manufacturing-documents/manufacturing-documents.module';
+import { TestOnlyGuard } from '../src/manufacturing-documents/test-only.guard';
 
 // El controlador no decide permisos (los decide el servicio y la base): aquí se prueba que la IDENTIDAD solo sale de la sesión autenticada, que los DTO rechazan campos de actor y que las rutas
 // validan sus identificadores. Sin base de datos (servicio simulado).
@@ -22,8 +24,9 @@ beforeAll(async () => {
   // esbuild (vitest) no emite metadata de decoradores: se declara a mano lo que Nest toma de los tipos (inyección y DTO del ValidationPipe).
   const tipos: Record<string, unknown[]> = { reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
   Reflect.defineMetadata('design:paramtypes', [DocumentsService], DocumentsController);
+  Reflect.defineMetadata('design:paramtypes', [ConfigService], TestOnlyGuard);
   for (const [metodo, t] of Object.entries(tipos)) Reflect.defineMetadata('design:paramtypes', t, DocumentsController.prototype, metodo);
-  const modulo = await Test.createTestingModule({ controllers: [DocumentsController], providers: [{ provide: DocumentsService, useValue: servicio }] }).compile();
+  const modulo = await Test.createTestingModule({ controllers: [DocumentsController], providers: [{ provide: DocumentsService, useValue: servicio }, { provide: ConfigService, useValue: { get: () => ({ name: 'daubert_hub_test' }) } }] }).compile();
   app = modulo.createNestApplication();
   app.setGlobalPrefix('api');
   // Hace el papel del AuthGuard: request.user solo existe si hay sesión (aquí, la cuenta 7 de la prueba).
@@ -142,9 +145,10 @@ describe('rutas de revisiones', () => {
 });
 
 describe('aislamiento del módulo', () => {
-  it('NO está registrado en AppModule (ninguna ruta del gestor documental existe todavía en la aplicación)', () => {
+  it('está registrado en AppModule y el controlador exige TestOnlyGuard (solo funciona con la base daubert_hub_test)', () => {
     const importados = (Reflect.getMetadata('imports', AppModule) ?? []) as unknown[];
-    expect(importados).not.toContain(ManufacturingDocumentsModule);
+    expect(importados).toContain(ManufacturingDocumentsModule);
+    expect(Reflect.getMetadata('__guards__', DocumentsController)).toContain(TestOnlyGuard);
   });
 
   it('el módulo documental solo depende de la generación de hojas a través del puerto SheetEngine', async () => {

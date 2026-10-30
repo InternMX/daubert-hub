@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { Matches } from 'class-validator';
 import type { AuthenticatedRequest } from '../common/authenticated-request';
 import { AssignReviewerDto, CreateDraftDto, UpdateDraftDto, VersionDto } from './documents.dto';
 import { DocumentsService } from './documents.service';
+import { TestOnlyGuard } from './test-only.guard';
 import type { ActorDocumental } from './documents.types';
 
 export class HistoryQueryDto {
@@ -23,6 +24,7 @@ export function actorDeSolicitud(request: AuthenticatedRequest): ActorDocumental
 // Gestor documental de Hojas de Instrucción de Manufactura (TEST). Autenticado por los guards globales (sin @Public) y con CSRF de origen en las escrituras.
 // Rutas finales: /api/manufacturing-sheets/documents/…  Los identificadores públicos son UUID (nunca ids internos).
 @Controller('manufacturing-sheets/documents')
+@UseGuards(TestOnlyGuard)
 export class DocumentsController {
   constructor(private readonly documents: DocumentsService) {}
 

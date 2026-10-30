@@ -1,6 +1,6 @@
 # Gestor documental · procedimiento definitivo del operador para `daubert_hub_test`
 
-**Estado: PREPARADO, NO EJECUTADO.** Nada de lo siguiente se ha corrido contra `daubert_hub_test` ni `daubert_global`. Requiere autorización expresa del responsable. Sin contraseñas: use `%APPDATA%\postgresql\pgpass.conf` o `PGPASSWORD` solo en la sesión del operador, y no copie salidas con credenciales a ningún informe.
+**Estado: APLICADA en `daubert_hub_test` el 2026-10-30** (ver «Resultado de la aplicación en TEST» al final). Nada se corrió contra `daubert_global`. Requiere autorización expresa del responsable. Sin contraseñas: use `%APPDATA%\postgresql\pgpass.conf` o `PGPASSWORD` solo en la sesión del operador, y no copie salidas con credenciales a ningún informe.
 
 **Decisión de recuperación (2026-10-30).** `daubert_hub_test` se considera un entorno de pruebas **reconstruible**: por decisión del proyecto, **un respaldo completo previo de TEST ya no es condición obligatoria** para esta migración (el `pg_dump` pasa a ser opcional). Se mantienen: verificación inequívoca del destino, hashes de los scripts, rol administrativo autorizado, precheck, UP transaccional, postcheck inmediato, pruebas de permisos y auditoría, y registro de resultados. Si el UP falla **no se ejecuta ninguna operación destructiva por reflejo**: primero se investiga el estado resultante (§4). El refresco futuro de TEST desde un respaldo de `daubert_global` se documenta aparte en [operations/test-refresh-from-prod](operations/test-refresh-from-prod.md) y **no forma parte de esta migración**.
 
@@ -90,3 +90,19 @@ Regla general: **no ejecute `DOWN`, `DROP` ni restauraciones como primera reacci
 - `audit.cambios` es legible por el rol de la aplicación: conserva metadatos de borradores ajenos (no su contenido) y solo ADMIN los ve por la API.
 - Un cliente «manual» es solo de TEST y queda marcado como no verificado.
 - Los ids de identidad dejan huecos tras el smoke (inocuo).
+
+## 7. Resultado de la aplicación en TEST (2026-10-30)
+
+Ejecutada por el responsable desde una sesión administrativa interactiva (contraseña pedida por `psql -W`, sin credenciales en argumentos, archivos ni registros); sin respaldo previo, conforme a la decisión de TEST reconstruible.
+
+| Paso | Resultado |
+| --- | --- |
+| Identidad | `daubert_hub_test`, rol `postgres`, puerto 5432 |
+| Precheck | `all_prechecks_pass = t` (19 comprobaciones en `t`). Línea base: 47 usuarios, 204 empresas, 2 901 filas en `audit.cambios` y 8 huellas md5 |
+| UP | `UP_OK manufactura (5 tablas, RLS, 15 funciones, 4 triggers de auditoría redactores, privilegios mínimos)` y `COMMIT` |
+| Postcheck | 38 de 39 campos en `t`; todos los `*_igual` (nada fuera de `manufactura` cambió) en `t` |
+| Smoke (rol de la app) | `smoke_all_pass = t`, 55 pruebas; sin residuos de auditoría ni de negocio |
+
+**Desviación aceptada: `otros_roles_sin_acceso = f`.** El único rol con `USAGE` efectivo es `daubert_backup`, por ser miembro de `pg_read_all_data` (atributo del rol, no una concesión). La ACL del esquema es `{postgres=UC/postgres, daubert_hub_test_user=U/postgres}`; los demás seis roles revisados no tienen acceso. Es un falso positivo de la prueba, que debe excluir a los miembros de `pg_read_all_data` en una revisión futura del script (cambiaría su hash). Nota: `pg_read_all_data` no omite RLS; un `pg_dump` de `daubert_hub_test` con `daubert_backup` fallaría en lugar de omitir filas (hoy los respaldos programados son de `daubert_global`).
+
+**Activación en TEST (misma fecha):** `ManufacturingDocumentsModule` registrado en `AppModule` con `TestOnlyGuard` (404 salvo que la base configurada sea `daubert_hub_test`); panel encendido solo con `VITE_MANUFACTURING_DOCUMENTS=true` en `apps/web/.env.local` (ignorado por Git); las pruebas web fijan el flag en `false` para no depender de ese archivo.

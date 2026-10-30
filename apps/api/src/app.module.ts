@@ -24,6 +24,7 @@ import { PaymentNotificationSettingsModule } from './payment-notification-settin
 import { SecurityModule } from './security/security.module';
 import { SystemModule } from './system/system.module';
 import { ManufacturingSheetsModule } from './manufacturing-sheets/manufacturing-sheets.module';
+import { ManufacturingDocumentsModule } from './manufacturing-documents/manufacturing-documents.module';
 
 @Module({
   imports: [
@@ -44,7 +45,8 @@ import { ManufacturingSheetsModule } from './manufacturing-sheets/manufacturing-
     ClientsModule,
     SecurityModule,
     SystemModule,
-    ManufacturingSheetsModule
+    ManufacturingSheetsModule,
+    ManufacturingDocumentsModule
   ],
   providers: [
     // Order matters: CsrfOriginGuard runs FIRST, before any session lookup,
