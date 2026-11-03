@@ -865,4 +865,185 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     });
   });
 
+  describe('Finalizar y generar PDF: el resultado siempre se comunica donde está el usuario', () => {
+    const DATOS_COMPLETOS = {
+      codigo: 'SCHFPMG001', descripcion: 'BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', producto: 'Bolsa PLANA', fechaEmision: '2026-10-30', resinaVci: 'PMG AL 4%', colorNombre: 'DAUBERT AZUL AL 3%', colorHex: '#538DD5',
+      colorConcentracion: '3', composicion: 'PMG', presentacion: 'PAQUETE', cantidad: '200', cantidadUnidad: 'BOLSAS', ancho: '13', largo: '16', unidadDimensiones: 'IN', calibre: '3 MIL', pesoLb: '10', etiqueta: 'BOLSA VCI PMG'
+    };
+    const lista = (over: Partial<DocumentoVista> = {}) => guardado({
+      cliente: { empresaId: null, nombre: 'SCHAEFFLER', verificado: false },
+      elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' },
+      especificacion: { datos: DATOS_COMPLETOS }, ...over
+    });
+    const abrirLista = async (user: ReturnType<typeof userEvent.setup>, doc = lista()) => {
+      m.actualizarBorrador.mockImplementation(async (_id, c) => eco(c as { datos?: Record<string, string> }, doc.version + 1));   // el guardado previo a finalizar devuelve la copia guardada
+      pagina(true);
+      m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+      m.obtenerDocumento.mockResolvedValue(doc);
+      const l = await buscar(user);
+      await user.click(await enLista(l, doc.estado === 'BORRADOR' ? /Continuar editando SCHFPMG001/ : /Ver hoja SCHFPMG001 REV01/));
+      await screen.findByTestId('formulario-documento');
+      if (doc.estado !== 'BORRADOR') return;
+      await ancho();
+      await waitFor(() => expect(screen.getByTestId('final-datos')).not.toHaveTextContent('Comprobando'));
+    };
+    const seccion = () => screen.getByRole('region', { name: 'Finalizar hoja', hidden: true });   // con el diálogo abierto el resto de la página queda oculto a los roles accesibles
+    const eco = (cuerpo: { datos?: Record<string, string> }, version: number): DocumentoVista => lista({ version, especificacion: { datos: cuerpo.datos ?? DATOS_COMPLETOS } });
+    const pulsar = (user: ReturnType<typeof userEvent.setup>) => user.click(within(seccion()).getByRole('button', { name: /Finalizar y generar PDF|Finalizando/, hidden: true }));
+
+    it('una hoja lista: el clic abre la confirmación, muestra «Finalizando…» mientras trabaja y al terminar muestra REV01 y «Descargar PDF finalizado» en la misma sección', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      let terminar: (d: DocumentoVista) => void = () => undefined;
+      m.finalizarDocumento.mockImplementation(() => new Promise<DocumentoVista>((res) => { terminar = res; }));
+      const consultas = m.historialPorCodigo.mock.calls.length;
+      await pulsar(user);
+      const dialogo = await screen.findByRole('dialog');
+      await user.click(within(dialogo).getByRole('button', { name: 'Finalizar' }));
+      await waitFor(() => expect(m.finalizarDocumento).toHaveBeenCalledWith('rev-1', 4));
+      expect(within(seccion()).getByRole('button', { name: /Finalizando/, hidden: true })).toBeDisabled();     // sin clics repetidos
+      terminar(finalizada({ id: 'rev-1', version: 4 }));
+      const ok = await screen.findByTestId('final-resultado');
+      expect(ok).toHaveTextContent('REV01');
+      await cerrado();
+      expect(within(ok).getByRole('button', { name: 'Descargar PDF finalizado' })).toBeEnabled();
+      expect(within(ok).getByText(/SCHFPMG001_REV01\.pdf/)).toBeInTheDocument();
+      await waitFor(() => expect(m.historialPorCodigo.mock.calls.length).toBeGreaterThan(consultas));   // «Hojas de este código» se actualiza sin recargar la página
+      expect(m.finalizarDocumento).toHaveBeenCalledTimes(1);
+    });
+
+    it('el doble clic no finaliza dos veces', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockImplementation(() => new Promise<DocumentoVista>(() => undefined));
+      await pulsar(user);
+      const boton = within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' });
+      fireEvent.click(boton); fireEvent.click(boton);
+      await esperar();
+      expect(m.finalizarDocumento).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [422, 'FINALIZACION_NO_LISTA', /todavía no cumple los requisitos/, [{ codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente.' }]],
+      [409, 'VERSION_CONFLICT', /cambió desde que lo abriste/, []],
+      [501, 'PDF_NOT_AVAILABLE', /generación de PDF no está disponible/, []],
+      [500, 'FAILED', /no se pudo completar/, []]
+    ])('error %i: se explica en la sección «Finalizar hoja», el borrador se conserva y se puede reintentar', async (status, code, texto, motivos) => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockRejectedValueOnce(new docs.DocumentApiError(code as never, status, { motivos }));
+      await pulsar(user);
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      await cerrado();
+      await cerrado();
+      const alerta = await within(seccion()).findByTestId('final-error');
+      expect(alerta).toHaveTextContent(texto);
+      if (motivos.length > 0) expect(alerta).toHaveTextContent('Identifica al cliente.');
+      await cerrado();
+      expect(within(seccion()).getByRole('button', { name: 'Finalizar y generar PDF' })).toBeEnabled();   // reintentar
+      expect(screen.getByTestId('formulario-documento')).toBeInTheDocument();                            // el borrador sigue ahí
+    });
+
+    it('si el servidor pide algo que la pantalla no detectó (cliente/Elaboró), la sección lo lista con acceso al campo', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockRejectedValueOnce(new docs.DocumentApiError('FINALIZACION_NO_LISTA', 422, { motivos: [{ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' }, { codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente.' }] }));
+      await pulsar(user);
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      await cerrado();
+      await cerrado();
+      const alerta = await within(seccion()).findByTestId('final-error');
+      expect(within(alerta).getAllByRole('button', { name: /Ir al campo/ })).toHaveLength(2);
+      await user.click(within(alerta).getByRole('button', { name: /Ir al campo: Identifica al cliente/ }));
+      await waitFor(() => expect(screen.getByLabelText('Cliente (obligatorio para finalizar)')).toHaveFocus());
+    });
+
+    it('una respuesta tardía de un guardado no sobrescribe la revisión ya finalizada', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockResolvedValue(finalizada({ id: 'rev-1', version: 4 }));
+      await pulsar(user);
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      await screen.findByTestId('final-resultado');
+      await esperar();
+      expect(m.actualizarBorrador).toHaveBeenCalledTimes(1);                           // solo el guardado previo a finalizar; nada posterior pisa la revisión
+      expect(screen.getByTestId('estado-guardado')).toHaveTextContent(/REV01/);
+      expect(screen.getByRole('button', { name: 'Descargar PDF finalizado' })).toBeInTheDocument();
+    });
+
+    it('con la hoja finalizada ya no queda una vista previa de borrador como estado actual: se muestra el panel de hoja finalizada', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user, finalizada({ id: 'rev-1' }));
+      expect(screen.getByTestId('final-resultado')).toHaveTextContent('Hoja finalizada');
+      expect(screen.getByTestId('hoja-finalizada-panel')).toHaveTextContent(/FINALIZADA · REV01 · PRUEBA/);
+      expect(screen.queryByRole('button', { name: 'Descargar PDF de borrador' })).not.toBeInTheDocument();
+      expect(screen.queryByText('BORRADOR · SIN APROBAR')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Descargar PDF finalizado' })).toHaveLength(1);
+    });
+
+    it('si se pierde la respuesta HTTP pero el servidor SÍ finalizó, se consulta el estado real y se muestra REV01 sin ofrecer otro intento', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockRejectedValueOnce(new docs.DocumentApiError('NETWORK', 0));
+      m.obtenerDocumento.mockResolvedValue(finalizada({ id: 'rev-1', version: 4 }));
+      await pulsar(user);
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      const ok = await screen.findByTestId('final-resultado');
+      expect(ok).toHaveTextContent('REV01');
+      expect(screen.queryByTestId('final-error')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Finalizar y generar PDF' })).not.toBeInTheDocument();
+      expect(m.finalizarDocumento).toHaveBeenCalledTimes(1);
+    });
+
+    it('si se pierde la respuesta y la hoja sigue como borrador, se explica que se comprobó en el servidor y se puede reintentar', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockRejectedValueOnce(new docs.DocumentApiError('NETWORK', 0));
+      await pulsar(user);
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      expect(await screen.findByTestId('final-error')).toHaveTextContent(/Se comprobó en el servidor: la hoja sigue como borrador/);
+      await cerrado();
+      expect(within(seccion()).getByRole('button', { name: 'Finalizar y generar PDF' })).toBeEnabled();
+    });
+
+    it('si tampoco se puede comprobar el estado real, se avisa que revise «Hojas de este código» antes de reintentar', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user);
+      m.finalizarDocumento.mockRejectedValueOnce(new docs.DocumentApiError('NETWORK', 0));
+      m.obtenerDocumento.mockRejectedValue(new docs.DocumentApiError('NETWORK', 0));
+      await pulsar(user);
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Finalizar' }));
+      expect(await screen.findByTestId('final-error')).toHaveTextContent(/antes de reintentar revisa «Hojas de este código»/);
+    });
+
+    it('descargar siempre entrega el PDF ALMACENADO y un fallo de descarga no se presenta como fallo de finalización', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user, finalizada({ id: 'rev-1' }));
+      m.descargarPdfFinalizado.mockRejectedValueOnce(new docs.DocumentApiError('PDF_INTEGRITY', 500));
+      await user.click(screen.getByRole('button', { name: 'Descargar PDF finalizado' }));
+      const e = await screen.findByTestId('final-error-descarga');
+      expect(e).toHaveTextContent(/No se pudo descargar el PDF almacenado/);
+      expect(e).toHaveTextContent(/La hoja sigue finalizada/);
+      expect(screen.queryByTestId('final-error')).not.toBeInTheDocument();
+      m.descargarPdfFinalizado.mockResolvedValue({ blob: new Blob(['%PDF'], { type: 'application/pdf' }), filename: 'SCHFPMG001_REV01.pdf', sha256: 'c'.repeat(64) });
+      await user.click(screen.getByRole('button', { name: 'Descargar PDF finalizado' }));
+      await waitFor(() => expect(guardarArchivo).toHaveBeenCalledWith(expect.any(Blob), 'SCHFPMG001_REV01.pdf'));
+      expect(m.descargarPdfFinalizado).toHaveBeenCalledWith('rev-1');                      // el PDF almacenado por id; no hay llamada que regenere
+      expect(m.finalizarDocumento).not.toHaveBeenCalled();
+    });
+
+    it('«Ver hoja finalizada» abre el PDF almacenado en otra pestaña', async () => {
+      const user = userEvent.setup();
+      await abrirLista(user, finalizada({ id: 'rev-1' }));
+      const pestana = { location: { href: '' }, close: vi.fn() };
+      const abrir = vi.spyOn(window, 'open').mockReturnValue(pestana as unknown as Window);
+      const url = vi.fn(() => 'blob:pdf-almacenado');
+      Object.defineProperty(URL, 'createObjectURL', { value: url, configurable: true });
+      m.descargarPdfFinalizado.mockResolvedValue({ blob: new Blob(['%PDF'], { type: 'application/pdf' }), filename: 'SCHFPMG001_REV01.pdf', sha256: 'c'.repeat(64) });
+      await user.click(screen.getByRole('button', { name: 'Ver hoja finalizada' }));
+      await waitFor(() => expect(pestana.location.href).toBe('blob:pdf-almacenado'));
+      expect(m.descargarPdfFinalizado).toHaveBeenCalledWith('rev-1');
+      abrir.mockRestore();
+    });
+  });
 });

@@ -55,6 +55,10 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   const [historial, setHistorial] = useState<{ abierto: boolean; codigo: string }>({ abierto: false, codigo: '' });
   const [confirmando, setConfirmando] = useState<'finalizar' | 'descartar' | null>(null);
   const [conflicto, setConflicto] = useState(false);
+  const [finalizando, setFinalizando] = useState(false);
+  const [errorFin, setErrorFin] = useState<{ texto: string; motivos: MotivoNoLista[] } | null>(null);
+  const [errorDescarga, setErrorDescarga] = useState<string | null>(null);
+  const finalizandoRef = useRef(false);
   const montado = useRef(true);
   const solicitud = useRef(0);
   // StrictMode (desarrollo) monta, desmonta y vuelve a montar: la marca debe volver a `true` al re-montar o las respuestas se descartan y el indicador de carga queda activo.
@@ -63,6 +67,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   // Un documento abierto pertenece a su código: si el usuario busca otro producto, el panel vuelve a «sin guardar».
   useEffect(() => { if (doc && codigo !== null && doc.codigo.toLowerCase() !== codigo.toLowerCase()) { setDoc(null); setAviso(null); setMotivos([]); } }, [codigo, doc]);
   useEffect(() => { onDocumentoCambio?.(doc); }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setErrorFin(null); setErrorDescarga(null); }, [doc?.id]);
   useEffect(() => { if (doc) { setElaboro(doc.elaboro.nombre ?? doc.elaboro.sugerido); setAutorizo(doc.autorizo ?? ''); setRevisorSel(doc.revisor?.id ?? ''); } }, [doc]);
   useEffect(() => {
     if (!doc || doc.estado !== 'BORRADOR' || !doc.permisos.asignarRevisor) return undefined;
@@ -160,13 +165,16 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   /** Tras abrir otro documento: nueva línea base (abrir no guarda) y cualquier respuesta de guardado del documento anterior queda obsoleta. */
   const reiniciarBase = (): void => { gen.current += 1; setBaseEd(espejo.current.ediciones); setErrorEd(-1); setGuardado('inactivo'); setCreacionIntentada(false); setVarianteFallida(null); setAutoOcupado(false); };
 
-  function reportarError(e: unknown): void {
+  function reportarError(e: unknown): { texto: string; motivos: MotivoNoLista[] } {
     if (e instanceof DocumentApiError) {
       setMotivos(e.motivos);
       setConflicto(e.kind === 'VERSION_CONFLICT');
       const extra = e.kind === 'CLIENTE_ACTUALIZADO' && e.nombreActual ? ` Nombre vigente: «${e.nombreActual}».` : e.kind === 'INVALID_DATA' && e.campos.length > 0 ? ` Revisa: ${e.campos.map((c) => c.replace(/^datos\./, '')).join(', ')}.` : '';
       setAviso({ tipo: 'error', texto: documentErrorText[e.kind] + extra });
-    } else setAviso({ tipo: 'error', texto: documentErrorText.NETWORK });
+      return { texto: documentErrorText[e.kind] + extra, motivos: e.motivos };
+    }
+    setAviso({ tipo: 'error', texto: documentErrorText.NETWORK });
+    return { texto: documentErrorText.NETWORK, motivos: [] };
   }
 
   /** Ejecuta una acción del servidor: bloquea los botones, muestra el resultado y traduce los errores (sin mostrar nunca el cuerpo crudo de la respuesta). */
@@ -200,7 +208,28 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     await ejecutar(() => obtenerDocumento(id), (d) => ({ tipo: 'info', texto: `Documento abierto: ${d ? `${d.codigo} · ${etiquetaRevision(d)}` : ''}` }), true);
     setHistorial((h) => ({ ...h, abierto: false }));
   };
-  const descargarPorId = (id: string): Promise<void> => ejecutar(async () => { const p = await descargarPdfFinalizado(id); guardarArchivo(p.blob, p.filename); }, () => ({ tipo: 'success', texto: 'PDF descargado.' }));
+  // Descargar siempre entrega el PDF ALMACENADO (el servidor verifica su SHA-256); nunca se vuelve a generar. Un fallo aquí no es un fallo de finalización: tiene su propio mensaje.
+  const textoDescarga = (e: unknown): string => `No se pudo descargar el PDF almacenado. ${e instanceof DocumentApiError ? documentErrorText[e.kind] : documentErrorText.NETWORK} La hoja sigue finalizada; puedes intentarlo de nuevo.`;
+  const descargarPorId = (id: string): Promise<void> => {
+    setErrorDescarga(null);
+    return ejecutar(async () => {
+      try { const p = await descargarPdfFinalizado(id); guardarArchivo(p.blob, p.filename); } catch (e) { setErrorDescarga(textoDescarga(e)); throw e; }
+    }, () => ({ tipo: 'success', texto: 'PDF descargado.' }));
+  };
+  const verFinalizada = async (): Promise<void> => {
+    if (!doc || doc.estado !== 'FINALIZADA') return;
+    setErrorDescarga(null); setOcupado(true);
+    const pestana = window.open('', '_blank');                                // se abre al hacer clic (antes de esperar) para que el navegador no la bloquee
+    try {
+      const p = await descargarPdfFinalizado(doc.id);
+      if (!montado.current) return;
+      const url = URL.createObjectURL(p.blob);
+      if (pestana) pestana.location.href = url; else guardarArchivo(p.blob, p.filename);
+    } catch (e) {
+      pestana?.close();
+      if (montado.current) setErrorDescarga(textoDescarga(e));
+    } finally { if (montado.current) setOcupado(false); }
+  };
   const descargar = (): Promise<void> => (doc ? descargarPorId(doc.id) : Promise.resolve());
   const nuevaRevisionDe = (documentoId: string): Promise<void> => ejecutar(() => crearRevisionNueva(documentoId), () => ({ tipo: 'success', texto: 'Nueva revisión creada como borrador a partir de la última versión finalizada.' }), true);
 
@@ -208,16 +237,58 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   const guardarAutorizo = (): Promise<void> => (doc ? ejecutar(() => actualizarBorrador(doc.id, { version: doc.version, autorizoNombre: autorizo }), () => ({ tipo: 'success', texto: 'Autorizó actualizado (opcional; no hay flujo de autorización).' })) : Promise.resolve());
   const asignar = (): Promise<void> => (doc ? ejecutar(() => asignarRevisor(doc.id, doc.version, revisorSel === '' ? null : revisorSel), () => ({ tipo: 'success', texto: revisorSel === '' ? 'Revisor retirado.' : 'Revisor asignado.' })) : Promise.resolve());
   const registrar = (): Promise<void> => (doc ? ejecutar(() => registrarRevision(doc.id, doc.version), () => ({ tipo: 'success', texto: 'Tu revisión quedó registrada sobre esta versión.' })) : Promise.resolve());
+  /**
+   * Finalizar y generar el PDF. Un solo intento a la vez (los clics repetidos se ignoran). Primero se guardan los cambios pendientes (si no se pueden guardar, NO se finaliza); después el
+   * servidor vuelve a validar la copia guardada, genera el PDF y registra la revisión. El resultado (éxito o error) se comunica en la sección «Finalizar hoja», donde está el usuario.
+   * Una respuesta tardía de un guardado no puede reemplazar una revisión finalizada (`gen`).
+   */
   const finalizar = async (): Promise<void> => {
-    if (!doc) return;
-    let actual = doc;
-    // «Finalizar y generar PDF»: primero se verifica que todos los cambios estén persistidos (se guardan ahora si hace falta); si no se pueden guardar, NO se finaliza.
-    if (autoguardar && (sucio || riesgoRef.current)) {
-      const r = await guardarAuto(true);
-      if (!r.ok || !r.doc) { setConfirmando(null); return; }
-      actual = r.doc;
+    if (!doc || finalizandoRef.current) return;
+    finalizandoRef.current = true;
+    const mia = ++solicitud.current;
+    setFinalizando(true); setErrorFin(null); setAviso(null); setMotivos([]); setConflicto(false);
+    try {
+      let actual = doc;
+      if (autoguardar && (sucio || riesgoRef.current)) {
+        const r = await guardarAuto(true);
+        if (!montado.current || mia !== solicitud.current) return;
+        if (!r.ok || !r.doc) { setErrorFin({ texto: 'No se pudieron guardar los últimos cambios, así que la hoja no se finalizó. Revisa el aviso de guardado y vuelve a intentar.', motivos: [] }); return; }
+        actual = r.doc;
+      }
+      try {
+        const r = await finalizarDocumento(actual.id, actual.version);
+        if (!montado.current || mia !== solicitud.current) return;
+        gen.current += 1;                                        // ninguna respuesta de guardado anterior puede reemplazar la revisión finalizada
+        setDoc(r); setAviso({ tipo: 'success', texto: 'Hoja finalizada. El PDF quedó almacenado.' }); setErrorFin(null);
+      } catch (e) {
+        if (!montado.current || mia !== solicitud.current) return;
+        // Sin respuesta definitiva (red caída, 5xx, conflicto de versión o «ya finalizada»): el servidor pudo haber finalizado. Se consulta el estado REAL antes de ofrecer otro intento.
+        const ambiguo = !(e instanceof DocumentApiError) || ['NETWORK', 'FAILED', 'INVALID_RESPONSE', 'VERSION_CONFLICT', 'ALREADY_FINAL'].includes(e.kind);
+        if (ambiguo) {
+          try {
+            const real = await obtenerDocumento(actual.id);
+            if (!montado.current || mia !== solicitud.current) return;
+            if (real.estado === 'FINALIZADA') {
+              gen.current += 1;
+              setDoc(real); setAviso({ tipo: 'success', texto: 'Hoja finalizada. El PDF quedó almacenado.' }); setErrorFin(null);
+              return;
+            }
+            if (real.estado === 'FINALIZANDO') { setDoc(real); setErrorFin({ texto: 'La finalización sigue en curso en el servidor. Espera un momento y consulta «Hojas de este código» antes de volver a intentar.', motivos: [] }); return; }
+            const r = reportarError(e);
+            setErrorFin({ ...r, texto: `${r.texto} Se comprobó en el servidor: la hoja sigue como borrador, así que puedes reintentar.` });
+          } catch {
+            if (!montado.current || mia !== solicitud.current) return;
+            const r = reportarError(e);
+            setErrorFin({ ...r, texto: `${r.texto} No se pudo comprobar si la hoja llegó a finalizarse: antes de reintentar revisa «Hojas de este código».` });
+          }
+          return;
+        }
+        setErrorFin(reportarError(e));
+      }
+    } finally {
+      finalizandoRef.current = false;
+      if (montado.current) { setFinalizando(false); if (mia === solicitud.current) { setOcupado(false); setConfirmando(null); } }
     }
-    await ejecutar(() => finalizarDocumento(actual.id, actual.version), () => ({ tipo: 'success', texto: 'Hoja finalizada. El PDF quedó almacenado.' }));
   };
   /**
    * Descarta el borrador. Primero se espera a que termine un guardado en curso (para usar la versión vigente) y se anula cualquier guardado automático pendiente; al confirmarlo el servidor, el documento
@@ -248,14 +319,14 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   };
   const cancelarFin = (): Promise<void> => (doc ? ejecutar(() => cancelarFinalizacion(doc.id, doc.version), () => ({ tipo: 'info', texto: 'Finalización cancelada: vuelve a ser borrador.' })) : Promise.resolve());
   const reintentarFin = (): Promise<void> => (doc ? ejecutar(() => finalizarDocumento(doc.id, doc.version), () => ({ tipo: 'success', texto: 'Hoja finalizada.' })) : Promise.resolve());
-  const cerrar = (): void => { solicitud.current += 1; setDoc(null); setAviso(null); setMotivos([]); setConflicto(false); setOcupado(false); setVariante(''); reiniciarBase(); };
+  const cerrar = (): void => { solicitud.current += 1; setErrorFin(null); setDoc(null); setAviso(null); setMotivos([]); setConflicto(false); setOcupado(false); setVariante(''); reiniciarBase(); };
 
   const vigentes = doc?.confirmaciones.filter((k) => k.vigente) ?? [];
   const obsoletas = (doc?.confirmaciones.length ?? 0) - vigentes.length;
   const elaboroCambiado = doc ? (elaboro.trim() || null) !== doc.elaboro.nombre : false;
 
   const valor: Documento = {
-    doc, codigo, carga, variante, setVariante, ocupado: ocupado || autoOcupado, aviso, motivos, conflicto, revisores, revisorSel, setRevisorSel, elaboro, setElaboro, autorizo, setAutorizo, sucio, vigentes, obsoletas, elaboroCambiado,
+    doc, codigo, carga, variante, setVariante, finalizando, errorFin, errorDescarga, verFinalizada, ocupado: ocupado || autoOcupado || finalizando, aviso, motivos, conflicto, revisores, revisorSel, setRevisorSel, elaboro, setElaboro, autorizo, setAutorizo, sucio, vigentes, obsoletas, elaboroCambiado,
     confirmando, setConfirmando, guardar, recargar, abrirPorId, descargar, descargarPorId, nuevaRevisionDe, confirmarElaboro, guardarAutorizo, asignar, registrar, finalizar, descartar, cancelarFin, reintentarFin,
     autoguardar, guardado: guardado === 'guardando' ? 'guardando' : pendiente ? 'pendiente' : guardado, guardadoEn, guardarAhora: async () => { await guardarAuto(true); },
     abrirHistorial: (porCodigo) => setHistorial({ abierto: true, codigo: porCodigo ? (codigo ?? '') : '' }), cerrar
@@ -271,8 +342,8 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
           <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">Lo imprimirá como «PRUEBA · NO VÁLIDO PARA PRODUCCIÓN», sin firmas.</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmando(null)}>Cancelar</Button>
-          <Button variant="contained" color="success" disabled={ocupado} onClick={() => void finalizar()}>Finalizar</Button>
+          <Button disabled={finalizando} onClick={() => setConfirmando(null)}>Cancelar</Button>
+          <Button variant="contained" color="success" disabled={ocupado || finalizando} onClick={() => void finalizar()} startIcon={finalizando ? <CircularProgress size={16} color="inherit" /> : undefined}>{finalizando ? 'Finalizando…' : 'Finalizar'}</Button>
         </DialogActions>
       </Dialog>
       <Dialog open={confirmando === 'descartar'} onClose={() => setConfirmando(null)} aria-labelledby="desc-titulo">
@@ -383,7 +454,7 @@ export function BarraDocumento() {
         </Alert>
       )}
 
-      {doc?.estado === 'FINALIZADA' && (
+      {doc?.estado === 'FINALIZADA' && !d.autoguardar && (
         <Stack spacing={1} sx={{ mt: 1 }}>
           <Alert severity="success">
             Finalizada en TEST como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
@@ -485,9 +556,36 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
   const { doc } = d;
   const [mostrar, setMostrar] = useState(false);
   const [verPendientes, setVerPendientes] = useState(false);
+  const resultado = useRef<HTMLDivElement | null>(null);
+  const eraBorrador = useRef(false);
+  useEffect(() => {
+    // Al terminar de finalizar el usuario ve el resultado: se lleva la pantalla a la tarjeta de resultado.
+    if (doc?.estado === 'BORRADOR') eraBorrador.current = true;
+    else if (doc?.estado === 'FINALIZADA' && eraBorrador.current) { eraBorrador.current = false; resultado.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); }
+  }, [doc?.estado]);
+  if (doc?.estado === 'FINALIZADA') {
+    return (
+      <Paper component="section" variant="outlined" aria-label="Finalizar hoja" sx={{ p: 2, mt: 2 }} ref={resultado} data-testid="final-resultado">
+        <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Hoja finalizada</Typography>
+        <Alert severity="success">
+          Finalizada en TEST como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
+        </Alert>
+        {doc.pdf && <Typography variant="body2" sx={{ mt: 1 }}>Archivo: <b>{doc.pdf.nombre}</b> <Typography component="span" variant="caption" color="text.secondary">· SHA-256 {doc.pdf.sha256.slice(0, 16)}…</Typography></Typography>}
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+          <Button variant="contained" startIcon={d.ocupado ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdfRoundedIcon />} onClick={() => void d.descargar()} disabled={d.ocupado || !doc.permisos.descargarPdf}>Descargar PDF finalizado</Button>
+          <Button variant="outlined" onClick={() => void d.verFinalizada()} disabled={d.ocupado || !doc.permisos.descargarPdf}>Ver hoja finalizada</Button>
+          <Button variant="text" onClick={() => void d.nuevaRevisionDe(doc.documentoId)} disabled={d.ocupado || !doc.permisos.crearRevisionNueva}>Crear nueva revisión</Button>
+        </Stack>
+        {d.errorDescarga && <Alert severity="error" sx={{ mt: 1 }} role="alert" data-testid="final-error-descarga">{d.errorDescarga}</Alert>}
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>Este es el documento definitivo de PRUEBA («PRUEBA · NO VÁLIDO PARA PRODUCCIÓN»). La vista previa de la hoja es de trabajo y no lo sustituye.</Typography>
+      </Paper>
+    );
+  }
   if (doc?.estado !== 'BORRADOR') return null;
   const elaboroOk = doc.elaboro.confirmado && !d.elaboroCambiado;
   const irAElaboro = (): void => { const s = document.getElementById('responsables-seccion'); s?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); s?.querySelector<HTMLElement>('input')?.focus(); };
+  const irACliente = (): void => { const c = document.querySelector<HTMLElement>('[data-field="cliente"]'); c?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); c?.querySelector<HTMLElement>('input')?.focus(); };
+  const irAMotivo = (codigo: string): (() => void) | undefined => (codigo === 'ELABORO_SIN_CONFIRMAR' ? irAElaboro : codigo === 'CLIENTE_REQUERIDO' ? irACliente : undefined);
   const lista: BloqueoFinal[] = [...bloqueos, ...(elaboroOk ? [] : [{ clave: 'elaboro', texto: 'Falta confirmar «Elaboró».', irA: irAElaboro }])];
   const intentar = (): void => {
     if (lista.length > 0) { setMostrar(true); onIntentar?.(); return; }
@@ -524,10 +622,19 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
           </ul>
         </Alert>
       )}
-      {d.motivos.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 1 }} aria-label="Requisitos pendientes">
-          <b>El servidor no pudo finalizar todavía:</b>
-          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>{d.motivos.map((m) => <li key={m.codigo}>{m.mensaje}{m.detalle && m.detalle.length > 0 ? ` (${m.detalle.join('; ')})` : ''}</li>)}</ul>
+      {d.errorFin && (
+        <Alert severity="warning" sx={{ mb: 1 }} aria-label="Requisitos pendientes" data-testid="final-error" role="alert">
+          <b>No se pudo finalizar.</b> {d.errorFin.texto}
+          {d.errorFin.motivos.length > 0 && (
+            <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+              {d.errorFin.motivos.map((m) => {
+                const ir = irAMotivo(m.codigo);
+                const texto = `${m.mensaje}${m.detalle && m.detalle.length > 0 ? ` (${m.detalle.join('; ')})` : ''}`;
+                return <li key={m.codigo}>{texto}{ir ? <> <Button size="small" onClick={ir} aria-label={`Ir al campo: ${m.mensaje}`}>Ir al campo</Button></> : null}</li>;
+              })}
+            </ul>
+          )}
+          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>Tu borrador sigue intacto: corrige lo indicado y vuelve a intentar.</Typography>
         </Alert>
       )}
       {mostrar && lista.length > 0 && (
@@ -539,7 +646,8 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
         </Alert>
       )}
       <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-        <Button variant="contained" color="success" disabled={d.ocupado || !doc.permisos.finalizar || d.guardado === 'conflicto'} onClick={intentar} aria-describedby="finalizar-ayuda">Finalizar y generar PDF</Button>
+        <Button variant="contained" color="success" disabled={d.ocupado || !doc.permisos.finalizar || d.guardado === 'conflicto'} onClick={intentar} aria-describedby="finalizar-ayuda"
+          startIcon={d.finalizando ? <CircularProgress size={16} color="inherit" /> : undefined}>{d.finalizando ? 'Finalizando…' : 'Finalizar y generar PDF'}</Button>
         <Box sx={{ flex: 1 }} />
         <Button size="small" color="inherit" disabled={d.ocupado || !doc.permisos.editar} onClick={() => d.setConfirmando('descartar')}>Descartar borrador</Button>
       </Stack>

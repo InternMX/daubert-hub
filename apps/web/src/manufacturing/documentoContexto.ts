@@ -17,6 +17,14 @@ export interface Documento {
   elaboro: string; setElaboro: (v: string) => void; autorizo: string; setAutorizo: (v: string) => void;
   sucio: boolean; vigentes: ConfirmacionDocumento[]; obsoletas: number; elaboroCambiado: boolean;
   confirmando: 'finalizar' | 'descartar' | null; setConfirmando: (v: 'finalizar' | 'descartar' | null) => void;
+  /** Finalización en curso (guardando lo pendiente, generando el PDF): evita clics repetidos y alimenta «Finalizando…». */
+  finalizando: boolean;
+  /** Resultado de un intento de finalizar que falló: texto comprensible + requisitos que informó el servidor (se muestra en la sección «Finalizar hoja»). */
+  errorFin: { texto: string; motivos: MotivoNoLista[] } | null;
+  /** Error al DESCARGAR o ver el PDF almacenado (distinto de un error de finalización). */
+  errorDescarga: string | null;
+  /** Abre en otra pestaña el PDF ALMACENADO de la revisión finalizada (no se vuelve a generar). */
+  verFinalizada: () => Promise<void>;
   guardar: () => Promise<void>; recargar: () => Promise<void>; abrirPorId: (id: string) => Promise<void>; descargar: () => Promise<void>; descargarPorId: (id: string) => Promise<void>;
   nuevaRevisionDe: (documentoId: string) => Promise<void>; confirmarElaboro: () => Promise<void>; guardarAutorizo: () => Promise<void>; asignar: () => Promise<void>;
   registrar: () => Promise<void>; finalizar: () => Promise<void>; descartar: () => Promise<void>; cancelarFin: () => Promise<void>; reintentarFin: () => Promise<void>;

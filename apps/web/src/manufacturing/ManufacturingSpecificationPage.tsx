@@ -15,6 +15,7 @@ import { localizar } from './incidenciasNavegacion';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
 import { abrirSinBind, construirCarga } from './documentSpec';
+import { etiquetaRevision } from './documentLabels';
 import { BarraDocumento, DocumentoProvider, FinalizarHojaDocumento, ResponsablesDocumento, type BloqueoFinal, type EstadoDatos } from './DocumentPanel';
 import { BotonMisHojas, HojasDelCodigo } from './HojasDelCodigo';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
@@ -803,7 +804,16 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         {documentos && <FinalizarHojaDocumento datos={estadoDatos} bloqueos={bloqueosFinal} faltantes={faltantesFinal.length} contradicciones={sinReconocer.length} onIntentar={() => setIntentoFinal(true)} />}
         </Box>
         </IncidenciasProvider>
-        {!sinElegir && <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
+        {documentos && docActual?.estado === 'FINALIZADA' && (
+          <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2 }} data-testid="hoja-finalizada-panel">
+              <Chip size="small" color="success" label={`FINALIZADA · ${etiquetaRevision(docActual)} · PRUEBA`} />
+              <Typography sx={{ mt: 1 }}>Esta hoja ya no es un borrador. El documento definitivo es el PDF almacenado ({docActual.pdf?.nombre ?? 'REV'}); descárgalo o ábrelo desde «Hoja finalizada».</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>Los cambios requieren crear una nueva revisión.</Typography>
+            </Paper>
+          </Box>
+        )}
+        {!sinElegir && !(documentos && docActual?.estado === 'FINALIZADA') && <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
           <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData} avisos={avisosVistaPrevia}
             pdfBloqueo={sinReconocer.length > 0 ? `Corrige o reconoce las contradicciones técnicas (${sinReconocer.length}) para descargar el PDF.` : null}
             context={previewContext}
