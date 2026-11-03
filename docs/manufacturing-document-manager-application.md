@@ -82,6 +82,16 @@ La página «Hojas de manufactura» es **una sola experiencia** basada en el có
 
 **Validación automática.** Ya no existe el botón «Validar especificación» en esta pantalla: la comprobación local es inmediata y la del servidor (vista previa) se solicita con retardo al cambiar los datos relevantes; solo vale la respuesta que corresponde a los datos actuales (una respuesta tardía se descarta) y mientras no llega se muestra «Comprobando datos…», nunca «Datos completos». No genera documentos, no modifica el borrador, no confirma revisiones ni crea PDF. Los faltantes se marcan en su campo al intentar finalizar o al navegar a ellos. (Sin el gestor documental, `VITE_MANUFACTURING_DOCUMENTS` apagado, la pantalla clásica conserva su tarjeta de validación.)
 
+### Selección de formato (familia)
+**Buscar código → Usar el formato recomendado o elegir otro → Completar instrucciones → Finalizar y generar PDF.** Elegir el formato ES empezar: no hay «Confirmar familia».
+
+- Producto nuevo con recomendación: tarjeta «Formato recomendado: …» con «Usar este formato» y «Elegir otro formato» (los siete formatos, ninguno marcado). La recomendación no cuenta como elegida: el formulario técnico y la vista previa aparecen al elegir, y consultar BIND o ver la recomendación no crea nada.
+- Sin recomendación confiable: se ofrece directamente la selección, sin inventar una recomendación.
+- Elegido el formato queda la línea «Formato: … · Cambiar»; el borrador se crea con el guardado automático existente. Antes de guardar se puede cambiar libremente (se crea una sola hoja con el último formato); con la hoja ya guardada, cambiar pide confirmación y solo entonces actualiza el borrador (los datos que el nuevo formato no usa dejan de guardarse).
+- Hojas existentes: se abren con su formato real, sin tarjeta ni confirmación, y abrir no escribe nada. COEX conserva su selector de variante y los rollos sus modalidades.
+- Al **descartar** un borrador se cierra el formulario, se anula el guardado pendiente, se recargan «Hojas de este código» y «Mis hojas» y se avisa «Borrador descartado.»; una respuesta tardía no restaura la hoja.
+- Al recuperar un borrador se conservan la selección y la procedencia del color (Daubert Azul no pasa a «Otro» ni a «Modificado por el usuario»).
+
 ### Datos obligatorios pendientes: qué falta y dónde
 «Faltan datos obligatorios (N)» es desplegable: lista cada pendiente con su nombre claro y «Ir al campo» (desplaza, enfoca y resalta el control). Junto al campo se muestra solo una marca discreta «Pendiente para finalizar» (el detalle no se repite). «Falta confirmar Elaboró» es independiente y su chip lleva a su sección. Las listas se derivan de los datos actuales (sin resultados obsoletos).
 

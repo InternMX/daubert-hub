@@ -257,6 +257,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const [bindBusqueda, setBindBusqueda] = useState<BindProductLookup | null>(null);
   const busquedaRef = useRef<string | null>(null);
   const [docActual, setDocActual] = useState<DocumentoVista | null>(null);
+  const [listaFormatos, setListaFormatos] = useState(false);                         // se muestran los siete formatos («Elegir otro formato» / «Cambiar»)
   const [mensaje, setMensaje] = useState<string | null>(null);                           // confirmación breve (p. ej. «Borrador descartado.»)
   const [familiaPendiente, setFamiliaPendiente] = useState<FamilyCode | null>(null);   // cambio de familia de una hoja ya guardada, a la espera de confirmación
   const [bindActual, setBindActual] = useState<BindActual>({ estado: 'inactivo' });
@@ -291,7 +292,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
-    setMensaje(null);
+    setMensaje(null); setListaFormatos(false);
     setValidation(null);
     setReviewedKey('');
     setReviewWeights(false);
@@ -333,7 +334,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   function abrirDocumento(doc: DocumentoVista): void {
     controller.current?.abort();            // una búsqueda a BIND en curso no debe pisar el documento abierto
     const abierto = abrirSinBind(doc, configs);
-    setMensaje(null);
+    setMensaje(null); setListaFormatos(false);
     setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setCode(doc.codigo); setErrorKind(null);
     if (documentos && busquedaRef.current?.toLowerCase() !== doc.codigo.toLowerCase()) { busquedaRef.current = doc.codigo; setBusqueda(doc.codigo); setBindBusqueda(null); void recargarHojas(doc.codigo); }
@@ -373,7 +374,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   function prepararNueva(): void {
     if (!bindBusqueda) return;
     controller.current?.abort();
-    setMensaje(null);
+    setMensaje(null); setListaFormatos(false);
     setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false);
     setLookup(bindBusqueda); setForm(buildInitialForm(bindBusqueda, configs)); setStatus('ready');
@@ -385,7 +386,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     controller.current?.abort();
     setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false); setFamiliaPendiente(null);
-    setForm(null); setLookup(bindBusqueda); setStatus('ready'); setMensaje('Borrador descartado.');
+    setForm(null); setLookup(bindBusqueda); setStatus('ready'); setListaFormatos(false); setMensaje('Borrador descartado.');
     void recargarHojas(d.codigo);
   }
 
@@ -419,6 +420,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   // Elegir familia ES empezar: confirma la sugerida o cambia de familia. Si la hoja ya está guardada con otra familia, se pide confirmación antes de cambiarla (no se sobrescribe sin avisar).
   const elegirFamilia = (familia: FamilyCode): void => {
     if (documentos && docActual?.estado === 'BORRADOR' && docActual.familia !== familia) { setFamiliaPendiente(familia); return; }
+    setListaFormatos(false);
     update((f) => (f.family === familia ? confirmFamily(f) : selectFamily(f, familia, configs)));
   };
   const select = (key: FieldKey, options: Array<[string, string]>) => (
@@ -445,6 +447,8 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     )
   );
 
+  // Gestor documental: el formulario técnico y la vista previa aparecen cuando el usuario elige el formato (la recomendación no cuenta como elegida).
+  const sinElegir = Boolean(documentos && form && form.familyOrigin !== 'USUARIO');
   const live = form && configStatus === 'ready' ? validateSpecification(form, configs, lookup ?? undefined) : null;
   const reviewKey = JSON.stringify({ form, producto: lookup?.producto });
   const previewData = form && config ? { ...toPreviewData(form, config), ...(config.fuelles ? { fuelleTotal: form.fields.fuelleTotal.value } : {}) } : {};
@@ -547,8 +551,38 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         {documentos && <BarraDocumento />}
         <Box component="fieldset" disabled={soloLectura} data-testid="formulario-documento" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
           <BindProductPanel lookup={lookup} guardado={desdeGuardado} actual={bindActual} onConsultar={() => { void consultarBindActual(); }} />
-          {live && <ResumenIncidencias lista={todas} ctx={ctx} />}
+          {live && !sinElegir && <ResumenIncidencias lista={todas} ctx={ctx} />}
 
+          {documentos ? (
+            <Paper component="section" variant="outlined" sx={{ p: 2, mt: 2 }} aria-label="Formato de la hoja">
+              {form.familyOrigin === 'USUARIO' && !listaFormatos ? (
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography data-testid="formato-actual">Formato: <b>{config?.nombre ?? form.family}</b></Typography>
+                  {!soloLectura && <Button size="small" onClick={() => setListaFormatos(true)}>Cambiar</Button>}
+                </Stack>
+              ) : form.familyOrigin === 'SUGERIDA' && !listaFormatos ? (
+                <Box data-testid="formato-recomendado">
+                  <Typography variant="subtitle1" component="h2">Formato recomendado: <b>{config?.nombre ?? form.family}</b></Typography>
+                  {form.familyNote && <Typography variant="body2" color="text.secondary" data-testid="family-note">{form.familyNote}</Typography>}
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
+                    <Button variant="contained" onClick={() => form.family && elegirFamilia(form.family)}>Usar este formato</Button>
+                    <Button variant="outlined" onClick={() => setListaFormatos(true)}>Elegir otro formato</Button>
+                  </Stack>
+                </Box>
+              ) : (
+                <FormControl error={Boolean(errors.familia)}>
+                  <FormLabel id="family-label">{form.family === null ? 'No hay un formato recomendado para este producto: elige el formato' : 'Elige el formato'}</FormLabel>
+                  {form.family === null && form.familyNote && !todas.some((i) => i.id === 'MATERIAL_PAPEL_SIN_PLANTILLA') && <Typography variant="body2" color="text.secondary" data-testid="family-note">{form.familyNote}</Typography>}
+                  <RadioGroup row aria-labelledby="family-label" value={form.familyOrigin === 'USUARIO' ? (form.family ?? '') : ''} onChange={(e) => elegirFamilia(e.target.value as FamilyCode)}>
+                    {configs.map((c) => <FormControlLabel key={c.codigo} value={c.codigo} control={<Radio />} label={c.nombre} />)}
+                  </RadioGroup>
+                  {form.family !== null && <Box><Button size="small" onClick={() => setListaFormatos(false)}>{form.familyOrigin === 'USUARIO' ? 'Mantener el formato' : 'Volver a la recomendación'}</Button></Box>}
+                </FormControl>
+              )}
+              {!sinElegir && config && config.notas.map((n) => <Typography key={n} variant="caption" color="text.secondary" display="block" data-testid="family-particularity">{n}</Typography>)}
+              <IncidenciasDeSeccion seccion="familia" />
+            </Paper>
+          ) : (
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Familia de manufactura">
             <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 1 }}>Familia de manufactura</Typography>
             <FormControl error={Boolean(errors.familia)}>
@@ -570,7 +604,9 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             {config && config.notas.map((n) => <Typography key={n} variant="caption" color="text.secondary" display="block" data-testid="family-particularity">{n}</Typography>)}
             <IncidenciasDeSeccion seccion="familia" />
           </Paper>
+          )}
 
+          {!sinElegir && (<>
           <SectionCard title="Datos generales" seccion="datos">
             {text('codigo')}
             {text('descripcion', { multiline: true, minRows: 2 })}
@@ -732,14 +768,15 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             )}
           </Paper>
           )}
+          </>)}
           <Dialog open={familiaPendiente !== null} onClose={() => setFamiliaPendiente(null)} aria-labelledby="cambiar-familia-titulo">
             <DialogTitle id="cambiar-familia-titulo">Cambiar la familia de esta hoja</DialogTitle>
             <DialogContent>
               <Typography>Esta hoja ya está guardada como {configs.find((c) => c.codigo === docActual?.familia)?.nombre ?? docActual?.familia}. Cambiarla a {configs.find((c) => c.codigo === familiaPendiente)?.nombre ?? familiaPendiente} actualizará el borrador guardado: los datos que la nueva familia no usa dejarán de guardarse.</Typography>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setFamiliaPendiente(null)}>Conservar la familia actual</Button>
-              <Button variant="contained" onClick={() => { const nueva = familiaPendiente; setFamiliaPendiente(null); if (nueva) update((f) => selectFamily(f, nueva, configs)); }}>Cambiar familia</Button>
+              <Button onClick={() => { setFamiliaPendiente(null); setListaFormatos(false); }}>Conservar la familia actual</Button>
+              <Button variant="contained" onClick={() => { const nueva = familiaPendiente; setFamiliaPendiente(null); setListaFormatos(false); if (nueva) update((f) => selectFamily(f, nueva, configs)); }}>Cambiar familia</Button>
             </DialogActions>
           </Dialog>
           <Dialog open={reviewWeights && Boolean(config?.pesosCapasRegla)} onClose={() => setReviewWeights(false)} aria-labelledby="review-layer-weights-title">
@@ -766,12 +803,12 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         {documentos && <FinalizarHojaDocumento datos={estadoDatos} bloqueos={bloqueosFinal} faltantes={faltantesFinal.length} contradicciones={sinReconocer.length} onIntentar={() => setIntentoFinal(true)} />}
         </Box>
         </IncidenciasProvider>
-        <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
+        {!sinElegir && <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
           <SheetPreviewPanel family={form.family} familyLabel={config?.nombre ?? ''} data={previewData} avisos={avisosVistaPrevia}
             pdfBloqueo={sinReconocer.length > 0 ? `Corrige o reconoce las contradicciones técnicas (${sinReconocer.length}) para descargar el PDF.` : null}
             context={previewContext}
             onAssessment={(result, key, estado) => { setAssessment(result ? { key, result } : null); setFallo(estado === 'error' ? key : ''); }} />
-        </Box>
+        </Box>}
         </Box>
       )}
     </Box>

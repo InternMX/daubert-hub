@@ -10,7 +10,7 @@ import * as docs from '../services/manufacturingDocuments';
 import type { DocumentoVista } from '../services/manufacturingDocuments';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { previewManufacturingSheet } from '../services/sheetPreview';
-import { familyConfigs, schfpmg001 } from '../test/bindProductFixtures';
+import { familyConfigs, productoPapel, rolloContinuo, schfpmg001 } from '../test/bindProductFixtures';
 import { guardarArchivo } from './downloadFile';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
 
@@ -102,7 +102,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await esperar();
     expect(m.crearBorrador).not.toHaveBeenCalled();                                  // preparar y ver la sugerencia no crea nada: falta que el usuario elija la familia
     m.crearBorrador.mockResolvedValue(guardado());
-    await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
+    await user.click(await screen.findByRole('button', { name: 'Usar este formato' }));
     expect(await screen.findByText('Cambios guardados')).toBeInTheDocument();         // solo tras la respuesta del servidor
     expect(m.crearBorrador).toHaveBeenCalledTimes(1);
     const enviado = m.crearBorrador.mock.calls[0]![0];
@@ -123,7 +123,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
     expect((await ancho()).value).toBe('77');
     expect((screen.getByLabelText('Largo') as HTMLInputElement).value).toBe('88');
-    expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
+    expect(screen.getByTestId('formato-actual')).toHaveTextContent('Formato: Bolsa Plana 1');
     expect((screen.getByLabelText('Elaboró') as HTMLInputElement).value).toBe('General Dos');
     expect(lookupMock).toHaveBeenCalledTimes(1);                                     // solo la búsqueda; abrir no vuelve a consultar BIND
   });
@@ -503,7 +503,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       const lista = await buscar(user);
       fireEvent.change(within(lista).getByLabelText('Variante (opcional)'), { target: { value: 'Doblada' } });
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
+      await user.click(await screen.findByRole('button', { name: 'Usar este formato' }));
       await waitFor(() => expect(m.crearBorrador).toHaveBeenCalledTimes(1));
       fireEvent.change(await ancho(), { target: { value: '7' } });
       await esperar();
@@ -519,7 +519,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       m.crearBorrador.mockRejectedValueOnce(new docs.DocumentApiError('DOCUMENT_EXISTS', 409));
       const lista = await buscar(user);
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
+      await user.click(await screen.findByRole('button', { name: 'Usar este formato' }));
       expect(await screen.findByText('Ya existe esa hoja')).toBeInTheDocument();
       await esperar();
       expect(m.crearBorrador).toHaveBeenCalledTimes(1);
@@ -536,7 +536,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       m.crearBorrador.mockRejectedValueOnce(new docs.DocumentApiError('INVALID_DATA', 400, { fields: ['datos.pesoLb'] }));
       const lista = await buscar(user);
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
+      await user.click(await screen.findByRole('button', { name: 'Usar este formato' }));
       expect(await screen.findByText('Error al guardar')).toBeInTheDocument();
       expect(screen.getByText(/Revisa: pesoLb/)).toBeInTheDocument();                 // identifica el campo rechazado
       expect(screen.queryByText('Cambios guardados')).not.toBeInTheDocument();       // jamás «guardado» sin respuesta exitosa
@@ -601,12 +601,13 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     });
   });
 
-  describe('elegir la familia es empezar (sin «Confirmar familia») y descartar cierra la hoja', () => {
-    const preparar = async (user: ReturnType<typeof userEvent.setup>) => {
+  describe('selección de formato: recomendación contextual, elegir otro formato y descartar', () => {
+    const FORMATOS = ['Bolsa Plana 1', 'Hojas', 'Bolsa Fuelle', 'Bolsa Natural', 'Rollo Continuo', 'Termoencogible', 'COEX'];
+    const preparar = async (user: ReturnType<typeof userEvent.setup>, lookup = schfpmg001()) => {
+      lookupMock.mockResolvedValue(lookup);
       pagina(true);
-      const lista = await buscar(user);
+      const lista = await buscar(user, lookup.producto.Code);
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await screen.findByRole('radio', { name: 'Bolsa Plana 1' });
     };
     const abrir = async (user: ReturnType<typeof userEvent.setup>, doc = guardado()) => {
       pagina(true);
@@ -616,6 +617,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
       await ancho();
     };
+    const formatoActual = () => screen.getByTestId('formato-actual');
     // Síncrono (fireEvent): el guardado automático pendiente (retardo de prueba 60 ms) no alcanza a enviarse antes de descartar.
     const descartarYa = () => {
       fireEvent.click(within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Descartar borrador' }));
@@ -626,15 +628,32 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Descartar' }));
     };
 
-    it('no existe «Confirmar familia»: pulsar la familia sugerida abre el trabajo, crea UN borrador y muestra «Responsables y revisión» y «Finalizar hoja»', async () => {
+    it('1) producto nuevo con familia recomendada: tarjeta compacta con dos acciones; la recomendación NO está elegida, no hay lista, ni formulario, ni borrador', async () => {
+      const user = userEvent.setup();
+      await preparar(user);
+      const tarjeta = await screen.findByTestId('formato-recomendado');
+      expect(tarjeta).toHaveTextContent('Formato recomendado: Bolsa Plana 1');
+      expect(within(tarjeta).getByRole('button', { name: 'Usar este formato' })).toBeInTheDocument();
+      expect(within(tarjeta).getByRole('button', { name: 'Elegir otro formato' })).toBeInTheDocument();
+      expect(screen.queryAllByRole('radio', { name: /Bolsa Plana 1|COEX/ })).toHaveLength(0);       // la lista de siete no es la interfaz principal
+      expect(screen.queryByRole('button', { name: 'Confirmar familia' })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Ancho')).not.toBeInTheDocument();                            // el formulario aparece al elegir
+      expect(screen.queryByTestId('formato-actual')).not.toBeInTheDocument();
+      await esperar();
+      expect(m.crearBorrador).not.toHaveBeenCalled();                                              // 10) consultar BIND y ver la recomendación no crea nada
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    });
+
+    it('2) «Usar este formato» elige la recomendada: línea «Formato: … · Cambiar», formulario, UN borrador y las secciones de responsables y finalizar', async () => {
       const user = userEvent.setup();
       m.crearBorrador.mockResolvedValue(guardado());
       await preparar(user);
-      expect(screen.queryByRole('button', { name: 'Confirmar familia' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('region', { name: 'Finalizar hoja' })).not.toBeInTheDocument();
-      await esperar();
-      expect(m.crearBorrador).not.toHaveBeenCalled();                                 // consultar BIND y preparar no crean nada
-      await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+      await user.click(await screen.findByRole('button', { name: 'Usar este formato' }));
+      expect(await ancho()).toBeInTheDocument();
+      expect(formatoActual()).toHaveTextContent('Formato: Bolsa Plana 1');
+      expect(within(formatoActual().parentElement as HTMLElement).getByRole('button', { name: 'Cambiar' })).toBeInTheDocument();
+      expect(screen.queryByTestId('formato-recomendado')).not.toBeInTheDocument();
+      expect(screen.queryAllByRole('radio', { name: /Bolsa Plana 1/ })).toHaveLength(0);           // la lista queda oculta
       expect(await screen.findByRole('region', { name: 'Finalizar hoja' })).toBeInTheDocument();
       expect(screen.getByRole('region', { name: 'Responsables y revisión' })).toBeInTheDocument();
       await esperar();
@@ -642,11 +661,50 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(m.crearBorrador.mock.calls[0]![0]).toMatchObject({ familia: 'BOLSA_PLANA_1' });
     });
 
-    it('elegir otra familia distinta de la sugerida y cambiar de opinión antes de guardar: se crea una sola hoja, con la última familia', async () => {
+    it('3) «Elegir otro formato» muestra los siete formatos sin ninguno marcado; al elegir uno comienza con él sin confirmación adicional', async () => {
       const user = userEvent.setup();
       m.crearBorrador.mockResolvedValue(guardado({ familia: 'BOLSA_FUELLE' }));
       await preparar(user);
-      fireEvent.click(screen.getByRole('radio', { name: 'Rollo Continuo' }));
+      await user.click(await screen.findByRole('button', { name: 'Elegir otro formato' }));
+      for (const nombre of FORMATOS) expect(screen.getByRole('radio', { name: nombre })).not.toBeChecked();
+      expect(screen.getAllByRole('radio')).toHaveLength(7);
+      await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
+      expect(formatoActual()).toHaveTextContent('Formato: Bolsa Fuelle');
+      expect(screen.queryAllByRole('radio', { name: 'Bolsa Fuelle' })).toHaveLength(0);
+      await waitFor(() => expect(m.crearBorrador).toHaveBeenCalledTimes(1));
+      expect(m.crearBorrador.mock.calls[0]![0]).toMatchObject({ familia: 'BOLSA_FUELLE' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('4) sin recomendación confiable: se ofrece directamente la selección de formatos, sin inventar una recomendación ni crear nada', async () => {
+      const user = userEvent.setup();
+      await preparar(user, productoPapel());
+      expect(await screen.findByText(/No hay un formato recomendado para este producto/)).toBeInTheDocument();
+      expect(screen.queryByTestId('formato-recomendado')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('radio')).toHaveLength(7);
+      for (const nombre of FORMATOS) expect(screen.getByRole('radio', { name: nombre })).not.toBeChecked();
+      expect(screen.queryByLabelText('Ancho')).not.toBeInTheDocument();
+      await esperar();
+      expect(m.crearBorrador).not.toHaveBeenCalled();
+    });
+
+    it('5) abrir un borrador guardado muestra su familia real, sin tarjeta de recomendación, sin pedir elegir y sin escribir nada (ni al ver «Cambiar»)', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      expect(formatoActual()).toHaveTextContent('Formato: Bolsa Plana 1');
+      expect(screen.queryByTestId('formato-recomendado')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Usar este formato' })).not.toBeInTheDocument();
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
+      expect(m.crearBorrador).not.toHaveBeenCalled();
+    });
+
+    it('6) cambiar de formato antes de guardar: se crea una sola hoja, con el último formato', async () => {
+      const user = userEvent.setup();
+      m.crearBorrador.mockResolvedValue(guardado({ familia: 'BOLSA_FUELLE' }));
+      await preparar(user);
+      fireEvent.click(await screen.findByRole('button', { name: 'Usar este formato' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cambiar' }));
       fireEvent.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
       await waitFor(() => expect(m.crearBorrador).toHaveBeenCalledTimes(1));
       await esperar();
@@ -654,33 +712,45 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(m.crearBorrador.mock.calls[0]![0]).toMatchObject({ familia: 'BOLSA_FUELLE' });
     });
 
-    it('cambiar de familia DESPUÉS de guardar pide confirmación: conservar no escribe nada; cambiar actualiza el borrador con la nueva familia', async () => {
+    it('7) cambiar de formato DESPUÉS de guardar pide confirmación: conservar no escribe nada; cambiar actualiza el borrador con el nuevo formato', async () => {
       const user = userEvent.setup();
       await abrir(user);
+      await user.click(screen.getByRole('button', { name: 'Cambiar' }));
       await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
       const dialogo = await screen.findByRole('dialog');
       expect(dialogo).toHaveTextContent(/ya está guardada como Bolsa Plana 1/);
       await user.click(within(dialogo).getByRole('button', { name: 'Conservar la familia actual' }));
       await cerrado();
-      expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
+      expect(formatoActual()).toHaveTextContent('Formato: Bolsa Plana 1');
       await esperar();
       expect(m.actualizarBorrador).not.toHaveBeenCalled();
       m.actualizarBorrador.mockResolvedValue(guardado({ familia: 'BOLSA_FUELLE', version: 4 }));
+      await user.click(screen.getByRole('button', { name: 'Cambiar' }));
       await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
       await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cambiar familia' }));
       await waitFor(() => expect(m.actualizarBorrador).toHaveBeenCalledTimes(1));
       expect(m.actualizarBorrador.mock.calls[0]![1]).toMatchObject({ version: 3, familia: 'BOLSA_FUELLE' });
     });
 
-    it('abrir un borrador existente conserva su familia y no escribe nada (ni al pulsar su propia familia)', async () => {
+    it('8) COEX: se puede elegir de la lista y conserva su selector de variante azul/verde', async () => {
       const user = userEvent.setup();
-      await abrir(user);
-      expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
-      await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      await esperar();
-      expect(m.actualizarBorrador).not.toHaveBeenCalled();
-      expect(m.crearBorrador).not.toHaveBeenCalled();
+      m.crearBorrador.mockResolvedValue(guardado({ familia: 'COEX' }));
+      await preparar(user);
+      await user.click(await screen.findByRole('button', { name: 'Elegir otro formato' }));
+      await user.click(screen.getByRole('radio', { name: 'COEX' }));
+      expect(formatoActual()).toHaveTextContent('Formato: COEX');
+      expect(await screen.findByLabelText('Variante COEX')).toBeInTheDocument();
+    });
+
+    it('9) Rollo Continuo recomendado conserva sus modalidades (Extendida sigue no autorizada) al usar el formato', async () => {
+      const user = userEvent.setup();
+      m.crearBorrador.mockResolvedValue(guardado({ familia: 'ROLLO_CONTINUO' }));
+      await preparar(user, rolloContinuo());
+      expect(await screen.findByTestId('formato-recomendado')).toHaveTextContent('Formato recomendado: Rollo Continuo');
+      await user.click(screen.getByRole('button', { name: 'Usar este formato' }));
+      expect(formatoActual()).toHaveTextContent('Formato: Rollo Continuo');
+      expect(document.querySelector('[data-field="modalidad"]')).not.toBeNull();
+      expect(screen.getByRole('radio', { name: /Extendida/ })).toBeDisabled();                      // no autorizada: se muestra deshabilitada (regla existente)
     });
 
     it('descartar: cierra el formulario, limpia el documento activo, avisa, recarga «Hojas de este código» y «Mis hojas» y cancela el guardado automático pendiente', async () => {
@@ -723,6 +793,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(screen.queryByTestId('formulario-documento')).not.toBeInTheDocument();
       expect(m.actualizarBorrador).toHaveBeenCalledTimes(1);
     });
+
     it('si el servidor rechaza el descarte, la hoja sigue abierta y editable con el error', async () => {
       const user = userEvent.setup();
       await abrir(user);
