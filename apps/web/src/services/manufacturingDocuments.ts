@@ -46,7 +46,9 @@ export interface DocumentoVista extends ResumenDocumento {
 export type FuncionResponsable = 'GENERO' | 'REVISO' | 'APROBO';
 export const FUNCIONES: ReadonlyArray<{ valor: FuncionResponsable; etiqueta: string }> = [{ valor: 'GENERO', etiqueta: 'Generó' }, { valor: 'REVISO', etiqueta: 'Revisó' }, { valor: 'APROBO', etiqueta: 'Aprobó' }];
 /** Imagen de firma que esta cuenta puede usar (la miniatura viaja como data URI ya procesada por el servidor). */
-export interface FirmaVista { id: string; propietario: string; propia: boolean; ancho: number; alto: number; miniatura: string; creadaEn: string }
+export interface FirmaVista { id: string; propietario: string; propia: boolean; ancho: number; alto: number; miniatura: string; creadaEn: string; /** Solo al subirla: false = quedó a nombre de otra persona y esta cuenta aún no puede usarla (necesita su autorización). */ utilizable?: boolean }
+/** Persona con autorización de USO vigente de una firma. */
+export interface AutorizacionFirma { usuarioId: string; nombre: string; otorgadaEn: string; otorgadaPor: string | null }
 export interface FirmaDeResponsable { id: string; propietario: string | null; miniatura: string }
 export interface ResponsableVista { posicion: number; funcion: FuncionResponsable; nombre: string; conFirma: boolean; firma: FirmaDeResponsable | null }
 /** Responsable que se envía al guardar: la posición es el orden; la primera es siempre «Generó». Con `firmaId` el nombre impreso es el de la propietaria de la imagen. */
@@ -202,5 +204,6 @@ export async function subirFirma(nueva: FirmaNueva): Promise<FirmaVista> {
   if (typeof json !== 'object' || json === null) throw new DocumentApiError('INVALID_RESPONSE', response.status);
   return json as FirmaVista;
 }
+export const autorizacionesDeFirma = (firmaId: string, signal?: AbortSignal): Promise<{ data: AutorizacionFirma[] }> => call('GET', `/signatures/${enc(firmaId)}/authorizations`, undefined, signal);
 export const autorizarUsoDeFirma = (firmaId: string, usuarioId: string): Promise<{ ok: true }> => call('POST', `/signatures/${enc(firmaId)}/authorize`, { usuarioId });
 export const revocarUsoDeFirma = (firmaId: string, usuarioId: string): Promise<{ ok: true }> => call('POST', `/signatures/${enc(firmaId)}/revoke`, { usuarioId });

@@ -13,6 +13,7 @@ export interface ResponsableFila {
 }
 export interface ResponsablePdf { posicion: number; funcion: FuncionResponsable; nombre: string; firma: { tipoMime: string; contenido: Buffer; sha256: string } | null }
 export interface ResponsableAGuardar { posicion: number; funcion: FuncionResponsable; nombre: string; firmaInternaId: string | null }
+export interface AutorizacionVista { usuarioId: string; nombre: string; otorgadaEn: string; otorgadaPor: string | null }
 export interface FirmaResuelta { id: string; internoId: string; propietario: string; permitido: boolean }
 
 @Injectable()
@@ -108,6 +109,18 @@ export class ResponsablesRepository {
       `INSERT INTO manufactura.firma_autorizaciones (firma_id, usuario_id) SELECT f.firma_id, $2::bigint FROM manufactura.firmas f WHERE f.public_id = $1::uuid
        ON CONFLICT DO NOTHING`, [firmaPublicId, usuarioId]);
     return (r.rowCount ?? 0) > 0 ? 'creada' : 'ya_autorizada';
+  }
+
+  /** Autorizaciones de uso VIGENTES de una firma (la propietaria ve todas; cualquier otra cuenta solo ve las suyas: lo decide la base). */
+  async autorizacionesDe(c: PoolClient, firmaPublicId: string): Promise<AutorizacionVista[]> {
+    const r = await c.query<{ usuario_id: string; nombre: string; otorgada_en: string; otorgada_por: string | null }>(
+      `SELECT a.usuario_id::text, u.display_name AS nombre, to_json(a.created_at) #>> '{}' AS otorgada_en, o.display_name AS otorgada_por
+         FROM manufactura.firma_autorizaciones a
+         JOIN manufactura.firmas f ON f.firma_id = a.firma_id
+         JOIN security.users u ON u.user_id = a.usuario_id
+         LEFT JOIN security.users o ON o.user_id = a.otorgada_por_usuario_id
+        WHERE f.public_id = $1::uuid AND a.revocada_en IS NULL ORDER BY a.created_at, a.autorizacion_id`, [firmaPublicId]);
+    return r.rows.map((x) => ({ usuarioId: x.usuario_id, nombre: x.nombre, otorgadaEn: x.otorgada_en, otorgadaPor: x.otorgada_por }));
   }
 
   async revocar(c: PoolClient, firmaPublicId: string, usuarioId: string): Promise<number> {

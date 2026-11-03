@@ -44,8 +44,14 @@ Igual que la 101 (README de la carpeta): respaldo verificable de `manufactura` �
 4. En «Autorizar uso…» de una firma propia, autorizar a otra cuenta; iniciar sesión con esa cuenta y comprobar que la ve (y que no ve la de nadie más).
 5. Finalizar: el PDF REV01 muestra función, nombre e imagen de cada responsable; reabrir desde «Hojas de este código» no cambia nada; «Crear nueva revisión» recupera nombres sin imágenes.
 
+## Autorización de uso de firmas (completa)
+- **Quién autoriza:** solo la propietaria de la firma. En «Elegir firma» → su firma → **«Quién puede usarla»**: lista de personas con permiso, buscador por nombre para agregar a otra y «Revocar» por persona. Nada se concede solo: quien sube una firma **no recibe** permiso de uso; si un ADMIN sube la firma de otra persona con cuenta, queda a nombre de ella, no se selecciona y se le explica que la propietaria debe autorizarlo.
+- **API (`/api/manufacturing-sheets/documents/signatures/:id/…`):** `GET authorizations`, `POST authorize` y `POST revoke` (cuerpo `{ usuarioId }`), `POST retire`. Cada autorización y revocación queda en `audit.cambios` con la cuenta que la realizó.
+- **Revocar:** impide asignar la firma a hojas nuevas y finalizar con ella (mensaje claro «una firma asignada ya no está disponible»); el borrador sigue intacto y los PDF y revisiones ya finalizados no cambian.
+- **Persona sin cuenta:** por diseño de la migración 102, el ADMIN que la incorpora queda como custodio con permiso de uso (registrado). Cualquier otra persona requiere autorización explícita suya.
+
 ## Limitaciones conocidas
-- La interfaz no incluye revocar un uso ya autorizado ni retirar una firma (la API ya lo permite: `POST …/signatures/:id/revoke` y `…/retire`).
+- La interfaz no incluye retirar una firma del catálogo (la API ya lo permite: `POST …/retire`).
 - Las firmas se reducen a 600 × 240 px como máximo; una firma muy detallada puede perder finura.
 - Solo los PDF finalizados imprimen las imágenes; el PDF de borrador mantiene «SIN FIRMA».
 - Una firma asignada que ya no esté disponible (autorización revocada o firma retirada) impide finalizar hasta cambiarla o quitarla.

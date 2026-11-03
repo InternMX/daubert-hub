@@ -1,10 +1,10 @@
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormLabel, MenuItem, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, Card, CardActionArea, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormLabel, MenuItem, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
 import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../auth/authContext.core';
 import {
-  autorizarUsoDeFirma, DocumentApiError, documentErrorText, FUNCIONES, listarFirmas, listarRevisores, subirFirma,
-  type FirmaDeResponsable, type FirmaVista, type FuncionResponsable, type UsuarioRevisor
+  autorizacionesDeFirma, autorizarUsoDeFirma, DocumentApiError, documentErrorText, FUNCIONES, listarFirmas, listarRevisores, revocarUsoDeFirma, subirFirma,
+  type AutorizacionFirma, type FirmaDeResponsable, type FirmaVista, type FuncionResponsable, type UsuarioRevisor
 } from '../services/manufacturingDocuments';
 import type { ResponsableLocal } from './responsablesModelo';
 
@@ -31,9 +31,13 @@ function DialogoFirmas({ abierto, funcion, actual, onElegir, onCerrar }: { abier
   const [usuarios, setUsuarios] = useState<UsuarioRevisor[]>([]);
   const [usuarioId, setUsuarioId] = useState('');
   const [nombreExterno, setNombreExterno] = useState('');
-  const [usoDe, setUsoDe] = useState<string | null>(null);
-  const [usoUsuario, setUsoUsuario] = useState('');
+  const yoId = useContext(AuthContext)?.user?.id ?? '';
+  const [usoDe, setUsoDe] = useState<string | null>(null);                 // firma propia cuyo uso se está gestionando
+  const [autorizados, setAutorizados] = useState<AutorizacionFirma[] | null>(null);
+  const [usoPersona, setUsoPersona] = useState<UsuarioRevisor | null>(null);
   const [usoAviso, setUsoAviso] = useState('');
+  const [usoOcupado, setUsoOcupado] = useState(false);
+  const [aviso, setAviso] = useState('');
 
   useEffect(() => {
     if (!abierto) return undefined;
@@ -48,6 +52,13 @@ function DialogoFirmas({ abierto, funcion, actual, onElegir, onCerrar }: { abier
     listarRevisores(c.signal).then((r) => setUsuarios(r.data)).catch(() => undefined);
     return () => c.abort();
   }, [abierto, esAdmin, usoDe]);
+  useEffect(() => {
+    if (!abierto || usoDe === null) { setAutorizados(null); return undefined; }
+    const c = new AbortController();
+    setAutorizados(null);
+    autorizacionesDeFirma(usoDe, c.signal).then((r) => setAutorizados(r.data)).catch((e: unknown) => { if (!(e instanceof DOMException)) setUsoAviso(e instanceof DocumentApiError ? documentErrorText[e.kind] : documentErrorText.NETWORK); });
+    return () => c.abort();
+  }, [abierto, usoDe]);
   useEffect(() => () => { if (vista) URL.revokeObjectURL(vista); }, [vista]);
 
   const elegirArchivo = (f: File | undefined): void => {
@@ -62,17 +73,37 @@ function DialogoFirmas({ abierto, funcion, actual, onElegir, onCerrar }: { abier
     setSubiendo(true); setErrorArchivo('');
     try {
       const f = await subirFirma({ archivo, ...(esAdmin && propietario === 'cuenta' && usuarioId ? { propietarioUsuarioId: usuarioId } : {}), ...(esAdmin && propietario === 'sinCuenta' ? { propietarioNombre: nombreExterno } : {}) });
-      setLista((l) => [f, ...(l ?? [])]);
       setNueva(false); setArchivo(null); setVista('');
+      if (f.utilizable === false) {
+        // Quedó a nombre de otra persona: quien la subió NO recibe permiso de uso. Se avisa y no se selecciona.
+        setAviso(`La firma quedó guardada a nombre de ${f.propietario}. No puedes usarla todavía: ${f.propietario} debe autorizar tu uso desde su cuenta («Quién puede usarla»).`);
+        return;
+      }
+      setLista((l) => [f, ...(l ?? [])]);
+      setAviso('');
       onElegir({ id: f.id, propietario: f.propietario, miniatura: f.miniatura });
     } catch (e) {
       setErrorArchivo(e instanceof DocumentApiError ? (e.mensajeFirma ?? documentErrorText[e.kind]) : documentErrorText.NETWORK);
     } finally { setSubiendo(false); }
   };
+  const textoError = (e: unknown): string => (e instanceof DocumentApiError ? documentErrorText[e.kind] : documentErrorText.NETWORK);
   const autorizar = async (firmaId: string): Promise<void> => {
-    setUsoAviso('');
-    try { await autorizarUsoDeFirma(firmaId, usoUsuario); setUsoAviso('Uso autorizado. La persona verá esta firma en su catálogo; no aprueba ningún documento.'); setUsoUsuario(''); }
-    catch (e) { setUsoAviso(e instanceof DocumentApiError ? documentErrorText[e.kind] : documentErrorText.NETWORK); }
+    if (!usoPersona) return;
+    setUsoAviso(''); setUsoOcupado(true);
+    try {
+      await autorizarUsoDeFirma(firmaId, usoPersona.id);
+      setAutorizados((await autorizacionesDeFirma(firmaId)).data);
+      setUsoAviso(`${usoPersona.displayName} ya puede usar esta firma. Es un permiso de uso de la imagen: no aprueba ningún documento.`);
+      setUsoPersona(null);
+    } catch (e) { setUsoAviso(textoError(e)); } finally { setUsoOcupado(false); }
+  };
+  const revocar = async (firmaId: string, persona: AutorizacionFirma): Promise<void> => {
+    setUsoAviso(''); setUsoOcupado(true);
+    try {
+      await revocarUsoDeFirma(firmaId, persona.usuarioId);
+      setAutorizados((await autorizacionesDeFirma(firmaId)).data);
+      setUsoAviso(`Se retiró el uso a ${persona.nombre}. No podrá usarla en nuevas hojas ni finalizar con ella; los PDF ya finalizados no cambian.`);
+    } catch (e) { setUsoAviso(textoError(e)); } finally { setUsoOcupado(false); }
   };
   const puedeGuardar = archivo !== null && !subiendo && (propietario !== 'cuenta' || usuarioId !== '') && (propietario !== 'sinCuenta' || nombreExterno.trim() !== '');
 
@@ -82,6 +113,7 @@ function DialogoFirmas({ abierto, funcion, actual, onElegir, onCerrar }: { abier
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>Solo se muestran tus firmas y las de otras personas que autorizaron su uso. Con una firma, el nombre impreso es el de su propietaria.</Typography>
         {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+        {aviso && <Alert severity="info" sx={{ mb: 1 }} role="status" onClose={() => setAviso('')}>{aviso}</Alert>}
         {lista === null && !error && <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={18} /><Typography variant="body2">Cargando firmas…</Typography></Stack>}
         {lista !== null && (
           <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))' } }} role="list" aria-label="Firmas disponibles">
@@ -99,13 +131,24 @@ function DialogoFirmas({ abierto, funcion, actual, onElegir, onCerrar }: { abier
                     <Typography variant="caption" color="text.secondary">{f.propia ? 'Tu firma' : 'Uso autorizado'}</Typography>
                   </CardContent>
                 </CardActionArea>
-                {f.propia && <Box sx={{ px: 1, pb: 1 }}><Button size="small" onClick={() => { setUsoDe(usoDe === f.id ? null : f.id); setUsoAviso(''); }} aria-expanded={usoDe === f.id}>Autorizar uso…</Button></Box>}
+                {f.propia && <Box sx={{ px: 1, pb: 1 }}><Button size="small" onClick={() => { setUsoDe(usoDe === f.id ? null : f.id); setUsoAviso(''); setUsoPersona(null); }} aria-expanded={usoDe === f.id}>Quién puede usarla</Button></Box>}
                 {usoDe === f.id && (
-                  <Stack spacing={1} sx={{ p: 1 }}>
-                    <TextField select size="small" label="Persona" value={usoUsuario} onChange={(e) => setUsoUsuario(e.target.value)}>
-                      {usuarios.map((u) => <MenuItem key={u.id} value={u.id}>{u.displayName}</MenuItem>)}
-                    </TextField>
-                    <Button size="small" variant="outlined" disabled={usoUsuario === ''} onClick={() => void autorizar(f.id)}>Autorizar</Button>
+                  <Stack spacing={1} sx={{ p: 1 }} data-testid="gestion-uso">
+                    {autorizados === null ? <Typography variant="caption">Cargando…</Typography> : autorizados.filter((a) => a.usuarioId !== yoId).length === 0
+                      ? <Typography variant="caption" color="text.secondary">Solo tú. Nadie más puede usarla.</Typography>
+                      : (
+                        <Stack component="ul" spacing={0.5} sx={{ m: 0, p: 0, listStyle: 'none' }} aria-label="Personas con permiso de uso">
+                          {autorizados.filter((a) => a.usuarioId !== yoId).map((a) => (
+                            <Stack component="li" key={a.usuarioId} direction="row" spacing={1} alignItems="center" data-testid="autorizado">
+                              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{a.nombre}</Typography>
+                              <Button size="small" color="inherit" disabled={usoOcupado} onClick={() => void revocar(f.id, a)} aria-label={`Revocar el uso a ${a.nombre}`}>Revocar</Button>
+                            </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                    <Autocomplete size="small" options={usuarios.filter((u) => u.id !== yoId && !(autorizados ?? []).some((a) => a.usuarioId === u.id))} getOptionLabel={(u) => u.displayName}
+                      value={usoPersona} onChange={(_e, v) => setUsoPersona(v)} noOptionsText="Sin coincidencias" renderInput={(params) => <TextField {...params} label="Buscar persona" />} />
+                    <Button size="small" variant="outlined" disabled={usoPersona === null || usoOcupado} onClick={() => void autorizar(f.id)}>Autorizar uso</Button>
                     {usoAviso && <Typography variant="caption" role="status">{usoAviso}</Typography>}
                   </Stack>
                 )}

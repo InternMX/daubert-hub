@@ -7,7 +7,7 @@ import type { AssignReviewerDto, ClienteDocumentoDto, CreateDraftDto, Responsabl
 import { DocumentsRepository, type CambiosBorrador, type InicioFinalizacion } from './documents.repository';
 import { construirEspecificacion, incidenciasQueBloquean } from './documents.spec-model';
 import type { ActorDocumental, ConfirmacionRow, EspecificacionDocumento, RevisionRow } from './documents.types';
-import { ResponsablesRepository, type FirmaVista, type ResponsableAGuardar, type ResponsableFila } from './responsables.repository';
+import { ResponsablesRepository, type AutorizacionVista, type FirmaVista, type ResponsableAGuardar, type ResponsableFila } from './responsables.repository';
 import { procesarFirma } from './signature-image';
 import { SheetEngine } from './sheet-engine.port';
 
@@ -342,7 +342,7 @@ export class DocumentsService {
   }
 
   /** Alta de una firma: el archivo se valida y se normaliza (nunca se guarda tal cual). Sin propietario indicado es de la cuenta; solo un ADMIN incorpora la de otra persona. */
-  async subirFirma(actor: ActorDocumental, archivo: Buffer | undefined, propietarioUsuarioId: string | undefined, propietarioNombre: string | undefined): Promise<FirmaVista> {
+  async subirFirma(actor: ActorDocumental, archivo: Buffer | undefined, propietarioUsuarioId: string | undefined, propietarioNombre: string | undefined): Promise<FirmaVista & { utilizable: boolean }> {
     if (!archivo) throw http(HttpStatus.BAD_REQUEST, 'FIRMA_INVALIDA', 'No se recibió ninguna imagen.');
     const firma = procesarFirma(archivo);
     try {
@@ -364,7 +364,9 @@ export class DocumentsService {
         const publicId = await this.resp.insertarFirma(c, propietarioId, nombre, firma);
         const lista = await this.resp.listarUtilizables(c, actor.userId);
         const creada = lista.find((f) => f.id === publicId);
-        return creada ?? { id: publicId, propietario: nombre, propia: propietarioId === actor.userId, ancho: firma.ancho, alto: firma.alto, miniatura: `data:${firma.tipoMime};base64,${firma.contenido.toString('base64')}`, creadaEn: new Date().toISOString() };
+        // Quien sube la firma de otra persona NO recibe permiso de uso: `utilizable` dice si esta cuenta puede usarla ya (propia, o custodio de una persona sin cuenta).
+        if (creada) return { ...creada, utilizable: true };
+        return { utilizable: false, id: publicId, propietario: nombre, propia: propietarioId === actor.userId, ancho: firma.ancho, alto: firma.alto, miniatura: `data:${firma.tipoMime};base64,${firma.contenido.toString('base64')}`, creadaEn: new Date().toISOString() };
       });
     } catch (error) {
       throw traducirErrorBd(error);
@@ -384,6 +386,11 @@ export class DocumentsService {
     } catch (error) {
       throw traducirErrorBd(error);
     }
+  }
+
+  /** Quién puede usar una firma (vigentes). Sin nombres de cuentas ajenas para quien no es propietaria: la base filtra las filas. */
+  async autorizacionesDeFirma(actor: ActorDocumental, firmaId: string): Promise<{ data: AutorizacionVista[] }> {
+    return this.repo.conSesion(actor, async (c) => ({ data: await this.resp.autorizacionesDe(c, firmaId) }));
   }
 
   async retirarFirma(actor: ActorDocumental, firmaId: string): Promise<{ ok: true }> {

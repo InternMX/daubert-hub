@@ -17,13 +17,13 @@ import { campoDeMensaje } from '../src/manufacturing-documents/validation-detail
 // El controlador no decide permisos (los decide el servicio y la base): aquí se prueba que la IDENTIDAD solo sale de la sesión autenticada, que los DTO rechazan campos de actor y que las rutas
 // validan sus identificadores. Sin base de datos (servicio simulado).
 const ID = '3f1c2a52-6d0e-4d3a-9d62-0f4f0c1b7a11';
-const servicio = { capacidades: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), cambiarUsoFirma: vi.fn(), retirarFirma: vi.fn(), crearBorrador: vi.fn(), obtener: vi.fn(), actualizarBorrador: vi.fn(), finalizar: vi.fn(), descargarPdf: vi.fn(), historial: vi.fn(), listarAbiertas: vi.fn(), usuariosRevisores: vi.fn(), registrarRevision: vi.fn(), descartarBorrador: vi.fn(), asignarRevisor: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn() };
+const servicio = { autorizacionesDeFirma: vi.fn(), capacidades: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), cambiarUsoFirma: vi.fn(), retirarFirma: vi.fn(), crearBorrador: vi.fn(), obtener: vi.fn(), actualizarBorrador: vi.fn(), finalizar: vi.fn(), descargarPdf: vi.fn(), historial: vi.fn(), listarAbiertas: vi.fn(), usuariosRevisores: vi.fn(), registrarRevision: vi.fn(), descartarBorrador: vi.fn(), asignarRevisor: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn() };
 let app: INestApplication;
 let conSesion = true;
 
 beforeAll(async () => {
   // esbuild (vitest) no emite metadata de decoradores: se declara a mano lo que Nest toma de los tipos (inyección y DTO del ValidationPipe).
-  const tipos: Record<string, unknown[]> = { capabilities: [Object], signatures: [Object], uploadSignature: [Object, UploadSignatureDto, Object], authorizeSignature: [String, SignatureUseDto, Object], revokeSignature: [String, SignatureUseDto, Object], retireSignature: [String, Object], reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
+  const tipos: Record<string, unknown[]> = { signatureAuthorizations: [String, Object], capabilities: [Object], signatures: [Object], uploadSignature: [Object, UploadSignatureDto, Object], authorizeSignature: [String, SignatureUseDto, Object], revokeSignature: [String, SignatureUseDto, Object], retireSignature: [String, Object], reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
   Reflect.defineMetadata('design:paramtypes', [DocumentsService], DocumentsController);
   Reflect.defineMetadata('design:paramtypes', [ConfigService], TestOnlyGuard);
   for (const [metodo, t] of Object.entries(tipos)) Reflect.defineMetadata('design:paramtypes', t, DocumentsController.prototype, metodo);
@@ -223,6 +223,14 @@ describe('catálogo de firmas (HTTP)', () => {
     expect(servicio.cambiarUsoFirma).toHaveBeenCalledWith(expect.objectContaining({ userId: '7' }), ID, '3', true);
     expect((await request(app.getHttpServer()).post(`${base}/${ID}/revoke`).send({ usuarioId: '3' })).status).toBe(200);
     expect(servicio.cambiarUsoFirma).toHaveBeenLastCalledWith(expect.anything(), ID, '3', false);
+  });
+
+  it('GET authorizations valida el identificador y consulta con la identidad de la sesión', async () => {
+    servicio.autorizacionesDeFirma.mockResolvedValue({ data: [] });
+    expect((await request(app.getHttpServer()).get(`${base}/no-es-uuid/authorizations`)).status).toBe(400);
+    const r = await request(app.getHttpServer()).get(`${base}/${ID}/authorizations?usuarioId=99`).set('X-User-Id', '99');
+    expect(r.status).toBe(200);
+    expect(servicio.autorizacionesDeFirma).toHaveBeenCalledWith(expect.objectContaining({ userId: '7' }), ID);
   });
 
   it('crear y actualizar admiten `responsables` (1 a 3, funciones válidas, firmaId UUID) y rechazan lo demás', async () => {

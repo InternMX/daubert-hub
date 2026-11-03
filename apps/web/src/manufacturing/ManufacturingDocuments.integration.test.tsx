@@ -11,6 +11,8 @@ import type { DocumentoVista } from '../services/manufacturingDocuments';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { previewManufacturingSheet } from '../services/sheetPreview';
 import { familyConfigs, productoPapel, rolloContinuo, schfpmg001 } from '../test/bindProductFixtures';
+import { AuthContext } from '../auth/authContext.core';
+import { createAuthContextValue, testAdminUser, testGeneralUser } from '../test/authTestUtils';
 import { guardarArchivo } from './downloadFile';
 import { ManufacturingSpecificationPage } from './ManufacturingSpecificationPage';
 
@@ -25,7 +27,7 @@ vi.mock('../services/manufacturingDocuments', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/manufacturingDocuments')>()),
   crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), listarAbiertos: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
   finalizarDocumento: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn(), descartarBorrador: vi.fn(),
-  capacidadesDocumentales: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn()
+  capacidadesDocumentales: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), autorizacionesDeFirma: vi.fn(), autorizarUsoDeFirma: vi.fn(), revocarUsoDeFirma: vi.fn()
 }));
 const m = Object.assign(vi.mocked(docs), { capacidades: vi.mocked(docs.capacidadesDocumentales) });
 const lookupMock = vi.mocked(lookupBindProductByCode);
@@ -1199,6 +1201,91 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(bloqueos).toHaveTextContent('Indica el nombre de quien generó la hoja.');
       await user.click(within(bloqueos).getByRole('button', { name: /Ir al campo: Indica el nombre/ }));
       await waitFor(() => expect(screen.getByLabelText('Nombre de Generó')).toHaveFocus());
+    });
+  });
+
+  describe('Autorización de uso de firmas', () => {
+    const MIA = { id: 'f0000000-0000-4000-8000-0000000000a1', propietario: 'General Dos', propia: true, ancho: 300, alto: 100, miniatura: 'data:image/png;base64,AAAA', creadaEn: '2026-11-03T10:00:00Z' };
+    const USUARIOS = [{ id: '2', displayName: 'General Dos' }, { id: '3', displayName: 'General Tres' }, { id: '4', displayName: 'Maria Lopez' }];
+    const A = docs as unknown as { autorizacionesDeFirma: ReturnType<typeof vi.fn>; autorizarUsoDeFirma: ReturnType<typeof vi.fn>; revocarUsoDeFirma: ReturnType<typeof vi.fn> };
+    const abrirDialogo = async (user: ReturnType<typeof userEvent.setup>, admin = false) => {
+      m.capacidades.mockResolvedValue({ firmas: true });
+      m.listarFirmas.mockResolvedValue({ data: [MIA] });
+      m.listarRevisores.mockResolvedValue({ data: USUARIOS });
+      const doc = guardado();
+      m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+      m.obtenerDocumento.mockResolvedValue(doc);
+      render(<AuthContext.Provider value={createAuthContextValue({ user: { ...(admin ? testAdminUser : testGeneralUser), id: '2' } })}><MemoryRouter><ManufacturingSpecificationPage documentos retardoAutoguardado={RETARDO} /></MemoryRouter></AuthContext.Provider>);
+      const lista = await buscar(user);
+      await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+      await ancho();
+      await user.click(within(screen.getByTestId('responsable-1')).getByRole('button', { name: 'Elegir firma' }));
+      return screen.findByRole('dialog');
+    };
+
+    it('la propietaria ve quién puede usar su firma, busca a una persona por nombre, la autoriza y la lista se actualiza', async () => {
+      const user = userEvent.setup();
+      A.autorizacionesDeFirma.mockResolvedValueOnce({ data: [] }).mockResolvedValue({ data: [{ usuarioId: '3', nombre: 'General Tres', otorgadaEn: '2026-11-03T11:00:00Z', otorgadaPor: 'General Dos' }] });
+      A.autorizarUsoDeFirma.mockResolvedValue({ ok: true });
+      const dialogo = await abrirDialogo(user);
+      await user.click(await within(dialogo).findByRole('button', { name: 'Quién puede usarla' }));
+      expect(await within(dialogo).findByText('Solo tú. Nadie más puede usarla.')).toBeInTheDocument();
+      const buscador = within(dialogo).getByLabelText('Buscar persona');
+      await user.type(buscador, 'tres');                                                         // buscador sencillo por nombre
+      expect(within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent)).toEqual(['General Tres']);
+      await user.click(screen.getByRole('option', { name: 'General Tres' }));
+      expect(within(dialogo).getByRole('button', { name: 'Autorizar uso' })).toBeEnabled();
+      await user.click(within(dialogo).getByRole('button', { name: 'Autorizar uso' }));
+      await waitFor(() => expect(A.autorizarUsoDeFirma).toHaveBeenCalledWith(MIA.id, '3'));       // autorización EXPLÍCITA de la propietaria
+      expect(await within(dialogo).findByTestId('autorizado')).toHaveTextContent('General Tres');
+      expect(within(dialogo).getByText(/General Tres ya puede usar esta firma\. Es un permiso de uso de la imagen: no aprueba ningún documento/)).toBeInTheDocument();
+    });
+
+    it('revocar retira el uso de esa persona, avisa que los PDF ya finalizados no cambian y la lista queda vacía', async () => {
+      const user = userEvent.setup();
+      A.autorizacionesDeFirma.mockResolvedValueOnce({ data: [{ usuarioId: '3', nombre: 'General Tres', otorgadaEn: '2026-11-03T11:00:00Z', otorgadaPor: 'General Dos' }] }).mockResolvedValue({ data: [] });
+      A.revocarUsoDeFirma.mockResolvedValue({ ok: true });
+      const dialogo = await abrirDialogo(user);
+      await user.click(await within(dialogo).findByRole('button', { name: 'Quién puede usarla' }));
+      expect(await within(dialogo).findByTestId('autorizado')).toHaveTextContent('General Tres');
+      await user.click(within(dialogo).getByRole('button', { name: 'Revocar el uso a General Tres' }));
+      await waitFor(() => expect(A.revocarUsoDeFirma).toHaveBeenCalledWith(MIA.id, '3'));
+      expect(await within(dialogo).findByText(/Se retiró el uso a General Tres.*los PDF ya finalizados no cambian/)).toBeInTheDocument();
+      expect(within(dialogo).queryByTestId('autorizado')).toBeNull();
+    });
+
+    it('un error del servidor al autorizar se explica sin perder la lista', async () => {
+      const user = userEvent.setup();
+      A.autorizacionesDeFirma.mockResolvedValue({ data: [] });
+      A.autorizarUsoDeFirma.mockRejectedValue(new docs.DocumentApiError('FORBIDDEN', 403, {}));
+      const dialogo = await abrirDialogo(user);
+      await user.click(await within(dialogo).findByRole('button', { name: 'Quién puede usarla' }));
+      await user.click(await within(dialogo).findByLabelText('Buscar persona'));
+      await user.click(await screen.findByRole('option', { name: 'Maria Lopez' }));
+      await user.click(within(dialogo).getByRole('button', { name: 'Autorizar uso' }));
+      expect(await within(dialogo).findByText('No tienes permiso para esta operación.')).toBeInTheDocument();
+    });
+
+    it('si un ADMIN sube la firma de otra persona con cuenta, queda a nombre de ella, NO se selecciona ni se le da permiso a quien la subió, y se le explica cómo usarla', async () => {
+      const user = userEvent.setup();
+      Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:vista', configurable: true });
+      Object.defineProperty(URL, 'revokeObjectURL', { value: () => undefined, configurable: true });
+      m.subirFirma.mockResolvedValue({ id: 'f0000000-0000-4000-8000-0000000000b2', propietario: 'General Tres', propia: false, ancho: 300, alto: 100, miniatura: 'data:image/png;base64,BBBB', creadaEn: '2026-11-03T10:00:00Z', utilizable: false });
+      const dialogo = await abrirDialogo(user, true);
+      await user.click(await within(dialogo).findByRole('button', { name: 'Nueva firma' }));
+      fireEvent.change(within(dialogo).getByLabelText('Archivo de la firma'), { target: { files: [new File([new Uint8Array(10)], 'ok.png', { type: 'image/png' })] } });
+      await user.click(within(dialogo).getByRole('radio', { name: 'De otra persona con cuenta' }));
+      await user.click(within(dialogo).getByRole('combobox', { name: 'Propietario' }));
+      await user.click(await screen.findByRole('option', { name: 'General Tres' }));
+      await user.click(within(dialogo).getByRole('button', { name: 'Guardar y usar esta firma' }));
+      expect(m.subirFirma).toHaveBeenCalledWith(expect.objectContaining({ propietarioUsuarioId: '3' }));
+      expect(await within(dialogo).findByText(/quedó guardada a nombre de General Tres\. No puedes usarla todavía/)).toBeInTheDocument();
+      expect(within(dialogo).queryAllByTestId('firma-opcion')).toHaveLength(1);                   // no se añadió a su selector
+      await user.click(within(dialogo).getByRole('button', { name: 'Cerrar' }));
+      await cerrado();
+      expect((screen.getByLabelText('Nombre de Generó') as HTMLInputElement)).toBeEnabled();      // la hoja no quedó con la firma ajena
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
     });
   });
 

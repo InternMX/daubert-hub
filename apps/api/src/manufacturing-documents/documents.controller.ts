@@ -51,6 +51,12 @@ export class DocumentsController {
     return this.documents.subirFirma(actorDeSolicitud(request), archivo?.buffer, body.propietarioUsuarioId, body.propietarioNombre);
   }
 
+  /** Quién tiene autorización vigente para usar la imagen (la propietaria las ve todas). */
+  @Get('signatures/:id/authorizations')
+  signatureAuthorizations(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['autorizacionesDeFirma']> {
+    return this.documents.autorizacionesDeFirma(actorDeSolicitud(request), id);
+  }
+
   /** Autoriza el USO de la imagen a otra cuenta (acceso al recurso; no aprueba ningún documento). */
   @Post('signatures/:id/authorize')
   @HttpCode(HttpStatus.OK)
