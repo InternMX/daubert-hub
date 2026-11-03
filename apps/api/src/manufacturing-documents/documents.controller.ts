@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile, UnauthorizedException, UseFilters, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile, UnauthorizedException, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
 import type { Response } from 'express';
 import { Matches } from 'class-validator';
 import type { AuthenticatedRequest } from '../common/authenticated-request';
-import { AssignReviewerDto, CreateDraftDto, UpdateDraftDto, VersionDto } from './documents.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from './documents.dto';
 import { DocumentsService } from './documents.service';
 import { TestOnlyGuard } from './test-only.guard';
 import { DetalleValidacionFilter } from './validation-detail.filter';
@@ -29,6 +30,46 @@ export function actorDeSolicitud(request: AuthenticatedRequest): ActorDocumental
 @UseFilters(DetalleValidacionFilter)
 export class DocumentsController {
   constructor(private readonly documents: DocumentsService) {}
+
+  /** Capacidades del entorno (p. ej. si el catálogo de firmas está disponible). */
+  @Get('capabilities')
+  capabilities(@Req() request: AuthenticatedRequest): ReturnType<DocumentsService['capacidades']> {
+    return this.documents.capacidades(actorDeSolicitud(request));
+  }
+
+  /** Firmas que esta cuenta puede USAR (propias o con autorización de uso). Nunca el catálogo completo. */
+  @Get('signatures')
+  signatures(@Req() request: AuthenticatedRequest): ReturnType<DocumentsService['listarFirmas']> {
+    return this.documents.listarFirmas(actorDeSolicitud(request));
+  }
+
+  /** Alta de una firma (JPG/PNG): se valida el contenido real, se reduce y se vuelve a codificar. Multipart, campo «archivo». */
+  @Post('signatures')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('archivo', { limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 4, parts: 6 } }))
+  uploadSignature(@UploadedFile() archivo: { buffer: Buffer } | undefined, @Body() body: UploadSignatureDto, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['subirFirma']> {
+    return this.documents.subirFirma(actorDeSolicitud(request), archivo?.buffer, body.propietarioUsuarioId, body.propietarioNombre);
+  }
+
+  /** Autoriza el USO de la imagen a otra cuenta (acceso al recurso; no aprueba ningún documento). */
+  @Post('signatures/:id/authorize')
+  @HttpCode(HttpStatus.OK)
+  authorizeSignature(@Param('id', ParseUUIDPipe) id: string, @Body() body: SignatureUseDto, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['cambiarUsoFirma']> {
+    return this.documents.cambiarUsoFirma(actorDeSolicitud(request), id, body.usuarioId, true);
+  }
+
+  @Post('signatures/:id/revoke')
+  @HttpCode(HttpStatus.OK)
+  revokeSignature(@Param('id', ParseUUIDPipe) id: string, @Body() body: SignatureUseDto, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['cambiarUsoFirma']> {
+    return this.documents.cambiarUsoFirma(actorDeSolicitud(request), id, body.usuarioId, false);
+  }
+
+  /** Retira una firma del catálogo (las revisiones que ya la usan conservan su referencia). */
+  @Post('signatures/:id/retire')
+  @HttpCode(HttpStatus.OK)
+  retireSignature(@Param('id', ParseUUIDPipe) id: string, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['retirarFirma']> {
+    return this.documents.retirarFirma(actorDeSolicitud(request), id);
+  }
 
   /** Cuentas activas que pueden asignarse como revisor (solo id y nombre). */
   @Get('reviewers')

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { AppModule } from '../src/app.module';
 import { SafeExceptionFilter } from '../src/common/http-exception.filter';
 import { actorDeSolicitud, DocumentsController, HistoryQueryDto } from '../src/manufacturing-documents/documents.controller';
-import { AssignReviewerDto, CreateDraftDto, UpdateDraftDto, VersionDto } from '../src/manufacturing-documents/documents.dto';
+import { AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from '../src/manufacturing-documents/documents.dto';
 import { DocumentsService } from '../src/manufacturing-documents/documents.service';
 import { ManufacturingDocumentsModule } from '../src/manufacturing-documents/manufacturing-documents.module';
 import { TestOnlyGuard } from '../src/manufacturing-documents/test-only.guard';
@@ -17,13 +17,13 @@ import { campoDeMensaje } from '../src/manufacturing-documents/validation-detail
 // El controlador no decide permisos (los decide el servicio y la base): aquí se prueba que la IDENTIDAD solo sale de la sesión autenticada, que los DTO rechazan campos de actor y que las rutas
 // validan sus identificadores. Sin base de datos (servicio simulado).
 const ID = '3f1c2a52-6d0e-4d3a-9d62-0f4f0c1b7a11';
-const servicio = { crearBorrador: vi.fn(), obtener: vi.fn(), actualizarBorrador: vi.fn(), finalizar: vi.fn(), descargarPdf: vi.fn(), historial: vi.fn(), listarAbiertas: vi.fn(), usuariosRevisores: vi.fn(), registrarRevision: vi.fn(), descartarBorrador: vi.fn(), asignarRevisor: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn() };
+const servicio = { capacidades: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), cambiarUsoFirma: vi.fn(), retirarFirma: vi.fn(), crearBorrador: vi.fn(), obtener: vi.fn(), actualizarBorrador: vi.fn(), finalizar: vi.fn(), descargarPdf: vi.fn(), historial: vi.fn(), listarAbiertas: vi.fn(), usuariosRevisores: vi.fn(), registrarRevision: vi.fn(), descartarBorrador: vi.fn(), asignarRevisor: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn() };
 let app: INestApplication;
 let conSesion = true;
 
 beforeAll(async () => {
   // esbuild (vitest) no emite metadata de decoradores: se declara a mano lo que Nest toma de los tipos (inyección y DTO del ValidationPipe).
-  const tipos: Record<string, unknown[]> = { reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
+  const tipos: Record<string, unknown[]> = { capabilities: [Object], signatures: [Object], uploadSignature: [Object, UploadSignatureDto, Object], authorizeSignature: [String, SignatureUseDto, Object], revokeSignature: [String, SignatureUseDto, Object], retireSignature: [String, Object], reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
   Reflect.defineMetadata('design:paramtypes', [DocumentsService], DocumentsController);
   Reflect.defineMetadata('design:paramtypes', [ConfigService], TestOnlyGuard);
   for (const [metodo, t] of Object.entries(tipos)) Reflect.defineMetadata('design:paramtypes', t, DocumentsController.prototype, metodo);
@@ -179,6 +179,58 @@ describe('aislamiento del módulo', () => {
         const permitido = archivo === 'sheet-engine.port.ts' || /preview\/(family-registry|incidencias|draft-layer|sheet-data\.mapper|technical-coherence|sheet-preview\.dto)$/.test(ruta ?? '') && !/Service|Renderer/.test(ruta ?? '') || ruta === 'manufacturing-sheets.module';
         expect(permitido, `${archivo} importa ${ruta}`).toBe(true);
       }
+    }
+  });
+});
+
+describe('catálogo de firmas (HTTP)', () => {
+  const base = '/api/manufacturing-sheets/documents/signatures';
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(64, 1)]);
+
+  it('GET lista las firmas utilizables con la identidad de la sesión (no la del cliente)', async () => {
+    servicio.listarFirmas.mockResolvedValue({ data: [] });
+    const r = await request(app.getHttpServer()).get(`${base}?userId=99`).set('X-User-Id', '99');
+    expect(r.status).toBe(200);
+    expect(servicio.listarFirmas.mock.calls[0]![0]).toMatchObject({ userId: '7', role: 'GENERAL' });
+  });
+
+  it('POST multipart entrega el archivo al servicio y el actor sale de la sesión; solo se aceptan los campos propietarioUsuarioId y propietarioNombre', async () => {
+    servicio.subirFirma.mockResolvedValue({ id: ID });
+    const r = await request(app.getHttpServer()).post(base).attach('archivo', png, { filename: 'firma.png', contentType: 'image/png' }).field('propietarioNombre', 'Persona Externa');
+    expect(r.status).toBe(201);
+    const [actor, archivo, propietarioId, propietarioNombre] = servicio.subirFirma.mock.calls[0]!;
+    expect(actor).toMatchObject({ userId: '7' });
+    expect(Buffer.isBuffer(archivo) && archivo.equals(png)).toBe(true);
+    expect([propietarioId, propietarioNombre]).toEqual([undefined, 'Persona Externa']);
+    servicio.subirFirma.mockClear();
+    expect((await request(app.getHttpServer()).post(base).attach('archivo', png, 'f.png').field('creadoPor', 'x')).status).toBe(400);
+    expect((await request(app.getHttpServer()).post(base).attach('archivo', png, 'f.png').field('propietarioUsuarioId', '../1')).status).toBe(400);
+    expect(servicio.subirFirma).not.toHaveBeenCalled();
+  });
+
+  it('un archivo de más de 2 MB se corta en la recepción (no llega al servicio)', async () => {
+    const r = await request(app.getHttpServer()).post(base).attach('archivo', Buffer.alloc(2 * 1024 * 1024 + 10, 1), 'grande.png');
+    expect([400, 413]).toContain(r.status);
+    expect(servicio.subirFirma).not.toHaveBeenCalled();
+  });
+
+  it('autorizar/revocar validan el identificador de la firma y el usuario; retirar no admite cuerpo con actores', async () => {
+    servicio.cambiarUsoFirma.mockResolvedValue({ ok: true });
+    expect((await request(app.getHttpServer()).post(`${base}/no-es-uuid/authorize`).send({ usuarioId: '3' })).status).toBe(400);
+    expect((await request(app.getHttpServer()).post(`${base}/${ID}/authorize`).send({ usuarioId: 'abc' })).status).toBe(400);
+    expect((await request(app.getHttpServer()).post(`${base}/${ID}/authorize`).send({ usuarioId: '3', otorgadaPor: '1' })).status).toBe(400);
+    expect((await request(app.getHttpServer()).post(`${base}/${ID}/authorize`).send({ usuarioId: '3' })).status).toBe(200);
+    expect(servicio.cambiarUsoFirma).toHaveBeenCalledWith(expect.objectContaining({ userId: '7' }), ID, '3', true);
+    expect((await request(app.getHttpServer()).post(`${base}/${ID}/revoke`).send({ usuarioId: '3' })).status).toBe(200);
+    expect(servicio.cambiarUsoFirma).toHaveBeenLastCalledWith(expect.anything(), ID, '3', false);
+  });
+
+  it('crear y actualizar admiten `responsables` (1 a 3, funciones válidas, firmaId UUID) y rechazan lo demás', async () => {
+    servicio.crearBorrador.mockResolvedValue({ id: ID });
+    const ok = { ...cuerpo, responsables: [{ funcion: 'GENERO', nombre: 'Ana', firmaId: ID }, { funcion: 'APROBO', nombre: 'Beto' }] };
+    expect((await request(app.getHttpServer()).post('/api/manufacturing-sheets/documents/drafts').send(ok)).status).toBe(201);
+    for (const mal of [[], Array.from({ length: 4 }, () => ({ funcion: 'GENERO', nombre: 'x' })), [{ funcion: 'DIRECTOR', nombre: 'x' }], [{ funcion: 'GENERO', nombre: 'x', firmaId: 'no-uuid' }], [{ funcion: 'GENERO', nombre: 'x', usuarioId: '1' }]]) {
+      expect((await request(app.getHttpServer()).post('/api/manufacturing-sheets/documents/drafts').send({ ...cuerpo, responsables: mal })).status).toBe(400);
     }
   });
 });

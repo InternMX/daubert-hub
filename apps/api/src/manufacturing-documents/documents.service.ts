@@ -3,10 +3,12 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { InfoFinalizada } from '../manufacturing-sheets/preview/draft-layer';
 import type { BindReviewContext } from '../manufacturing-sheets/preview/technical-coherence';
-import type { AssignReviewerDto, ClienteDocumentoDto, CreateDraftDto, UpdateDraftDto } from './documents.dto';
+import type { AssignReviewerDto, ClienteDocumentoDto, CreateDraftDto, ResponsableDto, UpdateDraftDto } from './documents.dto';
 import { DocumentsRepository, type CambiosBorrador, type InicioFinalizacion } from './documents.repository';
 import { construirEspecificacion, incidenciasQueBloquean } from './documents.spec-model';
 import type { ActorDocumental, ConfirmacionRow, EspecificacionDocumento, RevisionRow } from './documents.types';
+import { ResponsablesRepository, type FirmaVista, type ResponsableAGuardar, type ResponsableFila } from './responsables.repository';
+import { procesarFirma } from './signature-image';
 import { SheetEngine } from './sheet-engine.port';
 
 type Cliente = Pick<CambiosBorrador, 'clienteEmpresaId' | 'clienteNombre' | 'clienteVerificado'>;
@@ -59,7 +61,7 @@ const textoONulo = (valor: string | undefined | null): string | null => {
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
 
-  constructor(private readonly repo: DocumentsRepository, private readonly engine: SheetEngine) {}
+  constructor(private readonly repo: DocumentsRepository, private readonly engine: SheetEngine, private readonly resp: ResponsablesRepository = new ResponsablesRepository()) {}
 
   // ================================================================== 1. crear / recuperar borradores
   async crearBorrador(actor: ActorDocumental, dto: CreateDraftDto): Promise<unknown> {
@@ -77,7 +79,10 @@ export class DocumentsService {
         if (existente && !reanudable) throw documentoYaExiste();
         const documento = reanudable ?? await this.repo.crearDocumento(c, dto.codigo, variante);
         // «Elaboró» se SUGIERE desde la cuenta autenticada, queda editable y sin confirmar: debe confirmarse expresamente antes de finalizar.
-        const id = await this.repo.crearBorrador(c, documento.documento_id, { familia: dto.familia, especificacion, elaboroNombre: actor.displayName, elaboroConfirmado: false, autorizoNombre: null, ...cliente, revisorUsuarioId: null });
+        // «Generó» (campo documental `Elaboró`): se sugiere desde la cuenta autenticada y es editable; con `responsables` la primera posición manda.
+        const resp = dto.responsables ? await this.prepararResponsables(c, dto.responsables, null) : null;
+        const id = await this.repo.crearBorrador(c, documento.documento_id, { familia: dto.familia, especificacion, elaboroNombre: resp ? resp.nombrePrincipal : actor.displayName, elaboroConfirmado: false, autorizoNombre: null, ...cliente, revisorUsuarioId: null });
+        if (resp?.dispo) await this.resp.guardarResponsables(c, (await this.revisionInterna(c, id)), resp.aGuardar);
         return this.vistaDe(c, actor, id);
       });
     } catch (error) {
@@ -114,7 +119,8 @@ export class DocumentsService {
         };
         const especificacion = construirEspecificacion(dto.cliente !== undefined ? this.conClienteImpreso(entrada, cliente) : entrada, fila.codigo_dcmx);
 
-        const nombre = dto.elaboroNombre !== undefined ? textoONulo(dto.elaboroNombre) : fila.elaboro_nombre;
+        const resp = dto.responsables !== undefined ? await this.prepararResponsables(c, dto.responsables, fila.revision_id) : null;
+        const nombre = resp ? resp.nombrePrincipal : dto.elaboroNombre !== undefined ? textoONulo(dto.elaboroNombre) : fila.elaboro_nombre;
         const cambioNombre = nombre !== fila.elaboro_nombre;
         // Cambiar el nombre impreso retira la confirmación, salvo que la misma petición confirme expresamente el nombre nuevo.
         const confirmado = cambioNombre ? dto.elaboroConfirmado === true : (dto.elaboroConfirmado ?? fila.elaboro_confirmado);
@@ -125,6 +131,7 @@ export class DocumentsService {
           autorizoNombre: dto.autorizoNombre !== undefined ? textoONulo(dto.autorizoNombre) : fila.autorizo_nombre, ...cliente, revisorUsuarioId: fila.revisor_usuario_id
         };
         if (!(await this.repo.actualizarBorrador(c, id, dto.version, cambios))) throw await this.conflictoDeVersion(c, id, dto.version);
+        if (resp?.dispo) await this.resp.guardarResponsables(c, fila.revision_id, resp.aGuardar);
         return this.vistaDe(c, actor, id);
       });
     } catch (error) {
@@ -276,7 +283,118 @@ export class DocumentsService {
     const fila = await this.repo.obtenerRevision(c, id);
     if (!fila) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Documento no encontrado.' });
     const confirmaciones = await this.repo.confirmaciones(c, id);
-    return this.vista(fila, actor, confirmaciones);
+    return { ...this.vista(fila, actor, confirmaciones), responsables: await this.responsablesVista(c, fila) };
+  }
+
+  /** Responsables que se muestran: los guardados (con la miniatura de la imagen si esta cuenta puede verla) o, sin ellos, «Generó» con el nombre documental `Elaboró`. */
+  private async responsablesVista(c: PoolClient, fila: RevisionRow): Promise<Array<Record<string, unknown>>> {
+    let filas: ResponsableFila[] = [];
+    if (await this.resp.disponible(c)) filas = await this.resp.responsablesDe(c, fila.public_id);
+    const lista = filas.map((r) => ({
+      posicion: r.posicion, funcion: r.funcion, nombre: r.nombre, conFirma: r.con_firma,
+      firma: r.firma_id && r.firma_b64 && r.firma_mime ? { id: r.firma_id, propietario: r.firma_propietario, miniatura: `data:${r.firma_mime};base64,${r.firma_b64.replace(/\s+/g, '')}` } : null
+    }));
+    if (!lista.some((r) => r.posicion === 1)) lista.unshift({ posicion: 1, funcion: 'GENERO', nombre: fila.elaboro_nombre ?? '', conFirma: false, firma: null });
+    return lista;
+  }
+
+  // ================================================================== responsables y catálogo de firmas
+  async capacidades(actor: ActorDocumental): Promise<{ firmas: boolean }> {
+    return this.repo.conSesion(actor, async (c) => ({ firmas: await this.resp.disponible(c) }));
+  }
+
+  private async revisionInterna(c: PoolClient, publicId: string): Promise<string> {
+    const r = await this.repo.obtenerRevision(c, publicId);
+    if (!r) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Documento no encontrado.' });
+    return r.revision_id;
+  }
+
+  /**
+   * Valida y resuelve los responsables (1 a 3): la primera posición es «Generó»; una firma solo se acepta si esta cuenta puede usarla (propia, con autorización vigente, o ya asignada a esta
+   * revisión); con firma, el nombre impreso es el de su propietaria (no se puede atribuir la imagen a otra persona). Sin la migración 102 solo existe «Generó» y no hay firmas.
+   */
+  private async prepararResponsables(c: PoolClient, items: ResponsableDto[], revisionInternaId: string | null): Promise<{ aGuardar: ResponsableAGuardar[]; nombrePrincipal: string | null; dispo: boolean }> {
+    if (items.length < 1 || items.length > 3) throw http(HttpStatus.BAD_REQUEST, 'RESPONSABLES_INVALIDOS', 'Una hoja lleva de uno a tres responsables.');
+    if (items[0]?.funcion !== 'GENERO') throw http(HttpStatus.BAD_REQUEST, 'RESPONSABLES_INVALIDOS', 'El primer responsable es siempre «Generó».');
+    const dispo = await this.resp.disponible(c);
+    const conFirma = items.filter((i) => i.firmaId);
+    if (!dispo && (items.length > 1 || conFirma.length > 0)) {
+      throw http(HttpStatus.CONFLICT, 'FIRMAS_NO_DISPONIBLES', 'Los responsables adicionales y las firmas requieren la migración de firmas, que aún no está aplicada en este entorno.');
+    }
+    const resueltas = await this.resp.resolverFirmas(c, conFirma.map((i) => i.firmaId as string), revisionInternaId ?? '0');
+    for (const i of conFirma) {
+      const f = resueltas.get(i.firmaId as string);
+      if (!f || !f.permitido) throw http(HttpStatus.FORBIDDEN, 'FIRMA_NO_AUTORIZADA', 'No tienes autorización para usar una de las firmas seleccionadas.');
+    }
+    const aGuardar: ResponsableAGuardar[] = [];
+    let nombrePrincipal: string | null = null;
+    items.forEach((i, idx) => {
+      const f = i.firmaId ? resueltas.get(i.firmaId) : undefined;
+      const nombre = textoONulo(f ? f.propietario : i.nombre);
+      if (idx === 0) nombrePrincipal = nombre;
+      if (nombre) aGuardar.push({ posicion: idx + 1, funcion: idx === 0 ? 'GENERO' : i.funcion, nombre, firmaInternaId: f?.internoId ?? null });
+    });
+    return { aGuardar, nombrePrincipal, dispo };
+  }
+
+  async listarFirmas(actor: ActorDocumental): Promise<{ data: FirmaVista[] }> {
+    return this.repo.conSesion(actor, async (c) => ({ data: (await this.resp.disponible(c)) ? await this.resp.listarUtilizables(c, actor.userId) : [] }));
+  }
+
+  /** Alta de una firma: el archivo se valida y se normaliza (nunca se guarda tal cual). Sin propietario indicado es de la cuenta; solo un ADMIN incorpora la de otra persona. */
+  async subirFirma(actor: ActorDocumental, archivo: Buffer | undefined, propietarioUsuarioId: string | undefined, propietarioNombre: string | undefined): Promise<FirmaVista> {
+    if (!archivo) throw http(HttpStatus.BAD_REQUEST, 'FIRMA_INVALIDA', 'No se recibió ninguna imagen.');
+    const firma = procesarFirma(archivo);
+    try {
+      return await this.repo.conSesion(actor, async (c) => {
+        if (!(await this.resp.disponible(c))) throw http(HttpStatus.CONFLICT, 'FIRMAS_NO_DISPONIBLES', 'El catálogo de firmas requiere la migración de firmas, que aún no está aplicada en este entorno.');
+        const ajena = propietarioUsuarioId !== undefined && propietarioUsuarioId !== actor.userId;
+        const sinCuenta = propietarioUsuarioId === undefined && propietarioNombre !== undefined && textoONulo(propietarioNombre) !== null;
+        if ((ajena || sinCuenta) && actor.role !== 'ADMIN') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo un ADMIN autorizado puede incorporar la firma de otra persona.' });
+        let propietarioId: string | null = propietarioUsuarioId ?? (sinCuenta ? null : actor.userId);
+        let nombre: string;
+        if (propietarioId !== null) {
+          const n = await this.resp.nombreDeUsuarioActivo(c, propietarioId);
+          if (!n) throw http(HttpStatus.UNPROCESSABLE_ENTITY, 'REFERENCE_INVALID', 'El usuario propietario no existe o no está activo.');
+          nombre = n;
+        } else {
+          propietarioId = null;
+          nombre = textoONulo(propietarioNombre) as string;
+        }
+        const publicId = await this.resp.insertarFirma(c, propietarioId, nombre, firma);
+        const lista = await this.resp.listarUtilizables(c, actor.userId);
+        const creada = lista.find((f) => f.id === publicId);
+        return creada ?? { id: publicId, propietario: nombre, propia: propietarioId === actor.userId, ancho: firma.ancho, alto: firma.alto, miniatura: `data:${firma.tipoMime};base64,${firma.contenido.toString('base64')}`, creadaEn: new Date().toISOString() };
+      });
+    } catch (error) {
+      throw traducirErrorBd(error);
+    }
+  }
+
+  /** Autorizar o revocar el USO de una imagen por otra persona (acceso al recurso; no aprueba ningún documento). Lo decide la base: propietaria, o su ADMIN custodio si no tiene cuenta. */
+  async cambiarUsoFirma(actor: ActorDocumental, firmaId: string, usuarioId: string, autorizar: boolean): Promise<{ ok: true }> {
+    try {
+      await this.repo.conSesion(actor, async (c) => {
+        if (autorizar) {
+          if ((await this.resp.autorizar(c, firmaId, usuarioId)) === 'sin_acceso') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo la propietaria de la firma puede autorizar su uso.' });
+        }
+        else if ((await this.resp.revocar(c, firmaId, usuarioId)) === 0) throw new NotFoundException({ code: 'NOT_FOUND', message: 'No hay una autorización vigente para ese usuario.' });
+      });
+      return { ok: true };
+    } catch (error) {
+      throw traducirErrorBd(error);
+    }
+  }
+
+  async retirarFirma(actor: ActorDocumental, firmaId: string): Promise<{ ok: true }> {
+    try {
+      await this.repo.conSesion(actor, async (c) => {
+        if ((await this.resp.retirar(c, firmaId)) === 0) throw new NotFoundException({ code: 'NOT_FOUND', message: 'La firma no existe, no es tuya o ya está retirada.' });
+      });
+      return { ok: true };
+    } catch (error) {
+      throw traducirErrorBd(error);
+    }
   }
 
   private vista(fila: RevisionRow, actor: ActorDocumental, confirmaciones: ConfirmacionRow[]): Record<string, unknown> {
@@ -302,7 +420,8 @@ export class DocumentsService {
   /** Lo que falta para finalizar (sin escribir nada). Lista vacía = lista. El motor de PDF se verifica aparte (501), antes de tocar el estado. */
   async motivosNoLista(fila: RevisionRow): Promise<MotivoNoLista[]> {
     const motivos: MotivoNoLista[] = [];
-    if (!fila.elaboro_nombre || !fila.elaboro_confirmado) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' });
+    if (!fila.elaboro_nombre) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Indica el nombre de quien generó la hoja (Generó).' });
+    else if (!fila.elaboro_confirmado) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' });
     if (!fila.cliente_nombre) motivos.push({ codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente (vinculado a la lista de clientes o, en TEST, manual).' });
     motivos.push(...(await this.motivosDeBloqueo(fila)));
     return motivos;
@@ -320,8 +439,10 @@ export class DocumentsService {
     let inicio: InicioFinalizacion;
     let fila: RevisionRow;
     let confirmaciones: ConfirmacionRow[];
+    let versionFinal = version;
+    let responsablesPdf: InfoFinalizada['responsables'];
     try {
-      ({ inicio, fila, confirmaciones } = await this.repo.conSesion(actor, async (c) => {
+      ({ inicio, fila, confirmaciones, versionFinal, responsablesPdf } = await this.repo.conSesion(actor, async (c) => {
         const actual = await this.repo.obtenerRevision(c, id);
         if (!actual) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Documento no encontrado.' });
         if (actual.estado === 'FINALIZADA') throw http(HttpStatus.CONFLICT, 'ALREADY_FINAL', 'Esta revisión ya está finalizada.');
@@ -337,11 +458,28 @@ export class DocumentsService {
         }
         // Chrome es obligatorio: sin él no se toca el estado, no se genera nada y se informa con claridad.
         if (!this.engine.disponible) throw http(HttpStatus.NOT_IMPLEMENTED, 'PDF_NOT_AVAILABLE', 'No se puede finalizar: la generación de PDF no está disponible en este entorno.');
-        const motivos = await this.motivosNoLista(actual);
+        // Pulsar «Finalizar y generar PDF» ES la confirmación expresa del nombre de «Generó» que se ve en el formulario (no hay casilla aparte). Se registra con la sesión autenticada y la versión
+        // vigente DENTRO de esta misma transacción: si falta algún requisito o algo falla, se revierte todo y la hoja no queda parcialmente confirmada.
+        let trabajo = actual;
+        let v = version;
+        if (actual.estado === 'BORRADOR' && actual.elaboro_nombre && !actual.elaboro_confirmado) {
+          const cambios: CambiosBorrador = { familia: actual.familia, especificacion: actual.especificacion, elaboroNombre: actual.elaboro_nombre, elaboroConfirmado: true, autorizoNombre: actual.autorizo_nombre, ...this.clienteDe(actual), revisorUsuarioId: actual.revisor_usuario_id };
+          if (!(await this.repo.actualizarBorrador(c, id, version, cambios))) throw await this.conflictoDeVersion(c, id, version);
+          v = version + 1;
+          trabajo = (await this.repo.obtenerRevision(c, id)) ?? actual;
+        }
+        const motivos = await this.motivosNoLista(trabajo);
         if (motivos.length > 0) throw http(HttpStatus.UNPROCESSABLE_ENTITY, 'FINALIZACION_NO_LISTA', 'La revisión todavía no cumple los requisitos para finalizar.', { motivos });
-        const iniciada = actual.estado === 'BORRADOR' ? await this.repo.iniciarFinalizacion(c, id, version) : await this.repo.reclamarFinalizacion(c, id, version);
+        // Responsables e imágenes que se imprimirán: si una imagen asignada ya no es legible/utilizable por esta cuenta, no se finaliza (nunca se omite en silencio).
+        let responsables: InfoFinalizada['responsables'];
+        if (await this.resp.disponible(c)) {
+          const rp = await this.resp.responsablesParaPdf(c, trabajo.revision_id);
+          if (rp.faltantes > 0) throw http(HttpStatus.UNPROCESSABLE_ENTITY, 'FIRMA_NO_DISPONIBLE', 'Una firma asignada ya no está disponible para esta cuenta (autorización retirada o firma retirada). Cámbiala o quítala antes de finalizar.');
+          if (rp.responsables.length > 0) responsables = rp.responsables;
+        }
+        const iniciada = actual.estado === 'BORRADOR' ? await this.repo.iniciarFinalizacion(c, id, v) : await this.repo.reclamarFinalizacion(c, id, v);
         if (!iniciada) throw http(HttpStatus.CONFLICT, 'FINALIZACION_EN_CURSO', 'Otra finalización de esta revisión está en curso o la revisión cambió.');
-        return { inicio: iniciada, fila: actual, confirmaciones: await this.repo.confirmaciones(c, id) };
+        return { inicio: iniciada, fila: trabajo, confirmaciones: await this.repo.confirmaciones(c, id), versionFinal: v, responsablesPdf: responsables };
       }));
     } catch (error) {
       throw traducirErrorBd(error);
@@ -355,13 +493,14 @@ export class DocumentsService {
         elaboro: fila.elaboro_nombre ?? '',
         reviso: vigente ? `${vigente.usuario_nombre}${vigente.es_autorrevision && !vigente.como_revisor_asignado ? ' (autorrevisión)' : ''}` : null,
         autorizo: fila.autorizo_nombre,
-        huella: fila.especificacion_sha256
+        huella: fila.especificacion_sha256,
+        ...(responsablesPdf ? { responsables: responsablesPdf } : {})
       };
       const spec = fila.especificacion;
       const documento = await this.engine.generarFinalizada(fila.familia, spec.datos, this.contextoBind(spec), info, fila.variante);
       const sha = this.sha256(documento.pdf);
       await this.repo.conSesion(actor, async (c) => {
-        const ok = await this.repo.completarFinalizacion(c, { revisionId: inicio.revision_id, token: inicio.finalizando_token, version, nombreArchivo: documento.filename, sha256: sha, contenido: documento.pdf, especificacionSha256: fila.especificacion_sha256 });
+        const ok = await this.repo.completarFinalizacion(c, { revisionId: inicio.revision_id, token: inicio.finalizando_token, version: versionFinal, nombreArchivo: documento.filename, sha256: sha, contenido: documento.pdf, especificacionSha256: fila.especificacion_sha256 });
         if (!ok) throw http(HttpStatus.CONFLICT, 'FINALIZACION_PERDIDA', 'La finalización fue cancelada o reclamada por otra sesión; no se registró ningún PDF.');
       });
     } catch (error) {
@@ -427,6 +566,8 @@ export class DocumentsService {
           familia: base.familia, especificacion: base.especificacion, elaboroNombre: actor.displayName, elaboroConfirmado: false, autorizoNombre: null,
           clienteEmpresaId: base.cliente_empresa_id, clienteNombre: base.cliente_nombre, clienteVerificado: base.cliente_verificado, revisorUsuarioId: null
         }, base.revision_id);
+        // Los nombres y funciones se recuperan como referencia editable; las imágenes de firma NO se heredan (cada revisión se firma por separado).
+        if (await this.resp.disponible(c)) await this.resp.copiarNombres(c, base.revision_id, id);
         return this.vistaDe(c, actor, id);
       });
     } catch (error) {

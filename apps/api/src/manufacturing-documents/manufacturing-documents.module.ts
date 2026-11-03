@@ -4,6 +4,7 @@ import { ManufacturingSheetsModule } from '../manufacturing-sheets/manufacturing
 import { DocumentsController } from './documents.controller';
 import { DocumentsRepository } from './documents.repository';
 import { DocumentsService } from './documents.service';
+import { ResponsablesRepository } from './responsables.repository';
 import { TestOnlyGuard } from './test-only.guard';
 import { SheetEngine, SheetEngineAdapter } from './sheet-engine.port';
 
@@ -13,6 +14,6 @@ import { SheetEngine, SheetEngineAdapter } from './sheet-engine.port';
 @Module({
   imports: [DatabaseModule, ManufacturingSheetsModule],
   controllers: [DocumentsController],
-  providers: [DocumentsRepository, DocumentsService, TestOnlyGuard, { provide: SheetEngine, useClass: SheetEngineAdapter }]
+  providers: [DocumentsRepository, ResponsablesRepository, DocumentsService, TestOnlyGuard, { provide: SheetEngine, useClass: SheetEngineAdapter }]
 })
 export class ManufacturingDocumentsModule {}

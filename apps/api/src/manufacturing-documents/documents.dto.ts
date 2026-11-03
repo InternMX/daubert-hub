@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsDefined, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDefined, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 import { FAMILY_CODES, type FamilyCode } from '../manufacturing-sheets/preview/family-registry';
 import { SheetPreviewDataDto } from '../manufacturing-sheets/preview/sheet-preview.dto';
 
@@ -32,6 +32,16 @@ export class ClienteDocumentoDto {
   @IsOptional() @IsString() @MinLength(1) @MaxLength(200) nombre?: string;
 }
 
+export const FUNCIONES_RESPONSABLE = ['GENERO', 'REVISO', 'APROBO'] as const;
+export type FuncionResponsable = (typeof FUNCIONES_RESPONSABLE)[number];
+
+/** Un responsable impreso en la hoja. La posición es el orden del arreglo (1 a 3); la primera es siempre «Generó». Con `firmaId` el nombre impreso es el de la propietaria de la imagen. */
+export class ResponsableDto {
+  @IsIn(FUNCIONES_RESPONSABLE) funcion!: FuncionResponsable;
+  @IsString() @MaxLength(120) nombre!: string;
+  @IsOptional() @IsUUID('4') firmaId?: string | null;
+}
+
 export class CreateDraftDto {
   @IsString() @Matches(/^[A-Za-z0-9._-]{1,64}$/) @Matches(/^[^.-]/, { message: 'El código no puede empezar con punto ni guion.' }) codigo!: string;
   @IsOptional() @IsString() @Matches(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/, { message: 'Variante no válida.' }) variante?: string;
@@ -42,6 +52,7 @@ export class CreateDraftDto {
   @IsOptional() @IsObject() @ValidateNested() @Type(() => ColorPersonalizadoDto) colorPersonalizado?: ColorPersonalizadoDto;
   @IsOptional() @IsArray() @ArrayMaxSize(60) @ValidateNested({ each: true }) @Type(() => IncidenciaReconocidaDto) incidenciasReconocidas?: IncidenciaReconocidaDto[];
   @IsOptional() @IsObject() @ValidateNested() @Type(() => ClienteDocumentoDto) cliente?: ClienteDocumentoDto;
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => ResponsableDto) responsables?: ResponsableDto[];
 }
 
 /** Bloqueo optimista: `version` es la que el usuario vio. Cada sección enviada REEMPLAZA a la guardada; las omitidas se conservan. */
@@ -54,6 +65,7 @@ export class UpdateDraftDto {
   @IsOptional() @IsObject() @ValidateNested() @Type(() => ColorPersonalizadoDto) colorPersonalizado?: ColorPersonalizadoDto;
   @IsOptional() @IsArray() @ArrayMaxSize(60) @ValidateNested({ each: true }) @Type(() => IncidenciaReconocidaDto) incidenciasReconocidas?: IncidenciaReconocidaDto[];
   @IsOptional() @IsObject() @ValidateNested() @Type(() => ClienteDocumentoDto) cliente?: ClienteDocumentoDto;
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => ResponsableDto) responsables?: ResponsableDto[];
   /** Nombre IMPRESO de «Elaboró» (editable). Cambiarlo retira la confirmación salvo que se envíe `elaboroConfirmado: true` en la misma petición. */
   @IsOptional() @IsString() @MaxLength(120) elaboroNombre?: string;
   @IsOptional() @IsBoolean() elaboroConfirmado?: boolean;
@@ -69,4 +81,14 @@ export class AssignReviewerDto {
   @IsInt() @Min(1) @Max(1_000_000) version!: number;
   /** `null` retira al revisor asignado. */
   @ValidateIf((_objeto, valor) => valor !== null) @IsString() @Matches(ID_ENTERO) revisorUsuarioId!: string | null;
+}
+
+/** Alta de una firma (multipart: el archivo viaja aparte). Sin campos = firma propia. Un ADMIN puede indicar otro usuario o el nombre de una persona sin cuenta. */
+export class UploadSignatureDto {
+  @IsOptional() @IsString() @Matches(ID_ENTERO) propietarioUsuarioId?: string;
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(120) propietarioNombre?: string;
+}
+
+export class SignatureUseDto {
+  @IsString() @Matches(ID_ENTERO) usuarioId!: string;
 }

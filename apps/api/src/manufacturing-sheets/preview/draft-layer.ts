@@ -37,6 +37,15 @@ export interface InfoFinalizada {
   autorizo?: string | null;
   /** Huella (SHA-256) de la copia de la especificación; se imprimen los primeros 12 caracteres. */
   huella: string;
+  /** Responsables impresos (1 a 3) con su imagen de firma opcional. Sin este campo se conserva el comportamiento anterior (firmas «SIN FIRMA»). */
+  responsables?: ResponsableImpreso[];
+}
+
+export interface ResponsableImpreso {
+  posicion: number;
+  funcion: 'GENERO' | 'REVISO' | 'APROBO';
+  nombre: string;
+  firma: { tipoMime: string; contenido: Buffer; sha256: string } | null;
 }
 
 const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' };

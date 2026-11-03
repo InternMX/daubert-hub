@@ -36,17 +36,12 @@ describe('SCHFPMG001 · Bolsa Plana 1: finalizar de extremo a extremo con Chrome
     const b = await service.crearBorrador(actor(2), { codigo: 'SCHFPMG001', familia: 'BOLSA_PLANA_1', datos: DATOS, cliente: { nombre: 'SCHAEFFLER' } } as never) as Vista;
     expect(b).toMatchObject({ estado: 'BORRADOR', cliente: { nombre: 'SCHAEFFLER', verificado: false } });
 
-    // Sin «Elaboró» confirmado no se finaliza: se explica qué falta y el borrador queda intacto.
-    const sin = await falla(service.finalizar(actor(2), b.id, b.version));
-    expect(sin.status).toBe(422);
-    expect(sin.body.motivos.map((m: Vista) => m.codigo)).toContain('ELABORO_SIN_CONFIRMAR');
-    expect((await service.obtener(actor(2), b.id) as Vista).estado).toBe('BORRADOR');
-
-    const confirmado = await service.actualizarBorrador(actor(2), b.id, { version: b.version, elaboroConfirmado: true } as never) as Vista;
-    expect((await service.obtener(actor(2), b.id) as Vista).datos?.colorConcentracion ?? (await service.obtener(actor(2), b.id) as Vista).especificacion.datos.colorConcentracion).toBe('3');
-    const fin = await service.finalizar(actor(2), b.id, confirmado.version) as Vista;
-    expect(fin).toMatchObject({ estado: 'FINALIZADA', revision: 1, entorno: 'PRUEBA' });
+    // Sin casilla de confirmación: pulsar «Finalizar» confirma el nombre de «Generó» (con la sesión y la versión vigente, en la misma transacción).
+    expect(b.elaboro).toMatchObject({ confirmado: false });
+    const fin = await service.finalizar(actor(2), b.id, b.version) as Vista;
+    expect(fin).toMatchObject({ estado: 'FINALIZADA', revision: 1, entorno: 'PRUEBA', elaboro: { confirmado: true, nombre: 'General Dos' } });
     expect(fin.pdf.nombre).toBe('SCHFPMG001_REV01.pdf');
+    expect(fin.especificacion.datos.colorConcentracion).toBe('3');
 
     // Descarga del PDF almacenado: contenido, leyenda y datos impresos.
     const d = await service.descargarPdf(actor(2), b.id);
