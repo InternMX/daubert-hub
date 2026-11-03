@@ -284,10 +284,10 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
     await ancho();
     const responsables = screen.getByRole('region', { name: 'Responsables y firmas' });
-    expect(within(responsables).getByText('Revisión del borrador (opcional)')).toBeInTheDocument();
-    expect(within(responsables).getByText('No es requisito para finalizar')).toBeInTheDocument();
-    expect(within(responsables).queryByRole('button', { name: 'Registrar mi revisión' })).not.toBeInTheDocument();   // plegada por defecto (no accesible)
-    await user.click(within(responsables).getByRole('button', { name: /Revisión del borrador \(opcional\)/ }));
+    expect(within(responsables).queryByText(/Revisión del borrador/)).not.toBeInTheDocument();          // ya no ocupa lugar en el formulario principal
+    expect(within(responsables).queryByRole('button', { name: 'Registrar mi revisión' })).not.toBeInTheDocument();   // contraída por defecto (no accesible)
+    await user.click(within(responsables).getByRole('button', { name: 'Opciones avanzadas' }));
+    expect(await within(responsables).findByText(/no es la función impresa «Revisó», no usa ninguna imagen de firma/)).toBeInTheDocument();
     expect(await within(responsables).findByRole('button', { name: 'Registrar mi revisión' })).toBeInTheDocument();
     expect(within(responsables).getByRole('button', { name: 'Confirmar revisión del borrador' })).toBeInTheDocument();
     expect(m.actualizarBorrador).not.toHaveBeenCalled();
@@ -381,7 +381,8 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await ancho();
     expect(screen.getByTestId('document-panel')).toHaveTextContent(/SCHFPMG001 · Borrador · v7/);
     expect(within(screen.getByRole('region', { name: 'Responsables y firmas' })).queryByRole('button', { name: /Confirmar «Elaboró»/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/1 revisión registrada/)).toBeInTheDocument();
+    await user.click(within(screen.getByRole('region', { name: 'Responsables y firmas' })).getByRole('button', { name: 'Opciones avanzadas' }));
+    expect(await screen.findByText(/Revisó: General Tres/)).toBeInTheDocument();                      // la revisión interna sigue existiendo, dentro de la opción avanzada
     expect(m.actualizarBorrador).not.toHaveBeenCalled();
     expect(m.crearBorrador).not.toHaveBeenCalled();
   });

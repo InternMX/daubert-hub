@@ -513,14 +513,15 @@ export function ResponsablesDocumento({ revisionDatos, responsables, onResponsab
         <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Responsables y firmas</Typography>
         <Stack spacing={2}>
           <ResponsablesFirmas responsables={responsables} onChange={onResponsables} puedeFirmas={puedeFirmas} disabled={!doc.permisos.editar} />
-          <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
-            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} aria-controls="revision-opcional" id="revision-opcional-cabecera">
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Typography variant="subtitle2" component="h3">Revisión del borrador (opcional)</Typography>
-                {d.vigentes.length > 0 ? <Chip size="small" color="success" label={`${d.vigentes.length} ${d.vigentes.length === 1 ? 'revisión registrada' : 'revisiones registradas'}`} /> : <Typography variant="body2" color="text.secondary">No es requisito para finalizar</Typography>}
-              </Stack>
+          <Accordion disableGutters elevation={0} sx={{ '&:before': { display: 'none' }, bgcolor: 'transparent' }} data-testid="opciones-avanzadas">
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} aria-controls="opciones-avanzadas-detalle" id="opciones-avanzadas-cabecera" sx={{ px: 0, minHeight: 36, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <Typography variant="body2" color="text.secondary">Opciones avanzadas</Typography>
             </AccordionSummary>
-            <AccordionDetails id="revision-opcional">{revision}</AccordionDetails>
+            <AccordionDetails id="opciones-avanzadas-detalle" sx={{ px: 0 }}>
+              <Typography variant="subtitle2" component="h3">Revisión interna del borrador</Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>Solo para casos especiales. Es una constancia autenticada en el sistema: no es la función impresa «Revisó», no usa ninguna imagen de firma y no es requisito para finalizar.</Typography>
+              {revision}
+            </AccordionDetails>
           </Accordion>
         </Stack>
       </Paper>
