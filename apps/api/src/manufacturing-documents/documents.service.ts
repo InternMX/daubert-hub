@@ -397,10 +397,16 @@ export class DocumentsService {
   async listarFirmasAdministrativas(actor: ActorDocumental, propietarioUsuarioId: string | undefined, sinCuenta: boolean): Promise<{ data: FirmaAdministrativa[]; alcance: string }> {
     if (actor.role !== 'ADMIN') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo un ADMIN puede consultar la gestión administrativa de firmas.' });
     if ((propietarioUsuarioId === undefined) === !sinCuenta) throw http(HttpStatus.BAD_REQUEST, 'CONSULTA_INVALIDA', 'Indica un usuario o la consulta de personas sin cuenta (solo una).');
-    return this.repo.conSesion(actor, async (c) => ({
-      data: (await this.resp.disponible(c)) ? await this.resp.firmasAdministrativas(c, sinCuenta ? null : (propietarioUsuarioId as string)) : [],
-      alcance: 'Solo se listan las firmas que esta cuenta registró o cuyo uso tiene autorizado: ser ADMIN no da acceso a las firmas de otras personas.'
-    }));
+    return this.repo.conSesion(actor, async (c) => {
+      if (!(await this.resp.disponible(c))) return { data: [], alcance: 'El catálogo de firmas no está disponible en este entorno.' };
+      const { data, completo } = await this.resp.firmasAdministrativas(c, sinCuenta ? null : (propietarioUsuarioId as string));
+      return {
+        data,
+        alcance: completo
+          ? 'Inventario administrativo: solo descripción y estados. Ser ADMIN no da acceso a la imagen ni permiso de uso de las firmas de otras personas.'
+          : 'Solo se listan las firmas que esta cuenta registró o cuyo uso tiene autorizado: ser ADMIN no da acceso a las firmas de otras personas.'
+      };
+    });
   }
 
   async retirarFirma(actor: ActorDocumental, firmaId: string): Promise<{ ok: true }> {

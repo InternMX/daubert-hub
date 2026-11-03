@@ -54,8 +54,23 @@ Igual que la 101 (README de la carpeta): respaldo verificable de `manufactura` �
 
 Reglas: un ADMIN que registra una firma para otra persona con cuenta **no es propietario ni obtiene permiso de uso**, no puede autorizarse ni autorizar a terceros en nombre de ella y no ve su imagen; solo la propietaria concede y revoca (lo exige la base de datos). Las pantallas administrativas devuelven 403 a cuentas no ADMIN y las rutas están protegidas por `AdminRoute`.
 
-### Limitación de la consulta administrativa (por la seguridad existente)
-Las políticas RLS de la migración 102 NO dan a un ADMIN visibilidad general sobre `manufactura.firmas`. Por eso la consulta administrativa (`GET …/signatures-admin`) solo muestra las firmas que **esa cuenta** registró o incorporó (o cuyo uso tiene autorizado): no verá las que la propia persona subió, ni las que registró otro ADMIN. Para un inventario administrativo completo de metadatos haría falta una **migración 103** pequeña (una función `SECURITY DEFINER` solo para ADMIN que devuelva descripción y estados, nunca el contenido), que no se ha creado ni aplicado; no se ampliaron las políticas RLS.
+### Limitación de la consulta administrativa y migración 103 (PROPUESTA, no aplicada a TEST)
+Las políticas RLS de la 102 no dan a un ADMIN visibilidad general sobre `manufactura.firmas`: sin la 103, `GET …/signatures-admin` solo muestra las firmas que **esa cuenta** registró o cuyo uso tiene autorizado (no las que subió la propia persona ni las de otro ADMIN). La API ya detecta si existe la función de la 103 y, si no, conserva este comportamiento (y lo dice en pantalla).
+
+**103 = una sola función, sin tocar RLS:** `manufactura.fn_firmas_inventario(propietario bigint, sin_cuenta boolean)`: `SECURITY DEFINER`, `STABLE`, `search_path` fijo, valida la identidad de la sesión y que sea **ADMIN activo** (si no, `insufficient_privilege`), y devuelve **solo metadatos**: propietario, estado de la cuenta, estado y fechas de la firma, quién la subió/incorporó, si la registró la cuenta que consulta y **cuántas** autorizaciones vigentes hay (no a quién). Nunca la imagen ni miniaturas. `EXECUTE` solo para `daubert_hub_test_user` (se revoca a PUBLIC). No cambia tablas, políticas RLS, triggers ni privilegios, no concede ningún permiso de uso y un ADMIN sigue sin poder autorizarse ni leer la imagen (lo comprueba el smoke). Ver una firma en el inventario tampoco permite retirarla: solo se ofrece «Retirar» en las que esa cuenta registró.
+
+Archivos: `20261105_103_manufactura_inventario_firmas_admin_test.{precheck,up,postcheck,smoke,down}.sql` (+ `tools/validar-103-en-instancia-desechable.cjs`). El precheck imprime `huella_manufactura` y el postcheck (`-v huella_manufactura=…`) prueba que tablas, triggers, políticas y privilegios no cambiaron. DOWN idempotente (`DROP FUNCTION`; no hay datos que perder; la API vuelve sola a la consulta limitada).
+
+Validado en instancia desechable: precheck → UP → postcheck (todo `t`) → smoke 11/11 (sin identidad y GENERAL rechazados; ADMIN ve firmas de otros solo como metadatos; no lee la tabla, no se autoriza, sin imagen en el resultado, sin residuos de auditoría) → DOWN → DOWN repetido → UP → postcheck.
+
+```
+0361c3f2a5532c3c4f8f49db2ec551ad28175260dd0b8819edd0a16a42d609e5  …103…test.up.sql
+122a12490e910726397a08dde6b5159f3851a0686d80aa5f95d520ff9b6e4348  …103…test.precheck.sql
+7786637dd78727f468240db36604bed0dbf84db832321eece411ec345ec48374  …103…test.postcheck.sql
+700b83035f85ef1ec6476f38d70cfc2e7b1d83e3df7b10fa044fec2a61573b51  …103…test.smoke.sql
+27e36ccf585cd63ac68853f246e97ad85a372dd25a3852f7acfa4b50aaf4023f  …103…test.down.sql
+```
+(SHA-256 de los archivos tal como están en el árbol; recalcular si cambian los finales de línea.) Riesgos: bloqueo muy breve al crear la función (`lock_timeout` 10 s), el inventario limita a 500 filas, y la consulta no queda en `audit.cambios` (es de solo lectura). Requiere autorización expresa antes de aplicarse.
 
 ## Autorización de uso de firmas (completa)
 - **Quién autoriza:** solo la propietaria de la firma. En **Mi perfil → Mis firmas → «Quién puede usarla»**: lista de personas con permiso, buscador por nombre para agregar a otra y «Revocar» por persona. Nada se concede solo: quien sube una firma **no recibe** permiso de uso; si un ADMIN sube la firma de otra persona con cuenta, queda a nombre de ella, no se selecciona y se le explica que la propietaria debe autorizarlo.
@@ -64,7 +79,7 @@ Las políticas RLS de la migración 102 NO dan a un ADMIN visibilidad general so
 - **Persona sin cuenta:** por diseño de la migración 102, el ADMIN que la incorpora queda como custodio con permiso de uso (registrado). Cualquier otra persona requiere autorización explícita suya.
 
 ## Limitaciones conocidas
-- La interfaz no incluye retirar una firma del catálogo (la API ya lo permite: `POST …/retire`).
+- Retirar una firma solo está en la gestión administrativa y solo para las que esa cuenta registró.
 - Las firmas se reducen a 600 × 240 px como máximo; una firma muy detallada puede perder finura.
 - Solo los PDF finalizados imprimen las imágenes; el PDF de borrador mantiene «SIN FIRMA».
 - Una firma asignada que ya no esté disponible (autorización revocada o firma retirada) impide finalizar hasta cambiarla o quitarla.

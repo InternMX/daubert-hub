@@ -211,7 +211,7 @@ export const revocarUsoDeFirma = (firmaId: string, usuarioId: string): Promise<{
 // ---------------------------------------------------------------- gestión administrativa (solo descripción; nunca la imagen)
 export interface FirmaAdministrativa {
   id: string; propietarioUsuarioId: string | null; propietario: string; cuenta: 'ACTIVE' | 'INACTIVE' | 'SIN_CUENTA'; estado: 'ACTIVA' | 'RETIRADA';
-  creadaEn: string; retiradaEn: string | null; subidaPor: string | null; incorporadaPor: string | null; autorizaciones: number | null;
+  creadaEn: string; retiradaEn: string | null; subidaPor: string | null; incorporadaPor: string | null; autorizaciones: number | null; registradaPorMi: boolean;
 }
 export const listarFirmasAdministrativas = (consulta: { propietarioUsuarioId: string } | { sinCuenta: true }, signal?: AbortSignal): Promise<{ data: FirmaAdministrativa[]; alcance: string }> =>
   call('GET', `/signatures-admin?${'sinCuenta' in consulta ? 'sinCuenta=true' : `propietarioUsuarioId=${enc(consulta.propietarioUsuarioId)}`}`, undefined, signal);

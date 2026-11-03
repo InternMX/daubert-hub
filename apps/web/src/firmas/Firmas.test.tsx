@@ -131,7 +131,7 @@ describe('Mi perfil → Mis firmas (usuario GENERAL)', () => {
 });
 
 const otro: ManagedUser = { id: '3', displayName: 'General Tres', email: 'g3@daubertcromwell.com', role: 'GENERAL', status: 'ACTIVE', mustChangePassword: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', lastLoginAt: null };
-const filaAdmin = (o: Partial<docs.FirmaAdministrativa> = {}): docs.FirmaAdministrativa => ({ id: 'f0000000-0000-4000-8000-0000000000d1', propietarioUsuarioId: '3', propietario: 'General Tres', cuenta: 'ACTIVE', estado: 'ACTIVA', creadaEn: '2026-11-03T10:00:00Z', retiradaEn: null, subidaPor: 'Alejandro López', incorporadaPor: 'Alejandro López', autorizaciones: null, ...o });
+const filaAdmin = (o: Partial<docs.FirmaAdministrativa> = {}): docs.FirmaAdministrativa => ({ id: 'f0000000-0000-4000-8000-0000000000d1', propietarioUsuarioId: '3', propietario: 'General Tres', cuenta: 'ACTIVE', estado: 'ACTIVA', creadaEn: '2026-11-03T10:00:00Z', retiradaEn: null, subidaPor: 'Alejandro López', incorporadaPor: 'Alejandro López', autorizaciones: null, registradaPorMi: true, ...o });
 const alcance = 'Solo se listan las firmas que esta cuenta registró o cuyo uso tiene autorizado: ser ADMIN no da acceso a las firmas de otras personas.';
 
 function detalle(usuario = otro) {
@@ -181,6 +181,14 @@ describe('Usuarios → detalle → Firmas (ADMIN, solo descripción)', () => {
     expect(await within(seccion).findByText('Cuenta inactiva')).toBeInTheDocument();
     expect(within(seccion).getByText('No se pueden registrar firmas para una cuenta inactiva.')).toBeInTheDocument();
     expect(within(seccion).queryByRole('button', { name: 'Registrar firma para este usuario' })).toBeNull();
+  });
+
+  it('«Retirar» solo se ofrece en las firmas que esta cuenta registró: las que registró otra persona se ven (descripción) pero no se pueden retirar desde aquí', async () => {
+    m.listarFirmasAdministrativas.mockResolvedValue({ data: [filaAdmin({ registradaPorMi: false, incorporadaPor: 'General Tres' }), filaAdmin({ id: 'f0000000-0000-4000-8000-0000000000d3', registradaPorMi: true })], alcance });
+    detalle();
+    const filas = await screen.findAllByTestId('firma-admin');
+    expect(within(filas[0]!).queryByRole('button', { name: /Retirar/ })).toBeNull();
+    expect(within(filas[1]!).getByRole('button', { name: /Retirar/ })).toBeInTheDocument();
   });
 
   it('retirar una firma pide confirmación y avisa que las revisiones finalizadas no cambian', async () => {

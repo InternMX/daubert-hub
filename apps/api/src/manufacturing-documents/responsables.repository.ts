@@ -18,6 +18,8 @@ export interface AutorizacionVista { usuarioId: string; nombre: string; otorgada
 export interface FirmaAdministrativa {
   id: string; propietarioUsuarioId: string | null; propietario: string; cuenta: 'ACTIVE' | 'INACTIVE' | 'SIN_CUENTA'; estado: 'ACTIVA' | 'RETIRADA';
   creadaEn: string; retiradaEn: string | null; subidaPor: string | null; incorporadaPor: string | null; autorizaciones: number | null;
+  /** La registró esta misma cuenta: solo entonces puede retirarla (la base no deja actuar sobre firmas que no ve). */
+  registradaPorMi: boolean;
 }
 export interface FirmaResuelta { id: string; internoId: string; propietario: string; permitido: boolean }
 
@@ -129,24 +131,34 @@ export class ResponsablesRepository {
   }
 
   /**
-   * Firmas registradas a nombre de un usuario (o de personas sin cuenta), solo descripción: nunca la imagen. Lo que se ve lo decide la base (RLS): una cuenta ADMIN NO ve las firmas de otras
-   * personas por ser administradora, solo las que ella subió o incorporó y aquellas cuyo uso le autorizaron. `autorizaciones` se informa solo donde el ADMIN actúa como custodio (persona sin cuenta).
+   * Inventario administrativo de firmas (solo descripción, nunca la imagen). Con la migración 103 usa `fn_firmas_inventario` (solo ADMIN, metadatos de TODAS las firmas); sin ella se conserva la
+   * consulta limitada por RLS: una cuenta ADMIN solo ve las firmas que registró/incorporó o cuyo uso tiene autorizado. `completo` indica cuál de las dos se usó.
    */
-  async firmasAdministrativas(c: PoolClient, propietarioUsuarioId: string | null): Promise<FirmaAdministrativa[]> {
-    const r = await c.query<{ id: string; propietario_usuario_id: string | null; propietario: string; cuenta_estado: string | null; estado: 'ACTIVA' | 'RETIRADA'; creada_en: string; retirada_en: string | null; subida_por: string | null; incorporada_por: string | null; autorizaciones: string | null }>(
-      `SELECT f.public_id::text AS id, f.propietario_usuario_id::text, f.propietario_nombre AS propietario, u.status AS cuenta_estado, f.estado,
-              to_json(f.created_at) #>> '{}' AS creada_en, to_json(f.retirada_en) #>> '{}' AS retirada_en, s.display_name AS subida_por, i.display_name AS incorporada_por,
-              CASE WHEN f.propietario_usuario_id IS NULL THEN (SELECT count(*) FROM manufactura.firma_autorizaciones a WHERE a.firma_id = f.firma_id AND a.revocada_en IS NULL)::text END AS autorizaciones
-         FROM manufactura.firmas f
-         LEFT JOIN security.users u ON u.user_id = f.propietario_usuario_id
-         LEFT JOIN security.users s ON s.user_id = f.subida_por_usuario_id
-         LEFT JOIN security.users i ON i.user_id = f.incorporada_por_usuario_id
-        WHERE f.propietario_usuario_id IS NOT DISTINCT FROM $1::bigint
-        ORDER BY f.created_at DESC, f.firma_id DESC LIMIT 100`, [propietarioUsuarioId]);
-    return r.rows.map((x) => ({
+  async firmasAdministrativas(c: PoolClient, propietarioUsuarioId: string | null): Promise<{ data: FirmaAdministrativa[]; completo: boolean }> {
+    type Fila = { id: string; propietario_usuario_id: string | null; propietario: string; cuenta_estado: string | null; estado: 'ACTIVA' | 'RETIRADA'; creada_en: string; retirada_en: string | null; subida_por: string | null; incorporada_por: string | null; autorizaciones: string | null; registrada_por_mi: boolean };
+    const completo = (await c.query<{ ok: boolean }>("SELECT to_regprocedure('manufactura.fn_firmas_inventario(bigint, boolean)') IS NOT NULL AS ok")).rows[0]?.ok === true;
+    const r = completo
+      ? await c.query<Fila>(
+        `SELECT i.public_id::text AS id, i.propietario_usuario_id::text, i.propietario_nombre AS propietario, i.cuenta_estado, i.estado, to_json(i.created_at) #>> '{}' AS creada_en,
+                to_json(i.retirada_en) #>> '{}' AS retirada_en, i.subida_por_nombre AS subida_por, i.incorporada_por_nombre AS incorporada_por, i.autorizaciones_vigentes::text AS autorizaciones,
+                (i.incorporada_por_usuario_id = manufactura.fn_actor_id()) AS registrada_por_mi
+           FROM manufactura.fn_firmas_inventario($1::bigint, $2::boolean) i`, [propietarioUsuarioId, propietarioUsuarioId === null])
+      : await c.query<Fila>(
+        `SELECT f.public_id::text AS id, f.propietario_usuario_id::text, f.propietario_nombre AS propietario, u.status AS cuenta_estado, f.estado,
+                to_json(f.created_at) #>> '{}' AS creada_en, to_json(f.retirada_en) #>> '{}' AS retirada_en, s.display_name AS subida_por, i.display_name AS incorporada_por,
+                CASE WHEN f.propietario_usuario_id IS NULL THEN (SELECT count(*) FROM manufactura.firma_autorizaciones a WHERE a.firma_id = f.firma_id AND a.revocada_en IS NULL)::text END AS autorizaciones,
+                (f.incorporada_por_usuario_id = manufactura.fn_actor_id()) AS registrada_por_mi
+           FROM manufactura.firmas f
+           LEFT JOIN security.users u ON u.user_id = f.propietario_usuario_id
+           LEFT JOIN security.users s ON s.user_id = f.subida_por_usuario_id
+           LEFT JOIN security.users i ON i.user_id = f.incorporada_por_usuario_id
+          WHERE f.propietario_usuario_id IS NOT DISTINCT FROM $1::bigint
+          ORDER BY f.created_at DESC, f.firma_id DESC LIMIT 100`, [propietarioUsuarioId]);
+    const data = r.rows.map((x): FirmaAdministrativa => ({
       id: x.id, propietarioUsuarioId: x.propietario_usuario_id, propietario: x.propietario, cuenta: x.propietario_usuario_id === null ? 'SIN_CUENTA' : x.cuenta_estado === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
-      estado: x.estado, creadaEn: x.creada_en, retiradaEn: x.retirada_en, subidaPor: x.subida_por, incorporadaPor: x.incorporada_por, autorizaciones: x.autorizaciones === null ? null : Number(x.autorizaciones)
+      estado: x.estado, creadaEn: x.creada_en, retiradaEn: x.retirada_en, subidaPor: x.subida_por, incorporadaPor: x.incorporada_por, autorizaciones: x.autorizaciones === null ? null : Number(x.autorizaciones), registradaPorMi: x.registrada_por_mi === true
     }));
+    return { data, completo };
   }
 
   async revocar(c: PoolClient, firmaPublicId: string, usuarioId: string): Promise<number> {

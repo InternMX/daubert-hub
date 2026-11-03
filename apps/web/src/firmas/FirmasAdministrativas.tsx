@@ -88,7 +88,7 @@ export function FirmasAdministrativas({ consulta, propietarioNuevo, titulo }: { 
                       {custodia && <TableCell>{f.autorizaciones ?? 0}</TableCell>}
                       <TableCell align="right">
                         {custodia && f.estado === 'ACTIVA' && <Button size="small" aria-expanded={gestionando === f.id} onClick={() => setGestionando(gestionando === f.id ? null : f.id)}>Quién puede usarla</Button>}
-                        {f.estado === 'ACTIVA' && <Button size="small" color="inherit" onClick={() => setRetirando(f)} aria-label={`Retirar la firma de ${f.propietario}`}>Retirar</Button>}
+                        {f.estado === 'ACTIVA' && f.registradaPorMi && <Button size="small" color="inherit" onClick={() => setRetirando(f)} aria-label={`Retirar la firma de ${f.propietario}`}>Retirar</Button>}
                       </TableCell>
                     </TableRow>
                     {custodia && gestionando === f.id && <TableRow><TableCell colSpan={7}><GestionUsoFirma firmaId={f.id} yoId={user?.id ?? ''} custodia /></TableCell></TableRow>}
