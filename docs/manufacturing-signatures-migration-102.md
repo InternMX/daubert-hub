@@ -44,8 +44,21 @@ Igual que la 101 (README de la carpeta): respaldo verificable de `manufactura` �
 4. En «Autorizar uso…» de una firma propia, autorizar a otra cuenta; iniciar sesión con esa cuenta y comprobar que la ve (y que no ve la de nadie más).
 5. Finalizar: el PDF REV01 muestra función, nombre e imagen de cada responsable; reabrir desde «Hojas de este código» no cambia nada; «Crear nueva revisión» recupera nombres sin imágenes.
 
+## Dónde se gestionan las firmas
+| Dónde | Quién | Qué |
+|---|---|---|
+| **Mi perfil → Mis firmas** (`/profile`, menú de cuenta) | cualquier usuario | firmas propias con miniatura, alta de una nueva (JPG/PNG), **«Quién puede usarla»** (lista, buscador por nombre, autorizar, revocar) y, aparte, las firmas que otras personas autorizaron |
+| **Usuarios → detalle → Firmas** | ADMIN | descripción de las firmas registradas a nombre del usuario (propietario, cuenta activa/inactiva, fecha, quién la registró, estado), alta en su nombre y retiro. **Sin imágenes** y sin administrar su uso |
+| **Usuarios → Firmas de personas sin cuenta** (`/users/signatures`) | ADMIN | las firmas bajo su custodia (modelo existente): localizarlas, ver y gestionar quién puede usarlas, registrar nuevas y retirarlas |
+| **Hoja de manufactura → «Elegir firma»** | quien edita | solo consume el catálogo: «Sin firma», firmas propias y autorizadas, y «Nueva firma» (mismo alta que Mi perfil). Enlace a «Administrar mis firmas» |
+
+Reglas: un ADMIN que registra una firma para otra persona con cuenta **no es propietario ni obtiene permiso de uso**, no puede autorizarse ni autorizar a terceros en nombre de ella y no ve su imagen; solo la propietaria concede y revoca (lo exige la base de datos). Las pantallas administrativas devuelven 403 a cuentas no ADMIN y las rutas están protegidas por `AdminRoute`.
+
+### Limitación de la consulta administrativa (por la seguridad existente)
+Las políticas RLS de la migración 102 NO dan a un ADMIN visibilidad general sobre `manufactura.firmas`. Por eso la consulta administrativa (`GET …/signatures-admin`) solo muestra las firmas que **esa cuenta** registró o incorporó (o cuyo uso tiene autorizado): no verá las que la propia persona subió, ni las que registró otro ADMIN. Para un inventario administrativo completo de metadatos haría falta una **migración 103** pequeña (una función `SECURITY DEFINER` solo para ADMIN que devuelva descripción y estados, nunca el contenido), que no se ha creado ni aplicado; no se ampliaron las políticas RLS.
+
 ## Autorización de uso de firmas (completa)
-- **Quién autoriza:** solo la propietaria de la firma. En «Elegir firma» → su firma → **«Quién puede usarla»**: lista de personas con permiso, buscador por nombre para agregar a otra y «Revocar» por persona. Nada se concede solo: quien sube una firma **no recibe** permiso de uso; si un ADMIN sube la firma de otra persona con cuenta, queda a nombre de ella, no se selecciona y se le explica que la propietaria debe autorizarlo.
+- **Quién autoriza:** solo la propietaria de la firma. En **Mi perfil → Mis firmas → «Quién puede usarla»**: lista de personas con permiso, buscador por nombre para agregar a otra y «Revocar» por persona. Nada se concede solo: quien sube una firma **no recibe** permiso de uso; si un ADMIN sube la firma de otra persona con cuenta, queda a nombre de ella, no se selecciona y se le explica que la propietaria debe autorizarlo.
 - **API (`/api/manufacturing-sheets/documents/signatures/:id/…`):** `GET authorizations`, `POST authorize` y `POST revoke` (cuerpo `{ usuarioId }`), `POST retire`. Cada autorización y revocación queda en `audit.cambios` con la cuenta que la realizó.
 - **Revocar:** impide asignar la firma a hojas nuevas y finalizar con ella (mensaje claro «una firma asignada ya no está disponible»); el borrador sigue intacto y los PDF y revisiones ya finalizados no cambian.
 - **Persona sin cuenta:** por diseño de la migración 102, el ADMIN que la incorpora queda como custodio con permiso de uso (registrado). Cualquier otra persona requiere autorización explícita suya.

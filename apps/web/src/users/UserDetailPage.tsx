@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { roleLabels, userStatusLabels } from '../services/userLabels';
 import { deactivateUser, describeUsersApiError, getUser, reactivateUser, UsersApiError, type ManagedUser } from '../services/users';
+import { FirmasAdministrativas } from '../firmas/FirmasAdministrativas';
 import { ResetPasswordDialog } from './ResetPasswordDialog';
 
 function DetailField({ label, value }: { label: string; value: string }) {
@@ -95,7 +96,7 @@ export function UserDetailPage() {
         </Tooltip>
         <Button component={Link} to="/users">Volver a usuarios</Button>
       </PageHeader>
-      <Stack spacing={2} sx={{ mt: 4, maxWidth: 720 }}>
+      <Stack spacing={2} sx={{ mt: 4, maxWidth: 960 }}>
         {successMessage && <Alert severity="success">{successMessage}</Alert>}
         {actionError && <Alert severity="error">{actionError}</Alert>}
         <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
@@ -110,6 +111,9 @@ export function UserDetailPage() {
             <DetailField label="Fecha de creación" value={formatTimestamp(user.createdAt)} />
             <DetailField label="Última actualización" value={formatTimestamp(user.updatedAt)} />
           </Stack>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
+          <FirmasAdministrativas consulta={{ propietarioUsuarioId: user.id }} propietarioNuevo={isActive ? { tipo: 'usuario', id: user.id, nombre: user.displayName } : null} titulo="Firmas" />
         </Paper>
       </Stack>
       <Dialog open={confirming} onClose={() => !changingStatus && setConfirming(false)}>

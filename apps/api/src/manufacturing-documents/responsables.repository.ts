@@ -14,6 +14,11 @@ export interface ResponsableFila {
 export interface ResponsablePdf { posicion: number; funcion: FuncionResponsable; nombre: string; firma: { tipoMime: string; contenido: Buffer; sha256: string } | null }
 export interface ResponsableAGuardar { posicion: number; funcion: FuncionResponsable; nombre: string; firmaInternaId: string | null }
 export interface AutorizacionVista { usuarioId: string; nombre: string; otorgadaEn: string; otorgadaPor: string | null }
+/** Descripción administrativa de una firma: SIN la imagen. */
+export interface FirmaAdministrativa {
+  id: string; propietarioUsuarioId: string | null; propietario: string; cuenta: 'ACTIVE' | 'INACTIVE' | 'SIN_CUENTA'; estado: 'ACTIVA' | 'RETIRADA';
+  creadaEn: string; retiradaEn: string | null; subidaPor: string | null; incorporadaPor: string | null; autorizaciones: number | null;
+}
 export interface FirmaResuelta { id: string; internoId: string; propietario: string; permitido: boolean }
 
 @Injectable()
@@ -121,6 +126,27 @@ export class ResponsablesRepository {
          LEFT JOIN security.users o ON o.user_id = a.otorgada_por_usuario_id
         WHERE f.public_id = $1::uuid AND a.revocada_en IS NULL ORDER BY a.created_at, a.autorizacion_id`, [firmaPublicId]);
     return r.rows.map((x) => ({ usuarioId: x.usuario_id, nombre: x.nombre, otorgadaEn: x.otorgada_en, otorgadaPor: x.otorgada_por }));
+  }
+
+  /**
+   * Firmas registradas a nombre de un usuario (o de personas sin cuenta), solo descripción: nunca la imagen. Lo que se ve lo decide la base (RLS): una cuenta ADMIN NO ve las firmas de otras
+   * personas por ser administradora, solo las que ella subió o incorporó y aquellas cuyo uso le autorizaron. `autorizaciones` se informa solo donde el ADMIN actúa como custodio (persona sin cuenta).
+   */
+  async firmasAdministrativas(c: PoolClient, propietarioUsuarioId: string | null): Promise<FirmaAdministrativa[]> {
+    const r = await c.query<{ id: string; propietario_usuario_id: string | null; propietario: string; cuenta_estado: string | null; estado: 'ACTIVA' | 'RETIRADA'; creada_en: string; retirada_en: string | null; subida_por: string | null; incorporada_por: string | null; autorizaciones: string | null }>(
+      `SELECT f.public_id::text AS id, f.propietario_usuario_id::text, f.propietario_nombre AS propietario, u.status AS cuenta_estado, f.estado,
+              to_json(f.created_at) #>> '{}' AS creada_en, to_json(f.retirada_en) #>> '{}' AS retirada_en, s.display_name AS subida_por, i.display_name AS incorporada_por,
+              CASE WHEN f.propietario_usuario_id IS NULL THEN (SELECT count(*) FROM manufactura.firma_autorizaciones a WHERE a.firma_id = f.firma_id AND a.revocada_en IS NULL)::text END AS autorizaciones
+         FROM manufactura.firmas f
+         LEFT JOIN security.users u ON u.user_id = f.propietario_usuario_id
+         LEFT JOIN security.users s ON s.user_id = f.subida_por_usuario_id
+         LEFT JOIN security.users i ON i.user_id = f.incorporada_por_usuario_id
+        WHERE f.propietario_usuario_id IS NOT DISTINCT FROM $1::bigint
+        ORDER BY f.created_at DESC, f.firma_id DESC LIMIT 100`, [propietarioUsuarioId]);
+    return r.rows.map((x) => ({
+      id: x.id, propietarioUsuarioId: x.propietario_usuario_id, propietario: x.propietario, cuenta: x.propietario_usuario_id === null ? 'SIN_CUENTA' : x.cuenta_estado === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+      estado: x.estado, creadaEn: x.creada_en, retiradaEn: x.retirada_en, subidaPor: x.subida_por, incorporadaPor: x.incorporada_por, autorizaciones: x.autorizaciones === null ? null : Number(x.autorizaciones)
+    }));
   }
 
   async revocar(c: PoolClient, firmaPublicId: string, usuarioId: string): Promise<number> {

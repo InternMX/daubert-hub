@@ -7,6 +7,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
+import AccountCircleRoundedIcon from '@mui/icons-material/AccountCircleRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Avatar, Box, ButtonBase, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
@@ -363,6 +364,10 @@ function UserAccountControl({ collapsed }: { collapsed: boolean }) {
           <Typography variant="caption" color="text.secondary">{roleLabel}</Typography>
         </Box>
         <Divider />
+        <MenuItem component={Link} to="/profile" onClick={handleClose}>
+          <ListItemIcon><AccountCircleRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Mi perfil</ListItemText>
+        </MenuItem>
         <MenuItem onClick={handleLogout} disabled={signingOut}>
           <ListItemIcon><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Cerrar sesión</ListItemText>

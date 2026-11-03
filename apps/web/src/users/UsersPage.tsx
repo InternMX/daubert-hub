@@ -43,6 +43,7 @@ export function UsersPage() {
     <>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Usuarios' }]} />
       <PageHeader title="Usuarios" description="Administra las cuentas con acceso a Daubert Hub.">
+        <Button component={Link} to="/users/signatures" variant="outlined">Firmas de personas sin cuenta</Button>
         <Button component={Link} to="/users/new" variant="contained">Nuevo usuario</Button>
       </PageHeader>
       {loading && <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress aria-label="Cargando usuarios" /></Box>}

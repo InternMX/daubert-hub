@@ -23,6 +23,8 @@ import { AuditPage } from './audit/AuditPage';
 import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
+import { UserSignaturesPage } from './users/UserSignaturesPage';
+import { ProfilePage } from './account/ProfilePage';
 import { EditUserPage } from './users/EditUserPage';
 import { MANUFACTURING_SHEETS_ROUTE } from './automations/automationRoutes';
 import { ManufacturingSpecificationPage } from './manufacturing/ManufacturingSpecificationPage';
@@ -63,6 +65,7 @@ export function App() {
       <Route path="/change-password" element={<ChangePasswordRoute><ChangePasswordPage /></ChangePasswordRoute>} />
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/providers/new" element={<NewProviderPage />} />
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
@@ -82,6 +85,7 @@ export function App() {
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
+          <Route path="/users/signatures" element={<UserSignaturesPage />} />
           <Route path="/users/:userId/edit" element={<EditUserPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
         </Route>

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { AppModule } from '../src/app.module';
 import { SafeExceptionFilter } from '../src/common/http-exception.filter';
 import { actorDeSolicitud, DocumentsController, HistoryQueryDto } from '../src/manufacturing-documents/documents.controller';
-import { AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from '../src/manufacturing-documents/documents.dto';
+import { AdminSignaturesQueryDto, AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from '../src/manufacturing-documents/documents.dto';
 import { DocumentsService } from '../src/manufacturing-documents/documents.service';
 import { ManufacturingDocumentsModule } from '../src/manufacturing-documents/manufacturing-documents.module';
 import { TestOnlyGuard } from '../src/manufacturing-documents/test-only.guard';
@@ -17,13 +17,13 @@ import { campoDeMensaje } from '../src/manufacturing-documents/validation-detail
 // El controlador no decide permisos (los decide el servicio y la base): aquí se prueba que la IDENTIDAD solo sale de la sesión autenticada, que los DTO rechazan campos de actor y que las rutas
 // validan sus identificadores. Sin base de datos (servicio simulado).
 const ID = '3f1c2a52-6d0e-4d3a-9d62-0f4f0c1b7a11';
-const servicio = { autorizacionesDeFirma: vi.fn(), capacidades: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), cambiarUsoFirma: vi.fn(), retirarFirma: vi.fn(), crearBorrador: vi.fn(), obtener: vi.fn(), actualizarBorrador: vi.fn(), finalizar: vi.fn(), descargarPdf: vi.fn(), historial: vi.fn(), listarAbiertas: vi.fn(), usuariosRevisores: vi.fn(), registrarRevision: vi.fn(), descartarBorrador: vi.fn(), asignarRevisor: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn() };
+const servicio = { listarFirmasAdministrativas: vi.fn(), autorizacionesDeFirma: vi.fn(), capacidades: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), cambiarUsoFirma: vi.fn(), retirarFirma: vi.fn(), crearBorrador: vi.fn(), obtener: vi.fn(), actualizarBorrador: vi.fn(), finalizar: vi.fn(), descargarPdf: vi.fn(), historial: vi.fn(), listarAbiertas: vi.fn(), usuariosRevisores: vi.fn(), registrarRevision: vi.fn(), descartarBorrador: vi.fn(), asignarRevisor: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn() };
 let app: INestApplication;
 let conSesion = true;
 
 beforeAll(async () => {
   // esbuild (vitest) no emite metadata de decoradores: se declara a mano lo que Nest toma de los tipos (inyección y DTO del ValidationPipe).
-  const tipos: Record<string, unknown[]> = { signatureAuthorizations: [String, Object], capabilities: [Object], signatures: [Object], uploadSignature: [Object, UploadSignatureDto, Object], authorizeSignature: [String, SignatureUseDto, Object], revokeSignature: [String, SignatureUseDto, Object], retireSignature: [String, Object], reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
+  const tipos: Record<string, unknown[]> = { signaturesAdmin: [AdminSignaturesQueryDto, Object], signatureAuthorizations: [String, Object], capabilities: [Object], signatures: [Object], uploadSignature: [Object, UploadSignatureDto, Object], authorizeSignature: [String, SignatureUseDto, Object], revokeSignature: [String, SignatureUseDto, Object], retireSignature: [String, Object], reviewers: [Object], open: [Object], history: [HistoryQueryDto, Object], createDraft: [CreateDraftDto, Object], get: [String, Object], update: [String, UpdateDraftDto, Object], discard: [String, VersionDto, Object], assignReviewer: [String, AssignReviewerDto, Object], review: [String, VersionDto, Object], finalize: [String, VersionDto, Object], cancelFinalization: [String, VersionDto, Object], pdf: [String, Object, Object], newRevision: [String, Object] };
   Reflect.defineMetadata('design:paramtypes', [DocumentsService], DocumentsController);
   Reflect.defineMetadata('design:paramtypes', [ConfigService], TestOnlyGuard);
   for (const [metodo, t] of Object.entries(tipos)) Reflect.defineMetadata('design:paramtypes', t, DocumentsController.prototype, metodo);
@@ -231,6 +231,17 @@ describe('catálogo de firmas (HTTP)', () => {
     const r = await request(app.getHttpServer()).get(`${base}/${ID}/authorizations?usuarioId=99`).set('X-User-Id', '99');
     expect(r.status).toBe(200);
     expect(servicio.autorizacionesDeFirma).toHaveBeenCalledWith(expect.objectContaining({ userId: '7' }), ID);
+  });
+
+  it('GET signatures-admin valida la consulta y usa la identidad de la sesión (la autorización de ADMIN la decide el servicio)', async () => {
+    servicio.listarFirmasAdministrativas.mockResolvedValue({ data: [], alcance: '' });
+    expect((await request(app.getHttpServer()).get(`${base}-admin?propietarioUsuarioId=../1`)).status).toBe(400);
+    expect((await request(app.getHttpServer()).get(`${base}-admin?sinCuenta=no`)).status).toBe(400);
+    expect((await request(app.getHttpServer()).get(`${base}-admin?propietarioUsuarioId=3&actor=1`)).status).toBe(400);
+    expect((await request(app.getHttpServer()).get(`${base}-admin?propietarioUsuarioId=3`)).status).toBe(200);
+    expect(servicio.listarFirmasAdministrativas).toHaveBeenCalledWith(expect.objectContaining({ userId: '7', role: 'GENERAL' }), '3', false);
+    await request(app.getHttpServer()).get(`${base}-admin?sinCuenta=true`);
+    expect(servicio.listarFirmasAdministrativas).toHaveBeenLastCalledWith(expect.anything(), undefined, true);
   });
 
   it('crear y actualizar admiten `responsables` (1 a 3, funciones válidas, firmaId UUID) y rechazan lo demás', async () => {

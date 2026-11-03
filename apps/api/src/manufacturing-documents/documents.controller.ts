@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { Matches } from 'class-validator';
 import type { AuthenticatedRequest } from '../common/authenticated-request';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from './documents.dto';
+import { AdminSignaturesQueryDto, AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from './documents.dto';
 import { DocumentsService } from './documents.service';
 import { TestOnlyGuard } from './test-only.guard';
 import { DetalleValidacionFilter } from './validation-detail.filter';
@@ -41,6 +41,12 @@ export class DocumentsController {
   @Get('signatures')
   signatures(@Req() request: AuthenticatedRequest): ReturnType<DocumentsService['listarFirmas']> {
     return this.documents.listarFirmas(actorDeSolicitud(request));
+  }
+
+  /** Gestión administrativa (ADMIN): descripción de las firmas de un usuario o de personas sin cuenta. Sin imágenes. */
+  @Get('signatures-admin')
+  signaturesAdmin(@Query() query: AdminSignaturesQueryDto, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['listarFirmasAdministrativas']> {
+    return this.documents.listarFirmasAdministrativas(actorDeSolicitud(request), query.propietarioUsuarioId, query.sinCuenta === 'true');
   }
 
   /** Alta de una firma (JPG/PNG): se valida el contenido real, se reduce y se vuelve a codificar. Multipart, campo «archivo». */

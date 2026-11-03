@@ -92,3 +92,9 @@ export class UploadSignatureDto {
 export class SignatureUseDto {
   @IsString() @Matches(ID_ENTERO) usuarioId!: string;
 }
+
+/** Consulta administrativa de firmas: las de un usuario concreto o las de personas sin cuenta. */
+export class AdminSignaturesQueryDto {
+  @IsOptional() @IsString() @Matches(ID_ENTERO) propietarioUsuarioId?: string;
+  @IsOptional() @IsIn(['true']) sinCuenta?: string;
+}

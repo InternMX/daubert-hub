@@ -450,6 +450,7 @@ describe('AppShell account menu', () => {
     expect(within(menu).getByText(testAdminUser.email)).toBeInTheDocument();
     expect(within(menu).getByText('Administrador')).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Cerrar sesión' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Mi perfil' })).toHaveAttribute('href', '/profile');
   });
 
   it('translates the GENERAL role in the menu too, using actual user data — nothing hardcoded', async () => {

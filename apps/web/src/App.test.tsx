@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -356,6 +356,20 @@ describe('admin-only routing (/users)', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Hola, Ana Ruiz' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 1, name: 'Auditoría' })).not.toBeInTheDocument();
     expect(auditEventsMock).not.toHaveBeenCalled();
+  });
+
+  it('renders /profile («Mi perfil») for a GENERAL user, but /users/signatures and a user detail stay admin-only', async () => {
+    renderWithAuth('/profile', { isLoading: false, user: testGeneralUser });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Mi perfil' })).toBeInTheDocument();
+    cleanup();
+    renderWithAuth('/users/signatures', { isLoading: false, user: testGeneralUser });
+    expect(screen.getByRole('heading', { level: 1, name: 'Hola, Ana Ruiz' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Firmas de personas sin cuenta' })).not.toBeInTheDocument();
+  });
+
+  it('renders /users/signatures (firmas de personas sin cuenta) for an ADMIN', async () => {
+    renderWithAuth('/users/signatures', { isLoading: false });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Firmas de personas sin cuenta' })).toBeInTheDocument();
   });
 
   it('redirects a GENERAL user away from /users to home', () => {
