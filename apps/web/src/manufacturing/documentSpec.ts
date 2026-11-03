@@ -3,7 +3,7 @@ import type { FamilyConfig } from '../services/manufacturingFamilies';
 import type { BorradorNuevo, DocumentoVista, IncidenciaReconocida } from '../services/manufacturingDocuments';
 import type { Reconocimientos } from './incidencias';
 import {
-  ALL_FIELDS, buildInitialForm, confirmFamily, configOf, displayOrigin, selectFamily, setCustomColor, setFieldValue, toPreviewData, type BaseOrigin, type FamilyCode, type SpecificationForm
+  ALL_FIELDS, buildInitialForm, confirmFamily, configOf, displayOrigin, selectFamily, setCustomColor, setFieldValue, toPreviewData, type BaseOrigin, type FamilyCode, type FieldKey, type SpecificationForm
 } from './specificationForm';
 
 // Traducción entre el formulario de la especificación y la copia que guarda el gestor documental. NO compone hojas ni interpreta BIND: solo empaqueta lo que el usuario ya ve y, al abrir
@@ -55,6 +55,36 @@ export const reconocimientosDe = (doc: Pick<DocumentoVista, 'especificacion'>): 
 
 const ORIGENES_BASE: ReadonlySet<string> = new Set<BaseOrigin>(['BIND', 'SUGERIDO', 'CALCULADO', 'PENDIENTE', 'SIN_DATO']);
 
+type Campo = SpecificationForm['fields'][FieldKey];
+const comoSistema = (c: Campo, valor: string, origen: BaseOrigin): Campo => ({ ...c, value: valor, manual: false, confirmed: false, source: undefined, ref: undefined, base: { ...c.base, value: valor, origin: origen } });
+const comoUsuario = (c: Campo, valor: string): Campo => ({ ...c, value: valor, source: undefined, ref: undefined, manual: true, confirmed: false });
+
+/**
+ * Color guardado. El selector («preset») no se guarda: se deduce del HEX guardado cuando coincide con un color del catálogo de la familia (Daubert Azul, Natural…); entonces la selección y la
+ * procedencia de cada campo se reproducen tal como estaban (de sistema o del usuario). Solo un HEX ajeno al catálogo es un color personalizado («Otro») con su nombre y HEX guardados.
+ */
+function restaurarColor(form: SpecificationForm, config: FamilyConfig, datos: Record<string, string>, procedencia: Record<string, string>): SpecificationForm {
+  const hex = datos.colorHex ?? form.fields.colorHex.value;
+  const nombre = datos.colorNombre ?? form.fields.colorNombre.value;
+  const def = hex === '' ? undefined : config.colores.find((c) => c.hex.toLowerCase() === hex.toLowerCase());
+  if (!def) {
+    return form.fields.colorNombre.value !== nombre || form.fields.colorHex.value !== hex ? setCustomColor(form, nombre, hex) : form;
+  }
+  const f = form.fields;
+  const origenDe = (key: 'colorHex' | 'colorNombre'): BaseOrigin | undefined => (procedencia[key] !== undefined && ORIGENES_BASE.has(procedencia[key] as string) ? procedencia[key] as BaseOrigin : undefined);
+  const poner = (key: 'colorHex' | 'colorNombre', valor: string): Campo => { const o = origenDe(key); return o ? comoSistema(f[key], valor, o) : comoUsuario(f[key], valor); };
+  const origenHex = origenDe('colorHex');
+  return {
+    ...form,
+    fields: {
+      ...f,
+      colorPreset: origenHex ? comoSistema(f.colorPreset, def.id, origenHex) : comoUsuario(f.colorPreset, def.id),
+      colorHex: poner('colorHex', hex),
+      colorNombre: poner('colorNombre', nombre)
+    }
+  };
+}
+
 /**
  * Coloca los valores GUARDADOS sobre un formulario base. Los valores guardados mandan y NUNCA se reemplazan por sugerencias: cada campo recupera su procedencia guardada (BIND, sugerido,
  * calculado… se restauran como valor de origen; USUARIO o sin dato guardado queda «editado por el usuario»). La familia se confirma porque ya fue elegida al guardar.
@@ -74,8 +104,7 @@ export function aplicarGuardado(form: SpecificationForm, doc: Pick<DocumentoVist
     } else if (f.fields[key].value !== valor) f = setFieldValue(f, key, valor);
   }
   const config = configOf(configs, doc.familia as FamilyCode);
-  if (config?.colorDibujo && (datos.colorNombre !== undefined || datos.colorHex !== undefined)
-    && (f.fields.colorNombre.value !== (datos.colorNombre ?? '') || f.fields.colorHex.value !== (datos.colorHex ?? ''))) f = setCustomColor(f, datos.colorNombre ?? '', datos.colorHex ?? '');
+  if (config?.colorDibujo && (datos.colorNombre !== undefined || datos.colorHex !== undefined)) f = restaurarColor(f, config, datos, procedencia);
   if (doc.cliente) f = doc.cliente.empresaId ? setFieldValue(f, 'cliente', doc.cliente.nombre, 'CATALOGO', doc.cliente.empresaId) : setFieldValue(f, 'cliente', doc.cliente.nombre, 'PROVISIONAL');
   return f;
 }

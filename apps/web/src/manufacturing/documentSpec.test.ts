@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DocumentoVista } from '../services/manufacturingDocuments';
 import { coexAzul, familyConfigs, schfpmg001 } from '../test/bindProductFixtures';
 import { abrirSinBind, aplicarGuardado, claveDeCarga, claveDeDocumento, construirCarga, reconocimientosDe } from './documentSpec';
-import { buildInitialForm, configOf, selectFamily, setCustomColor, setFieldValue, confirmFamily, type FieldKey } from './specificationForm';
+import { buildInitialForm, configOf, confirmFamily, displayOrigin, isEdited, selectFamily, setColorPreset, setCustomColor, setFieldValue, type FieldKey } from './specificationForm';
 
 const lookup = schfpmg001();
 function formulario(familia: 'BOLSA_PLANA_1' | 'HOJA_PAQ' = 'BOLSA_PLANA_1') {
@@ -169,5 +169,39 @@ describe('abrir sin BIND (copia guardada en el documento)', () => {
     expect(abierto.family).toBe('COEX');
     for (const k of ['coexVariante', 'pesoCapaInterior', 'lbVciInterior', 'pesoLb', 'calibre'] as const) expect(abierto.fields[k].value, k).toBe(carga.datos[k]);
     expect(abierto.fields.pesoCapaInterior.value).toBe('0.111');
+  });
+});
+
+// Abrir una hoja guardada reproduce EXACTAMENTE lo que había: misma selección de color, misma procedencia y ningún campo pasa a «Modificado por el usuario».
+describe('recuperación de la selección y la procedencia del color', () => {
+  const docDe = (carga: NonNullable<ReturnType<typeof construirCarga>>) =>
+    ({ codigo: carga.bind!.Code, familia: carga.familia, especificacion: { datos: carga.datos, procedencia: carga.procedencia, bind: carga.bind, incidenciasReconocidas: carga.incidenciasReconocidas }, cliente: null }) as unknown as DocumentoVista;
+  const COLORES: FieldKey[] = ['colorPreset', 'colorHex', 'colorNombre'];
+
+  it.each(familyConfigs.filter((c) => c.colorDibujo).map((c) => [c.codigo]))('%s: el color de sistema (Daubert Azul, Natural…) se reabre igual: mismo preset, misma procedencia y sin ediciones', (codigo) => {
+    const l = codigo === 'COEX' ? coexAzul() : lookup;
+    const c = configOf(familyConfigs, codigo)!;
+    const original = confirmFamily(selectFamily(buildInitialForm(l, familyConfigs, '2026-10-29'), codigo, familyConfigs));
+    const carga = construirCarga(original, c, l, {})!;
+    const abierto = abrirSinBind(docDe(carga), familyConfigs).form;
+    for (const k of COLORES) {
+      expect(abierto.fields[k].value, `${k} valor`).toBe(original.fields[k].value);
+      expect(displayOrigin(abierto.fields[k]), `${k} procedencia`).toBe(displayOrigin(original.fields[k]));
+      expect(isEdited(abierto.fields[k]), `${k} editado`).toBe(isEdited(original.fields[k]));
+    }
+    expect(claveDeCarga(construirCarga(abierto, c, l, {})), 'abrir no cambia lo guardado').toBe(claveDeCarga(carga));
+    for (const k of Object.keys(carga.datos)) if (k in abierto.fields) expect(isEdited(abierto.fields[k as FieldKey]), `${k} editado`).toBe(isEdited(original.fields[k as FieldKey]));
+  });
+
+  it('un preset elegido por el usuario se reabre como ese preset (no «Otro») y un color personalizado real sigue reabriéndose con nombre y HEX', () => {
+    const azul = configOf(familyConfigs, 'BOLSA_PLANA_1')!.colores.find((x) => x.hex && x.id !== 'DAUBERT_AZUL') ?? configOf(familyConfigs, 'BOLSA_PLANA_1')!.colores[0]!;
+    const elegido = setColorPreset(formulario(), azul.id, cfg);
+    const reabierto = abrirSinBind(docDe(construirCarga(elegido, cfg, lookup, {})!), familyConfigs).form;
+    expect(reabierto.fields.colorPreset.value).toBe(azul.id);
+    expect(reabierto.fields.colorHex.value).toBe(azul.hex);
+    const propio = setCustomColor(formulario(), 'Azul Cielo Especial', '#3778c8');
+    const r2 = abrirSinBind(docDe(construirCarga(propio, cfg, lookup, {})!), familyConfigs).form;
+    expect(r2.fields.colorPreset.value).toBe('OTRO');
+    expect([r2.fields.colorNombre.value, r2.fields.colorHex.value]).toEqual(['Azul Cielo Especial', '#3778c8']);
   });
 });
