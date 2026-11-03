@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { FAMILIAS, modalidadesDe, type FamilyCode } from './family-registry';
 import { mapSheetData, type PreviewFamily, type PreviewFormData } from './sheet-data.mapper';
+import { bloquesDeFirma, integrarBloquesFirma } from './signature-blocks';
 import { aplicarCapaBorrador, aplicarCapaFinalizada, type InfoFinalizada } from './draft-layer';
 import { consolidarIncidencias, incidencia, type Incidencia } from './incidencias';
 import { revisarCoherencia, type BindReviewContext } from './technical-coherence';
@@ -81,7 +82,9 @@ export class SheetPreviewService {
     const incidenciasValidador = errores.map((e) => incidencia({ codigo: 'VALIDACION_FAMILIA', id: `VALIDACION_FAMILIA:${e}`, nivel: 'ERROR', mensaje: `Validación de la familia: ${e}`, seccion: 'datos', origen: 'PLANTILLA', afectaVistaPrevia: true }));
 
     const template = await this.composedTemplate(family);
-    const values: Record<string, string> = { ...mapped.datos, bloque_firma_elaboro: SIN_FIRMA_MARKER, bloque_firma_aprobo: SIN_FIRMA_MARKER };
+    // Con una versión FINALIZADA y responsables (1 a 3), los recuadros de firma llevan función, nombre e imagen opcional; en cualquier otro caso se conserva el marcador «SIN FIRMA» de la plantilla.
+    const bloques = opciones.capaFinalizada?.responsables && opciones.capaFinalizada.responsables.length > 0 ? bloquesDeFirma(opciones.capaFinalizada.responsables) : null;
+    const values: Record<string, string> = { ...mapped.datos, bloque_firma_elaboro: bloques ? bloques.primero : SIN_FIRMA_MARKER, bloque_firma_aprobo: bloques ? bloques.segundo : SIN_FIRMA_MARKER };
     // Una sola pasada sobre la plantilla: un valor con «{{x}}» nunca se vuelve a interpretar. Los textos se escapan; los bloques de firma son el marcador fijo.
     let html = template.replace(PLACEHOLDER, (whole, name: string) => {
       if (name in mapped.visual) return mapped.visual[name] ?? whole;          // sin color válido el placeholder queda y la plantilla muestra gris, sin inventar un color
@@ -90,6 +93,7 @@ export class SheetPreviewService {
     });
     html = html.replace('<head>', `<head>\n  ${CSP}`);
     html = this.inlineImages(family, html);
+    if (bloques) html = integrarBloquesFirma(html, bloques);
     const completo = mapped.faltantes.length === 0 && mapped.advertencias.length === 0 && errores.length === 0;
     if (opciones.tituloPdf !== undefined) html = html.replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escapeHtml(opciones.tituloPdf as string)}</title>`);
     if (opciones.capaBorrador) html = aplicarCapaBorrador(html, completo);

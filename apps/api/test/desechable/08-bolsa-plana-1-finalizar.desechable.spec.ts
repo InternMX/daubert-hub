@@ -9,6 +9,7 @@ import { DEFAULT_PDF_RENDERER_OPTIONS, resolveChromePath } from '../../src/manuf
 import { SheetPdfService } from '../../src/manufacturing-sheets/preview/sheet-pdf.service';
 import { SheetPreviewService } from '../../src/manufacturing-sheets/preview/sheet-preview.service';
 import { actor, crearServicio, falla, type Vista } from './entorno';
+import { pngFirma } from '../imagenes-firma';
 
 // Recorrido real del caso SCHFPMG001 · Bolsa Plana 1 (cliente escrito a mano, concentración del color 3 %) con el motor REAL (Chrome) y la instancia desechable:
 // borrador guardado → «Elaboró» confirmado → finalización → REV01 → descarga → reapertura desde el historial. Los datos son los que envía el formulario web (incluye `colorConcentracion`).
@@ -72,4 +73,45 @@ describe('SCHFPMG001 · Bolsa Plana 1: finalizar de extremo a extremo con Chrome
     expect(luego).toMatchObject({ estado: 'FINALIZADA', revision: 1 });
     expect(luego.pdf.sha256).toBe(fin.pdf.sha256);
   }, 90_000);
+});
+
+describe('SCHFPMG001 · responsables y firmas en el PDF finalizado (Chrome real)', () => {
+  const imagenes = (pdf: Buffer): number => (pdf.toString('latin1').match(/\/Subtype\s*\/Image/g) ?? []).length;
+
+  it.skipIf(!chromePath)('tres responsables con funciones repetidas e imágenes: el PDF las imprime; REV01 no cambia al retirar la firma; REV02 no hereda imágenes; la hoja sin responsables se genera como antes', async () => {
+    const f1 = await service.subirFirma(actor(2), pngFirma(500, 160), undefined, undefined);
+    const f2 = await service.subirFirma(actor(2), pngFirma(300, 120, { fondo: 'blanco' }), undefined, undefined);
+    const codigo = `FIRMAS${Date.now().toString(36).toUpperCase()}`.slice(0, 30);
+    const b = await service.crearBorrador(actor(2), { codigo, familia: 'BOLSA_PLANA_1', datos: { ...DATOS, codigo }, cliente: { nombre: 'SCHAEFFLER' },
+      responsables: [{ funcion: 'GENERO', nombre: 'Se sustituye por la propietaria', firmaId: f1.id }, { funcion: 'GENERO', nombre: 'Segundo Generó', firmaId: f2.id }, { funcion: 'REVISO', nombre: 'Persona Sin Imagen' }] } as never) as Vista;
+    expect(b.responsables.map((r: Vista) => [r.posicion, r.funcion, r.nombre, r.conFirma])).toEqual([[1, 'GENERO', 'General Dos', true], [2, 'GENERO', 'General Dos', true], [3, 'REVISO', 'Persona Sin Imagen', false]]);
+
+    const fin = await service.finalizar(actor(2), b.id, b.version) as Vista;
+    expect(fin).toMatchObject({ estado: 'FINALIZADA', revision: 1, elaboro: { confirmado: true, nombre: 'General Dos' } });
+    const pdf = (await service.descargarPdf(actor(2), b.id)).contenido;
+    const texto = textoDelPdf(pdf) ?? '';
+    expect(texto).toMatch(/NO V.LIDO PARA PRODUCCI.N/);
+    expect(texto).toContain('Persona Sin Imagen');
+    expect((texto.match(/Gener./g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(texto).toMatch(/Revis./);
+
+    // Sin responsables (flujo anterior): mismo documento sin imágenes de firma.
+    const codigoB = `SINFIRMA${Date.now().toString(36).toUpperCase()}`.slice(0, 30);
+    const sin = await service.crearBorrador(actor(2), { codigo: codigoB, familia: 'BOLSA_PLANA_1', datos: { ...DATOS, codigo: codigoB }, cliente: { nombre: 'SCHAEFFLER' } } as never) as Vista;
+    await service.finalizar(actor(2), sin.id, sin.version);
+    const pdfSin = (await service.descargarPdf(actor(2), sin.id)).contenido;
+    expect(imagenes(pdf)).toBeGreaterThan(imagenes(pdfSin));                       // las dos imágenes de firma están en el PDF
+    expect(textoDelPdf(pdfSin) ?? '').toMatch(/SIN FIRMA/);
+
+    // El catálogo cambia: la firma se retira. REV01 y su PDF almacenado no cambian.
+    const sha = (await service.obtener(actor(2), b.id) as Vista).pdf.sha256;
+    await service.retirarFirma(actor(2), f1.id);
+    expect(((await service.obtener(actor(2), b.id) as Vista).pdf.sha256)).toBe(sha);
+    expect((await service.descargarPdf(actor(2), b.id)).contenido.equals(pdf)).toBe(true);
+    expect((await service.obtener(actor(2), b.id) as Vista).responsables[0]).toMatchObject({ conFirma: true });
+
+    // REV02: nombres y funciones como referencia editable; sin imágenes.
+    const rev2 = await service.crearRevisionNueva(actor(2), fin.documentoId) as Vista;
+    expect(rev2.responsables.map((r: Vista) => [r.posicion, r.funcion, r.nombre, r.conFirma])).toEqual([[1, 'GENERO', 'General Dos', false], [2, 'GENERO', 'General Dos', false], [3, 'REVISO', 'Persona Sin Imagen', false]]);
+  }, 120_000);
 });

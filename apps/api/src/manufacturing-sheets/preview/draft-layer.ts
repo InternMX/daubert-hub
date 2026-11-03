@@ -4,6 +4,8 @@
 //   · Texto fijo (sin datos del usuario): no hay nada que escapar.
 // Las firmas siguen siendo las de la plantilla («SIN FIRMA»): no se usan firmas escaneadas ni folios.
 
+import { FUNCION_IMPRESA } from './signature-blocks';
+
 export const MARCA_BORRADOR = 'BORRADOR · SIN APROBAR';
 export const MARCA_INCOMPLETO = 'BORRADOR INCOMPLETO · FALTAN DATOS · SIN APROBAR';
 export const PIE_BORRADOR = 'Documento de demostración: no es una hoja emitida · Firmas: SIN FIRMA';
@@ -64,7 +66,9 @@ export function aplicarCapaFinalizada(html: string, info: InfoFinalizada): strin
   if (!/^\d{4}-\d{2}-\d{2}$/.test(info.finalizadoEn)) throw new Error('Fecha de finalización no válida.');
   if (!/^[0-9a-f]{12,64}$/.test(info.huella)) throw new Error('Huella no válida.');
   const rev = String(info.revision).padStart(2, '0');
-  const responsables = [`Elaboró: ${nombreImpreso(info.elaboro)}`, `Revisó: ${info.reviso ? nombreImpreso(info.reviso) : 'sin revisión registrada'}`, ...(info.autorizo ? [`Autorizó: ${nombreImpreso(info.autorizo)}`] : []), 'Firmas: SIN FIRMA'].join(' · ');
+  const responsables = info.responsables && info.responsables.length > 0
+    ? [...[...info.responsables].sort((x, y) => x.posicion - y.posicion).map((r) => `${FUNCION_IMPRESA[r.funcion]}: ${nombreImpreso(r.nombre)}`), ...(info.reviso ? [`Revisión registrada: ${nombreImpreso(info.reviso)}`] : []), ...(info.responsables.some((r) => r.firma) ? [] : ['Firmas: SIN FIRMA'])].join(' · ')
+    : [`Elaboró: ${nombreImpreso(info.elaboro)}`, `Revisó: ${info.reviso ? nombreImpreso(info.reviso) : 'sin revisión registrada'}`, ...(info.autorizo ? [`Autorizó: ${nombreImpreso(info.autorizo)}`] : []), 'Firmas: SIN FIRMA'].join(' · ');
   const capa = `${CAPA_FINAL_CSS}\n<div class="marca-prueba" data-modo="finalizada-prueba">${MARCA_PRUEBA}</div>\n<div class="marca-prueba-pie">Revisión ${rev} · Finalizada en TEST el ${info.finalizadoEn} · Huella ${info.huella.slice(0, 12)} · No implica aprobación oficial<br>${responsables}</div>\n`;
   if (!html.includes('</body>')) throw new Error('La plantilla compuesta no tiene </body>: no se puede identificar la versión de prueba.');
   return html.replace('</body>', () => `${capa}</body>`);
