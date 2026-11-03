@@ -15,6 +15,7 @@ const IMAGEN = 'postgres:18-alpine';
 const RAIZ = resolve(__dirname, '..', '..', '..', '..');
 const MIGRACIONES = join(RAIZ, 'database', 'migrations', 'daubert_hub_test');
 const PREFIJO = '20261030_101_manufactura_gestor_documental_test';
+const PREFIJO_102 = '20261103_102_manufactura_responsables_firmas_test';
 
 const docker = (args: string[]) => spawnSync('docker', args, { encoding: 'utf8' });
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -37,10 +38,12 @@ export async function setup(): Promise<void> {
     try {
       writeFileSync(join(tmp, 'init.sql'), INIT);
       copyFileSync(join(MIGRACIONES, `${PREFIJO}.up.sql`), join(tmp, 'up.sql'));
-      for (const f of ['init.sql', 'up.sql']) docker(['cp', join(tmp, f), `${CONTENEDOR}:/tmp/${f}`]);
+      copyFileSync(join(MIGRACIONES, `${PREFIJO_102}.up.sql`), join(tmp, 'up102.sql'));
+      for (const f of ['init.sql', 'up.sql', 'up102.sql']) docker(['cp', join(tmp, f), `${CONTENEDOR}:/tmp/${f}`]);
     } finally { rmSync(tmp, { recursive: true, force: true }); }
     psql('init.sql');
     psql('up.sql');
+    psql('up102.sql');
   } catch (error) {
     docker(['rm', '-f', CONTENEDOR]);
     throw error;

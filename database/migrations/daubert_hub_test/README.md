@@ -81,3 +81,16 @@ psql -h localhost -p 5432 -d daubert_hub_test -U daubert_hub_test_user -X -w -v 
 
 ## Validación realizada (sin tocar TEST)
 Solo en instancias PostgreSQL 18 desechables (contenedores temporales, ya eliminados), con una réplica mínima de `security.users`, `core.empresas` y de `audit.cambios` + la definición real de `audit.fn_registrar_cambio`. **No se ejecutó nada contra `daubert_hub_test` ni `daubert_global`.** Resultado de `tools/validar-en-instancia-desechable.cjs`: 42/42 (respaldo previo, precheck con línea base ampliada, UP, postcheck, smoke con 55 pruebas y sin residuos, negativas en otra base y con rol no administrador, UP/DOWN repetidos, DOWN con datos y doble confirmación, ciclo UP→DOWN→UP, doble finalización, doble borrador, carrera por el mismo PDF, reclamo de FINALIZANDO abandonada, cancelación idempotente, revisor inactivo, variantes simultáneas, RLS, crecimiento y respaldo).
+
+
+---
+
+# Migración 102 · Responsables y firmas (adicional a la 101)
+
+**Estado: ENTREGADA, NO APLICADA a `daubert_hub_test`.** Solo TEST. Requiere autorización expresa y el rol administrativo. Archivos: `20261103_102_manufactura_responsables_firmas_test.{precheck,up,postcheck,smoke,down}.sql`.
+
+Crea 3 tablas **nuevas** en el esquema `manufactura` (no modifica ninguna existente): `firmas` (catálogo de imágenes JPG/PNG ya procesadas por la API; propietaria, quién subió y quién incorporó; contenido inmutable; nunca se borra), `firma_autorizaciones` (permiso de **uso** de una imagen, no una aprobación documental) y `revision_responsables` (hasta 3 por revisión: posición, función, nombre impreso, referencia y huella de la imagen; congelados fuera de BORRADOR). 8 funciones, 11 triggers (3 de auditoría redactora que no copian el contenido de la imagen), 10 políticas RLS y privilegios mínimos (sin DDL ni TRUNCATE; `DELETE` solo en `revision_responsables`, donde el trigger exige BORRADOR).
+
+Reglas en la base: el nombre de la propietaria sale de su cuenta; solo un ADMIN incorpora firmas de otra persona o de personas sin cuenta (queda como custodio); una imagen solo se asigna si el usuario es su propietario o tiene autorización vigente y está ACTIVA; con imagen, el nombre impreso es el de su propietaria; una firma retirada conserva sus referencias.
+
+Procedimiento: igual que la 101 (respaldo, precheck con **huella_101**, UP, postcheck con `-v huella_101=…`, smoke con el rol de la app, DOWN idempotente con confirmación si hay datos). Validado completo en una instancia desechable con `tools/validar-102-en-instancia-desechable.cjs` (precheck → UP → postcheck → smoke 12/12 → DOWN → DOWN idempotente → UP → postcheck).
