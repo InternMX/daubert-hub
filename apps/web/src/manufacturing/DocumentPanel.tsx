@@ -5,7 +5,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  actualizarBorrador, asignarRevisor, cancelarFinalizacion, crearBorrador, crearRevisionNueva, descargarPdfFinalizado, descartarBorrador, DocumentApiError, documentErrorText, finalizarDocumento,
+  actualizarBorrador, asignarRevisor, cancelarFinalizacion, crearBorrador, crearRevisionNueva, descargarPdfFinalizado, descartarBorrador, DocumentApiError, documentErrorText, finalizarDocumento, FUNCIONES,
   listarRevisores, obtenerDocumento, registrarRevision, type DocumentoVista, type MotivoNoLista, type UsuarioRevisor
 } from '../services/manufacturingDocuments';
 import { Contexto, useDocumento, type Aviso, type Documento, type EstadoGuardado } from './documentoContexto';
@@ -327,6 +327,16 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   const obsoletas = (doc?.confirmaciones.length ?? 0) - vigentes.length;
   const elaboroCambiado = doc ? (elaboro.trim() || null) !== doc.elaboro.nombre : false;
 
+  // Los mismos responsables que usará el servidor: lo que se está editando (se guarda antes de finalizar) o, si no se tocó, lo guardado. Con firma, el nombre es el de su propietaria.
+  const etiquetaFuncion = (f: string): string => FUNCIONES.find((x) => x.valor === f)?.etiqueta ?? f;
+  const responsablesAImprimir = ((): Array<{ posicion: number; funcion: string; nombre: string; conFirma: boolean }> => {
+    const base = carga?.responsables
+      ? carga.responsables.map((r) => ({ funcion: r.funcion as string, nombre: r.nombre, conFirma: Boolean(r.firmaId) }))
+      : (doc?.responsables ?? []).map((r) => ({ funcion: r.funcion as string, nombre: r.nombre, conFirma: r.conFirma }));
+    const lista = base.map((r, i) => ({ posicion: i + 1, funcion: etiquetaFuncion(i === 0 ? 'GENERO' : r.funcion), nombre: (r.nombre.trim() || (i === 0 ? doc?.elaboro.nombre ?? '' : '')).trim(), conFirma: r.conFirma })).filter((r) => r.nombre !== '');
+    return lista.length > 0 ? lista : [{ posicion: 1, funcion: 'Generó', nombre: doc?.elaboro.nombre ?? '', conFirma: false }];
+  })();
+
   const valor: Documento = {
     doc, codigo, carga, variante, setVariante, finalizando, errorFin, errorDescarga, verFinalizada, ocupado: ocupado || autoOcupado || finalizando, aviso, motivos, conflicto, revisores, revisorSel, setRevisorSel, elaboro, setElaboro, autorizo, setAutorizo, sucio, vigentes, obsoletas, elaboroCambiado,
     confirmando, setConfirmando, guardar, recargar, abrirPorId, descargar, descargarPorId, nuevaRevisionDe, confirmarElaboro, guardarAutorizo, asignar, registrar, finalizar, descartar, cancelarFin, reintentarFin,
@@ -342,7 +352,17 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
         <DialogContent>
           <Typography>Se generará el PDF de PRUEBA desde la copia guardada (versión {doc?.version}) y se registrará como revisión definitiva. Después no podrá modificarse; los cambios requerirán una nueva revisión.</Typography>
           {autoguardar && <Typography sx={{ mt: 1 }}>Al finalizar confirmas el nombre de «Generó»: <b>{carga?.responsables?.[0]?.nombre ?? doc?.elaboro.nombre ?? ''}</b>.</Typography>}
-          <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">Lo imprimirá como «PRUEBA · NO VÁLIDO PARA PRODUCCIÓN», sin firmas.</Typography>
+          {autoguardar && (
+            <Box sx={{ mt: 1.5 }} data-testid="fin-responsables">
+              <Typography variant="subtitle2" component="h3">Responsables que se imprimirán</Typography>
+              <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+                {responsablesAImprimir.map((r) => (
+                  <li key={r.posicion}><Typography variant="body2"><b>{r.funcion}</b> · {r.nombre} — {r.conFirma ? 'con firma' : 'sin firma (el espacio queda vacío para firmar a mano)'}</Typography></li>
+                ))}
+              </Box>
+            </Box>
+          )}
+          <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">Se imprimirá con la marca «PRUEBA · NO VÁLIDO PARA PRODUCCIÓN».{sucio ? ' Los cambios pendientes se guardan antes de finalizar.' : ''}</Typography>
         </DialogContent>
         <DialogActions>
           <Button disabled={finalizando} onClick={() => setConfirmando(null)}>Cancelar</Button>

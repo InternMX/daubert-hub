@@ -92,16 +92,19 @@ describe('SCHFPMG001 · responsables y firmas en el PDF finalizado (Chrome real)
     const texto = textoDelPdf(pdf) ?? '';
     expect(texto).toMatch(/NO V.LIDO PARA PRODUCCI.N/);
     expect(texto).toContain('Persona Sin Imagen');
+    expect(texto).toContain('General Dos');                                         // con imagen, el nombre impreso es el de su propietaria
+    expect(texto).not.toContain('Se sustituye por la propietaria');                 // el nombre escrito a mano no se imprime junto a una firma ajena
     expect((texto.match(/Gener./g) ?? []).length).toBeGreaterThanOrEqual(2);
     expect(texto).toMatch(/Revis./);
 
-    // Sin responsables (flujo anterior): mismo documento sin imágenes de firma.
+    // Sin responsables agregados (solo «Generó» con el nombre documental): mismo documento sin imágenes de firma y sin texto sustituto.
     const codigoB = `SINFIRMA${Date.now().toString(36).toUpperCase()}`.slice(0, 30);
     const sin = await service.crearBorrador(actor(2), { codigo: codigoB, familia: 'BOLSA_PLANA_1', datos: { ...DATOS, codigo: codigoB }, cliente: { nombre: 'SCHAEFFLER' } } as never) as Vista;
     await service.finalizar(actor(2), sin.id, sin.version);
     const pdfSin = (await service.descargarPdf(actor(2), sin.id)).contenido;
     expect(imagenes(pdf)).toBeGreaterThan(imagenes(pdfSin));                       // las dos imágenes de firma están en el PDF
-    expect(textoDelPdf(pdfSin) ?? '').toMatch(/SIN FIRMA/);
+    expect(textoDelPdf(pdfSin) ?? '').not.toMatch(/SIN FIRMA/);                    // sin imagen el espacio queda vacío para firmar a mano
+    expect(textoDelPdf(pdf) ?? '').not.toMatch(/SIN FIRMA/);
 
     // El catálogo cambia: la firma se retira. REV01 y su PDF almacenado no cambian.
     const sha = (await service.obtener(actor(2), b.id) as Vista).pdf.sha256;

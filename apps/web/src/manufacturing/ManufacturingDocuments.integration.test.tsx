@@ -915,6 +915,37 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(m.finalizarDocumento).toHaveBeenCalledTimes(1);
     });
 
+    it('el diálogo lista los responsables con su función y si cada uno tiene firma: solo «Generó» sin firma no da a entender que todas faltan', async () => {
+      const user = userEvent.setup();
+      const firma = { id: 'f0000000-0000-4000-8000-0000000000a1', propietario: 'Beto Ríos', miniatura: 'data:image/png;base64,AAAA' };
+      await abrirLista(user, lista({ responsables: [
+        { posicion: 1, funcion: 'GENERO', nombre: 'General Dos', conFirma: false, firma: null },
+        { posicion: 2, funcion: 'REVISO', nombre: 'Beto Ríos', conFirma: true, firma }
+      ] }));
+      await pulsar(user);
+      const dialogo = await screen.findByRole('dialog');
+      const resumen = within(dialogo).getByTestId('fin-responsables');
+      const filas = within(resumen).getAllByRole('listitem').map((li) => li.textContent);
+      expect(filas).toEqual(['Generó · General Dos — sin firma (el espacio queda vacío para firmar a mano)', 'Revisó · Beto Ríos — con firma']);
+      expect(dialogo).not.toHaveTextContent(/sin firmas(?![ (])/);                                  // el texto fijo anterior ya no existe
+      expect(dialogo).toHaveTextContent('Al finalizar confirmas el nombre de «Generó»: General Dos');
+    });
+
+    it('el resumen sigue lo que se está editando (lo que se guardará antes de finalizar) y con firma muestra el nombre de su propietaria', async () => {
+      const user = userEvent.setup();
+      m.capacidades.mockResolvedValue({ firmas: true });
+      const firma = { id: 'f0000000-0000-4000-8000-0000000000a1', propietario: 'Beto Ríos', propia: false, ancho: 300, alto: 100, miniatura: 'data:image/png;base64,AAAA', creadaEn: '2026-11-03T10:00:00Z' };
+      m.listarFirmas.mockResolvedValue({ data: [firma] });
+      await abrirLista(user);
+      await waitFor(() => expect(m.capacidades).toHaveBeenCalled());
+      await user.click(await within(screen.getByTestId('responsable-1')).findByRole('button', { name: 'Elegir firma' }));
+      await user.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Firma de Beto Ríos' }));
+      await cerrado();
+      await pulsar(user);
+      const resumen = within(await screen.findByRole('dialog')).getByTestId('fin-responsables');
+      expect(within(resumen).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Generó · Beto Ríos — con firma']);   // con imagen, el nombre impreso es el de su propietaria
+    });
+
     it('el doble clic no finaliza dos veces', async () => {
       const user = userEvent.setup();
       await abrirLista(user);

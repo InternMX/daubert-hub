@@ -2,7 +2,8 @@ import type { ResponsableImpreso } from './draft-layer';
 
 // Bloque de firmas de los PDF FINALIZADOS con responsables (1 a 3). NO modifica las plantillas aprobadas: reutiliza los dos recuadros que ya existen en todas (`firma_elaboro` y
 // `firma_aprobo`, con la geometría propia de cada familia) y, solo cuando hay tres responsables, añade un tercer recuadro y reparte el ancho de la zona de firmas en tres partes iguales.
-// Los borradores y las hojas sin responsables conservan exactamente el marcador «SIN FIRMA» de la plantilla.
+// Los borradores y las vistas previas conservan el marcador «SIN FIRMA» de la plantilla (ayuda visual de trabajo). En un PDF FINALIZADO un responsable sin imagen deja su espacio vacío, con la
+// línea de firma, el nombre y la función debajo: la ausencia de imagen no significa que alguien haya firmado, y una firma manuscrita posterior solo existe en el ejemplar impreso.
 
 const FUNCION: Record<ResponsableImpreso['funcion'], string> = { GENERO: 'Generó', REVISO: 'Revisó', APROBO: 'Aprobó' };
 const MIME_PERMITIDOS = new Set(['image/png', 'image/jpeg']);
@@ -14,7 +15,7 @@ export const FUNCION_IMPRESA = FUNCION;
 function bloque(r: ResponsableImpreso): string {
   const imagen = r.firma && MIME_PERMITIDOS.has(r.firma.tipoMime)
     ? `<img alt="" src="data:${r.firma.tipoMime};base64,${r.firma.contenido.toString('base64')}">`
-    : '<span class="resp-sin">SIN FIRMA</span>';
+    : '';                                    // sin imagen el espacio queda VACÍO (para firmar a mano en el ejemplar impreso): no se imprime ningún texto sustituto
   return `<div class="resp" data-posicion="${r.posicion}"><div class="resp-img">${imagen}</div><div class="resp-linea"></div><div class="resp-nombre">${escapar(r.nombre.replace(/\s+/g, ' ').trim().slice(0, 120))}</div><div class="resp-funcion">${FUNCION[r.funcion]}</div></div>`;
 }
 
@@ -25,7 +26,6 @@ const CSS_BASE = `<style>
   .firma-bloque .resp-linea { flex: 0 0 auto; border-top: 0.6pt solid #000; margin: 1pt 3pt 1.5pt; }
   .firma-bloque .resp-nombre { flex: 0 0 auto; font-size: 7.5pt; line-height: 1.05; font-weight: bold; max-height: 17.6pt; overflow: hidden; word-break: break-word; }
   .firma-bloque .resp-funcion { flex: 0 0 auto; font-size: 7.5pt; line-height: 1.1; color: #333; }
-  .firma-bloque .resp-sin { font-weight: bold; color: #7f7f7f; font-size: 7pt; padding-bottom: 2pt; }
 </style>`;
 // Tres responsables: la zona de firmas se reparte en tres columnas iguales (porcentajes: cada familia conserva su propio ancho y alto de zona).
 const CSS_TRES = `<style>

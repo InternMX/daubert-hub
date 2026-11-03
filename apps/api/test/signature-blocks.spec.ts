@@ -14,11 +14,13 @@ const info = (responsables?: ResponsableImpreso[]): InfoFinalizada => ({ revisio
 const compuesto = async (familia: (typeof FAMILY_CODES)[number], responsables?: ResponsableImpreso[]): Promise<string> =>
   (await servicio.preview(familia, { codigo: 'SIGTEST', descripcion: 'x' }, undefined, { capaFinalizada: info(responsables) })).html;
 const cuenta = (html: string, texto: string): number => html.split(texto).length - 1;
+/** HTML sin comentarios HTML ni CSS: la plantilla menciona «SIN FIRMA» en comentarios que no se imprimen. */
+const visible = (html: string): string => html.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 /** Recuadros de la plantilla que muestran el marcador «SIN FIRMA» (el comentario de la plantilla también lo menciona). */
 const sinFirma = (html: string): number => (html.match(/id="firma_(?:elaboro|aprobo)"><span class="sin-firma">SIN FIRMA/g) ?? []).length;
 
 describe.each(FAMILY_CODES)('bloque de firmas de %s', (familia) => {
-  it('sin responsables (hojas anteriores) conserva el marcador «SIN FIRMA» de la plantilla y no añade nada', async () => {
+  it('sin información de responsables (llamada directa, no el flujo documental) conserva el marcador de la plantilla y no añade nada', async () => {
     const html = await compuesto(familia);
     expect(sinFirma(html)).toBe(2);
     expect(html).not.toContain('class="resp"');
@@ -30,7 +32,8 @@ describe.each(FAMILY_CODES)('bloque de firmas de %s', (familia) => {
     const html = await compuesto(familia, [R(1, 'GENERO', 'Ana Pérez', false)]);
     expect(cuenta(html, 'class="resp"')).toBe(1);
     expect(html).toContain('>Ana Pérez</div><div class="resp-funcion">Generó</div>');
-    expect(html).toContain('resp-sin">SIN FIRMA');
+    expect(html).toContain('<div class="resp-img"></div><div class="resp-linea"></div>');          // espacio de firma vacío con su línea; nada de texto sustituto
+    expect(visible(html)).not.toContain('SIN FIRMA');
     expect(html).not.toContain('firma_extra');
     expect(html).toMatch(/id="firma_aprobo"><\/div>/);
   });
@@ -41,6 +44,16 @@ describe.each(FAMILY_CODES)('bloque de firmas de %s', (familia) => {
     expect(html).toContain('<img alt="" src="data:image/png;base64,');
     expect(html).toContain('Aprobó</div>');
     expect(html).not.toContain('firma_extra');
+  });
+
+  it('el PDF finalizado con responsables nunca imprime «SIN FIRMA» (combinaciones con y sin imagen) y no genera espacios de más', async () => {
+    for (const combinacion of [[false], [true, false], [false, true], [true, false, true], [false, false, false]]) {
+      const html = await compuesto(familia, combinacion.map((conFirma, i) => R(i + 1, i === 0 ? 'GENERO' : 'REVISO', `Persona ${i + 1}`, conFirma)));
+      expect(visible(html), JSON.stringify(combinacion)).not.toMatch(/SIN FIRMA|PENDIENTE/);
+      expect(cuenta(html, 'class="resp"')).toBe(combinacion.length);                                // un recuadro por responsable agregado, ninguno de más
+      expect(cuenta(html, '<img alt="" src="data:image/png')).toBe(combinacion.filter(Boolean).length);
+      expect(cuenta(html, 'id="firma_extra"')).toBe(combinacion.length === 3 ? 1 : 0);
+    }
   });
 
   it('tres responsables con funciones repetidas: tercer recuadro dentro de la zona de firmas y reparto en tres columnas', async () => {
@@ -60,7 +73,7 @@ describe('seguridad del bloque de firmas', () => {
     expect(html).not.toContain('<img src=x');
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt; &quot;Ana&quot; &amp; Cía');
     expect(html).not.toContain('image/svg+xml');
-    expect(html).toContain('resp-sin">SIN FIRMA');
+    expect(visible(html)).not.toContain('SIN FIRMA');                                                // un tipo no permitido deja el espacio vacío, no un texto
   });
 
   it('el borrador (PDF/vista previa) conserva «SIN FIRMA» aunque existan responsables: las firmas solo se imprimen al finalizar', async () => {

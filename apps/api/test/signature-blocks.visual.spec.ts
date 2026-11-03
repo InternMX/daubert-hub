@@ -32,14 +32,17 @@ const tres: ResponsableImpreso[] = [
   { posicion: 2, funcion: 'REVISO', nombre: 'María de los Ángeles Hernández-Domínguez de la Garza', firma: firma(240, 120) },
   { posicion: 3, funcion: 'APROBO', nombre: 'Persona sin imagen', firma: null }
 ];
+const sinImagen: ResponsableImpreso[] = [{ posicion: 1, funcion: 'GENERO', nombre: 'Solo Generó', firma: null }];
+const mixto: ResponsableImpreso[] = [{ posicion: 1, funcion: 'GENERO', nombre: 'Con firma', firma: firma(400, 150) }, { posicion: 2, funcion: 'REVISO', nombre: 'Sin firma (a mano)', firma: null }, { posicion: 3, funcion: 'APROBO', nombre: 'Con firma', firma: firma(300, 100) }];
 
 describe.skipIf(!chrome)('PDF finalizado con responsables y firmas (Chrome real)', () => {
   it.each(FAMILY_CODES)('%s: una sola página Carta con 1 y con 3 responsables', async (familia) => {
-    for (const [etiqueta, responsables] of [['1', [tres[0] as ResponsableImpreso]], ['3', tres]] as const) {
+    for (const [etiqueta, responsables] of [['1', [tres[0] as ResponsableImpreso]], ['3', tres], ['0firma', sinImagen], ['mixto', mixto]] as const) {
       const r = await pdf.generarFinalizada(familia, DATOS[familia],
         undefined, { revision: 1, finalizadoEn: '2026-11-03', elaboro: 'Alejandro', huella: 'b'.repeat(64), responsables: [...responsables] }, null);
       expect(r.pdf.subarray(0, 5).toString()).toBe('%PDF-');
       expect((r.pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
+      expect(r.pdf.length).toBeGreaterThan(5000);
       if (carpeta) { mkdirSync(carpeta, { recursive: true }); writeFileSync(join(carpeta, `${familia}_${etiqueta}.pdf`), r.pdf); }
     }
   }, 60_000);

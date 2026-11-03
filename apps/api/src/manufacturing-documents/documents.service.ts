@@ -494,6 +494,8 @@ export class DocumentsService {
           if (rp.faltantes > 0) throw http(HttpStatus.UNPROCESSABLE_ENTITY, 'FIRMA_NO_DISPONIBLE', 'Una firma asignada ya no está disponible para esta cuenta (autorización retirada o firma retirada). Cámbiala o quítala antes de finalizar.');
           if (rp.responsables.length > 0) responsables = rp.responsables;
         }
+        // Toda finalización nueva usa la composición de responsables: sin filas guardadas se imprime «Generó» con el nombre documental (espacio de firma vacío), nunca el marcador «SIN FIRMA».
+        responsables ??= [{ posicion: 1, funcion: 'GENERO', nombre: trabajo.elaboro_nombre ?? '', firma: null }];
         const iniciada = actual.estado === 'BORRADOR' ? await this.repo.iniciarFinalizacion(c, id, v) : await this.repo.reclamarFinalizacion(c, id, v);
         if (!iniciada) throw http(HttpStatus.CONFLICT, 'FINALIZACION_EN_CURSO', 'Otra finalización de esta revisión está en curso o la revisión cambió.');
         return { inicio: iniciada, fila: trabajo, confirmaciones: await this.repo.confirmaciones(c, id), versionFinal: v, responsablesPdf: responsables };

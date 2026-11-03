@@ -109,7 +109,7 @@ describe('responsables y firmas (instancia desechable)', () => {
     expect(rev2.responsables.every((r: Vista) => r.conFirma === false)).toBe(true);
   });
 
-  it('si una imagen asignada deja de estar disponible, no se finaliza ni queda nada a medias; hojas anteriores sin responsables siguen generándose como antes', async () => {
+  it('si una imagen asignada deja de estar disponible, no se finaliza ni queda nada a medias; una hoja sin responsables guardados se finaliza con «Generó» y espacio de firma vacío', async () => {
     const f = await subir(2, pngFirma());
     await service.cambiarUsoFirma(actor(2), f.id, '3', true);
     const v = await crear(3);
@@ -119,11 +119,11 @@ describe('responsables y firmas (instancia desechable)', () => {
     expect(e).toMatchObject({ status: 422, code: 'FIRMA_NO_DISPONIBLE' });
     expect(await service.obtener(actor(3), v.id) as Vista).toMatchObject({ estado: 'BORRADOR', version: a.version, elaboro: { confirmado: false } });
 
-    // Hoja "anterior": sin filas de responsables (flujo previo) → el motor no recibe responsables y el PDF se compone como antes.
+    // Hoja sin responsables guardados: el motor recibe igualmente «Generó» con el nombre documental y sin imagen (espacio vacío), nunca el marcador «SIN FIRMA».
     const vieja = await crear(2);
     motor.renders = [];
     const fin = await service.finalizar(actor(2), vieja.id, vieja.version) as Vista;
     expect(fin.estado).toBe('FINALIZADA');
-    expect(motor.renders[0]!.info.responsables).toBeUndefined();
+    expect(motor.renders[0]!.info.responsables).toEqual([{ posicion: 1, funcion: 'GENERO', nombre: 'General Dos', firma: null }]);
   });
 });
