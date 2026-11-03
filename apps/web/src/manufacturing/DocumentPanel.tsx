@@ -29,6 +29,8 @@ interface ProviderProps {
   onAbrirDocumento: (doc: DocumentoVista) => void;
   /** Informa a la página del documento vigente (estado y permisos), para que el formulario se ponga en solo lectura cuando corresponda. */
   onDocumentoCambio?: (doc: DocumentoVista | null) => void;
+  /** Se invoca cuando el borrador se descartó con éxito: la página cierra el formulario y vuelve a la búsqueda del código. */
+  onDescartado?: (doc: DocumentoVista) => void;
   /** Guardado automático de borradores (sin botón «Guardar»). Apagado por defecto. */
   autoguardar?: boolean;
   /** Datos mínimos conocidos para CREAR el borrador (familia confirmada por el usuario). Nunca se inventan valores técnicos. */
@@ -40,7 +42,7 @@ interface ProviderProps {
   children?: ReactNode;
 }
 
-export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumentoCambio, autoguardar = false, puedeCrear = false, ediciones = 0, retardoMs = 1500, children }: ProviderProps) {
+export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumentoCambio, onDescartado, autoguardar = false, puedeCrear = false, ediciones = 0, retardoMs = 1500, children }: ProviderProps) {
   const [doc, setDoc] = useState<DocumentoVista | null>(null);
   const [variante, setVariante] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -86,6 +88,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   useEffect(() => { espejo.current = { doc, carga, codigo, variante, ediciones, baseEd, puedeCrear }; });
   const enVuelo = useRef<Promise<unknown> | null>(null);
   const gen = useRef(0);
+  const descartando = useRef(false);   // mientras se descarta no se inicia ningún guardado (el automático pendiente queda anulado)
 
   const errorSinNuevasEdiciones = guardado === 'error' && ediciones <= errorEd;
   const elegible = autoguardar && carga !== null && guardado !== 'conflicto' && !errorSinNuevasEdiciones && (doc
@@ -101,6 +104,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     const previo = enVuelo.current;
     const trabajo = (async (): Promise<{ ok: boolean; doc: DocumentoVista | null }> => {
       if (previo) await previo.catch(() => undefined);
+      if (descartando.current) return { ok: false, doc: espejo.current.doc };
       const e = espejo.current;
       const g = gen.current;
       const d = e.doc;
@@ -156,6 +160,15 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
   /** Tras abrir otro documento: nueva línea base (abrir no guarda) y cualquier respuesta de guardado del documento anterior queda obsoleta. */
   const reiniciarBase = (): void => { gen.current += 1; setBaseEd(espejo.current.ediciones); setErrorEd(-1); setGuardado('inactivo'); setCreacionIntentada(false); setVarianteFallida(null); setAutoOcupado(false); };
 
+  function reportarError(e: unknown): void {
+    if (e instanceof DocumentApiError) {
+      setMotivos(e.motivos);
+      setConflicto(e.kind === 'VERSION_CONFLICT');
+      const extra = e.kind === 'CLIENTE_ACTUALIZADO' && e.nombreActual ? ` Nombre vigente: «${e.nombreActual}».` : e.kind === 'INVALID_DATA' && e.campos.length > 0 ? ` Revisa: ${e.campos.map((c) => c.replace(/^datos\./, '')).join(', ')}.` : '';
+      setAviso({ tipo: 'error', texto: documentErrorText[e.kind] + extra });
+    } else setAviso({ tipo: 'error', texto: documentErrorText.NETWORK });
+  }
+
   /** Ejecuta una acción del servidor: bloquea los botones, muestra el resultado y traduce los errores (sin mostrar nunca el cuerpo crudo de la respuesta). */
   async function ejecutar(accion: () => Promise<DocumentoVista | void>, exito?: (d: DocumentoVista | void) => Aviso | null, abrir = false): Promise<void> {
     // Solo la solicitud MÁS RECIENTE puede reemplazar el documento abierto: una respuesta tardía de una solicitud anterior se descarta (no cambia el panel ni el formulario).
@@ -168,12 +181,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
       setAviso(exito ? exito(r) : null);
     } catch (e) {
       if (!montado.current || mia !== solicitud.current) return;
-      if (e instanceof DocumentApiError) {
-        setMotivos(e.motivos);
-        setConflicto(e.kind === 'VERSION_CONFLICT');
-        const extra = e.kind === 'CLIENTE_ACTUALIZADO' && e.nombreActual ? ` Nombre vigente: «${e.nombreActual}».` : e.kind === 'INVALID_DATA' && e.campos.length > 0 ? ` Revisa: ${e.campos.map((c) => c.replace(/^datos\./, '')).join(', ')}.` : '';
-        setAviso({ tipo: 'error', texto: documentErrorText[e.kind] + extra });
-      } else setAviso({ tipo: 'error', texto: documentErrorText.NETWORK });
+      reportarError(e);
     } finally { if (montado.current && mia === solicitud.current) { setOcupado(false); setConfirmando(null); } }
   }
 
@@ -211,7 +219,33 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     }
     await ejecutar(() => finalizarDocumento(actual.id, actual.version), () => ({ tipo: 'success', texto: 'Hoja finalizada. El PDF quedó almacenado.' }));
   };
-  const descartar = (): Promise<void> => (doc ? ejecutar(() => descartarBorrador(doc.id, doc.version), () => ({ tipo: 'info', texto: 'Borrador descartado.' })) : Promise.resolve());
+  /**
+   * Descarta el borrador. Primero se espera a que termine un guardado en curso (para usar la versión vigente) y se anula cualquier guardado automático pendiente; al confirmarlo el servidor, el documento
+   * activo se limpia, las respuestas tardías de guardado quedan obsoletas (`gen`) y la página cierra el formulario. Si el servidor rechaza, el borrador sigue abierto y editable.
+   */
+  const descartar = async (): Promise<void> => {
+    const abierto = espejo.current.doc;
+    if (!abierto) return;
+    // Uso independiente (sin página que cierre el formulario): se conserva el comportamiento anterior, el documento queda como descartado en el panel.
+    if (!onDescartado) { await ejecutar(() => descartarBorrador(abierto.id, abierto.version), () => ({ tipo: 'info', texto: 'Borrador descartado.' })); return; }
+    const mia = ++solicitud.current;
+    descartando.current = true;
+    setOcupado(true); setAviso(null); setMotivos([]); setConflicto(false);
+    try {
+      const previo = enVuelo.current ? await (enVuelo.current as Promise<{ doc: DocumentoVista | null } | undefined>).catch(() => undefined) : undefined;
+      const base = previo?.doc ?? abierto;
+      await descartarBorrador(base.id, base.version);
+      if (!montado.current || mia !== solicitud.current) return;
+      setDoc(null); setAviso(null); setMotivos([]); setConflicto(false); setVariante(''); reiniciarBase();
+      onDescartado?.(base);
+    } catch (e) {
+      if (!montado.current || mia !== solicitud.current) return;
+      reportarError(e);
+    } finally {
+      descartando.current = false;
+      if (montado.current && mia === solicitud.current) { setOcupado(false); setConfirmando(null); }
+    }
+  };
   const cancelarFin = (): Promise<void> => (doc ? ejecutar(() => cancelarFinalizacion(doc.id, doc.version), () => ({ tipo: 'info', texto: 'Finalización cancelada: vuelve a ser borrador.' })) : Promise.resolve());
   const reintentarFin = (): Promise<void> => (doc ? ejecutar(() => finalizarDocumento(doc.id, doc.version), () => ({ tipo: 'success', texto: 'Hoja finalizada.' })) : Promise.resolve());
   const cerrar = (): void => { solicitud.current += 1; setDoc(null); setAviso(null); setMotivos([]); setConflicto(false); setOcupado(false); setVariante(''); reiniciarBase(); };

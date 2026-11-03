@@ -24,7 +24,7 @@ vi.mock('./downloadFile', () => ({ guardarArchivo: vi.fn() }));
 vi.mock('../services/manufacturingDocuments', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/manufacturingDocuments')>()),
   crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), listarAbiertos: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
-  finalizarDocumento: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn()
+  finalizarDocumento: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn(), descartarBorrador: vi.fn()
 }));
 const m = vi.mocked(docs);
 const lookupMock = vi.mocked(lookupBindProductByCode);
@@ -100,9 +100,9 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(screen.getByTestId('bind-descripcion')).not.toBeEmptyDOMElement();
     expect(screen.queryByRole('heading', { name: 'Estado de la hoja' })).not.toBeInTheDocument();
     await esperar();
-    expect(m.crearBorrador).not.toHaveBeenCalled();                                  // preparar y ver la sugerencia no crea nada: falta que el usuario confirme la familia
+    expect(m.crearBorrador).not.toHaveBeenCalled();                                  // preparar y ver la sugerencia no crea nada: falta que el usuario elija la familia
     m.crearBorrador.mockResolvedValue(guardado());
-    await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+    await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
     expect(await screen.findByText('Cambios guardados')).toBeInTheDocument();         // solo tras la respuesta del servidor
     expect(m.crearBorrador).toHaveBeenCalledTimes(1);
     const enviado = m.crearBorrador.mock.calls[0]![0];
@@ -254,11 +254,11 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       const antes = Number(/\((\d+)\)/.exec(screen.getByTestId('final-datos').textContent ?? '')?.[1]);
       await user.click(screen.getByTestId('final-datos'));
       await screen.findByTestId('final-pendientes');
+      m.actualizarBorrador.mockImplementation(async (_id, cambios) => guardado({ version: 4, cliente: { empresaId: null, nombre: (cambios as { cliente?: { nombre?: string } }).cliente?.nombre ?? '', verificado: false } as never }));
       await user.type(screen.getByLabelText('Cliente (obligatorio para finalizar)'), 'Cliente Demo');
       await waitFor(() => expect(within(document.querySelector<HTMLElement>('[data-field="cliente"]') as HTMLElement).queryByTestId('campo-pendiente')).toBeNull());
       const chip = screen.getByTestId('final-datos');
-      if (antes > 1) expect(chip).toHaveTextContent(`(${antes - 1})`);
-      else expect(chip).not.toHaveTextContent(/Faltan datos obligatorios/);
+      await waitFor(() => { if (antes > 1) expect(chip).toHaveTextContent(`(${antes - 1})`); else expect(chip).not.toHaveTextContent(/Faltan datos obligatorios/); });
       expect(screen.queryByText(/Falta identificar al cliente\./)).not.toBeInTheDocument();
     });
 
@@ -503,7 +503,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       const lista = await buscar(user);
       fireEvent.change(within(lista).getByLabelText('Variante (opcional)'), { target: { value: 'Doblada' } });
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+      await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
       await waitFor(() => expect(m.crearBorrador).toHaveBeenCalledTimes(1));
       fireEvent.change(await ancho(), { target: { value: '7' } });
       await esperar();
@@ -519,7 +519,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       m.crearBorrador.mockRejectedValueOnce(new docs.DocumentApiError('DOCUMENT_EXISTS', 409));
       const lista = await buscar(user);
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+      await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
       expect(await screen.findByText('Ya existe esa hoja')).toBeInTheDocument();
       await esperar();
       expect(m.crearBorrador).toHaveBeenCalledTimes(1);
@@ -536,7 +536,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       m.crearBorrador.mockRejectedValueOnce(new docs.DocumentApiError('INVALID_DATA', 400, { fields: ['datos.pesoLb'] }));
       const lista = await buscar(user);
       await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
-      await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
+      await user.click(await screen.findByRole('radio', { name: 'Bolsa Plana 1' }));
       expect(await screen.findByText('Error al guardar')).toBeInTheDocument();
       expect(screen.getByText(/Revisa: pesoLb/)).toBeInTheDocument();                 // identifica el campo rechazado
       expect(screen.queryByText('Cambios guardados')).not.toBeInTheDocument();       // jamás «guardado» sin respuesta exitosa
@@ -600,4 +600,140 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       });
     });
   });
+
+  describe('elegir la familia es empezar (sin «Confirmar familia») y descartar cierra la hoja', () => {
+    const preparar = async (user: ReturnType<typeof userEvent.setup>) => {
+      pagina(true);
+      const lista = await buscar(user);
+      await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
+      await screen.findByRole('radio', { name: 'Bolsa Plana 1' });
+    };
+    const abrir = async (user: ReturnType<typeof userEvent.setup>, doc = guardado()) => {
+      pagina(true);
+      m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+      m.obtenerDocumento.mockResolvedValue(doc);
+      const lista = await buscar(user);
+      await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+      await ancho();
+    };
+    // Síncrono (fireEvent): el guardado automático pendiente (retardo de prueba 60 ms) no alcanza a enviarse antes de descartar.
+    const descartarYa = () => {
+      fireEvent.click(within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Descartar borrador' }));
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Descartar' }));
+    };
+    const confirmarDescarte = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Descartar borrador' }));
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Descartar' }));
+    };
+
+    it('no existe «Confirmar familia»: pulsar la familia sugerida abre el trabajo, crea UN borrador y muestra «Responsables y revisión» y «Finalizar hoja»', async () => {
+      const user = userEvent.setup();
+      m.crearBorrador.mockResolvedValue(guardado());
+      await preparar(user);
+      expect(screen.queryByRole('button', { name: 'Confirmar familia' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Finalizar hoja' })).not.toBeInTheDocument();
+      await esperar();
+      expect(m.crearBorrador).not.toHaveBeenCalled();                                 // consultar BIND y preparar no crean nada
+      await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+      expect(await screen.findByRole('region', { name: 'Finalizar hoja' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Responsables y revisión' })).toBeInTheDocument();
+      await esperar();
+      expect(m.crearBorrador).toHaveBeenCalledTimes(1);
+      expect(m.crearBorrador.mock.calls[0]![0]).toMatchObject({ familia: 'BOLSA_PLANA_1' });
+    });
+
+    it('elegir otra familia distinta de la sugerida y cambiar de opinión antes de guardar: se crea una sola hoja, con la última familia', async () => {
+      const user = userEvent.setup();
+      m.crearBorrador.mockResolvedValue(guardado({ familia: 'BOLSA_FUELLE' }));
+      await preparar(user);
+      fireEvent.click(screen.getByRole('radio', { name: 'Rollo Continuo' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
+      await waitFor(() => expect(m.crearBorrador).toHaveBeenCalledTimes(1));
+      await esperar();
+      expect(m.crearBorrador).toHaveBeenCalledTimes(1);
+      expect(m.crearBorrador.mock.calls[0]![0]).toMatchObject({ familia: 'BOLSA_FUELLE' });
+    });
+
+    it('cambiar de familia DESPUÉS de guardar pide confirmación: conservar no escribe nada; cambiar actualiza el borrador con la nueva familia', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
+      const dialogo = await screen.findByRole('dialog');
+      expect(dialogo).toHaveTextContent(/ya está guardada como Bolsa Plana 1/);
+      await user.click(within(dialogo).getByRole('button', { name: 'Conservar la familia actual' }));
+      await cerrado();
+      expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
+      m.actualizarBorrador.mockResolvedValue(guardado({ familia: 'BOLSA_FUELLE', version: 4 }));
+      await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cambiar familia' }));
+      await waitFor(() => expect(m.actualizarBorrador).toHaveBeenCalledTimes(1));
+      expect(m.actualizarBorrador.mock.calls[0]![1]).toMatchObject({ version: 3, familia: 'BOLSA_FUELLE' });
+    });
+
+    it('abrir un borrador existente conserva su familia y no escribe nada (ni al pulsar su propia familia)', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
+      await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
+      expect(m.crearBorrador).not.toHaveBeenCalled();
+    });
+
+    it('descartar: cierra el formulario, limpia el documento activo, avisa, recarga «Hojas de este código» y «Mis hojas» y cancela el guardado automático pendiente', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      m.descartarBorrador.mockResolvedValue(guardado({ estado: 'DESCARTADO' as never }));
+      const consultas = m.historialPorCodigo.mock.calls.length;
+      m.historialPorCodigo.mockResolvedValue({ data: [] });
+      fireEvent.change(await ancho(), { target: { value: '5' } });                      // guardado automático pendiente (aún no se envió)
+      descartarYa();
+      expect(await screen.findByTestId('mensaje-pagina')).toHaveTextContent('Borrador descartado.');
+      expect(m.descartarBorrador).toHaveBeenCalledWith('rev-1', 3);
+      expect(screen.queryByTestId('formulario-documento')).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Finalizar hoja' })).not.toBeInTheDocument();
+      await waitFor(() => expect(m.historialPorCodigo.mock.calls.length).toBeGreaterThan(consultas));
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();                              // el guardado pendiente quedó anulado
+      expect(screen.getByRole('button', { name: 'Preparar una hoja nueva' })).toBeInTheDocument();   // estado de preparación coherente
+      const antes = m.listarAbiertos.mock.calls.length;
+      await user.click(screen.getByRole('button', { name: 'Mis hojas' }));
+      await waitFor(() => expect(m.listarAbiertos.mock.calls.length).toBeGreaterThan(antes));
+    });
+
+    it('con un guardado en curso no se puede descartar (el botón espera) y, al terminar, se descarta la versión vigente sin que nada restaure la hoja', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      let responder: (d: DocumentoVista) => void = () => undefined;
+      m.actualizarBorrador.mockImplementation(() => new Promise<DocumentoVista>((res) => { responder = res; }));
+      m.descartarBorrador.mockResolvedValue(guardado({ estado: 'DESCARTADO' as never, version: 4 }));
+      fireEvent.change(await ancho(), { target: { value: '6' } });
+      await waitFor(() => expect(m.actualizarBorrador).toHaveBeenCalledTimes(1));
+      const boton = within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Descartar borrador' });
+      expect(boton).toBeDisabled();
+      responder(guardado({ version: 4 }));
+      await waitFor(() => expect(boton).toBeEnabled());
+      await confirmarDescarte(user);
+      await waitFor(() => expect(m.descartarBorrador).toHaveBeenCalledWith('rev-1', 4));
+      expect(await screen.findByTestId('mensaje-pagina')).toBeInTheDocument();
+      await esperar();
+      expect(screen.queryByTestId('formulario-documento')).not.toBeInTheDocument();
+      expect(m.actualizarBorrador).toHaveBeenCalledTimes(1);
+    });
+    it('si el servidor rechaza el descarte, la hoja sigue abierta y editable con el error', async () => {
+      const user = userEvent.setup();
+      await abrir(user);
+      m.descartarBorrador.mockRejectedValue(new docs.DocumentApiError('NETWORK', 0, {}));
+      await confirmarDescarte(user);
+      await waitFor(() => expect(m.descartarBorrador).toHaveBeenCalledTimes(1));
+      await cerrado();
+      expect(screen.getByTestId('formulario-documento')).toBeInTheDocument();
+      expect(screen.queryByTestId('mensaje-pagina')).not.toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Finalizar hoja' })).toBeInTheDocument();
+    });
+  });
+
 });

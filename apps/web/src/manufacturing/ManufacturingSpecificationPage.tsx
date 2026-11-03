@@ -257,6 +257,8 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const [bindBusqueda, setBindBusqueda] = useState<BindProductLookup | null>(null);
   const busquedaRef = useRef<string | null>(null);
   const [docActual, setDocActual] = useState<DocumentoVista | null>(null);
+  const [mensaje, setMensaje] = useState<string | null>(null);                           // confirmación breve (p. ej. «Borrador descartado.»)
+  const [familiaPendiente, setFamiliaPendiente] = useState<FamilyCode | null>(null);   // cambio de familia de una hoja ya guardada, a la espera de confirmación
   const [bindActual, setBindActual] = useState<BindActual>({ estado: 'inactivo' });
   const bindController = useRef<AbortController | null>(null);
   const [form, setForm] = useState<SpecificationForm | null>(null);
@@ -289,6 +291,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
+    setMensaje(null);
     setValidation(null);
     setReviewedKey('');
     setReviewWeights(false);
@@ -330,6 +333,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   function abrirDocumento(doc: DocumentoVista): void {
     controller.current?.abort();            // una búsqueda a BIND en curso no debe pisar el documento abierto
     const abierto = abrirSinBind(doc, configs);
+    setMensaje(null);
     setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setCode(doc.codigo); setErrorKind(null);
     if (documentos && busquedaRef.current?.toLowerCase() !== doc.codigo.toLowerCase()) { busquedaRef.current = doc.codigo; setBusqueda(doc.codigo); setBindBusqueda(null); void recargarHojas(doc.codigo); }
@@ -369,9 +373,20 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   function prepararNueva(): void {
     if (!bindBusqueda) return;
     controller.current?.abort();
+    setMensaje(null);
     setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false);
     setLookup(bindBusqueda); setForm(buildInitialForm(bindBusqueda, configs)); setStatus('ready');
+  }
+
+  // El borrador se descartó en el servidor: se cierra el formulario, se vuelve a la búsqueda del código (con su producto de BIND si la búsqueda lo trajo) y se refrescan las hojas.
+  // «Mis hojas» se consulta cada vez que se abre, así que ya no incluye la hoja descartada.
+  function alDescartar(d: DocumentoVista): void {
+    controller.current?.abort();
+    setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
+    setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false); setFamiliaPendiente(null);
+    setForm(null); setLookup(bindBusqueda); setStatus('ready'); setMensaje('Borrador descartado.');
+    void recargarHojas(d.codigo);
   }
 
   const update = (updater: (previous: SpecificationForm) => SpecificationForm): void => {
@@ -401,6 +416,11 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       </FieldFrame>
     )
   );
+  // Elegir familia ES empezar: confirma la sugerida o cambia de familia. Si la hoja ya está guardada con otra familia, se pide confirmación antes de cambiarla (no se sobrescribe sin avisar).
+  const elegirFamilia = (familia: FamilyCode): void => {
+    if (documentos && docActual?.estado === 'BORRADOR' && docActual.familia !== familia) { setFamiliaPendiente(familia); return; }
+    update((f) => (f.family === familia ? confirmFamily(f) : selectFamily(f, familia, configs)));
+  };
   const select = (key: FieldKey, options: Array<[string, string]>) => (
     form && has(key) && (
       <FieldFrame form={form} fieldKey={key} error={errors[key]} onRestore={restore}>
@@ -505,6 +525,8 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         onPrepare={(c) => { setCode(c); void search(c); }}
       />
 
+      {mensaje && <Alert severity="success" sx={{ mt: 2 }} role="status" onClose={() => setMensaje(null)} data-testid="mensaje-pagina">{mensaje}</Alert>}
+
       {documentos && busqueda && (
         <HojasDelCodigo
           codigo={busqueda} hojas={hojas} estado={hojasEstado} error={hojasError}
@@ -530,15 +552,17 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
           <Paper component="section" variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2 }} aria-label="Familia de manufactura">
             <Typography variant="h2" sx={{ fontSize: '1.125rem', mb: 1 }}>Familia de manufactura</Typography>
             <FormControl error={Boolean(errors.familia)}>
-              <FormLabel id="family-label">{form.familyOrigin === 'SUGERIDA' ? 'Familia sugerida (provisional): confírmala o cámbiala' : 'Selecciona la familia'}</FormLabel>
-              <RadioGroup row aria-labelledby="family-label" value={form.family ?? ''} onChange={(e) => update((f) => selectFamily(f, e.target.value as FamilyCode, configs))}>
-                {configs.map((c) => <FormControlLabel key={c.codigo} value={c.codigo} control={<Radio />} label={c.nombre} />)}
+              <FormLabel id="family-label">{form.familyOrigin === 'SUGERIDA' ? (documentos ? 'Familia sugerida (provisional): elígela para empezar o cambia de familia' : 'Familia sugerida (provisional): confírmala o cámbiala') : 'Selecciona la familia'}</FormLabel>
+              <RadioGroup row aria-labelledby="family-label" value={form.family ?? ''} onChange={(e) => elegirFamilia(e.target.value as FamilyCode)}>
+                {configs.map((c) => <FormControlLabel key={c.codigo} value={c.codigo} control={<Radio onClick={() => { if (documentos && form.family === c.codigo && form.familyOrigin === 'SUGERIDA') elegirFamilia(c.codigo); }} />} label={c.nombre} />)}
               </RadioGroup>
             </FormControl>
             {form.familyOrigin === 'SUGERIDA' && (
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
                 <Chip size="small" color="info" variant="outlined" label="Sugerida por el sistema (provisional)" data-testid="family-chip" />
-                <Button size="small" onClick={() => update((f) => confirmFamily(f))}>Confirmar familia</Button>
+                {documentos
+                  ? <Typography variant="caption" color="text.secondary">Pulsa la familia (la sugerida u otra) para empezar a trabajar: hasta entonces no se guarda nada.</Typography>
+                  : <Button size="small" onClick={() => update((f) => confirmFamily(f))}>Confirmar familia</Button>}
               </Stack>
             )}
             {form.familyOrigin === 'USUARIO' && <Chip size="small" color="secondary" label="Familia elegida por el usuario" sx={{ mt: 0.5 }} data-testid="family-chip" />}
@@ -708,6 +732,16 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             )}
           </Paper>
           )}
+          <Dialog open={familiaPendiente !== null} onClose={() => setFamiliaPendiente(null)} aria-labelledby="cambiar-familia-titulo">
+            <DialogTitle id="cambiar-familia-titulo">Cambiar la familia de esta hoja</DialogTitle>
+            <DialogContent>
+              <Typography>Esta hoja ya está guardada como {configs.find((c) => c.codigo === docActual?.familia)?.nombre ?? docActual?.familia}. Cambiarla a {configs.find((c) => c.codigo === familiaPendiente)?.nombre ?? familiaPendiente} actualizará el borrador guardado: los datos que la nueva familia no usa dejarán de guardarse.</Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setFamiliaPendiente(null)}>Conservar la familia actual</Button>
+              <Button variant="contained" onClick={() => { const nueva = familiaPendiente; setFamiliaPendiente(null); if (nueva) update((f) => selectFamily(f, nueva, configs)); }}>Cambiar familia</Button>
+            </DialogActions>
+          </Dialog>
           <Dialog open={reviewWeights && Boolean(config?.pesosCapasRegla)} onClose={() => setReviewWeights(false)} aria-labelledby="review-layer-weights-title">
             <DialogTitle id="review-layer-weights-title">Revisar reemplazo de pesos por capa</DialogTitle>
             <DialogContent>
@@ -743,7 +777,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     </Box>
   );
   return documentos ? (
-    <DocumentoProvider codigo={busqueda} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} autoguardar puedeCrear={form?.familyOrigin === 'USUARIO'} ediciones={ediciones} retardoMs={retardoAutoguardado}>
+    <DocumentoProvider codigo={busqueda} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} onDescartado={alDescartar} autoguardar puedeCrear={form?.familyOrigin === 'USUARIO'} ediciones={ediciones} retardoMs={retardoAutoguardado}>
       {contenido}
     </DocumentoProvider>
   ) : contenido;
