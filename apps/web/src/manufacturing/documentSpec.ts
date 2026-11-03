@@ -2,6 +2,7 @@ import type { BindProductLookup, CampoInterpretado, InterpretacionBind } from '.
 import type { FamilyConfig } from '../services/manufacturingFamilies';
 import type { BorradorNuevo, DocumentoVista, IncidenciaReconocida } from '../services/manufacturingDocuments';
 import type { Reconocimientos } from './incidencias';
+import { claveResponsables } from './responsablesModelo';
 import {
   ALL_FIELDS, buildInitialForm, confirmFamily, configOf, displayOrigin, selectFamily, setCustomColor, setFieldValue, toPreviewData, type BaseOrigin, type FamilyCode, type FieldKey, type SpecificationForm
 } from './specificationForm';
@@ -49,12 +50,12 @@ export function construirCarga(form: SpecificationForm, config: FamilyConfig, lo
 const sinVacios = (datos: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(datos).filter(([k, v]) => !(k === 'colorConcentracion' && v === '')));
 
 /** Huella de lo que hay en pantalla, para saber si hay cambios sin guardar. */
-export const claveDeCarga = (carga: CargaDocumento | null): string => (carga ? JSON.stringify({ f: carga.familia, d: sinVacios(carga.datos), c: carga.cliente ?? null, r: [...(carga.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)) }) : '');
+export const claveDeCarga = (carga: CargaDocumento | null): string => (carga ? JSON.stringify({ f: carga.familia, d: sinVacios(carga.datos), c: carga.cliente ?? null, r: [...(carga.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)), p: carga.responsables ? claveResponsables(carga.responsables) : null }) : '');
 
 /** Clave equivalente para un documento guardado (lo que devolvió el servidor), con la que se compara `claveDeCarga`. */
-export function claveDeDocumento(doc: Pick<DocumentoVista, 'familia' | 'especificacion' | 'cliente'>): string {
+export function claveDeDocumento(doc: Pick<DocumentoVista, 'familia' | 'especificacion' | 'cliente'> & Partial<Pick<DocumentoVista, 'responsables'>>, conResponsables = false): string {
   const cliente = doc.cliente ? (doc.cliente.empresaId ? { empresaId: doc.cliente.empresaId } : { nombre: doc.cliente.nombre }) : null;
-  return JSON.stringify({ f: doc.familia, d: sinVacios(doc.especificacion.datos), c: cliente, r: [...(doc.especificacion.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)) });
+  return JSON.stringify({ f: doc.familia, d: sinVacios(doc.especificacion.datos), c: cliente, r: [...(doc.especificacion.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)), p: conResponsables ? claveResponsables((doc.responsables ?? []).map((r) => ({ funcion: r.funcion, nombre: r.nombre, firmaId: r.firma?.id ?? null }))) : null });
 }
 
 export const reconocimientosDe = (doc: Pick<DocumentoVista, 'especificacion'>): Reconocimientos => Object.fromEntries((doc.especificacion.incidenciasReconocidas ?? []).map((r) => [r.id, r.huella]));

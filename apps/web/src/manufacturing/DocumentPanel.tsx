@@ -12,6 +12,8 @@ import { Contexto, useDocumento, type Aviso, type Documento, type EstadoGuardado
 import { claveDeCarga, claveDeDocumento, type CargaDocumento } from './documentSpec';
 import { etiquetaRevision } from './documentLabels';
 import { DocumentHistoryDialog } from './DocumentHistoryDialog';
+import { ResponsablesFirmas } from './ResponsablesFirmas';
+import type { ResponsableLocal } from './responsablesModelo';
 import { guardarArchivo } from './downloadFile';
 
 // Gestor documental (TEST) integrado en la hoja de manufactura. NO edita la hoja: guarda lo que el usuario ya ve (la carga que arma el formulario) y administra el ciclo del documento.
@@ -76,7 +78,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     return () => c.abort();
   }, [doc?.id, doc?.estado, doc?.permisos.asignarRevisor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const sucio = doc ? doc.estado === 'BORRADOR' && claveDeCarga(carga) !== claveDeDocumento(doc) : carga !== null;
+  const sucio = doc ? doc.estado === 'BORRADOR' && claveDeCarga(carga) !== claveDeDocumento(doc, carga?.responsables !== undefined) : carga !== null;
 
   // ---------------------------------------------------------------- guardado automático de borradores
   // Reglas: no se crea nada por buscar ni por consultar BIND; el borrador se crea una sola vez cuando el usuario ya confirmó la familia (datos mínimos de la base; no se inventa ningún valor);
@@ -116,7 +118,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
       if (!e.carga || !e.codigo) return { ok: true, doc: d };
       if (d) {
         if (d.estado !== 'BORRADOR' || !d.permisos.editar) return { ok: true, doc: d };
-        if (claveDeCarga(e.carga) === claveDeDocumento(d)) return { ok: true, doc: d };
+        if (claveDeCarga(e.carga) === claveDeDocumento(d, e.carga.responsables !== undefined)) return { ok: true, doc: d };
         if (!forzar && e.ediciones <= e.baseEd) return { ok: true, doc: d };
       } else if (!forzar && !e.puedeCrear) return { ok: true, doc: null };
       const snapEd = e.ediciones;
@@ -339,6 +341,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
         <DialogTitle id="fin-titulo">Finalizar la hoja</DialogTitle>
         <DialogContent>
           <Typography>Se generará el PDF de PRUEBA desde la copia guardada (versión {doc?.version}) y se registrará como revisión definitiva. Después no podrá modificarse; los cambios requerirán una nueva revisión.</Typography>
+          {autoguardar && <Typography sx={{ mt: 1 }}>Al finalizar confirmas el nombre de «Generó»: <b>{carga?.responsables?.[0]?.nombre ?? doc?.elaboro.nombre ?? ''}</b>.</Typography>}
           <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">Lo imprimirá como «PRUEBA · NO VÁLIDO PARA PRODUCCIÓN», sin firmas.</Typography>
         </DialogContent>
         <DialogActions>
@@ -477,7 +480,7 @@ export function BarraDocumento() {
  * en una sección plegable (la revisión registrada es trazable y está ligada a la huella de la especificación; no es la validación técnica del sistema). `revisionDatos` es la ranura de la
  * confirmación de revisión de datos en pantalla que ofrece el formulario.
  */
-export function ResponsablesDocumento({ revisionDatos }: { revisionDatos?: ReactNode } = {}) {
+export function ResponsablesDocumento({ revisionDatos, responsables, onResponsables, puedeFirmas = false }: { revisionDatos?: ReactNode; responsables?: ResponsableLocal[]; onResponsables?: (r: ResponsableLocal[]) => void; puedeFirmas?: boolean } = {}) {
   const d = useDocumento();
   const { doc } = d;
   if (doc?.estado !== 'BORRADOR') return null;
@@ -504,6 +507,25 @@ export function ResponsablesDocumento({ revisionDatos }: { revisionDatos?: React
       {revisionDatos}
     </Box>
   );
+  if (d.autoguardar && responsables && onResponsables) {
+    return (
+      <Paper component="section" variant="outlined" aria-label="Responsables y firmas" id="responsables-seccion" sx={{ p: 2, mt: 2 }}>
+        <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Responsables y firmas</Typography>
+        <Stack spacing={2}>
+          <ResponsablesFirmas responsables={responsables} onChange={onResponsables} puedeFirmas={puedeFirmas} disabled={!doc.permisos.editar} />
+          <Accordion disableGutters variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} aria-controls="revision-opcional" id="revision-opcional-cabecera">
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Typography variant="subtitle2" component="h3">Revisión del borrador (opcional)</Typography>
+                {d.vigentes.length > 0 ? <Chip size="small" color="success" label={`${d.vigentes.length} ${d.vigentes.length === 1 ? 'revisión registrada' : 'revisiones registradas'}`} /> : <Typography variant="body2" color="text.secondary">No es requisito para finalizar</Typography>}
+              </Stack>
+            </AccordionSummary>
+            <AccordionDetails id="revision-opcional">{revision}</AccordionDetails>
+          </Accordion>
+        </Stack>
+      </Paper>
+    );
+  }
   return (
     <Paper component="section" variant="outlined" aria-label="Responsables y revisión" id="responsables-seccion" sx={{ p: 2, mt: 2 }}>
       <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Responsables y revisión</Typography>
@@ -582,11 +604,10 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
     );
   }
   if (doc?.estado !== 'BORRADOR') return null;
-  const elaboroOk = doc.elaboro.confirmado && !d.elaboroCambiado;
   const irAElaboro = (): void => { const s = document.getElementById('responsables-seccion'); s?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); s?.querySelector<HTMLElement>('input')?.focus(); };
   const irACliente = (): void => { const c = document.querySelector<HTMLElement>('[data-field="cliente"]'); c?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); c?.querySelector<HTMLElement>('input')?.focus(); };
   const irAMotivo = (codigo: string): (() => void) | undefined => (codigo === 'ELABORO_SIN_CONFIRMAR' ? irAElaboro : codigo === 'CLIENTE_REQUERIDO' ? irACliente : undefined);
-  const lista: BloqueoFinal[] = [...bloqueos, ...(elaboroOk ? [] : [{ clave: 'elaboro', texto: 'Falta confirmar «Elaboró».', irA: irAElaboro }])];
+  const lista: BloqueoFinal[] = [...bloqueos];
   const intentar = (): void => {
     if (lista.length > 0) { setMostrar(true); onIntentar?.(); return; }
     setMostrar(false);
@@ -611,8 +632,6 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
         <Chip size="small" color={estadoDatos.c} variant={estadoDatos.c === 'default' ? 'outlined' : 'filled'} label={estadoDatos.t} data-testid="final-datos"
           {...(faltantes > 0 ? { onClick: () => setVerPendientes((v) => !v), 'aria-expanded': verPendientes, title: 'Ver cuáles son' } : {})} />
         <Chip size="small" color={contradicciones > 0 ? 'warning' : 'success'} variant={contradicciones > 0 ? 'filled' : 'outlined'} label={contradicciones > 0 ? `${contradicciones} ${contradicciones === 1 ? 'contradicción por reconocer' : 'contradicciones por reconocer'}` : 'Sin contradicciones pendientes'} data-testid="final-contradicciones" />
-        <Chip size="small" color={elaboroOk ? 'success' : 'warning'} variant={elaboroOk ? 'outlined' : 'filled'} label={elaboroOk ? 'Elaboró confirmado' : 'Falta confirmar «Elaboró»'} data-testid="final-elaboro"
-          {...(elaboroOk ? {} : { onClick: irAElaboro, title: 'Ir a «Elaboró»' })} />
       </Stack>
       {verPendientes && !mostrar && bloqueos.length > 0 && (
         <Alert severity="info" variant="outlined" sx={{ mb: 1 }} data-testid="final-pendientes">
@@ -653,7 +672,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
       </Stack>
       <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
         {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
-        Al finalizar se guardan los cambios pendientes y el servidor vuelve a comprobar la hoja (datos obligatorios, contradicciones reconocidas y «Elaboró») antes de generar el PDF de PRUEBA.
+        Al finalizar se guardan los cambios pendientes, se confirma el nombre de «Generó» tal como aparece arriba y el servidor vuelve a comprobar la hoja (datos obligatorios y contradicciones reconocidas) antes de generar el PDF de PRUEBA.
       </Typography>
     </Paper>
   );

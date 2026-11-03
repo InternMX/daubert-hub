@@ -24,16 +24,17 @@ vi.mock('./downloadFile', () => ({ guardarArchivo: vi.fn() }));
 vi.mock('../services/manufacturingDocuments', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/manufacturingDocuments')>()),
   crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), listarAbiertos: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
-  finalizarDocumento: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn(), descartarBorrador: vi.fn()
+  finalizarDocumento: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn(), descartarBorrador: vi.fn(),
+  capacidadesDocumentales: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn()
 }));
-const m = vi.mocked(docs);
+const m = Object.assign(vi.mocked(docs), { capacidades: vi.mocked(docs.capacidadesDocumentales) });
 const lookupMock = vi.mocked(lookupBindProductByCode);
 
 const PERMISOS = { editar: true, finalizar: true, asignarRevisor: true, registrarRevision: true, crearRevisionNueva: false, descargarPdf: false };
 const guardado = (over: Partial<DocumentoVista> = {}): DocumentoVista => ({
   id: 'rev-1', documentoId: 'doc-1', codigo: 'SCHFPMG001', variante: null, familia: 'BOLSA_PLANA_1', estado: 'BORRADOR', revision: null, revisionPrevista: null, version: 3, cliente: null,
   creadoPor: 'g2@example.invalid', actualizadoEn: '2026-10-29T10:00:00Z', finalizadoEn: null, finalizadoPor: null, entorno: 'PRUEBA', propio: true, asignadoComoRevisor: false, pdf: null, huella: 'a'.repeat(64),
-  especificacion: { datos: { codigo: 'SCHFPMG001', ancho: '77', largo: '88' } }, elaboro: { nombre: 'General Dos', confirmado: false, sugerido: 'General Dos' }, autorizo: null, revisor: null, confirmaciones: [],
+  especificacion: { datos: { codigo: 'SCHFPMG001', ancho: '77', largo: '88' } }, elaboro: { nombre: 'General Dos', confirmado: false, sugerido: 'General Dos' }, autorizo: null, revisor: null, confirmaciones: [], responsables: [{ posicion: 1, funcion: 'GENERO', nombre: 'General Dos', conFirma: false, firma: null }],
   basadaEnRevision: null, creadoEn: '2026-10-29T10:00:00Z', actualizadoPor: 'g2@example.invalid', permisos: PERMISOS, ...over
 });
 const PDF = { nombre: 'SCHFPMG001_REV01.pdf', sha256: 'c'.repeat(64), bytes: 1000 };
@@ -51,6 +52,7 @@ beforeEach(() => {
   m.listarAbiertos.mockResolvedValue({ data: [] });
   m.listarRevisores.mockResolvedValue({ data: [] });
   m.historialPorCodigo.mockResolvedValue({ data: [] });
+  m.capacidades.mockResolvedValue({ firmas: false });
 });
 afterEach(() => { vi.clearAllMocks(); });
 
@@ -124,7 +126,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect((await ancho()).value).toBe('77');
     expect((screen.getByLabelText('Largo') as HTMLInputElement).value).toBe('88');
     expect(screen.getByTestId('formato-actual')).toHaveTextContent('Formato: Bolsa Plana 1');
-    expect((screen.getByLabelText('Elaboró') as HTMLInputElement).value).toBe('General Dos');
+    expect((screen.getByLabelText('Nombre de Generó') as HTMLInputElement).value).toBe('General Dos');
     expect(lookupMock).toHaveBeenCalledTimes(1);                                     // solo la búsqueda; abrir no vuelve a consultar BIND
   });
 
@@ -180,11 +182,11 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     const seccion = screen.getByRole('region', { name: 'Finalizar hoja' });
     expect(within(encabezado).queryByRole('button', { name: /Finalizar y generar PDF|Descartar borrador/ })).not.toBeInTheDocument();   // el encabezado no tiene acciones de finalizar
     expect(screen.getAllByRole('button', { name: 'Finalizar y generar PDF' })).toHaveLength(1);                                         // un solo botón de finalización
-    const responsables = screen.getByRole('region', { name: 'Responsables y revisión' });
+    const responsables = screen.getByRole('region', { name: 'Responsables y firmas' });
     expect(responsables.compareDocumentPosition(seccion) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();                              // después de los responsables
     await user.click(within(seccion).getByRole('button', { name: 'Finalizar y generar PDF' }));
     const bloqueos = await screen.findByTestId('final-bloqueos');
-    expect(bloqueos).toHaveTextContent('Falta confirmar «Elaboró».');
+    expect(bloqueos).toHaveTextContent('Falta identificar al cliente.');
     expect(within(bloqueos).getAllByRole('button', { name: /Ir al campo/ }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(m.finalizarDocumento).not.toHaveBeenCalled();
@@ -262,19 +264,17 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(screen.queryByText(/Falta identificar al cliente\./)).not.toBeInTheDocument();
     });
 
-    it('«Falta confirmar Elaboró» es independiente (no cuenta como dato obligatorio) y su chip lleva a su sección', async () => {
+    it('«Elaboró» ya no es un pendiente aparte: no hay chip ni casilla; «Generó» se confirma al finalizar', async () => {
       const user = userEvent.setup();
       await abrir(user);
-      const elaboro = screen.getByTestId('final-elaboro');
-      expect(elaboro).toHaveTextContent('Falta confirmar «Elaboró»');
+      expect(screen.queryByTestId('final-elaboro')).not.toBeInTheDocument();
       await user.click(screen.getByTestId('final-datos'));
-      expect(within(await screen.findByTestId('final-pendientes')).queryByText(/Elaboró/)).not.toBeInTheDocument();
-      await user.click(elaboro);
-      expect((document.getElementById('responsables-seccion') as HTMLElement).contains(document.activeElement)).toBe(true);
+      expect(within(await screen.findByTestId('final-pendientes')).queryByText(/Elaboró|Generó/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Confirmar «Elaboró»/ })).not.toBeInTheDocument();
     });
   });
 
-  it('la revisión humana es opcional y secundaria: plegada, sin confirmar sola y dentro de «Responsables y revisión»', async () => {
+  it('la revisión humana es opcional y secundaria: plegada, sin confirmar sola y dentro de «Responsables y firmas»', async () => {
     const user = userEvent.setup();
     pagina(true);
     const doc = guardado();
@@ -283,7 +283,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     const lista = await buscar(user);
     await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
     await ancho();
-    const responsables = screen.getByRole('region', { name: 'Responsables y revisión' });
+    const responsables = screen.getByRole('region', { name: 'Responsables y firmas' });
     expect(within(responsables).getByText('Revisión del borrador (opcional)')).toBeInTheDocument();
     expect(within(responsables).getByText('No es requisito para finalizar')).toBeInTheDocument();
     expect(within(responsables).queryByRole('button', { name: 'Registrar mi revisión' })).not.toBeInTheDocument();   // plegada por defecto (no accesible)
@@ -348,7 +348,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(within(lista).queryByRole('button', { name: /Crear nueva revisión/ })).not.toBeInTheDocument();
     await user.click(await enLista(lista, /Abrir SCHFPMG001/));
     expect(await ancho()).toBeDisabled();
-    expect(screen.getByLabelText('Elaboró')).toBeDisabled();
+    expect(screen.getByLabelText('Nombre de Generó')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Finalizar y generar PDF' })).toBeDisabled();
     expect(m.actualizarBorrador).not.toHaveBeenCalled();
   });
@@ -366,7 +366,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(screen.getByTestId('document-panel')).toHaveTextContent(/OTRO001 · Borrador · v3/);
   });
 
-  it('abrir no cambia la versión ni confirma «Elaboró»; se muestran responsables y revisiones vigentes (dentro del formulario)', async () => {
+  it('abrir no cambia la versión ni confirma nada; se muestran responsables y revisiones vigentes (dentro del formulario)', async () => {
     const user = userEvent.setup();
     pagina(true);
     const doc = guardado({
@@ -380,8 +380,8 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
     await ancho();
     expect(screen.getByTestId('document-panel')).toHaveTextContent(/SCHFPMG001 · Borrador · v7/);
-    expect(within(screen.getByRole('region', { name: 'Responsables y revisión' })).getByRole('button', { name: 'Confirmar «Elaboró»' })).toBeEnabled();
-    expect(screen.getByText(/Revisó: General Tres/)).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Responsables y firmas' })).queryByRole('button', { name: /Confirmar «Elaboró»/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/1 revisión registrada/)).toBeInTheDocument();
     expect(m.actualizarBorrador).not.toHaveBeenCalled();
     expect(m.crearBorrador).not.toHaveBeenCalled();
   });
@@ -482,7 +482,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(screen.getByRole('button', { name: 'Finalizar y generar PDF' })).toBeDisabled();
     });
 
-    it('no confirma «Elaboró» ni envía firmas o identidad en el guardado automático', async () => {
+    it('el guardado automático no confirma a «Generó» ni envía responsables, firmas o identidad si el usuario no los tocó', async () => {
       const user = userEvent.setup();
       await abrirBorrador(user);
       m.actualizarBorrador.mockResolvedValue(guardado({ version: 4 }));
@@ -492,7 +492,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(Object.keys(cambios)).not.toEqual(expect.arrayContaining(['elaboroConfirmado']));
       expect(Object.keys(cambios)).not.toEqual(expect.arrayContaining(['elaboroNombre']));
       expect(Object.keys(cambios)).not.toEqual(expect.arrayContaining(['autorizoNombre']));
-      expect(screen.getByRole('button', { name: 'Confirmar «Elaboró»' })).toBeEnabled();
+      expect(Object.keys(cambios)).not.toEqual(expect.arrayContaining(['responsables']));
     });
 
     it('al preparar una hoja con variante, se crea una sola vez con esa variante aunque se sigan haciendo ediciones durante la creación', async () => {
@@ -655,7 +655,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(screen.queryByTestId('formato-recomendado')).not.toBeInTheDocument();
       expect(screen.queryAllByRole('radio', { name: /Bolsa Plana 1/ })).toHaveLength(0);           // la lista queda oculta
       expect(await screen.findByRole('region', { name: 'Finalizar hoja' })).toBeInTheDocument();
-      expect(screen.getByRole('region', { name: 'Responsables y revisión' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Responsables y firmas' })).toBeInTheDocument();
       await esperar();
       expect(m.crearBorrador).toHaveBeenCalledTimes(1);
       expect(m.crearBorrador.mock.calls[0]![0]).toMatchObject({ familia: 'BOLSA_PLANA_1' });
@@ -944,7 +944,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(screen.getByTestId('formulario-documento')).toBeInTheDocument();                            // el borrador sigue ahí
     });
 
-    it('si el servidor pide algo que la pantalla no detectó (cliente/Elaboró), la sección lo lista con acceso al campo', async () => {
+    it('si el servidor pide algo que la pantalla no detectó (cliente), la sección lo lista con acceso al campo', async () => {
       const user = userEvent.setup();
       await abrirLista(user);
       m.finalizarDocumento.mockRejectedValueOnce(new docs.DocumentApiError('FINALIZACION_NO_LISTA', 422, { motivos: [{ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' }, { codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente.' }] }));
@@ -1046,4 +1046,159 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       abrir.mockRestore();
     });
   });
+
+  describe('Responsables y firmas', () => {
+    const FIRMA_A = { id: 'f0000000-0000-4000-8000-00000000000a', propietario: 'General Dos', propia: true, ancho: 300, alto: 100, miniatura: 'data:image/png;base64,AAAA', creadaEn: '2026-11-03T10:00:00Z' };
+    const FIRMA_B = { id: 'f0000000-0000-4000-8000-00000000000b', propietario: 'General Tres', propia: false, ancho: 300, alto: 100, miniatura: 'data:image/png;base64,BBBB', creadaEn: '2026-11-03T10:00:00Z' };
+    const lista = () => guardado({
+      cliente: { empresaId: null, nombre: 'SCHAEFFLER', verificado: false },
+      especificacion: { datos: { codigo: 'SCHFPMG001', descripcion: 'BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', producto: 'Bolsa PLANA', fechaEmision: '2026-10-30', resinaVci: 'PMG AL 4%', colorNombre: 'DAUBERT AZUL AL 3%', colorHex: '#538DD5', colorConcentracion: '3', composicion: 'PMG', presentacion: 'PAQUETE', cantidad: '200', cantidadUnidad: 'BOLSAS', ancho: '13', largo: '16', unidadDimensiones: 'IN', calibre: '3 MIL', pesoLb: '10', etiqueta: 'BOLSA VCI PMG' } }
+    });
+    const abrirConFirmas = async (user: ReturnType<typeof userEvent.setup>, doc = guardado(), firmas = true) => {
+      m.capacidades.mockResolvedValue({ firmas });
+      m.listarFirmas.mockResolvedValue({ data: [FIRMA_A, FIRMA_B] });
+      pagina(true);
+      m.historialPorCodigo.mockResolvedValue({ data: [doc] });
+      m.obtenerDocumento.mockResolvedValue(doc);
+      const lista = await buscar(user);
+      await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+      await ancho();
+      await waitFor(() => expect(m.capacidades).toHaveBeenCalled());
+    };
+    const echo = (version: number) => async (_id: string, c: unknown) => guardado({ version, responsables: ((c as { responsables?: Array<{ funcion: never; nombre: string; firmaId?: string }> }).responsables ?? []).map((r, i) => ({ posicion: i + 1, funcion: r.funcion, nombre: r.nombre, conFirma: Boolean(r.firmaId), firma: null })) });
+    const seccion = () => screen.getByRole('region', { name: 'Responsables y firmas' });
+
+    it('1) «Generó» llega sugerido desde la cuenta, es editable, no hay casilla de confirmación y el guardado automático lo envía como primer responsable', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user);
+      const nombre = screen.getByLabelText('Nombre de Generó') as HTMLInputElement;
+      expect(nombre.value).toBe('General Dos');
+      expect(within(seccion()).queryByRole('button', { name: /Confirmar/ })).toBeNull();
+      expect(within(seccion()).queryByRole('checkbox')).toBeNull();
+      m.actualizarBorrador.mockImplementation(echo(4));
+      fireEvent.change(nombre, { target: { value: 'Persona que generó' } });
+      await waitFor(() => expect(m.actualizarBorrador).toHaveBeenCalledTimes(1));
+      expect((m.actualizarBorrador.mock.calls[0]![1] as { responsables: unknown }).responsables).toEqual([{ funcion: 'GENERO', nombre: 'Persona que generó' }]);
+    });
+
+    it('2) abrir una hoja no envía responsables ni guarda nada', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user, guardado({ responsables: [{ posicion: 1, funcion: 'GENERO', nombre: 'Ana', conFirma: false, firma: null }, { posicion: 2, funcion: 'APROBO', nombre: 'Beto', conFirma: false, firma: null }] }));
+      expect((screen.getByLabelText('Nombre de Generó') as HTMLInputElement).value).toBe('Ana');
+      expect(within(screen.getByTestId('responsable-2')).getByRole('radio', { name: 'Aprobó' })).toBeChecked();
+      expect((within(screen.getByTestId('responsable-2')).getByLabelText('Nombre (Aprobó)') as HTMLInputElement).value).toBe('Beto');
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    });
+
+    it('3) agrega segundo y tercer responsable con función independiente (también repetida), los guarda solos y permite quitarlos', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user);
+      m.actualizarBorrador.mockImplementation(echo(4));
+      expect(screen.queryByTestId('responsable-2')).toBeNull();
+      await user.click(within(seccion()).getByRole('button', { name: 'Agregar segundo responsable' }));
+      const r2 = screen.getByTestId('responsable-2');
+      await user.click(within(r2).getByRole('radio', { name: 'Generó' }));                         // función repetida permitida
+      fireEvent.change(within(r2).getByLabelText('Nombre (Generó)'), { target: { value: 'Beto' } });
+      await user.click(within(seccion()).getByRole('button', { name: 'Agregar tercer responsable' }));
+      const r3 = screen.getByTestId('responsable-3');
+      await user.click(within(r3).getByRole('radio', { name: 'Aprobó' }));
+      fireEvent.change(within(r3).getByLabelText('Nombre (Aprobó)'), { target: { value: 'Carla' } });
+      expect(within(seccion()).queryByRole('button', { name: /Agregar/ })).toBeNull();            // máximo tres
+      await waitFor(() => expect(m.actualizarBorrador.mock.calls.some((c) => (c[1] as { responsables: unknown[] }).responsables.length === 3)).toBe(true));
+      const ultimo = m.actualizarBorrador.mock.calls.at(-1)![1] as { responsables: unknown };
+      expect(ultimo.responsables).toEqual([{ funcion: 'GENERO', nombre: 'General Dos' }, { funcion: 'GENERO', nombre: 'Beto' }, { funcion: 'APROBO', nombre: 'Carla' }]);
+      await user.click(within(r3).getByRole('button', { name: 'Quitar' }));
+      expect(screen.queryByTestId('responsable-3')).toBeNull();
+      await waitFor(() => expect((m.actualizarBorrador.mock.calls.at(-1)![1] as { responsables: unknown[] }).responsables).toHaveLength(2));
+    });
+
+    it('4) selector visual: miniaturas con propietario, «Sin firma» y «Nueva firma»; al elegir una firma el nombre impreso pasa a ser el de su propietaria y se envía firmaId', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user);
+      m.actualizarBorrador.mockImplementation(echo(4));
+      await user.click(within(screen.getByTestId('responsable-1')).getByRole('button', { name: 'Elegir firma' }));
+      const dialogo = await screen.findByRole('dialog');
+      expect(await within(dialogo).findAllByTestId('firma-opcion')).toHaveLength(2);
+      expect(within(dialogo).getByRole('button', { name: 'Sin firma' })).toBeInTheDocument();
+      expect(within(dialogo).getByRole('button', { name: 'Nueva firma' })).toBeInTheDocument();
+      expect(within(dialogo).getByText('Tu firma')).toBeInTheDocument();
+      expect(within(dialogo).getByText('Uso autorizado')).toBeInTheDocument();
+      await user.click(within(dialogo).getByRole('button', { name: 'Firma de General Tres' }));
+      await cerrado();
+      const nombre = screen.getByLabelText('Nombre de Generó') as HTMLInputElement;
+      expect(nombre.value).toBe('General Tres');
+      expect(nombre).toBeDisabled();                                                              // no se puede cambiar el nombre de una firma ajena
+      await waitFor(() => expect(m.actualizarBorrador).toHaveBeenCalled());
+      expect((m.actualizarBorrador.mock.calls.at(-1)![1] as { responsables: unknown }).responsables).toEqual([{ funcion: 'GENERO', nombre: 'General Tres', firmaId: FIRMA_B.id }]);
+      await user.click(within(screen.getByTestId('responsable-1')).getByRole('button', { name: 'Cambiar firma' }));
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sin firma' }));
+      await cerrado();
+      expect(screen.getByLabelText('Nombre de Generó')).toBeEnabled();
+    });
+
+    it('5) «Nueva firma»: vista previa antes de guardar, rechazo local de SVG y de archivos grandes, y el motivo del servidor cuando rechaza el contenido', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user);
+      m.actualizarBorrador.mockImplementation(echo(4));
+      Object.defineProperty(URL, 'createObjectURL', { value: () => 'blob:vista', configurable: true });
+      Object.defineProperty(URL, 'revokeObjectURL', { value: () => undefined, configurable: true });
+      await user.click(within(screen.getByTestId('responsable-1')).getByRole('button', { name: 'Elegir firma' }));
+      const dialogo = await screen.findByRole('dialog');
+      await user.click(await within(dialogo).findByRole('button', { name: 'Nueva firma' }));
+      const entrada = within(dialogo).getByLabelText('Archivo de la firma') as HTMLInputElement;
+      const subir = (f: File) => fireEvent.change(entrada, { target: { files: [f] } });
+      subir(new File(['<svg/>'], 'firma.svg', { type: 'image/svg+xml' }));
+      expect(await within(dialogo).findByRole('alert')).toHaveTextContent('Solo se aceptan imágenes JPG o PNG');
+      subir(new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'grande.png', { type: 'image/png' }));
+      expect(await within(dialogo).findByRole('alert')).toHaveTextContent('máximo 2 MB');
+      m.subirFirma.mockRejectedValueOnce(new docs.DocumentApiError('FIRMA_INVALIDA', 400, { code: 'FIRMA_INVALIDA', message: 'La imagen está vacía (totalmente transparente).' }));
+      subir(new File([new Uint8Array(10)], 'ok.png', { type: 'image/png' }));
+      expect(await within(dialogo).findByAltText('Vista previa de la firma')).toHaveAttribute('src', 'blob:vista');   // vista previa antes de guardar
+      await user.click(within(dialogo).getByRole('button', { name: 'Guardar y usar esta firma' }));
+      expect(await within(dialogo).findByRole('alert')).toHaveTextContent('La imagen está vacía');
+      m.subirFirma.mockResolvedValueOnce({ ...FIRMA_A, id: 'f0000000-0000-4000-8000-0000000000cc' });
+      await user.click(within(dialogo).getByRole('button', { name: 'Guardar y usar esta firma' }));
+      await cerrado();
+      expect(m.subirFirma).toHaveBeenCalledTimes(2);
+      expect((screen.getByLabelText('Nombre de Generó') as HTMLInputElement).value).toBe('General Dos');
+      await waitFor(() => expect((m.actualizarBorrador.mock.calls.at(-1)![1] as { responsables: Array<{ firmaId?: string }> }).responsables[0]!.firmaId).toBe('f0000000-0000-4000-8000-0000000000cc'));
+    });
+
+    it('6) si el servidor rechaza una firma sin autorización al guardar, se explica con un mensaje claro', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user);
+      m.actualizarBorrador.mockRejectedValue(new docs.DocumentApiError('FIRMA_NO_AUTORIZADA', 403, {}));
+      await user.click(within(screen.getByTestId('responsable-1')).getByRole('button', { name: 'Elegir firma' }));
+      await user.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Firma de General Tres' }));
+      expect(await screen.findByText(/No tienes autorización para usar una de las firmas seleccionadas/)).toBeInTheDocument();
+    });
+
+    it('7) sin catálogo de firmas en el entorno solo existe «Generó» (sin agregar responsables ni elegir firma) y la hoja se finaliza igual', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user, lista(), false);
+      expect(within(seccion()).queryByRole('button', { name: /Agregar/ })).toBeNull();
+      expect(within(seccion()).queryByRole('button', { name: 'Elegir firma' })).toBeNull();
+      expect(within(seccion()).getByText(/se activarán cuando el entorno/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('final-datos')).not.toHaveTextContent('Comprobando'));
+      m.finalizarDocumento.mockResolvedValue(finalizada({ id: 'rev-1', version: 4 }));
+      m.actualizarBorrador.mockImplementation(async (_i, c) => guardado({ version: 4, especificacion: { datos: (c as { datos: Record<string, string> }).datos }, cliente: { empresaId: null, nombre: 'SCHAEFFLER', verificado: false } }));
+      await user.click(within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Finalizar y generar PDF' }));
+      const dialogo = await screen.findByRole('dialog');
+      expect(dialogo).toHaveTextContent('Al finalizar confirmas el nombre de «Generó»: General Dos');      // sin casilla ni paso adicional
+      await user.click(within(dialogo).getByRole('button', { name: 'Finalizar' }));
+      expect(await screen.findByTestId('final-resultado')).toHaveTextContent('REV01');
+    });
+
+    it('8) un «Generó» sin nombre bloquea finalizar con un mensaje y acceso al campo', async () => {
+      const user = userEvent.setup();
+      await abrirConFirmas(user, guardado({ elaboro: { nombre: null, confirmado: false, sugerido: 'General Dos' }, responsables: [{ posicion: 1, funcion: 'GENERO', nombre: '', conFirma: false, firma: null }] }));
+      await user.click(within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Finalizar y generar PDF' }));
+      const bloqueos = await screen.findByTestId('final-bloqueos');
+      expect(bloqueos).toHaveTextContent('Indica el nombre de quien generó la hoja.');
+      await user.click(within(bloqueos).getByRole('button', { name: /Ir al campo: Indica el nombre/ }));
+      await waitFor(() => expect(screen.getByLabelText('Nombre de Generó')).toHaveFocus());
+    });
+  });
+
 });

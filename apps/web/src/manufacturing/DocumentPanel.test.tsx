@@ -21,7 +21,7 @@ function vista(over: Partial<DocumentoVista> = {}): DocumentoVista {
   return {
     id: 'rev-1', documentoId: 'doc-1', codigo: 'DOC001', variante: null, familia: 'BOLSA_PLANA_1', estado: 'BORRADOR', revision: null, revisionPrevista: null, version: 1, cliente: null,
     creadoPor: 'g2@example.invalid', actualizadoEn: '2026-10-29T10:00:00Z', finalizadoEn: null, finalizadoPor: null, entorno: 'PRUEBA', propio: true, asignadoComoRevisor: false, pdf: null,
-    huella: 'a'.repeat(64), especificacion: { datos: { codigo: 'DOC001', ancho: '13' } }, elaboro: { nombre: 'General Dos', confirmado: false, sugerido: 'General Dos' }, autorizo: null, revisor: null, confirmaciones: [],
+    huella: 'a'.repeat(64), especificacion: { datos: { codigo: 'DOC001', ancho: '13' } }, elaboro: { nombre: 'General Dos', confirmado: false, sugerido: 'General Dos' }, autorizo: null, revisor: null, confirmaciones: [], responsables: [{ posicion: 1, funcion: 'GENERO', nombre: 'General Dos', conFirma: false, firma: null }],
     basadaEnRevision: null, creadoEn: '2026-10-29T10:00:00Z', actualizadoPor: 'g2@example.invalid', permisos: PERMISOS, ...over
   };
 }

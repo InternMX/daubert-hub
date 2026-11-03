@@ -40,14 +40,24 @@ export interface DocumentoVista extends ResumenDocumento {
   basadaEnRevision: number | null;
   creadoEn: string; actualizadoPor: string;
   permisos: PermisosDocumento;
+  /** Responsables impresos (siempre incluye «Generó»). */
+  responsables: ResponsableVista[];
 }
+export type FuncionResponsable = 'GENERO' | 'REVISO' | 'APROBO';
+export const FUNCIONES: ReadonlyArray<{ valor: FuncionResponsable; etiqueta: string }> = [{ valor: 'GENERO', etiqueta: 'Generó' }, { valor: 'REVISO', etiqueta: 'Revisó' }, { valor: 'APROBO', etiqueta: 'Aprobó' }];
+/** Imagen de firma que esta cuenta puede usar (la miniatura viaja como data URI ya procesada por el servidor). */
+export interface FirmaVista { id: string; propietario: string; propia: boolean; ancho: number; alto: number; miniatura: string; creadaEn: string }
+export interface FirmaDeResponsable { id: string; propietario: string | null; miniatura: string }
+export interface ResponsableVista { posicion: number; funcion: FuncionResponsable; nombre: string; conFirma: boolean; firma: FirmaDeResponsable | null }
+/** Responsable que se envía al guardar: la posición es el orden; la primera es siempre «Generó». Con `firmaId` el nombre impreso es el de la propietaria de la imagen. */
+export interface ResponsableEnvio { funcion: FuncionResponsable; nombre: string; firmaId?: string | null }
 export interface UsuarioRevisor { id: string; displayName: string }
 export interface MotivoNoLista { codigo: string; mensaje: string; detalle?: string[] }
 
 export interface BorradorNuevo {
   codigo: string; variante?: string; familia: FamilyCode; datos: Record<string, string>;
   bind?: EspecificacionGuardada['bind']; procedencia?: Record<string, string>; colorPersonalizado?: EspecificacionGuardada['colorPersonalizado'];
-  incidenciasReconocidas?: IncidenciaReconocida[]; cliente?: ClienteDocumento;
+  incidenciasReconocidas?: IncidenciaReconocida[]; cliente?: ClienteDocumento; responsables?: ResponsableEnvio[];
 }
 export interface CambiosBorrador extends Partial<Omit<BorradorNuevo, 'codigo' | 'variante'>> {
   version: number; elaboroNombre?: string; elaboroConfirmado?: boolean; autorizoNombre?: string;
@@ -55,10 +65,10 @@ export interface CambiosBorrador extends Partial<Omit<BorradorNuevo, 'codigo' | 
 
 export type DocumentErrorKind =
   | 'INACTIVE' | 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VERSION_CONFLICT' | 'DOCUMENT_EXISTS' | 'OPEN_DRAFT_EXISTS' | 'NOT_EDITABLE' | 'ALREADY_FINAL'
-  | 'FINALIZACION_NO_LISTA' | 'REVISION_BLOQUEADA' | 'PDF_NOT_AVAILABLE' | 'FINALIZACION_EN_CURSO' | 'FINALIZACION_PERDIDA' | 'CLIENTE_NO_VALIDO' | 'CLIENTE_ACTUALIZADO' | 'ELABORO_REQUERIDO'
+  | 'FINALIZACION_NO_LISTA' | 'REVISION_BLOQUEADA' | 'PDF_NOT_AVAILABLE' | 'FINALIZACION_EN_CURSO' | 'FINALIZACION_PERDIDA' | 'CLIENTE_NO_VALIDO' | 'CLIENTE_ACTUALIZADO' | 'ELABORO_REQUERIDO' | 'FIRMA_INVALIDA' | 'FIRMA_NO_AUTORIZADA' | 'FIRMAS_NO_DISPONIBLES' | 'FIRMA_NO_DISPONIBLE' | 'RESPONSABLES_INVALIDOS'
   | 'INVALID_DATA' | 'INVALID_RESPONSE' | 'PDF_INTEGRITY' | 'NETWORK' | 'FAILED';
 
-const KNOWN: ReadonlySet<string> = new Set(['NOT_FOUND', 'VERSION_CONFLICT', 'DOCUMENT_EXISTS', 'OPEN_DRAFT_EXISTS', 'NOT_EDITABLE', 'ALREADY_FINAL', 'FINALIZACION_NO_LISTA', 'REVISION_BLOQUEADA', 'PDF_NOT_AVAILABLE', 'FINALIZACION_EN_CURSO', 'FINALIZACION_PERDIDA', 'CLIENTE_NO_VALIDO', 'CLIENTE_ACTUALIZADO', 'ELABORO_REQUERIDO', 'PDF_INTEGRITY', 'FORBIDDEN']);
+const KNOWN: ReadonlySet<string> = new Set(['NOT_FOUND', 'VERSION_CONFLICT', 'DOCUMENT_EXISTS', 'OPEN_DRAFT_EXISTS', 'NOT_EDITABLE', 'ALREADY_FINAL', 'FINALIZACION_NO_LISTA', 'REVISION_BLOQUEADA', 'PDF_NOT_AVAILABLE', 'FINALIZACION_EN_CURSO', 'FINALIZACION_PERDIDA', 'CLIENTE_NO_VALIDO', 'CLIENTE_ACTUALIZADO', 'ELABORO_REQUERIDO', 'PDF_INTEGRITY', 'FORBIDDEN', 'FIRMA_INVALIDA', 'FIRMA_NO_AUTORIZADA', 'FIRMAS_NO_DISPONIBLES', 'FIRMA_NO_DISPONIBLE', 'RESPONSABLES_INVALIDOS']);
 
 export class DocumentApiError extends Error {
   constructor(public readonly kind: DocumentErrorKind, public readonly status: number, public readonly body: Record<string, unknown> = {}) {
@@ -69,6 +79,8 @@ export class DocumentApiError extends Error {
   get motivos(): MotivoNoLista[] { return Array.isArray(this.body.motivos) ? (this.body.motivos as MotivoNoLista[]) : []; }
   get nombreActual(): string | null { return typeof this.body.nombreActual === 'string' ? this.body.nombreActual : null; }
   get borradorId(): string | null { return typeof this.body.borradorId === 'string' ? this.body.borradorId : null; }
+  /** Motivo de rechazo de una imagen de firma: texto redactado por el servidor (sin datos del usuario). */
+  get mensajeFirma(): string | null { return this.kind === 'FIRMA_INVALIDA' && typeof this.body.message === 'string' && this.body.message.length <= 300 ? this.body.message : null; }
   /** Campos que el servidor rechazó en un 400 de validación (solo nombres; nunca valores). */
   get campos(): string[] { return Array.isArray(this.body.fields) ? (this.body.fields as unknown[]).filter((c): c is string => typeof c === 'string' && /^[A-Za-z][A-Za-z0-9_.[\]]{0,80}$/.test(c)).slice(0, 10) : []; }
 }
@@ -158,7 +170,37 @@ export const documentErrorText: Record<DocumentErrorKind, string> = {
   ELABORO_REQUERIDO: 'Indica el nombre de quien elaboró antes de confirmarlo.',
   INVALID_DATA: 'Algún dato no es válido para guardar (revisa longitudes y opciones).',
   INVALID_RESPONSE: 'La respuesta del servidor no tiene el formato esperado.',
+  FIRMA_INVALIDA: 'La imagen de la firma no es válida.',
+  FIRMA_NO_AUTORIZADA: 'No tienes autorización para usar una de las firmas seleccionadas. Elige otra o «Sin firma».',
+  FIRMAS_NO_DISPONIBLES: 'Los responsables adicionales y las firmas todavía no están disponibles en este entorno.',
+  FIRMA_NO_DISPONIBLE: 'Una firma asignada ya no está disponible para tu cuenta (autorización retirada o firma retirada). Cámbiala o quítala antes de finalizar.',
+  RESPONSABLES_INVALIDOS: 'Los responsables no son válidos: el primero es siempre «Generó» y puede haber hasta tres.',
   PDF_INTEGRITY: 'No se pudo verificar la integridad del PDF; no se entregó.',
   NETWORK: 'No se pudo comunicar con el servidor de Daubert Hub.',
   FAILED: 'La operación no se pudo completar. Intenta de nuevo.'
 };
+
+// ---------------------------------------------------------------- catálogo de firmas
+export const capacidadesDocumentales = (signal?: AbortSignal): Promise<{ firmas: boolean }> => call('GET', '/capabilities', undefined, signal);
+export const listarFirmas = (signal?: AbortSignal): Promise<{ data: FirmaVista[] }> => call('GET', '/signatures', undefined, signal);
+export interface FirmaNueva { archivo: File; propietarioUsuarioId?: string; propietarioNombre?: string }
+
+/** Sube una imagen JPG/PNG: el servidor valida su contenido real, la reduce y la vuelve a codificar (el cliente solo hace una comprobación previa para avisar pronto). */
+export async function subirFirma(nueva: FirmaNueva): Promise<FirmaVista> {
+  const form = new FormData();
+  form.append('archivo', nueva.archivo);
+  if (nueva.propietarioUsuarioId) form.append('propietarioUsuarioId', nueva.propietarioUsuarioId);
+  if (nueva.propietarioNombre) form.append('propietarioNombre', nueva.propietarioNombre);
+  let response: Response;
+  try {
+    response = await fetch(`${base}/signatures`, { method: 'POST', body: form });
+  } catch {
+    throw new DocumentApiError('NETWORK', 0);
+  }
+  const json: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw errorFor(response.status, json);
+  if (typeof json !== 'object' || json === null) throw new DocumentApiError('INVALID_RESPONSE', response.status);
+  return json as FirmaVista;
+}
+export const autorizarUsoDeFirma = (firmaId: string, usuarioId: string): Promise<{ ok: true }> => call('POST', `/signatures/${enc(firmaId)}/authorize`, { usuarioId });
+export const revocarUsoDeFirma = (firmaId: string, usuarioId: string): Promise<{ ok: true }> => call('POST', `/signatures/${enc(firmaId)}/revoke`, { usuarioId });

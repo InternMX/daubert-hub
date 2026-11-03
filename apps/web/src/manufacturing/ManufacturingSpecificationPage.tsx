@@ -8,13 +8,14 @@ import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
-import { DocumentApiError, documentErrorText, historialPorCodigo, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
+import { capacidadesDocumentales, DocumentApiError, documentErrorText, historialPorCodigo, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { localizar } from './incidenciasNavegacion';
 import { buildIncidencias, estaReconocida, huella, type Incidencia, type Reconocimientos, type SeccionIncidencia } from './incidencias';
 import { CUSTOM_COLORS_MAX, CUSTOM_COLOR_ERRORS, idDeColor, useCustomColors, type CustomColor, type CustomColorError } from './customColors';
 import { abrirSinBind, construirCarga } from './documentSpec';
+import { desdeVista, haciaEnvio, type ResponsableLocal } from './responsablesModelo';
 import { etiquetaRevision } from './documentLabels';
 import { BarraDocumento, DocumentoProvider, FinalizarHojaDocumento, ResponsablesDocumento, type BloqueoFinal, type EstadoDatos } from './DocumentPanel';
 import { BotonMisHojas, HojasDelCodigo } from './HojasDelCodigo';
@@ -259,6 +260,10 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const busquedaRef = useRef<string | null>(null);
   const [docActual, setDocActual] = useState<DocumentoVista | null>(null);
   const [listaFormatos, setListaFormatos] = useState(false);                         // se muestran los siete formatos («Elegir otro formato» / «Cambiar»)
+  // Responsables y firmas: se editan aquí (son parte de lo que se guarda solo) y se envían únicamente cuando el usuario los toca; abrir una hoja no los modifica.
+  const [responsables, setResponsables] = useState<ResponsableLocal[]>(desdeVista([]));
+  const [respEditados, setRespEditados] = useState(false);
+  const [puedeFirmas, setPuedeFirmas] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);                           // confirmación breve (p. ej. «Borrador descartado.»)
   const [familiaPendiente, setFamiliaPendiente] = useState<FamilyCode | null>(null);   // cambio de familia de una hoja ya guardada, a la espera de confirmación
   const [bindActual, setBindActual] = useState<BindActual>({ estado: 'inactivo' });
@@ -279,6 +284,12 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const controller = useRef<AbortController | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    if (!documentos) return undefined;
+    const c = new AbortController();
+    capacidadesDocumentales(c.signal).then((r) => setPuedeFirmas(r.firmas)).catch(() => setPuedeFirmas(false));
+    return () => c.abort();
+  }, [documentos]);
   useEffect(() => {
     const abort = new AbortController();
     listManufacturingFamilies(abort.signal).then((list) => { setConfigs(list); setConfigStatus('ready'); }).catch((error: unknown) => {
@@ -340,6 +351,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     setBindActual({ estado: 'inactivo' }); setCode(doc.codigo); setErrorKind(null);
     if (documentos && busquedaRef.current?.toLowerCase() !== doc.codigo.toLowerCase()) { busquedaRef.current = doc.codigo; setBusqueda(doc.codigo); setBindBusqueda(null); void recargarHojas(doc.codigo); }
     setLookup(abierto.lookup); setForm(abierto.form); setReconocidas(abierto.reconocidas); setDesdeGuardado(true); setStatus('ready');
+    setResponsables(desdeVista(doc.responsables ?? [])); setRespEditados(false);
   }
 
   // Consulta EXPLÍCITA de los datos actuales de BIND, solo lectura: no toca el formulario, el borrador ni lo guardado, y su indisponibilidad no afecta al documento abierto.
@@ -356,6 +368,11 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     }
   }
 
+  // Un documento que aparece (p. ej. el borrador recién creado) trae sus responsables: se muestran tal cual (nombre sugerido desde la cuenta). No cuenta como edición.
+  useEffect(() => {
+    if (docActual) { setResponsables(desdeVista(docActual.responsables ?? [])); setRespEditados(false); }
+  }, [docActual?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cambiarResponsables = (r: ResponsableLocal[]): void => { setResponsables(r); setRespEditados(true); setEdiciones((n) => n + 1); };
   const soloLectura = documentos && docActual !== null && (docActual.estado !== 'BORRADOR' || !docActual.permisos.editar);
 
   async function recargarHojas(codigo: string): Promise<void> {
@@ -387,7 +404,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     controller.current?.abort();
     setValidation(null); setIntentoFinal(false); setReviewedKey(''); setReviewWeights(false); setReveladas(new Set()); setFallo(''); setColorError(null); setColorGuardado(null); setEditorColorAbierto(false);
     setBindActual({ estado: 'inactivo' }); setReconocidas({}); setDesdeGuardado(false); setFamiliaPendiente(null);
-    setForm(null); setLookup(bindBusqueda); setStatus('ready'); setListaFormatos(false); setMensaje('Borrador descartado.');
+    setForm(null); setLookup(bindBusqueda); setStatus('ready'); setListaFormatos(false); setMensaje('Borrador descartado.'); setResponsables(desdeVista([])); setRespEditados(false);
     void recargarHojas(d.codigo);
   }
 
@@ -478,6 +495,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       : faltantesFinal.length > 0 || (currentAssessment !== null && !currentAssessment.completo) ? 'faltan'
         : sinReconocer.length > 0 || avisosVistaPrevia.length > 0 ? 'observaciones' : 'completos';
   const bloqueosFinal: BloqueoFinal[] = [
+    ...(documentos && docActual?.estado === 'BORRADOR' && (responsables[0]?.nombre ?? '').trim() === '' ? [{ clave: 'genero', texto: 'Indica el nombre de quien generó la hoja.', irA: () => { const c = document.getElementById('responsables-seccion'); c?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); c?.querySelector<HTMLElement>('input')?.focus(); } }] : []),
     ...faltantesFinal.map((i) => ({ clave: i.id, texto: i.codigo === 'CLIENTE_SIN_IDENTIFICAR' ? 'Falta identificar al cliente.' : i.resumen ?? i.mensaje, irA: () => localizar(i, ctx) })),
     ...sinReconocer.map((i) => ({ clave: i.id, texto: `Contradicción por reconocer: ${i.resumen ?? i.mensaje}`, irA: () => localizar(i, ctx) })),
     ...(faltantesFinal.length === 0 && currentAssessment !== null && !currentAssessment.completo ? [{ clave: 'hoja-incompleta', texto: 'La hoja está incompleta según la comprobación del servidor.' }] : [])
@@ -790,7 +808,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
           </Dialog>
         </Box>
         {documentos && (
-          <ResponsablesDocumento revisionDatos={(
+          <ResponsablesDocumento responsables={responsables} onResponsables={cambiarResponsables} puedeFirmas={puedeFirmas} revisionDatos={(
             <Box sx={{ mt: 2 }}>
               <Button variant="outlined" size="small" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO' || sinReconocer.length > 0}
                 onClick={() => { const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>Confirmar revisión del borrador</Button>
@@ -823,8 +841,11 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       )}
     </Box>
   );
+  function conResponsables<T extends object | null>(carga: T): T | (T & { responsables: ReturnType<typeof haciaEnvio> }) {
+    return carga && respEditados ? { ...carga, responsables: haciaEnvio(responsables) } : carga;
+  }
   return documentos ? (
-    <DocumentoProvider codigo={busqueda} carga={form && config ? construirCarga(form, config, lookup, reconocidas) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} onDescartado={alDescartar} autoguardar puedeCrear={form?.familyOrigin === 'USUARIO'} ediciones={ediciones} retardoMs={retardoAutoguardado}>
+    <DocumentoProvider codigo={busqueda} carga={form && config ? conResponsables(construirCarga(form, config, lookup, reconocidas)) : null} onAbrirDocumento={abrirDocumento} onDocumentoCambio={setDocActual} onDescartado={alDescartar} autoguardar puedeCrear={form?.familyOrigin === 'USUARIO'} ediciones={ediciones} retardoMs={retardoAutoguardado}>
       {contenido}
     </DocumentoProvider>
   ) : contenido;

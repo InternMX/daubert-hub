@@ -21,7 +21,7 @@ const CARGA: CargaDocumento = { familia: 'BOLSA_PLANA_1', datos: DATOS, proceden
 const vista = (over: Partial<DocumentoVista> = {}): DocumentoVista => ({
   id: 'rev-1', documentoId: 'doc-1', codigo: 'DOC001', variante: null, familia: 'BOLSA_PLANA_1', estado: 'BORRADOR', revision: null, revisionPrevista: null, version: 3, cliente: null,
   creadoPor: 'g2@example.invalid', actualizadoEn: '2026-10-29T10:00:00Z', finalizadoEn: null, finalizadoPor: null, entorno: 'PRUEBA', propio: true, asignadoComoRevisor: false, pdf: null, huella: 'a'.repeat(64),
-  especificacion: { datos: DATOS }, elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' }, autorizo: null, revisor: null, confirmaciones: [],
+  especificacion: { datos: DATOS }, elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' }, autorizo: null, revisor: null, confirmaciones: [], responsables: [{ posicion: 1, funcion: 'GENERO', nombre: 'General Dos', conFirma: false, firma: null }],
   basadaEnRevision: null, creadoEn: '2026-10-29T10:00:00Z', actualizadoPor: 'g2@example.invalid', permisos: PERMISOS, ...over
 });
 
@@ -57,13 +57,13 @@ describe('Finalizar hoja · acciones y ubicación', () => {
     expect(screen.getByText('ranura-revision-datos')).toBeInTheDocument();                       // la confirmación de revisión de datos vive dentro de «Responsables y revisión»
   });
 
-  it('muestra de forma compacta: guardado, datos, contradicciones y «Elaboró»', async () => {
+  it('muestra de forma compacta: guardado, datos y contradicciones (sin casilla ni chip de «Elaboró»)', async () => {
     montar({ datos: 'completos' });
     await abierto();
     expect(screen.getByTestId('final-guardado')).toHaveTextContent('Todo guardado');
     expect(screen.getByTestId('final-datos')).toHaveTextContent('Datos completos');
     expect(screen.getByTestId('final-contradicciones')).toHaveTextContent('Sin contradicciones pendientes');
-    expect(screen.getByTestId('final-elaboro')).toHaveTextContent('Elaboró confirmado');
+    expect(screen.queryByTestId('final-elaboro')).not.toBeInTheDocument();                       // «Generó» se confirma al finalizar: ya no hay un paso aparte
   });
 
   it.each([['comprobando', 'Comprobando datos…'], ['faltan', 'Faltan datos obligatorios'], ['observaciones', 'Hay observaciones por revisar']] as const)('estado de datos «%s» → «%s»', async (estado, texto) => {
@@ -140,13 +140,17 @@ describe('Finalizar hoja · bloqueos conocidos', () => {
     expect(m.finalizarDocumento).not.toHaveBeenCalled();
   });
 
-  it('«Elaboró» sin confirmar bloquea con un mensaje propio (la confirmación explícita se mantiene)', async () => {
+  it('con «Generó» ya sin casilla: el nombre llega como bloqueo propio de la pantalla (con acceso al campo) y nunca se pide confirmar «Elaboró»', async () => {
     const user = userEvent.setup();
-    montar({ doc: vista({ elaboro: { nombre: null, confirmado: false, sugerido: 'General Dos' } }) });
+    const irA = vi.fn();
+    montar({ bloqueos: [{ clave: 'genero', texto: 'Indica el nombre de quien generó la hoja.', irA }] });
     await abierto();
-    expect(screen.getByTestId('final-elaboro')).toHaveTextContent('Falta confirmar «Elaboró»');
+    expect(screen.queryByText(/Falta confirmar «Elaboró»/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Finalizar y generar PDF' }));
-    expect(await screen.findByTestId('final-bloqueos')).toHaveTextContent('Falta confirmar «Elaboró».');
+    const bloqueos = await screen.findByTestId('final-bloqueos');
+    expect(bloqueos).toHaveTextContent('Indica el nombre de quien generó la hoja.');
+    await user.click(within(bloqueos).getByRole('button', { name: /Ir al campo/ }));
+    expect(irA).toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(m.finalizarDocumento).not.toHaveBeenCalled();
   });
