@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DocumentoVista } from '../services/manufacturingDocuments';
 import { coexAzul, familyConfigs, schfpmg001 } from '../test/bindProductFixtures';
 import { abrirSinBind, aplicarGuardado, claveDeCarga, claveDeDocumento, construirCarga, reconocimientosDe } from './documentSpec';
-import { buildInitialForm, configOf, confirmFamily, displayOrigin, isEdited, selectFamily, setColorPreset, setCustomColor, setFieldValue, type FieldKey } from './specificationForm';
+import { buildInitialForm, configOf, confirmFamily, displayOrigin, isEdited, selectFamily, setColorConcentracion, setColorPreset, setCustomColor, setFieldValue, type FieldKey } from './specificationForm';
 
 const lookup = schfpmg001();
 function formulario(familia: 'BOLSA_PLANA_1' | 'HOJA_PAQ' = 'BOLSA_PLANA_1') {
@@ -203,5 +203,65 @@ describe('recuperación de la selección y la procedencia del color', () => {
     const r2 = abrirSinBind(docDe(construirCarga(propio, cfg, lookup, {})!), familyConfigs).form;
     expect(r2.fields.colorPreset.value).toBe('OTRO');
     expect([r2.fields.colorNombre.value, r2.fields.colorHex.value]).toEqual(['Azul Cielo Especial', '#3778c8']);
+  });
+});
+
+// Defecto de integridad: la concentración del color (3 %) no se guardaba y al reabrir quedaba vacía, aunque el texto impreso siguiera diciendo «AL 3%».
+describe('concentración del color: guardado y recuperación', () => {
+  const docDe = (carga: NonNullable<ReturnType<typeof construirCarga>>) =>
+    ({ codigo: carga.bind!.Code, familia: carga.familia, especificacion: { datos: carga.datos, procedencia: carga.procedencia, bind: carga.bind, incidenciasReconocidas: carga.incidenciasReconocidas }, cliente: null }) as unknown as DocumentoVista;
+  const reabrir = (f: ReturnType<typeof formulario>) => { const carga = construirCarga(f, cfg, lookup, {})!; return { carga, abierto: abrirSinBind(docDe(carga), familyConfigs).form }; };
+
+  it('2 % sugerido sin modificar: se guarda y se recupera como sugerido (no editado)', () => {
+    const f = formulario();
+    expect(f.fields.colorConcentracion.value).toBe('2');
+    const { carga, abierto } = reabrir(f);
+    expect(carga.datos.colorConcentracion).toBe('2');
+    expect(carga.procedencia!.colorConcentracion).toBe('SUGERIDO');
+    expect(abierto.fields.colorConcentracion.value).toBe('2');
+    expect(displayOrigin(abierto.fields.colorConcentracion)).toBe('SUGERIDO');
+    expect(isEdited(abierto.fields.colorConcentracion)).toBe(false);
+  });
+
+  it('2 % → 3 %: se guarda exactamente 3, conserva «editado por el usuario», el texto «AL 3%» y no toca la resina VCI', () => {
+    const f = setColorConcentracion(formulario(), '3', cfg);
+    expect(f.fields.colorNombre.value).toBe('DAUBERT AZUL AL 3%');
+    const { carga, abierto } = reabrir(f);
+    expect(carga.datos.colorConcentracion).toBe('3');
+    expect(carga.procedencia!.colorConcentracion).toBe('USUARIO');
+    expect(abierto.fields.colorConcentracion.value).toBe('3');
+    expect(displayOrigin(abierto.fields.colorConcentracion)).toBe('USUARIO');
+    expect(abierto.fields.colorNombre.value).toBe('DAUBERT AZUL AL 3%');
+    expect(abierto.fields.colorPreset.value).toBe('DAUBERT_AZUL');
+    expect(abierto.fields.resinaVci.value).toBe(f.fields.resinaVci.value);
+    expect(carga.datos.resinaVci).toBe(f.fields.resinaVci.value);
+    expect(claveDeCarga(construirCarga(abierto, cfg, lookup, {}))).toBe(claveDeCarga(carga));   // abrir no produce cambios
+  });
+
+  it('el texto editado a mano se conserva con su procedencia y un cambio posterior de concentración no lo sobrescribe', () => {
+    let f = setColorConcentracion(formulario(), '3', cfg);
+    f = setFieldValue(f, 'colorNombre', 'Azul especial del cliente');
+    const { abierto } = reabrir(f);
+    expect(abierto.fields.colorNombre.value).toBe('Azul especial del cliente');
+    expect(displayOrigin(abierto.fields.colorNombre)).toBe('USUARIO');
+    expect(setColorConcentracion(abierto, '4', cfg).fields.colorNombre.value).toBe('Azul especial del cliente');
+  });
+
+  it('color personalizado con concentración: se recuperan nombre, HEX y concentración sin regenerar el texto', () => {
+    const f = setColorConcentracion(setCustomColor(formulario(), 'Azul Cielo Especial', '#3778c8'), '5', cfg);
+    const { abierto } = reabrir(f);
+    expect(abierto.fields.colorPreset.value).toBe('OTRO');
+    expect([abierto.fields.colorNombre.value, abierto.fields.colorHex.value, abierto.fields.colorConcentracion.value]).toEqual(['Azul Cielo Especial', '#3778c8', '5']);
+  });
+
+  it('vacío no se guarda y un documento anterior sin el campo no se completa ni aparece como cambio sin guardar; «0» y el texto numérico se conservan tal cual', () => {
+    const vacia = setColorConcentracion(formulario(), '', cfg);
+    const sinConc = construirCarga(vacia, cfg, lookup, {})!;
+    expect('colorConcentracion' in sinConc.datos).toBe(false);
+    const antiguo = docDe(sinConc);
+    const abierto = abrirSinBind(antiguo, familyConfigs).form;
+    expect(abierto.fields.colorConcentracion.value).toBe('');                                   // no se infiere de «AL 2%» ni de ningún texto
+    expect(claveDeCarga(construirCarga(abierto, cfg, lookup, {}))).toBe(claveDeDocumento(antiguo));
+    for (const v of ['0', '2.5', '3,5']) expect(reabrir(setColorConcentracion(formulario(), v, cfg)).abierto.fields.colorConcentracion.value).toBe(v);
   });
 });

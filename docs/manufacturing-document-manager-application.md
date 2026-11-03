@@ -82,6 +82,9 @@ La página «Hojas de manufactura» es **una sola experiencia** basada en el có
 
 **Validación automática.** Ya no existe el botón «Validar especificación» en esta pantalla: la comprobación local es inmediata y la del servidor (vista previa) se solicita con retardo al cambiar los datos relevantes; solo vale la respuesta que corresponde a los datos actuales (una respuesta tardía se descarta) y mientras no llega se muestra «Comprobando datos…», nunca «Datos completos». No genera documentos, no modifica el borrador, no confirma revisiones ni crea PDF. Los faltantes se marcan en su campo al intentar finalizar o al navegar a ellos. (Sin el gestor documental, `VITE_MANUFACTURING_DOCUMENTS` apagado, la pantalla clásica conserva su tarjeta de validación.)
 
+### Concentración del color en el snapshot
+La concentración del color (p. ej. 3 %) se guarda en `especificacion.datos.colorConcentracion` (texto tal como se capturó) con su procedencia en `especificacion.procedencia`; no hay migración (el snapshot es JSON) y la hoja no la usa: imprime el texto del color, y la resina VCI es independiente. Vacío equivale a «sin dato» (no se guarda); un documento anterior sin el campo se abre con la concentración vacía, sin inferirla del texto ni marcar cambios. Antes de esta corrección la lista de campos permitidos del DTO y el empaquetado del cliente omitían el dato, por lo que se perdía al guardar.
+
 ### Selección de formato (familia)
 **Buscar código → Usar el formato recomendado o elegir otro → Completar instrucciones → Finalizar y generar PDF.** Elegir el formato ES empezar: no hay «Confirmar familia».
 

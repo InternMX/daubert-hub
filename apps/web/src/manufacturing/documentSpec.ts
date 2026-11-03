@@ -21,6 +21,9 @@ const numeroONada = (valor: number | string | null | undefined): number | undefi
 export function construirCarga(form: SpecificationForm, config: FamilyConfig, lookup: BindProductLookup | null, reconocidas: Reconocimientos): CargaDocumento | null {
   if (!form.family) return null;
   const datos: Record<string, string> = { ...toPreviewData(form, config), ...(config.fuelles ? { fuelleTotal: form.fields.fuelleTotal.value } : {}) };
+  // La concentración del color (independiente de la resina VCI) se guarda en el snapshot para recuperarla tal cual; no viaja a la vista previa (la hoja imprime el texto del color).
+  // Un valor vacío equivale a «sin dato»: no se guarda (y un documento anterior sin este campo no se completa).
+  if (config.campos.includes('colorConcentracion') && form.fields.colorConcentracion.value.trim() !== '') datos.colorConcentracion = form.fields.colorConcentracion.value.trim();
   const procedencia: Record<string, string> = {};
   for (const key of Object.keys(datos)) {
     if (key in form.fields) procedencia[key] = displayOrigin(form.fields[key as keyof typeof form.fields]);
@@ -42,13 +45,16 @@ export function construirCarga(form: SpecificationForm, config: FamilyConfig, lo
   return carga;
 }
 
+// La concentración vacía equivale a un documento que no la tiene (documentos anteriores): no cuenta como cambio.
+const sinVacios = (datos: Record<string, string>): Record<string, string> => Object.fromEntries(Object.entries(datos).filter(([k, v]) => !(k === 'colorConcentracion' && v === '')));
+
 /** Huella de lo que hay en pantalla, para saber si hay cambios sin guardar. */
-export const claveDeCarga = (carga: CargaDocumento | null): string => (carga ? JSON.stringify({ f: carga.familia, d: carga.datos, c: carga.cliente ?? null, r: [...(carga.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)) }) : '');
+export const claveDeCarga = (carga: CargaDocumento | null): string => (carga ? JSON.stringify({ f: carga.familia, d: sinVacios(carga.datos), c: carga.cliente ?? null, r: [...(carga.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)) }) : '');
 
 /** Clave equivalente para un documento guardado (lo que devolvió el servidor), con la que se compara `claveDeCarga`. */
 export function claveDeDocumento(doc: Pick<DocumentoVista, 'familia' | 'especificacion' | 'cliente'>): string {
   const cliente = doc.cliente ? (doc.cliente.empresaId ? { empresaId: doc.cliente.empresaId } : { nombre: doc.cliente.nombre }) : null;
-  return JSON.stringify({ f: doc.familia, d: doc.especificacion.datos, c: cliente, r: [...(doc.especificacion.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)) });
+  return JSON.stringify({ f: doc.familia, d: sinVacios(doc.especificacion.datos), c: cliente, r: [...(doc.especificacion.incidenciasReconocidas ?? [])].sort((a, b) => a.id.localeCompare(b.id)) });
 }
 
 export const reconocimientosDe = (doc: Pick<DocumentoVista, 'especificacion'>): Reconocimientos => Object.fromEntries((doc.especificacion.incidenciasReconocidas ?? []).map((r) => [r.id, r.huella]));

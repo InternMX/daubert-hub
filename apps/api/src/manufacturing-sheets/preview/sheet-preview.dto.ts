@@ -15,6 +15,8 @@ export class SheetPreviewDataDto {
   @IsOptional() @IsString() @short resinaVci?: string;
   @IsOptional() @IsString() @short colorNombre?: string;
   @IsOptional() @IsString() @MaxLength(16) colorHex?: string;
+  /** Concentración del color (texto tal como se capturó). Se conserva en el snapshot del documento; la hoja no la usa: imprime el texto del color. */
+  @IsOptional() @IsString() @MaxLength(16) colorConcentracion?: string;
   @IsOptional() @IsIn(['', 'PMG', 'CP5000', 'NAT']) composicion?: string;
   @IsOptional() @IsIn(['', 'ROLLO', 'PAQUETE']) presentacion?: string;
   @IsOptional() @IsString() @MaxLength(16) cantidad?: string;

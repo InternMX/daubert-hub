@@ -807,4 +807,62 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     });
   });
 
+  describe('concentración del color: recorrido real guardar → reabrir', () => {
+    // El «servidor» simulado guarda lo que recibe (datos, procedencia, bind) y lo devuelve como la copia guardada.
+    const eco = (cuerpo: Record<string, unknown>, version: number): DocumentoVista => guardado({
+      version, familia: cuerpo.familia as DocumentoVista['familia'],
+      especificacion: { datos: cuerpo.datos as Record<string, string>, procedencia: cuerpo.procedencia as Record<string, string>, bind: cuerpo.bind as never }
+    });
+
+    it('2 % → 3 %: se envía y se guarda 3, y al reabrir desde «Mis hojas» conserva 3 %, «Editado por el usuario», el texto «AL 3%» y la resina VCI; abrir no guarda', async () => {
+      const user = userEvent.setup();
+      let ultimo: DocumentoVista = guardado();
+      m.crearBorrador.mockImplementation(async (c) => { ultimo = eco(c as never, 1); return ultimo; });
+      m.actualizarBorrador.mockImplementation(async (_id, c) => { ultimo = eco({ familia: ultimo.familia, ...(c as object) } as never, ultimo.version + 1); return ultimo; });
+      const vista = pagina(true);
+      const lista = await buscar(user);
+      await user.click(within(lista).getByRole('button', { name: 'Preparar una hoja nueva' }));
+      await user.click(await screen.findByRole('button', { name: 'Usar este formato' }));
+      await screen.findByText('Cambios guardados');
+      const conc = await screen.findByLabelText('Concentración del color (%)') as HTMLInputElement;
+      expect(conc.value).toBe('2');
+      const resina = (screen.getByLabelText('Resina VCI') as HTMLInputElement).value;
+      fireEvent.change(conc, { target: { value: '3' } });
+      await waitFor(() => expect(m.actualizarBorrador).toHaveBeenCalledTimes(1));
+      const enviado = m.actualizarBorrador.mock.calls[0]![1] as unknown as { datos: Record<string, string>; procedencia: Record<string, string> };
+      expect(enviado.datos).toMatchObject({ colorConcentracion: '3', colorNombre: 'DAUBERT AZUL AL 3%' });
+      expect(enviado.procedencia.colorConcentracion).toBe('USUARIO');
+      expect(enviado.datos.resinaVci).toBe(resina);
+      await screen.findByText('Cambios guardados');
+      vista.unmount();
+
+      m.listarAbiertos.mockResolvedValue({ data: [ultimo] });
+      m.obtenerDocumento.mockResolvedValue(ultimo);
+      const antes = m.actualizarBorrador.mock.calls.length;
+      pagina(true);
+      await abrirDesdeMisHojas(user, /Abrir SCHFPMG001/);
+      const reabierta = await screen.findByLabelText('Concentración del color (%)') as HTMLInputElement;
+      expect(reabierta.value).toBe('3');
+      expect(within(document.querySelector<HTMLElement>('[data-field="colorConcentracion"]') as HTMLElement).getByText('Editado por el usuario')).toBeInTheDocument();
+      expect((screen.getByLabelText('Texto del color en el documento') as HTMLInputElement).value).toBe('DAUBERT AZUL AL 3%');
+      expect((screen.getByLabelText('Resina VCI') as HTMLInputElement).value).toBe(resina);
+      await esperar();
+      expect(m.actualizarBorrador.mock.calls.length).toBe(antes);                      // abrir no guarda
+    });
+
+    it('un documento anterior sin el campo se abre con la concentración vacía (sin inventar 2 % ni 3 % a partir del texto) y sin marcar cambios', async () => {
+      const user = userEvent.setup();
+      const antiguo = guardado({ especificacion: { datos: { codigo: 'SCHFPMG001', ancho: '77', largo: '88', colorNombre: 'DAUBERT AZUL AL 3%', colorHex: '#538DD5' } } });
+      m.historialPorCodigo.mockResolvedValue({ data: [antiguo] });
+      m.obtenerDocumento.mockResolvedValue(antiguo);
+      pagina(true);
+      const lista = await buscar(user);
+      await user.click(await enLista(lista, /Continuar editando SCHFPMG001/));
+      expect(((await screen.findByLabelText('Concentración del color (%)')) as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('Texto del color en el documento') as HTMLInputElement).value).toBe('DAUBERT AZUL AL 3%');
+      await esperar();
+      expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    });
+  });
+
 });

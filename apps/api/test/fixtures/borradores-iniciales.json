@@ -20,7 +20,8 @@
    "unidadDimensiones": "IN",
    "calibre": "3 MIL",
    "pesoLb": "0.0428",
-   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS"
+   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS",
+   "colorConcentracion": "2"
   },
   "procedencia": {
    "codigo": "BIND",
@@ -40,7 +41,8 @@
    "unidadDimensiones": "BIND",
    "calibre": "BIND",
    "pesoLb": "BIND",
-   "etiqueta": "BIND"
+   "etiqueta": "BIND",
+   "colorConcentracion": "SUGERIDO"
   },
   "incidenciasReconocidas": [],
   "bind": {
@@ -72,7 +74,8 @@
    "unidadDimensiones": "IN",
    "calibre": "3 MIL",
    "pesoLb": "0.0428",
-   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS"
+   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS",
+   "colorConcentracion": "2"
   },
   "procedencia": {
    "codigo": "BIND",
@@ -93,7 +96,8 @@
    "unidadDimensiones": "BIND",
    "calibre": "BIND",
    "pesoLb": "BIND",
-   "etiqueta": "BIND"
+   "etiqueta": "BIND",
+   "colorConcentracion": "SUGERIDO"
   },
   "incidenciasReconocidas": [],
   "bind": {
@@ -125,7 +129,8 @@
    "unidadDimensiones": "IN",
    "calibre": "3 MIL",
    "pesoLb": "0.0428",
-   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS"
+   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS",
+   "colorConcentracion": "2"
   },
   "procedencia": {
    "codigo": "BIND",
@@ -146,7 +151,8 @@
    "unidadDimensiones": "BIND",
    "calibre": "BIND",
    "pesoLb": "BIND",
-   "etiqueta": "BIND"
+   "etiqueta": "BIND",
+   "colorConcentracion": "SUGERIDO"
   },
   "incidenciasReconocidas": [],
   "bind": {
@@ -180,7 +186,8 @@
    "calibre": "3 MIL",
    "pesoLb": "0.0428",
    "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS",
-   "fuelleTotal": ""
+   "fuelleTotal": "",
+   "colorConcentracion": "2"
   },
   "procedencia": {
    "codigo": "BIND",
@@ -203,7 +210,8 @@
    "calibre": "BIND",
    "pesoLb": "BIND",
    "etiqueta": "BIND",
-   "fuelleTotal": "SIN_DATO"
+   "fuelleTotal": "SIN_DATO",
+   "colorConcentracion": "SUGERIDO"
   },
   "incidenciasReconocidas": [],
   "bind": {
@@ -234,7 +242,8 @@
    "anchoRollo": "",
    "calibre": "3 MIL",
    "pesoLb": "0.0428",
-   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS"
+   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS",
+   "colorConcentracion": "2"
   },
   "procedencia": {
    "codigo": "BIND",
@@ -254,7 +263,8 @@
    "anchoRollo": "SIN_DATO",
    "calibre": "BIND",
    "pesoLb": "BIND",
-   "etiqueta": "BIND"
+   "etiqueta": "BIND",
+   "colorConcentracion": "SUGERIDO"
   },
   "incidenciasReconocidas": [],
   "bind": {
@@ -285,7 +295,8 @@
    "anchoRollo": "",
    "calibre": "3 MIL",
    "pesoLb": "0.0428",
-   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS"
+   "etiqueta": "BOLSA VCI PMG 13 x 16\" CAL. 3 MIL PAQUETE C/200 BOLSAS",
+   "colorConcentracion": "2"
   },
   "procedencia": {
    "codigo": "BIND",
@@ -305,7 +316,8 @@
    "anchoRollo": "SIN_DATO",
    "calibre": "BIND",
    "pesoLb": "BIND",
-   "etiqueta": "BIND"
+   "etiqueta": "BIND",
+   "colorConcentracion": "SUGERIDO"
   },
   "incidenciasReconocidas": [],
   "bind": {
