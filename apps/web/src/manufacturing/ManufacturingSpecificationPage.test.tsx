@@ -4,7 +4,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BindProductApiError, lookupBindProductByCode } from '../services/bindProducts';
 import { listBindRecent } from '../services/bindRecent';
-import { listClients } from '../services/clients';
+import { createClient, listClients } from '../services/clients';
+import { searchCompanies } from '../services/companies';
+import { AuthContext } from '../auth/authContext.core';
+import { createAuthContextValue, testAdminUser, testGeneralUser } from '../test/authTestUtils';
 import { sugerirClientes } from '../services/clientAbbreviations';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { downloadDraftPdf, previewManufacturingSheet } from '../services/sheetPreview';
@@ -14,7 +17,8 @@ import { localIsoDate } from './specificationForm';
 
 vi.mock('../services/bindProducts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindProducts')>()), lookupBindProductByCode: vi.fn() }));
 vi.mock('../services/bindRecent', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindRecent')>()), listBindRecent: vi.fn() }));
-vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), listClients: vi.fn() }));
+vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), listClients: vi.fn(), createClient: vi.fn(), getClient: vi.fn() }));
+vi.mock('../services/companies', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/companies')>()), searchCompanies: vi.fn() }));
 vi.mock('../services/clientAbbreviations', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clientAbbreviations')>()), sugerirClientes: vi.fn() }));
 vi.mock('../services/manufacturingFamilies', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/manufacturingFamilies')>()), listManufacturingFamilies: vi.fn() }));
 
@@ -1173,3 +1177,60 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     expect(document.body.innerHTML).not.toContain('secreto');
   });
 });
+
+// Alta rápida de cliente desde el campo Cliente: solo un ADMIN la ve; el resto del formulario (búsqueda, captura manual) no cambia.
+describe('ManufacturingSpecificationPage · alta rápida de cliente', { timeout: 30_000 }, () => {
+  const sinClientes = { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } };
+  const conRol = (user: typeof testAdminUser) => render(<AuthContext.Provider value={createAuthContextValue({ user })}><MemoryRouter><ManufacturingSpecificationPage /></MemoryRouter></AuthContext.Provider>);
+
+  it('ADMIN: si la búsqueda no encuentra el cliente ofrece registrarlo; al guardar lo selecciona en la hoja sin recargar y deja disponible (sin crearla) la invitación a guardar la relación', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    listClientsMock.mockResolvedValue(sinClientes);
+    vi.mocked(searchCompanies).mockResolvedValue([]);
+    vi.mocked(createClient).mockResolvedValue({ client: { id: '900', commercialName: 'Cliente Nuevo', companyType: 'CLIENTE', status: 'ACTIVO', clientStatus: 'ACTIVO', notes: null, roles: ['CLIENTE'], fiscal: null }, requestId: 'r' } as never);
+    conRol(testAdminUser);
+    await buscar(user);
+    const entrada = await screen.findByLabelText(CLIENTE);
+    await user.type(entrada, 'Cliente Nuevo');
+    await user.click(await within(await screen.findByTestId('alta-rapida-oferta')).findByRole('button', { name: 'Registrar cliente' }));
+    const dialogo = await screen.findByRole('dialog', { name: 'Registrar cliente' });
+    expect(within(dialogo).getByLabelText(/Nombre comercial/)).toHaveValue('Cliente Nuevo');          // recuperado, no se vuelve a capturar
+    await user.click(within(dialogo).getByRole('button', { name: 'Registrar cliente' }));
+    await waitFor(() => expect(campo(CLIENTE).value).toBe('Cliente Nuevo'));
+    expect(campo(CLIENTE)).toBe(entrada);                                                                // el mismo campo: sin recargar la página
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(createClient).toHaveBeenCalledWith({ commercialName: 'Cliente Nuevo', fiscal: null, notes: null });
+    expect(await screen.findByTestId('alta-rapida-aviso')).toHaveTextContent('Cliente «Cliente Nuevo» registrado y seleccionado.');
+    expect(screen.queryByTestId('alta-rapida-oferta')).toBeNull();
+    expect(await screen.findByTestId('invitar-asociacion')).toHaveTextContent('¿Guardar esta relación para futuras hojas?');   // se ofrece, no se crea sola
+  });
+
+  it('ADMIN: si el catálogo SÍ tiene resultados no se ofrece el alta; con texto libre sin registrar el campo sigue funcionando como captura manual', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    listClientsMock.mockResolvedValue({ data: [clienteCatalogo], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } });
+    conRol(testAdminUser);
+    await buscar(user);
+    await user.type(await screen.findByLabelText(CLIENTE), 'Acme');
+    await waitFor(() => expect(listClientsMock).toHaveBeenCalled());
+    await esperarCortoAlta();
+    expect(screen.queryByTestId('alta-rapida-oferta')).toBeNull();
+    expect((screen.getByRole('combobox', { name: CLIENTE }) as HTMLInputElement).value).toBe('Acme');
+  });
+
+  it('GENERAL: no se ofrece el alta (captura manual como hasta ahora; no se amplían permisos desde esta pantalla)', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(schfpmg001());
+    listClientsMock.mockResolvedValue(sinClientes);
+    conRol(testGeneralUser);
+    await buscar(user);
+    await user.type(await screen.findByLabelText(CLIENTE), 'Cliente Nuevo');
+    await waitFor(() => expect(listClientsMock).toHaveBeenCalled());
+    await esperarCortoAlta();
+    expect(screen.queryByTestId('alta-rapida-oferta')).toBeNull();
+    expect(campo(CLIENTE).value).toBe('Cliente Nuevo');
+    expect(createClient).not.toHaveBeenCalled();
+  });
+});
+const esperarCortoAlta = () => new Promise((r) => setTimeout(r, 600));

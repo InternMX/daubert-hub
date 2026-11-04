@@ -2,7 +2,7 @@ import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
@@ -20,6 +20,8 @@ import { desdeVista, haciaEnvio, type ResponsableLocal } from './responsablesMod
 import { etiquetaRevision } from './documentLabels';
 import { BarraDocumento, DocumentoProvider, FinalizarHojaDocumento, ResponsablesDocumento, type BloqueoFinal, type EstadoDatos } from './DocumentPanel';
 import { BotonMisHojas, HojasDelCodigo } from './HojasDelCodigo';
+import { AuthContext } from '../auth/authContext.core';
+import { AltaRapidaCliente } from './AltaRapidaCliente';
 import { ClienteSugerencias, EnlaceConfiguracion } from './ClienteSugerencias';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
@@ -115,14 +117,19 @@ interface ClientOption { id: string; name: string }
 function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }: { form: SpecificationForm; requerido?: boolean; onUsarSugerencia: (clienteId: string, nombre: string) => void; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
   const [options, setOptions] = useState<ClientOption[]>([]);
   const [input, setInput] = useState(form.fields.cliente.value);
+  // Alta rápida (solo ADMIN): se ofrece cuando la búsqueda del catálogo terminó SIN resultados para lo escrito. Una cuenta GENERAL conserva la captura manual de siempre.
+  const esAdmin = useContext(AuthContext)?.user?.role === 'ADMIN';
+  const [sinResultados, setSinResultados] = useState<string | null>(null);
+  const [altaAbierta, setAltaAbierta] = useState(false);
+  const [creado, setCreado] = useState('');
   useEffect(() => {
     const term = input.trim();
-    if (term.length < 2) { setOptions([]); return undefined; }
+    if (term.length < 2) { setOptions([]); setSinResultados(null); return undefined; }
     let active = true;
     const timer = setTimeout(() => {
       listClients({ search: term, sortOrder: 'asc', page: 1, pageSize: 10 })
-        .then((result) => { if (active) setOptions(result.data.filter((client) => client.clientStatus === 'ACTIVO').map((client) => ({ id: client.id, name: client.commercialName }))); })
-        .catch(() => { if (active) setOptions([]); });
+        .then((result) => { if (!active) return; const lista = result.data.filter((client) => client.clientStatus === 'ACTIVO').map((client) => ({ id: client.id, name: client.commercialName })); setOptions(lista); setSinResultados(lista.length === 0 ? term : null); })
+        .catch(() => { if (active) { setOptions([]); setSinResultados(null); } });
     }, 300);
     return () => { active = false; clearTimeout(timer); };
   }, [input]);
@@ -147,7 +154,18 @@ function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }:
           ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Selecciona un cliente del catálogo o escribe su nombre." />
           : <TextField {...params} label="Cliente (opcional)" helperText="Selecciona un cliente del catálogo o escribe su nombre." />}
       />
+      {esAdmin && current.source !== 'CATALOGO' && sinResultados !== null && sinResultados === input.trim() && (
+        <Typography variant="caption" color="text.secondary" display="block" data-testid="alta-rapida-oferta" sx={{ mt: 0.5 }}>
+          ¿No encuentras «{input.trim()}» en el catálogo?
+          <Button size="small" variant="text" onClick={() => { setAltaAbierta(true); setCreado(''); }} sx={{ textTransform: 'none', px: 0.75, minWidth: 0 }}>Registrar cliente</Button>
+        </Typography>
+      )}
+      {creado && <Typography variant="caption" color="success.main" display="block" role="status" data-testid="alta-rapida-aviso" sx={{ mt: 0.5 }}>{creado}</Typography>}
       <ClienteSugerencias codigo={form.fields.codigo.value} actual={current} onUsar={onUsarSugerencia} />
+      {esAdmin && (
+        <AltaRapidaCliente open={altaAbierta} nombreInicial={input.trim()} onClose={() => setAltaAbierta(false)}
+          onCreado={(c) => { setAltaAbierta(false); setSinResultados(null); setCreado(c.nuevo ? `Cliente «${c.nombre}» registrado y seleccionado.` : `Cliente «${c.nombre}» seleccionado.`); onChange(c.nombre, 'CATALOGO', c.id); }} />
+      )}
     </FieldFrame>
   );
 }

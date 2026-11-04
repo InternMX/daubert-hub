@@ -78,7 +78,7 @@ function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (creada:
 export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string; nombre: string } } = {}) {
   const [estado, setEstado] = useState<'TODAS' | EstadoAbreviatura>(cliente ? 'TODAS' : 'PROPUESTA');
   const [q, setQ] = useState('');
-  const [datos, setDatos] = useState<{ disponible: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> } | null>(null);
+  const [datos, setDatos] = useState<{ disponible: boolean; puedeResolver: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> } | null>(null);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   const [rechazando, setRechazando] = useState<AbreviaturaVista | null>(null);

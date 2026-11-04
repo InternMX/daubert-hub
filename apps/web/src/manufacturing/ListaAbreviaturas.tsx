@@ -91,7 +91,7 @@ export function AbreviaturasDelCliente({ datos, puedeResolver, ocupado, destacad
         <Paper key={a.id} component="li" variant="outlined" data-testid="abreviatura-item" data-destacado={a.id === destacado ? 'true' : undefined}
           sx={{ px: 1.5, py: 1, transition: 'background-color 600ms', bgcolor: a.id === destacado ? 'action.selected' : undefined }}>
           <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap columnGap={1.5} rowGap={0.5}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, minWidth: 56, ...ROMPE }}>{a.abreviatura}</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, ...ROMPE, minWidth: 56 }}>{a.abreviatura}</Typography>
             <Chip size="small" color={COLOR[a.estado]} variant={a.estado === 'CONFIRMADA' ? 'filled' : 'outlined'} label={ESTADO_TEXTO[a.estado]} />
             <Typography variant="body2" color="text.secondary" sx={{ flex: '1 1 140px', ...ROMPE }}>{ALCANCE[a.alcance]}{a.codigoPatron ? ` · ${a.codigoPatron}` : ''}</Typography>
             <Stack direction="row" flexWrap="wrap" useFlexGap justifyContent="flex-end">
