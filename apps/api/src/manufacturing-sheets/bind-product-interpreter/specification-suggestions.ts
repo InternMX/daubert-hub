@@ -48,8 +48,15 @@ export interface SugerenciaVariante {
   nota: string;
 }
 
+export interface SugerenciaModalidad {
+  /** Modalidad declarada EXPLÍCITAMENTE en Title/Description (palabra «doblada» o «extendida»); null si no hay o se contradicen. */
+  valor: 'DOBLADA' | 'EXTENDIDA' | null;
+  nota: string;
+}
+
 export interface SugerenciasEspecificacion {
   productoEspecifico: string | null;
+  modalidad: SugerenciaModalidad;
   coexVariante: SugerenciaVariante;
   familia: SugerenciaFamilia;
   /** Resina VCI sugerida para la composición interpretada (monocapa). */
@@ -114,6 +121,15 @@ function sugerirFamilia(r: ResultadoInterpretacion, t: string): SugerenciaFamili
   return sugerida('BOLSA_PLANA_1', natural ? 'Bolsa natural de dos medidas, sin indicios de fuelle (la composición Natural existe en Bolsa Plana 1). Si es una bolsa natural con fuelles, cambia la familia.' : 'Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.', incompat);
 }
 
+/** Hojas, rollos y termoencogibles: solo se sugiere cuando el texto lo dice con la palabra (no se deduce de las medidas). Si aparecen ambas, queda pendiente. */
+function sugerirModalidad(t: string): SugerenciaModalidad {
+  const doblada = /\bDOBLAD[AO]S?\b/.test(t);
+  const extendida = /\bEXTENDID[AO]S?\b/.test(t);
+  if (doblada && !extendida) return { valor: 'DOBLADA', nota: 'El texto de BIND dice «doblada»: se sugiere la modalidad Doblada. Confírmala.' };
+  if (extendida && !doblada) return { valor: 'EXTENDIDA', nota: 'El texto de BIND dice «extendida»: se sugiere la modalidad Extendida. Confírmala.' };
+  return { valor: null, nota: doblada && extendida ? 'El texto menciona doblada y extendida: elige la modalidad.' : 'BIND no declara la modalidad.' };
+}
+
 function sugerirVariante(t: string): SugerenciaVariante {
   const azul = COLOR_AZUL.test(t);
   const verde = COLOR_VERDE.test(t);
@@ -151,6 +167,7 @@ export function sugerirEspecificacion(r: ResultadoInterpretacion): SugerenciasEs
   const titulo = r.producto.title.trim();
   return {
     productoEspecifico: denominacionEspecifica(r.producto.title),
+    modalidad: sugerirModalidad(t),
     familia: sugerirFamilia(r, t),
     coexVariante: sugerirVariante(t),
     resinaVci,

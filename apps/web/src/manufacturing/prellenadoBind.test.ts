@@ -129,3 +129,14 @@ describe('revisión del borrador: por completar, sugeridos por revisar, contradi
     expect(cuenta.ERROR - cuenta.faltantes).toBe(0);                                             // ningún error real: solo datos por completar
   });
 });
+
+describe('modalidad explícita', () => {
+  it('prellena la modalidad solo cuando BIND la declara con la palabra (sugerida, editable); sin palabra queda para captura', () => {
+    const l = lookup('HOJAS_SOLO_DESCRIPTION');
+    expect(buildInitialForm(l, familyConfigs, '2026-11-05').fields.modalidad.value).toBe('');
+    const conModalidad = { ...l, sugerencias: { ...l.sugerencias, modalidad: { valor: 'DOBLADA' as const, nota: 'El texto de BIND dice «doblada».' } } };
+    const f = buildInitialForm(conModalidad, familyConfigs, '2026-11-05');
+    expect(f.fields.modalidad).toMatchObject({ value: 'DOBLADA', base: { origin: 'SUGERIDO' } });
+    expect(validateSpecification(f, familyConfigs, conModalidad).errors).toEqual({});
+  });
+});

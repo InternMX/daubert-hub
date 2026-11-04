@@ -165,3 +165,13 @@ describe('familias distintas de la bolsa', () => {
     expect(sugerirEspecificacion(producto('COEFPMG01', 'BOLSA VCI PMG 20 X 30 IN CAL. 3 MIL', 'Película COEX azul')).familia.valor).toBe('COEX');
   });
 });
+
+describe('modalidad (hojas, rollos y termoencogibles): solo con la palabra explícita', () => {
+  const modalidad = (title: string, desc: string | null) => sugerirEspecificacion(producto('MODFPMG01', title, desc)).modalidad;
+  it('«doblada» o «extendida» en Title o Description se sugiere; sin palabra o con ambas queda pendiente (no se deduce de las medidas)', () => {
+    expect(modalidad('HOJA VCI PMG 40 X 40 IN CAL. 3 MIL DOBLADA', null)).toMatchObject({ valor: 'DOBLADA' });
+    expect(modalidad('HOJA VCI PMG 40 X 40 IN CAL. 3 MIL', 'Hoja extendida')).toMatchObject({ valor: 'EXTENDIDA' });
+    expect(modalidad('HOJA VCI PMG 40 X 40 IN CAL. 3 MIL', null)).toMatchObject({ valor: null });
+    expect(modalidad('HOJA DOBLADA', 'hoja extendida').valor).toBeNull();
+  });
+});

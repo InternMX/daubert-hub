@@ -92,6 +92,8 @@ export interface SugerenciasBind {
   familia: SugerenciaFamiliaBind;
   /** Variante COEX declarada por el título (nunca se asume una por defecto). */
   coexVariante?: { valor: 'AZUL' | 'VERDE' | null; nota: string };
+  /** Modalidad declarada explícitamente (solo familias con modalidad); ausente en respuestas anteriores. */
+  modalidad?: { valor: 'DOBLADA' | 'EXTENDIDA' | null; nota: string };
   resinaVci: { valor: string | null; regla: string | null; nota: string };
   resinaVciPorComposicion: Record<string, string>;
   color: { preset: 'DAUBERT_AZUL' | 'VERDE' | null; concentracionPct: string | null; detectado: string | null; regla: string | null; nota: string };

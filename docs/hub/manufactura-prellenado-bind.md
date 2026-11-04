@@ -60,3 +60,29 @@ Leyenda — qué puede aportar BIND:
 
 ## 3. Reglas nuevas (implementación)
 Ver sección «Reglas implementadas» al final de este documento (se completa conforme se entregan los commits).
+
+## Reglas implementadas
+1. **Description se interpreta** con la misma gramática que el Title (`description-merge.ts`; no hay un segundo motor) y se concilia **campo por campo**: solo en uno → se usa (procedencia `DESCRIPTION`); en ambos y coincide → `TITLE_Y_DESCRIPTION`; en ambos y difiere → campo pendiente + incidencia `TITULO_DESCRIPCION_DISTINTOS` (contradicción, no se elige fuente).
+2. **Medidas en dos sistemas** (p. ej. `69 x 43 x 66 cm (27 x 17 x 26.4")`): si Description corrobora exactamente una expresión, se usa esa y se informa de la otra (`MEDIDAS_EN_VARIOS_SISTEMAS`); sin corroboración siguen pendientes (`MEDIDAS_MULTIPLES`). Nunca se convierten unidades. Si el Title trae expresiones no resueltas y Description no las corrobora, no se toman las de Description.
+3. **Cantidad `PAQUETE n/B`**: el número se lee solo si el texto habla de paquete o rollo; la unidad **no** sale de la «B»: se sugiere según el tipo de producto (ya fusionado Title+Description) y se avisa.
+4. **Calibre** `CAL. 200` literal, sin unidad, desde Title o Description; **presentación** (PAQUETE/ROLLO), **tipo**, **resina** y **unidad de medidas** también aprovechan Description.
+5. **Rollo continuo / termoencogible**: las medidas solo se leen con etiquetas ANCHO/LARGO, también en Description (no se aplican reglas de bolsa a rollos).
+6. **Familia, color y variante COEX** consideran marcas explícitas en Description. **Modalidad** (doblada/extendida) se sugiere solo con la palabra explícita.
+7. **Revisión del borrador** distingue «por completar», «sugeridos por revisar», contradicciones y errores reales (el servidor sigue validando; los faltantes siguen bloqueando la finalización).
+8. El formulario muestra la fuente (`Extraído de Description`, `Corroborado por Title y Description`).
+
+## Medición (respuestas reales del backend; `prellenadoBind.test.ts`)
+| Producto (familia sugerida) | Obligatorios | Listos | Sugeridos por revisar | Vacíos |
+|---|---|---|---|---|
+| DANFPMGOC04 (Bolsa Fuelle) — **antes: 9 vacíos** | 16 | 7 | 9 | **0** |
+| Bolsa con datos solo en Description (Bolsa Plana 1) | 14 | 11 | 3 | 0 |
+| Hojas con datos solo en Description | 15 | 11 | 3 | 1 (modalidad) |
+| Rollo continuo con etiquetas ANCHO/LARGO | 14 | 9 | 3 | 2 (modalidad, ancho del rollo) |
+| Title y Description contradictorios (Bolsa Plana 1) | 14 | 5 | 3 | 6 (calibre, cantidad, unidad de cantidad, ancho, largo, unidad) — se piden por contradicción |
+| Dos sistemas sin Description que corrobore (Bolsa Fuelle) | 16 | 4 | 3 | 9 — no se elige al azar |
+
+## Casos que siguen requiriendo confirmación
+- **Tres medidas = Ancho × Fuelle total × Largo** (y mitades): siempre «sugerido». Evidencia de la convención: hojas históricas de Bolsa con fuelle (p. ej. `13X12X26"` → ancho 13", fuelle derecho 6"); aún no hay una validación formal de Manufactura por familia.
+- **Unidad de cantidad** cuando el texto solo dice `/B` o `C/n`.
+- **Dos sistemas de medidas** sin Description que corrobore; **contradicciones** Title ↔ Description; **ESD/XOW** (sin casilla); **cliente** (la abreviatura sugiere; no asigna).
+- **No recuperables desde BIND**: ancho del rollo, cotas de termoencogible (4), modalidad sin palabra explícita, fecha de emisión (sistema).

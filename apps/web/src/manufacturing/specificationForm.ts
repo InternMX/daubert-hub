@@ -183,7 +183,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       pesoLb: fromCampo(campos.pesoLb, String),
       // Etiqueta: Title completo de BIND, editable de forma independiente a la descripción.
       etiqueta: sug?.etiqueta?.valor ? field(sug.etiqueta.valor, 'BIND', sug.etiqueta.nota) : field(),
-      modalidad: field('', 'PENDIENTE'),
+      modalidad: sug?.modalidad?.valor ? field(sug.modalidad.valor, 'SUGERIDO', sug.modalidad.nota) : field('', 'PENDIENTE'),
       // Cotas técnicas independientes (Rollo Continuo y Termoencogible): BIND no las entrega y NO se calculan: las captura el usuario.
       anchoRollo: field(), anchoDoblado: field(), medidaPliegue: field(), largoPresentacionFinal: field(), anchoPresentacionFinal: field(),
       // COEX: la variante requiere color declarado. Los pesos y las libras de VCI de cada capa se calculan desde el total (suggestLayerWeights).
@@ -481,7 +481,7 @@ export interface SpecificationValidation {
 }
 
 /** Datos técnicos que el sistema prellenó como SUGERENCIA (no extraídos con certeza) y que el usuario aún no ha tocado ni confirmado: es lo que conviene revisar antes de finalizar. */
-export const CAMPOS_TECNICOS_REVISABLES: FieldKey[] = ['composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'];
+export const CAMPOS_TECNICOS_REVISABLES: FieldKey[] = ['modalidad', 'composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'];
 export function sugeridosPorRevisar(form: SpecificationForm, config: FamilyConfig | null): FieldKey[] {
   if (!config) return [];
   return CAMPOS_TECNICOS_REVISABLES.filter((k) => config.campos.includes(k) && form.fields[k].value.trim() !== '' && form.fields[k].base.origin === 'SUGERIDO' && isAuto(form.fields[k]));

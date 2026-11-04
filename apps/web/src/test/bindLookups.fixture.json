@@ -234,6 +234,10 @@
     ],
     "sugerencias": {
       "productoEspecifico": null,
+      "modalidad": {
+        "valor": null,
+        "nota": "BIND no declara la modalidad."
+      },
       "familia": {
         "valor": "BOLSA_FUELLE",
         "motivo": "Bolsa con tres medidas: se sugiere Ancho × Fuelle total × Largo; confirma que tenga fuelles.",
@@ -522,6 +526,10 @@
     ],
     "sugerencias": {
       "productoEspecifico": null,
+      "modalidad": {
+        "valor": null,
+        "nota": "BIND no declara la modalidad."
+      },
       "familia": {
         "valor": "BOLSA_PLANA_1",
         "motivo": "Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.",
@@ -755,6 +763,10 @@
     ],
     "sugerencias": {
       "productoEspecifico": null,
+      "modalidad": {
+        "valor": null,
+        "nota": "BIND no declara la modalidad."
+      },
       "familia": {
         "valor": "HOJA_PAQ",
         "motivo": "Producto identificado explícitamente como hoja plástica de dos medidas, sin indicios de otra familia especial.",
@@ -1001,6 +1013,10 @@
     ],
     "sugerencias": {
       "productoEspecifico": "ROLLO CONTINUO",
+      "modalidad": {
+        "valor": null,
+        "nota": "BIND no declara la modalidad."
+      },
       "familia": {
         "valor": "ROLLO_CONTINUO",
         "motivo": "El título indica rollo continuo.",
@@ -1310,6 +1326,10 @@
     "familiaSugerida": [],
     "sugerencias": {
       "productoEspecifico": null,
+      "modalidad": {
+        "valor": null,
+        "nota": "BIND no declara la modalidad."
+      },
       "familia": {
         "valor": null,
         "motivo": "No se identificaron las dos medidas (ancho y largo) en el título: elige la familia manualmente.",
@@ -1636,6 +1656,10 @@
     ],
     "sugerencias": {
       "productoEspecifico": null,
+      "modalidad": {
+        "valor": null,
+        "nota": "BIND no declara la modalidad."
+      },
       "familia": {
         "valor": "BOLSA_FUELLE",
         "motivo": "Bolsa con tres medidas: se sugiere Ancho × Fuelle total × Largo; confirma que tenga fuelles.",
