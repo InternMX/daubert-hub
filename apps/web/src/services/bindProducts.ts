@@ -8,7 +8,7 @@ import type { FamilyCode, FieldKey } from './manufacturingFamilies';
 export type Origen = 'EXTRAIDO' | 'SUGERIDO' | 'PENDIENTE';
 
 /** Qué fuente respalda un dato cuando se concilió Title con Code: extraído del título, inferido del código, corroborado por ambos o contradictorio. */
-export type FuenteDato = 'TITLE' | 'CODE' | 'TITLE_Y_CODE' | 'CONTRADICCION';
+export type FuenteDato = 'TITLE' | 'CODE' | 'TITLE_Y_CODE' | 'DESCRIPTION' | 'TITLE_Y_DESCRIPTION' | 'CONTRADICCION';
 
 export interface CampoInterpretado<T> {
   valor: T | null;

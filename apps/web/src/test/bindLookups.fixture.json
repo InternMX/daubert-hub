@@ -1,0 +1,1761 @@
+{
+  "DANFPMGOC04": {
+    "origen": "BIND",
+    "producto": {
+      "ID": "fixture",
+      "Code": "DANFPMGOC04",
+      "Title": "GPN034000021 BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\") (MINI)",
+      "Description": "Bolsa PMG 27 x 17 x 26.4\" CAL. 200 PAQUETE 200/B",
+      "Weight": 0.155,
+      "CreationDate": "2026-01-01T00:00:00Z"
+    },
+    "interpretacion": {
+      "producto": {
+        "id": "fixture",
+        "code": "DANFPMGOC04",
+        "title": "GPN034000021 BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\") (MINI)",
+        "informacionAdicional": "Bolsa PMG 27 x 17 x 26.4\" CAL. 200 PAQUETE 200/B",
+        "fechaAltaBind": "2026-01-01T00:00:00.000Z"
+      },
+      "campos": {
+        "codigoDcmx": {
+          "valor": "DANFPMGOC04",
+          "origen": "EXTRAIDO",
+          "fuente": "Code"
+        },
+        "tipo": {
+          "valor": "BOLSA",
+          "origen": "EXTRAIDO",
+          "fuente": "BOLSA",
+          "procedencia": "TITLE_Y_DESCRIPTION",
+          "nota": "Corroborado por Title y Description."
+        },
+        "resina": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "PMG",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "Corroborada por el código (PMG)."
+        },
+        "material": {
+          "valor": "FILM",
+          "origen": "SUGERIDO",
+          "fuente": "Code DANFPMGOC04 (F)",
+          "procedencia": "CODE",
+          "nota": "Inferido de la letra F (Film) del código; el título no lo indica explícitamente."
+        },
+        "claveMaterial": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "Code DANFPMGOC04",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "La resina del título coincide con la clave del código."
+        },
+        "ancho": {
+          "valor": 27,
+          "origen": "SUGERIDO",
+          "fuente": "27 X 17 X 26.4\"",
+          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. Corroborado por Title y Description.",
+          "procedencia": "TITLE_Y_DESCRIPTION"
+        },
+        "largo": {
+          "valor": 26.4,
+          "origen": "SUGERIDO",
+          "fuente": "27 X 17 X 26.4\"",
+          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. Corroborado por Title y Description.",
+          "procedencia": "TITLE_Y_DESCRIPTION"
+        },
+        "fuelleTotal": {
+          "valor": 17,
+          "origen": "SUGERIDO",
+          "fuente": "27 X 17 X 26.4\"",
+          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. Corroborado por Title y Description.",
+          "procedencia": "TITLE_Y_DESCRIPTION"
+        },
+        "fuelleDerecho": {
+          "valor": 8.5,
+          "origen": "SUGERIDO",
+          "fuente": "27 X 17 X 26.4\"",
+          "nota": "Fuelle total ÷ 2 (derivado; editable). Corroborado por Title y Description.",
+          "procedencia": "TITLE_Y_DESCRIPTION"
+        },
+        "fuelleIzquierdo": {
+          "valor": 8.5,
+          "origen": "SUGERIDO",
+          "fuente": "27 X 17 X 26.4\"",
+          "nota": "Fuelle total ÷ 2 (derivado; editable). Corroborado por Title y Description.",
+          "procedencia": "TITLE_Y_DESCRIPTION"
+        },
+        "unidadDimensiones": {
+          "valor": "IN",
+          "origen": "EXTRAIDO",
+          "fuente": "27 X 17 X 26.4\"",
+          "procedencia": "TITLE_Y_DESCRIPTION",
+          "nota": "Corroborado por Title y Description."
+        },
+        "calibre": {
+          "valor": {
+            "valorOriginal": "200",
+            "unidadOriginal": null,
+            "textoLiteral": "200"
+          },
+          "origen": "PENDIENTE",
+          "fuente": "Description: CAL. 200",
+          "nota": "Unidad o escala del calibre pendiente de confirmación; no se convierte. Dato tomado de Description (el título no lo indica).",
+          "procedencia": "DESCRIPTION"
+        },
+        "presentacion": {
+          "valor": "PAQUETE",
+          "origen": "EXTRAIDO",
+          "fuente": "Description: PAQUETE",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "cantidad": {
+          "valor": {
+            "cantidad": 200,
+            "unidad": "BOLSAS"
+          },
+          "origen": "SUGERIDO",
+          "fuente": "Description: 200/B",
+          "nota": "La «B» de «/B» no está confirmada como «bolsas»: la unidad se sugiere según el tipo de producto. Revísala. Dato tomado de Description (el título no lo indica).",
+          "procedencia": "DESCRIPTION"
+        },
+        "pesoLb": {
+          "valor": 0.155,
+          "origen": "EXTRAIDO",
+          "fuente": "0.155",
+          "nota": "Libras (convención de Daubert México)."
+        }
+      },
+      "codigo": {
+        "interpretable": true,
+        "prefijoCliente": "DAN",
+        "material": "FILM",
+        "materialAmbiguo": false,
+        "claveMaterial": "PMG",
+        "claveAmbigua": false,
+        "resina": "PMG",
+        "consecutivo": "04",
+        "segmentosAdicionales": [
+          "OC"
+        ]
+      },
+      "familia": {
+        "valor": null,
+        "estado": "PENDIENTE_CONFIRMACION",
+        "posiblesEstaFase": [
+          "BOLSA_PLANA_1"
+        ]
+      },
+      "pendientes": [
+        "calibre"
+      ],
+      "advertencias": [
+        {
+          "codigo": "MEDIDAS_EN_VARIOS_SISTEMAS",
+          "mensaje": "El título expresa las medidas en más de una forma (69 X 43 X 66 CM | 27 X 17 X 26.4\"): se usó «27 X 17 X 26.4\"» porque la corrobora Description. Compara con la otra expresión; no se convierten unidades.",
+          "campos": [
+            "ancho",
+            "largo",
+            "unidadDimensiones"
+          ],
+          "id": "MEDIDAS_EN_VARIOS_SISTEMAS:ancho+largo+unidadDimensiones",
+          "nivel": "INFORMACION",
+          "seccion": "bind",
+          "camposFormulario": [
+            "ancho",
+            "largo",
+            "unidadDimensiones"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "MEDIDAS_TRES_DIMENSIONES_SUGERIDAS",
+          "mensaje": "El título tiene tres medidas («27 X 17 X 26.4\"»): se sugiere el patrón Ancho × Fuelle total × Largo, con el fuelle total repartido en dos mitades. Confírmalo.",
+          "campos": [
+            "ancho",
+            "fuelleTotal",
+            "largo"
+          ],
+          "id": "MEDIDAS_TRES_DIMENSIONES_SUGERIDAS:ancho+largo",
+          "nivel": "INFORMACION",
+          "seccion": "bind",
+          "camposFormulario": [
+            "ancho",
+            "largo"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "CALIBRE_SIN_UNIDAD",
+          "mensaje": "Calibre «CAL. 200 » sin unidad: se conserva el valor original y la unidad/escala queda pendiente (no se convierte).",
+          "campos": [
+            "calibre"
+          ],
+          "id": "CALIBRE_SIN_UNIDAD:calibre",
+          "nivel": "INFORMACION",
+          "seccion": "bind",
+          "camposFormulario": [
+            "calibre"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "FAMILIA_NO_CONFIRMADA",
+          "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+          "campos": [
+            "familia"
+          ],
+          "id": "FAMILIA_NO_CONFIRMADA",
+          "nivel": "PENDIENTE",
+          "seccion": "familia",
+          "camposFormulario": [],
+          "explicaFaltante": false
+        }
+      ]
+    },
+    "datosSugeridosPlantilla": {
+      "codigo": "DANFPMGOC04",
+      "descripcion": "GPN034000021 BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\") (MINI)",
+      "comp_pmg": "X",
+      "comp_cp5000": "NA",
+      "comp_natural": "NA",
+      "pres_rollo": "NA",
+      "pres_paquete": "X",
+      "cantidad": "200 Bolsas",
+      "unidad_medidas": "Pulgadas (IN)",
+      "ancho": "27\"",
+      "largo": "26.4\"",
+      "peso_bolsa_lb": "0.1550"
+    },
+    "familiaSugerida": [
+      "BOLSA_FUELLE"
+    ],
+    "sugerencias": {
+      "productoEspecifico": null,
+      "familia": {
+        "valor": "BOLSA_FUELLE",
+        "motivo": "Bolsa con tres medidas: se sugiere Ancho × Fuelle total × Largo; confirma que tenga fuelles.",
+        "incompatibles": [
+          {
+            "familia": "HOJA_PAQ",
+            "motivo": "BIND describe una bolsa, no una hoja."
+          },
+          {
+            "familia": "BOLSA_PLANA_1",
+            "motivo": "El título indica fuelle o tres dimensiones: no corresponde a una bolsa plana de dos medidas."
+          }
+        ]
+      },
+      "coexVariante": {
+        "valor": null,
+        "nota": "BIND no declara el color: elige la variante COEX (Azul o Verde)."
+      },
+      "resinaVci": {
+        "valor": "PMG AL 3%",
+        "regla": "RESINA_VCI_PMG_3PCT",
+        "nota": "Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación."
+      },
+      "resinaVciPorComposicion": {
+        "PMG": "PMG AL 3%",
+        "CP5000": "CP5000 AL 3%"
+      },
+      "color": {
+        "preset": "DAUBERT_AZUL",
+        "concentracionPct": "2",
+        "detectado": null,
+        "regla": "COLOR_POR_DEFECTO_VCI_AZUL_2",
+        "nota": "BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color (práctica más frecuente en hojas VCI históricas; confírmalo)."
+      },
+      "etiqueta": {
+        "valor": "GPN034000021 BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\") (MINI)",
+        "regla": "ETIQUETA_TITLE_BIND",
+        "nota": "Título completo de BIND (incluye números de ítem o parte del cliente)."
+      }
+    },
+    "pendientes": [
+      "calibre"
+    ],
+    "advertencias": [
+      {
+        "codigo": "MEDIDAS_EN_VARIOS_SISTEMAS",
+        "mensaje": "El título expresa las medidas en más de una forma (69 X 43 X 66 CM | 27 X 17 X 26.4\"): se usó «27 X 17 X 26.4\"» porque la corrobora Description. Compara con la otra expresión; no se convierten unidades.",
+        "campos": [
+          "ancho",
+          "largo",
+          "unidadDimensiones"
+        ],
+        "id": "MEDIDAS_EN_VARIOS_SISTEMAS:ancho+largo+unidadDimensiones",
+        "nivel": "INFORMACION",
+        "seccion": "bind",
+        "camposFormulario": [
+          "ancho",
+          "largo",
+          "unidadDimensiones"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "MEDIDAS_TRES_DIMENSIONES_SUGERIDAS",
+        "mensaje": "El título tiene tres medidas («27 X 17 X 26.4\"»): se sugiere el patrón Ancho × Fuelle total × Largo, con el fuelle total repartido en dos mitades. Confírmalo.",
+        "campos": [
+          "ancho",
+          "fuelleTotal",
+          "largo"
+        ],
+        "id": "MEDIDAS_TRES_DIMENSIONES_SUGERIDAS:ancho+largo",
+        "nivel": "INFORMACION",
+        "seccion": "bind",
+        "camposFormulario": [
+          "ancho",
+          "largo"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "CALIBRE_SIN_UNIDAD",
+        "mensaje": "Calibre «CAL. 200 » sin unidad: se conserva el valor original y la unidad/escala queda pendiente (no se convierte).",
+        "campos": [
+          "calibre"
+        ],
+        "id": "CALIBRE_SIN_UNIDAD:calibre",
+        "nivel": "INFORMACION",
+        "seccion": "bind",
+        "camposFormulario": [
+          "calibre"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "FAMILIA_NO_CONFIRMADA",
+        "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+        "campos": [
+          "familia"
+        ],
+        "id": "FAMILIA_NO_CONFIRMADA",
+        "nivel": "PENDIENTE",
+        "seccion": "familia",
+        "camposFormulario": [],
+        "explicaFaltante": false
+      }
+    ],
+    "especificacionConfirmada": false
+  },
+  "BOLSA_PLANA_SOLO_DESCRIPTION": {
+    "origen": "BIND",
+    "producto": {
+      "ID": "fixture",
+      "Code": "XXXFPMG01",
+      "Title": "BOLSA VCI PMG",
+      "Description": "PAQUETE C/100 BOLSAS CAL. 3 MIL 20 X 30 IN",
+      "Weight": 0.05,
+      "CreationDate": "2026-01-01T00:00:00Z"
+    },
+    "interpretacion": {
+      "producto": {
+        "id": "fixture",
+        "code": "XXXFPMG01",
+        "title": "BOLSA VCI PMG",
+        "informacionAdicional": "PAQUETE C/100 BOLSAS CAL. 3 MIL 20 X 30 IN",
+        "fechaAltaBind": "2026-01-01T00:00:00.000Z"
+      },
+      "campos": {
+        "codigoDcmx": {
+          "valor": "XXXFPMG01",
+          "origen": "EXTRAIDO",
+          "fuente": "Code"
+        },
+        "tipo": {
+          "valor": "BOLSA",
+          "origen": "EXTRAIDO",
+          "fuente": "BOLSA",
+          "procedencia": "TITLE_Y_DESCRIPTION",
+          "nota": "Corroborado por Title y Description."
+        },
+        "resina": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "PMG",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "Corroborada por el código (PMG)."
+        },
+        "material": {
+          "valor": "FILM",
+          "origen": "SUGERIDO",
+          "fuente": "Code XXXFPMG01 (F)",
+          "procedencia": "CODE",
+          "nota": "Inferido de la letra F (Film) del código; el título no lo indica explícitamente."
+        },
+        "claveMaterial": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "Code XXXFPMG01",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "La resina del título coincide con la clave del código."
+        },
+        "ancho": {
+          "valor": 20,
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 20 X 30 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "largo": {
+          "valor": 30,
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 20 X 30 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "fuelleTotal": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleDerecho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleIzquierdo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "unidadDimensiones": {
+          "valor": "IN",
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 20 X 30 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "calibre": {
+          "valor": {
+            "valorOriginal": "3",
+            "unidadOriginal": "MIL",
+            "textoLiteral": "3 MIL"
+          },
+          "origen": "EXTRAIDO",
+          "fuente": "Description: CAL. 3 MIL",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "presentacion": {
+          "valor": "PAQUETE",
+          "origen": "EXTRAIDO",
+          "fuente": "Description: PAQUETE",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "cantidad": {
+          "valor": {
+            "cantidad": 100,
+            "unidad": "BOLSAS"
+          },
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 100 BOLSAS",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "pesoLb": {
+          "valor": 0.05,
+          "origen": "EXTRAIDO",
+          "fuente": "0.05",
+          "nota": "Libras (convención de Daubert México)."
+        }
+      },
+      "codigo": {
+        "interpretable": true,
+        "prefijoCliente": "XXX",
+        "material": "FILM",
+        "materialAmbiguo": false,
+        "claveMaterial": "PMG",
+        "claveAmbigua": false,
+        "resina": "PMG",
+        "consecutivo": "01",
+        "segmentosAdicionales": []
+      },
+      "familia": {
+        "valor": null,
+        "estado": "PENDIENTE_CONFIRMACION",
+        "posiblesEstaFase": [
+          "BOLSA_PLANA_1"
+        ]
+      },
+      "pendientes": [],
+      "advertencias": [
+        {
+          "codigo": "FAMILIA_NO_CONFIRMADA",
+          "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+          "campos": [
+            "familia"
+          ],
+          "id": "FAMILIA_NO_CONFIRMADA",
+          "nivel": "PENDIENTE",
+          "seccion": "familia",
+          "camposFormulario": [],
+          "explicaFaltante": false
+        }
+      ]
+    },
+    "datosSugeridosPlantilla": {
+      "codigo": "XXXFPMG01",
+      "descripcion": "BOLSA VCI PMG",
+      "comp_pmg": "X",
+      "comp_cp5000": "NA",
+      "comp_natural": "NA",
+      "pres_rollo": "NA",
+      "pres_paquete": "X",
+      "cantidad": "100 Bolsas",
+      "unidad_medidas": "Pulgadas (IN)",
+      "ancho": "20\"",
+      "largo": "30\"",
+      "calibre": "3 MIL",
+      "peso_bolsa_lb": "0.0500"
+    },
+    "familiaSugerida": [
+      "BOLSA_PLANA_1"
+    ],
+    "sugerencias": {
+      "productoEspecifico": null,
+      "familia": {
+        "valor": "BOLSA_PLANA_1",
+        "motivo": "Bolsa con dos medidas (ancho × largo) y sin indicios de fuelle ni de otra familia especial.",
+        "incompatibles": [
+          {
+            "familia": "HOJA_PAQ",
+            "motivo": "BIND describe una bolsa, no una hoja."
+          }
+        ]
+      },
+      "coexVariante": {
+        "valor": null,
+        "nota": "BIND no declara el color: elige la variante COEX (Azul o Verde)."
+      },
+      "resinaVci": {
+        "valor": "PMG AL 3%",
+        "regla": "RESINA_VCI_PMG_3PCT",
+        "nota": "Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación."
+      },
+      "resinaVciPorComposicion": {
+        "PMG": "PMG AL 3%",
+        "CP5000": "CP5000 AL 3%"
+      },
+      "color": {
+        "preset": "DAUBERT_AZUL",
+        "concentracionPct": "2",
+        "detectado": null,
+        "regla": "COLOR_POR_DEFECTO_VCI_AZUL_2",
+        "nota": "BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color (práctica más frecuente en hojas VCI históricas; confírmalo)."
+      },
+      "etiqueta": {
+        "valor": "BOLSA VCI PMG",
+        "regla": "ETIQUETA_TITLE_BIND",
+        "nota": "Título completo de BIND (incluye números de ítem o parte del cliente)."
+      }
+    },
+    "pendientes": [],
+    "advertencias": [
+      {
+        "codigo": "FAMILIA_NO_CONFIRMADA",
+        "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+        "campos": [
+          "familia"
+        ],
+        "id": "FAMILIA_NO_CONFIRMADA",
+        "nivel": "PENDIENTE",
+        "seccion": "familia",
+        "camposFormulario": [],
+        "explicaFaltante": false
+      }
+    ],
+    "especificacionConfirmada": false
+  },
+  "HOJAS_SOLO_DESCRIPTION": {
+    "origen": "BIND",
+    "producto": {
+      "ID": "fixture",
+      "Code": "HOJFPMG01",
+      "Title": "HOJA VCI PMG",
+      "Description": "PAQUETE C/100 HOJAS CAL. 3 MIL 40 X 40 IN",
+      "Weight": 0.2,
+      "CreationDate": "2026-01-01T00:00:00Z"
+    },
+    "interpretacion": {
+      "producto": {
+        "id": "fixture",
+        "code": "HOJFPMG01",
+        "title": "HOJA VCI PMG",
+        "informacionAdicional": "PAQUETE C/100 HOJAS CAL. 3 MIL 40 X 40 IN",
+        "fechaAltaBind": "2026-01-01T00:00:00.000Z"
+      },
+      "campos": {
+        "codigoDcmx": {
+          "valor": "HOJFPMG01",
+          "origen": "EXTRAIDO",
+          "fuente": "Code"
+        },
+        "tipo": {
+          "valor": "HOJA",
+          "origen": "EXTRAIDO",
+          "fuente": "HOJA",
+          "procedencia": "TITLE_Y_DESCRIPTION",
+          "nota": "Corroborado por Title y Description."
+        },
+        "resina": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "PMG",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "Corroborada por el código (PMG)."
+        },
+        "material": {
+          "valor": "FILM",
+          "origen": "SUGERIDO",
+          "fuente": "Code HOJFPMG01 (F)",
+          "procedencia": "CODE",
+          "nota": "Inferido de la letra F (Film) del código; el título no lo indica explícitamente."
+        },
+        "claveMaterial": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "Code HOJFPMG01",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "La resina del título coincide con la clave del código."
+        },
+        "ancho": {
+          "valor": 40,
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 40 X 40 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "largo": {
+          "valor": 40,
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 40 X 40 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "fuelleTotal": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleDerecho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleIzquierdo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "unidadDimensiones": {
+          "valor": "IN",
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 40 X 40 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "calibre": {
+          "valor": {
+            "valorOriginal": "3",
+            "unidadOriginal": "MIL",
+            "textoLiteral": "3 MIL"
+          },
+          "origen": "EXTRAIDO",
+          "fuente": "Description: CAL. 3 MIL",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "presentacion": {
+          "valor": "PAQUETE",
+          "origen": "EXTRAIDO",
+          "fuente": "Description: PAQUETE",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "cantidad": {
+          "valor": {
+            "cantidad": 100,
+            "unidad": "HOJAS"
+          },
+          "origen": "EXTRAIDO",
+          "fuente": "Description: 100 HOJAS",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "pesoLb": {
+          "valor": 0.2,
+          "origen": "EXTRAIDO",
+          "fuente": "0.2",
+          "nota": "Libras (convención de Daubert México)."
+        }
+      },
+      "codigo": {
+        "interpretable": true,
+        "prefijoCliente": "HOJ",
+        "material": "FILM",
+        "materialAmbiguo": false,
+        "claveMaterial": "PMG",
+        "claveAmbigua": false,
+        "resina": "PMG",
+        "consecutivo": "01",
+        "segmentosAdicionales": []
+      },
+      "familia": {
+        "valor": null,
+        "estado": "PENDIENTE_CONFIRMACION",
+        "posiblesEstaFase": [
+          "HOJA_PAQ"
+        ]
+      },
+      "pendientes": [],
+      "advertencias": [
+        {
+          "codigo": "FAMILIA_NO_CONFIRMADA",
+          "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+          "campos": [
+            "familia"
+          ],
+          "id": "FAMILIA_NO_CONFIRMADA",
+          "nivel": "PENDIENTE",
+          "seccion": "familia",
+          "camposFormulario": [],
+          "explicaFaltante": false
+        }
+      ]
+    },
+    "datosSugeridosPlantilla": {
+      "codigo": "HOJFPMG01",
+      "descripcion": "HOJA VCI PMG",
+      "comp_pmg": "X",
+      "comp_cp5000": "NA",
+      "comp_natural": "NA",
+      "pres_rollo": "NA",
+      "pres_paquete": "X",
+      "cantidad": "100 Hojas",
+      "unidad_medidas": "Pulgadas (IN)",
+      "ancho": "40\"",
+      "largo": "40\"",
+      "calibre": "3 MIL",
+      "peso_bolsa_lb": "0.2000"
+    },
+    "familiaSugerida": [
+      "HOJA_PAQ"
+    ],
+    "sugerencias": {
+      "productoEspecifico": null,
+      "familia": {
+        "valor": "HOJA_PAQ",
+        "motivo": "Producto identificado explícitamente como hoja plástica de dos medidas, sin indicios de otra familia especial.",
+        "incompatibles": [
+          {
+            "familia": "BOLSA_PLANA_1",
+            "motivo": "BIND describe una hoja, no una bolsa."
+          },
+          {
+            "familia": "BOLSA_FUELLE",
+            "motivo": "BIND describe una hoja, no una bolsa."
+          },
+          {
+            "familia": "BOLSA_NATURAL",
+            "motivo": "BIND describe una hoja, no una bolsa."
+          }
+        ]
+      },
+      "coexVariante": {
+        "valor": null,
+        "nota": "BIND no declara el color: elige la variante COEX (Azul o Verde)."
+      },
+      "resinaVci": {
+        "valor": "PMG AL 3%",
+        "regla": "RESINA_VCI_PMG_3PCT",
+        "nota": "Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación."
+      },
+      "resinaVciPorComposicion": {
+        "PMG": "PMG AL 3%",
+        "CP5000": "CP5000 AL 3%"
+      },
+      "color": {
+        "preset": "DAUBERT_AZUL",
+        "concentracionPct": "2",
+        "detectado": null,
+        "regla": "COLOR_POR_DEFECTO_VCI_AZUL_2",
+        "nota": "BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color (práctica más frecuente en hojas VCI históricas; confírmalo)."
+      },
+      "etiqueta": {
+        "valor": "HOJA VCI PMG",
+        "regla": "ETIQUETA_TITLE_BIND",
+        "nota": "Título completo de BIND (incluye números de ítem o parte del cliente)."
+      }
+    },
+    "pendientes": [],
+    "advertencias": [
+      {
+        "codigo": "FAMILIA_NO_CONFIRMADA",
+        "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+        "campos": [
+          "familia"
+        ],
+        "id": "FAMILIA_NO_CONFIRMADA",
+        "nivel": "PENDIENTE",
+        "seccion": "familia",
+        "camposFormulario": [],
+        "explicaFaltante": false
+      }
+    ],
+    "especificacionConfirmada": false
+  },
+  "ROLLO_CONTINUO_CON_ETIQUETAS": {
+    "origen": "BIND",
+    "producto": {
+      "ID": "fixture",
+      "Code": "ROCFPMG01",
+      "Title": "ROLLO CONTINUO VCI PMG CAL. 3 MIL",
+      "Description": "ANCHO 40 IN LARGO 100 IN",
+      "Weight": 5,
+      "CreationDate": "2026-01-01T00:00:00Z"
+    },
+    "interpretacion": {
+      "producto": {
+        "id": "fixture",
+        "code": "ROCFPMG01",
+        "title": "ROLLO CONTINUO VCI PMG CAL. 3 MIL",
+        "informacionAdicional": "ANCHO 40 IN LARGO 100 IN",
+        "fechaAltaBind": "2026-01-01T00:00:00.000Z"
+      },
+      "campos": {
+        "codigoDcmx": {
+          "valor": "ROCFPMG01",
+          "origen": "EXTRAIDO",
+          "fuente": "Code"
+        },
+        "tipo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "El título no indica si es Bolsa u Hoja."
+        },
+        "resina": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "PMG",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "Corroborada por el código (PMG)."
+        },
+        "material": {
+          "valor": "FILM",
+          "origen": "SUGERIDO",
+          "fuente": "Code ROCFPMG01 (F)",
+          "procedencia": "CODE",
+          "nota": "Inferido de la letra F (Film) del código; el título no lo indica explícitamente."
+        },
+        "claveMaterial": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "Code ROCFPMG01",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "La resina del título coincide con la clave del código."
+        },
+        "ancho": {
+          "valor": 40,
+          "origen": "EXTRAIDO",
+          "fuente": "Description: ANCHO 40 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "largo": {
+          "valor": 100,
+          "origen": "EXTRAIDO",
+          "fuente": "Description: LARGO 100 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "fuelleTotal": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleDerecho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleIzquierdo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "unidadDimensiones": {
+          "valor": "IN",
+          "origen": "EXTRAIDO",
+          "fuente": "Description: ANCHO 40 IN / LARGO 100 IN",
+          "procedencia": "DESCRIPTION",
+          "nota": "Dato tomado de Description (el título no lo indica)."
+        },
+        "calibre": {
+          "valor": {
+            "valorOriginal": "3",
+            "unidadOriginal": "MIL",
+            "textoLiteral": "3 MIL"
+          },
+          "origen": "EXTRAIDO",
+          "fuente": "CAL. 3 MIL"
+        },
+        "presentacion": {
+          "valor": "ROLLO",
+          "origen": "EXTRAIDO",
+          "fuente": "ROLLO"
+        },
+        "cantidad": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin cantidad en el título."
+        },
+        "pesoLb": {
+          "valor": 5,
+          "origen": "EXTRAIDO",
+          "fuente": "5",
+          "nota": "Libras (convención de Daubert México)."
+        }
+      },
+      "codigo": {
+        "interpretable": true,
+        "prefijoCliente": "ROC",
+        "material": "FILM",
+        "materialAmbiguo": false,
+        "claveMaterial": "PMG",
+        "claveAmbigua": false,
+        "resina": "PMG",
+        "consecutivo": "01",
+        "segmentosAdicionales": []
+      },
+      "familia": {
+        "valor": null,
+        "estado": "PENDIENTE_CONFIRMACION",
+        "posiblesEstaFase": []
+      },
+      "pendientes": [
+        "tipo",
+        "cantidad"
+      ],
+      "advertencias": [
+        {
+          "codigo": "CANTIDAD_AUSENTE",
+          "mensaje": "El título no indica la cantidad de bolsas u hojas por paquete o rollo.",
+          "campos": [
+            "cantidad"
+          ],
+          "id": "CANTIDAD_AUSENTE:cantidad",
+          "nivel": "PENDIENTE",
+          "seccion": "bind",
+          "camposFormulario": [
+            "cantidad"
+          ],
+          "explicaFaltante": true
+        },
+        {
+          "codigo": "FAMILIA_NO_CONFIRMADA",
+          "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+          "campos": [
+            "familia"
+          ],
+          "id": "FAMILIA_NO_CONFIRMADA",
+          "nivel": "PENDIENTE",
+          "seccion": "familia",
+          "camposFormulario": [],
+          "explicaFaltante": false
+        }
+      ]
+    },
+    "datosSugeridosPlantilla": {
+      "codigo": "ROCFPMG01",
+      "descripcion": "ROLLO CONTINUO VCI PMG CAL. 3 MIL",
+      "comp_pmg": "X",
+      "comp_cp5000": "NA",
+      "comp_natural": "NA",
+      "pres_rollo": "X",
+      "pres_paquete": "NA",
+      "unidad_medidas": "Pulgadas (IN)",
+      "ancho": "40\"",
+      "largo": "100\"",
+      "calibre": "3 MIL",
+      "peso_bolsa_lb": "5.0000"
+    },
+    "familiaSugerida": [
+      "ROLLO_CONTINUO"
+    ],
+    "sugerencias": {
+      "productoEspecifico": "ROLLO CONTINUO",
+      "familia": {
+        "valor": "ROLLO_CONTINUO",
+        "motivo": "El título indica rollo continuo.",
+        "incompatibles": [
+          {
+            "familia": "BOLSA_PLANA_1",
+            "motivo": "El título indica rollo continuo."
+          },
+          {
+            "familia": "HOJA_PAQ",
+            "motivo": "El título indica rollo continuo."
+          },
+          {
+            "familia": "BOLSA_FUELLE",
+            "motivo": "El título indica rollo continuo."
+          },
+          {
+            "familia": "BOLSA_NATURAL",
+            "motivo": "El título indica rollo continuo."
+          },
+          {
+            "familia": "TERMOENCOGIBLE",
+            "motivo": "El título indica rollo continuo."
+          },
+          {
+            "familia": "COEX",
+            "motivo": "El título indica rollo continuo."
+          }
+        ]
+      },
+      "coexVariante": {
+        "valor": null,
+        "nota": "BIND no declara el color: elige la variante COEX (Azul o Verde)."
+      },
+      "resinaVci": {
+        "valor": "PMG AL 3%",
+        "regla": "RESINA_VCI_PMG_3PCT",
+        "nota": "Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación."
+      },
+      "resinaVciPorComposicion": {
+        "PMG": "PMG AL 3%",
+        "CP5000": "CP5000 AL 3%"
+      },
+      "color": {
+        "preset": "DAUBERT_AZUL",
+        "concentracionPct": "2",
+        "detectado": null,
+        "regla": "COLOR_POR_DEFECTO_VCI_AZUL_2",
+        "nota": "BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color (práctica más frecuente en hojas VCI históricas; confírmalo)."
+      },
+      "etiqueta": {
+        "valor": "ROLLO CONTINUO VCI PMG CAL. 3 MIL",
+        "regla": "ETIQUETA_TITLE_BIND",
+        "nota": "Título completo de BIND (incluye números de ítem o parte del cliente)."
+      }
+    },
+    "pendientes": [
+      "tipo",
+      "cantidad"
+    ],
+    "advertencias": [
+      {
+        "codigo": "CANTIDAD_AUSENTE",
+        "mensaje": "El título no indica la cantidad de bolsas u hojas por paquete o rollo.",
+        "campos": [
+          "cantidad"
+        ],
+        "id": "CANTIDAD_AUSENTE:cantidad",
+        "nivel": "PENDIENTE",
+        "seccion": "bind",
+        "camposFormulario": [
+          "cantidad"
+        ],
+        "explicaFaltante": true
+      },
+      {
+        "codigo": "FAMILIA_NO_CONFIRMADA",
+        "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+        "campos": [
+          "familia"
+        ],
+        "id": "FAMILIA_NO_CONFIRMADA",
+        "nivel": "PENDIENTE",
+        "seccion": "familia",
+        "camposFormulario": [],
+        "explicaFaltante": false
+      }
+    ],
+    "especificacionConfirmada": false
+  },
+  "CONTRADICCION_TITLE_DESCRIPTION": {
+    "origen": "BIND",
+    "producto": {
+      "ID": "fixture",
+      "Code": "CCCFPMG01",
+      "Title": "BOLSA PMG 20 X 30 IN CAL. 3 MIL PAQUETE C/100 BOLSAS",
+      "Description": "Bolsa PMG 25 x 35 IN CAL. 2 MIL PAQUETE C/200 BOLSAS",
+      "Weight": 0.05,
+      "CreationDate": "2026-01-01T00:00:00Z"
+    },
+    "interpretacion": {
+      "producto": {
+        "id": "fixture",
+        "code": "CCCFPMG01",
+        "title": "BOLSA PMG 20 X 30 IN CAL. 3 MIL PAQUETE C/100 BOLSAS",
+        "informacionAdicional": "Bolsa PMG 25 x 35 IN CAL. 2 MIL PAQUETE C/200 BOLSAS",
+        "fechaAltaBind": "2026-01-01T00:00:00.000Z"
+      },
+      "campos": {
+        "codigoDcmx": {
+          "valor": "CCCFPMG01",
+          "origen": "EXTRAIDO",
+          "fuente": "Code"
+        },
+        "tipo": {
+          "valor": "BOLSA",
+          "origen": "EXTRAIDO",
+          "fuente": "BOLSA",
+          "procedencia": "TITLE_Y_DESCRIPTION",
+          "nota": "Corroborado por Title y Description."
+        },
+        "resina": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "PMG",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "Corroborada por el código (PMG)."
+        },
+        "material": {
+          "valor": "FILM",
+          "origen": "SUGERIDO",
+          "fuente": "Code CCCFPMG01 (F)",
+          "procedencia": "CODE",
+          "nota": "Inferido de la letra F (Film) del código; el título no lo indica explícitamente."
+        },
+        "claveMaterial": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "Code CCCFPMG01",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "La resina del título coincide con la clave del código."
+        },
+        "ancho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas: Title y Description se contradicen; se dejan pendientes.",
+          "procedencia": "CONTRADICCION"
+        },
+        "largo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas: Title y Description se contradicen; se dejan pendientes.",
+          "procedencia": "CONTRADICCION"
+        },
+        "fuelleTotal": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas: Title y Description se contradicen; se dejan pendientes.",
+          "procedencia": "CONTRADICCION"
+        },
+        "fuelleDerecho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas: Title y Description se contradicen; se dejan pendientes.",
+          "procedencia": "CONTRADICCION"
+        },
+        "fuelleIzquierdo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas: Title y Description se contradicen; se dejan pendientes.",
+          "procedencia": "CONTRADICCION"
+        },
+        "unidadDimensiones": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Unidad pendiente: medidas contradictorias.",
+          "procedencia": "CONTRADICCION"
+        },
+        "calibre": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Calibre: Title y Description se contradicen; se deja pendiente.",
+          "procedencia": "CONTRADICCION"
+        },
+        "presentacion": {
+          "valor": "PAQUETE",
+          "origen": "EXTRAIDO",
+          "fuente": "PAQUETE",
+          "procedencia": "TITLE_Y_DESCRIPTION",
+          "nota": "Corroborado por Title y Description."
+        },
+        "cantidad": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Cantidad: Title y Description se contradicen; se deja pendiente.",
+          "procedencia": "CONTRADICCION"
+        },
+        "pesoLb": {
+          "valor": 0.05,
+          "origen": "EXTRAIDO",
+          "fuente": "0.05",
+          "nota": "Libras (convención de Daubert México)."
+        }
+      },
+      "codigo": {
+        "interpretable": true,
+        "prefijoCliente": "CCC",
+        "material": "FILM",
+        "materialAmbiguo": false,
+        "claveMaterial": "PMG",
+        "claveAmbigua": false,
+        "resina": "PMG",
+        "consecutivo": "01",
+        "segmentosAdicionales": []
+      },
+      "familia": {
+        "valor": null,
+        "estado": "PENDIENTE_CONFIRMACION",
+        "posiblesEstaFase": [
+          "BOLSA_PLANA_1"
+        ]
+      },
+      "pendientes": [
+        "ancho",
+        "largo",
+        "unidadDimensiones",
+        "calibre",
+        "cantidad"
+      ],
+      "advertencias": [
+        {
+          "codigo": "TITULO_DESCRIPCION_DISTINTOS",
+          "mensaje": "Calibre: el título y la información adicional (Description) no coinciden («CAL. 3 MIL» frente a «CAL. 2 MIL»). Se deja pendiente: confirma cuál es el correcto.",
+          "campos": [
+            "calibre"
+          ],
+          "id": "TITULO_DESCRIPCION_DISTINTOS:calibre",
+          "nivel": "CONTRADICCION",
+          "seccion": "bind",
+          "camposFormulario": [
+            "calibre"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "TITULO_DESCRIPCION_DISTINTOS",
+          "mensaje": "Cantidad: el título (100) y Description (200) no coinciden. Se deja pendiente: confirma cuál es el correcto.",
+          "campos": [
+            "cantidad"
+          ],
+          "id": "TITULO_DESCRIPCION_DISTINTOS:cantidad",
+          "nivel": "CONTRADICCION",
+          "seccion": "bind",
+          "camposFormulario": [
+            "cantidad"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "TITULO_DESCRIPCION_DISTINTOS",
+          "mensaje": "Medidas: el título («20 X 30 IN») y Description («25 X 35 IN») no coinciden. Se dejan pendientes: confirma cuáles son las correctas.",
+          "campos": [
+            "ancho",
+            "largo"
+          ],
+          "id": "TITULO_DESCRIPCION_DISTINTOS:ancho+largo",
+          "nivel": "CONTRADICCION",
+          "seccion": "bind",
+          "camposFormulario": [
+            "ancho",
+            "largo"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "FAMILIA_NO_CONFIRMADA",
+          "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+          "campos": [
+            "familia"
+          ],
+          "id": "FAMILIA_NO_CONFIRMADA",
+          "nivel": "PENDIENTE",
+          "seccion": "familia",
+          "camposFormulario": [],
+          "explicaFaltante": false
+        }
+      ]
+    },
+    "datosSugeridosPlantilla": {
+      "codigo": "CCCFPMG01",
+      "descripcion": "BOLSA PMG 20 X 30 IN CAL. 3 MIL PAQUETE C/100 BOLSAS",
+      "comp_pmg": "X",
+      "comp_cp5000": "NA",
+      "comp_natural": "NA",
+      "pres_rollo": "NA",
+      "pres_paquete": "X",
+      "peso_bolsa_lb": "0.0500"
+    },
+    "familiaSugerida": [],
+    "sugerencias": {
+      "productoEspecifico": null,
+      "familia": {
+        "valor": null,
+        "motivo": "No se identificaron las dos medidas (ancho y largo) en el título: elige la familia manualmente.",
+        "incompatibles": [
+          {
+            "familia": "HOJA_PAQ",
+            "motivo": "BIND describe una bolsa, no una hoja."
+          }
+        ]
+      },
+      "coexVariante": {
+        "valor": null,
+        "nota": "BIND no declara el color: elige la variante COEX (Azul o Verde)."
+      },
+      "resinaVci": {
+        "valor": "PMG AL 3%",
+        "regla": "RESINA_VCI_PMG_3PCT",
+        "nota": "Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación."
+      },
+      "resinaVciPorComposicion": {
+        "PMG": "PMG AL 3%",
+        "CP5000": "CP5000 AL 3%"
+      },
+      "color": {
+        "preset": "DAUBERT_AZUL",
+        "concentracionPct": "2",
+        "detectado": null,
+        "regla": "COLOR_POR_DEFECTO_VCI_AZUL_2",
+        "nota": "BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color (práctica más frecuente en hojas VCI históricas; confírmalo)."
+      },
+      "etiqueta": {
+        "valor": "BOLSA PMG 20 X 30 IN CAL. 3 MIL PAQUETE C/100 BOLSAS",
+        "regla": "ETIQUETA_TITLE_BIND",
+        "nota": "Título completo de BIND (incluye números de ítem o parte del cliente)."
+      }
+    },
+    "pendientes": [
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "cantidad"
+    ],
+    "advertencias": [
+      {
+        "codigo": "TITULO_DESCRIPCION_DISTINTOS",
+        "mensaje": "Calibre: el título y la información adicional (Description) no coinciden («CAL. 3 MIL» frente a «CAL. 2 MIL»). Se deja pendiente: confirma cuál es el correcto.",
+        "campos": [
+          "calibre"
+        ],
+        "id": "TITULO_DESCRIPCION_DISTINTOS:calibre",
+        "nivel": "CONTRADICCION",
+        "seccion": "bind",
+        "camposFormulario": [
+          "calibre"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "TITULO_DESCRIPCION_DISTINTOS",
+        "mensaje": "Cantidad: el título (100) y Description (200) no coinciden. Se deja pendiente: confirma cuál es el correcto.",
+        "campos": [
+          "cantidad"
+        ],
+        "id": "TITULO_DESCRIPCION_DISTINTOS:cantidad",
+        "nivel": "CONTRADICCION",
+        "seccion": "bind",
+        "camposFormulario": [
+          "cantidad"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "TITULO_DESCRIPCION_DISTINTOS",
+        "mensaje": "Medidas: el título («20 X 30 IN») y Description («25 X 35 IN») no coinciden. Se dejan pendientes: confirma cuáles son las correctas.",
+        "campos": [
+          "ancho",
+          "largo"
+        ],
+        "id": "TITULO_DESCRIPCION_DISTINTOS:ancho+largo",
+        "nivel": "CONTRADICCION",
+        "seccion": "bind",
+        "camposFormulario": [
+          "ancho",
+          "largo"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "FAMILIA_NO_CONFIRMADA",
+        "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+        "campos": [
+          "familia"
+        ],
+        "id": "FAMILIA_NO_CONFIRMADA",
+        "nivel": "PENDIENTE",
+        "seccion": "familia",
+        "camposFormulario": [],
+        "explicaFaltante": false
+      }
+    ],
+    "especificacionConfirmada": false
+  },
+  "SIN_DESCRIPTION_CON_DOS_SISTEMAS": {
+    "origen": "BIND",
+    "producto": {
+      "ID": "fixture",
+      "Code": "FFFFPMG01",
+      "Title": "BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\")",
+      "Description": null,
+      "Weight": 0.1,
+      "CreationDate": "2026-01-01T00:00:00Z"
+    },
+    "interpretacion": {
+      "producto": {
+        "id": "fixture",
+        "code": "FFFFPMG01",
+        "title": "BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\")",
+        "informacionAdicional": null,
+        "fechaAltaBind": "2026-01-01T00:00:00.000Z"
+      },
+      "campos": {
+        "codigoDcmx": {
+          "valor": "FFFFPMG01",
+          "origen": "EXTRAIDO",
+          "fuente": "Code"
+        },
+        "tipo": {
+          "valor": "BOLSA",
+          "origen": "EXTRAIDO",
+          "fuente": "BOLSA"
+        },
+        "resina": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "PMG",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "Corroborada por el código (PMG)."
+        },
+        "material": {
+          "valor": "FILM",
+          "origen": "SUGERIDO",
+          "fuente": "Code FFFFPMG01 (F)",
+          "procedencia": "CODE",
+          "nota": "Inferido de la letra F (Film) del código; el título no lo indica explícitamente."
+        },
+        "claveMaterial": {
+          "valor": "PMG",
+          "origen": "EXTRAIDO",
+          "fuente": "Code FFFFPMG01",
+          "procedencia": "TITLE_Y_CODE",
+          "nota": "La resina del título coincide con la clave del código."
+        },
+        "ancho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas múltiples."
+        },
+        "largo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Medidas múltiples."
+        },
+        "fuelleTotal": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleDerecho": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "fuelleIzquierdo": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin fuelles en el título."
+        },
+        "unidadDimensiones": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Unidad dimensional sin determinar."
+        },
+        "calibre": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin calibre en el título."
+        },
+        "presentacion": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin presentación en el título."
+        },
+        "cantidad": {
+          "valor": null,
+          "origen": "PENDIENTE",
+          "fuente": null,
+          "nota": "Sin cantidad en el título."
+        },
+        "pesoLb": {
+          "valor": 0.1,
+          "origen": "EXTRAIDO",
+          "fuente": "0.1",
+          "nota": "Libras (convención de Daubert México)."
+        }
+      },
+      "codigo": {
+        "interpretable": true,
+        "prefijoCliente": "FFF",
+        "material": "FILM",
+        "materialAmbiguo": false,
+        "claveMaterial": "PMG",
+        "claveAmbigua": false,
+        "resina": "PMG",
+        "consecutivo": "01",
+        "segmentosAdicionales": []
+      },
+      "familia": {
+        "valor": null,
+        "estado": "PENDIENTE_CONFIRMACION",
+        "posiblesEstaFase": [
+          "BOLSA_PLANA_1"
+        ]
+      },
+      "pendientes": [
+        "ancho",
+        "largo",
+        "unidadDimensiones",
+        "calibre",
+        "presentacion",
+        "cantidad"
+      ],
+      "advertencias": [
+        {
+          "codigo": "MEDIDAS_MULTIPLES",
+          "mensaje": "El título contiene varias expresiones de medidas (69 X 43 X 66 CM | 27 X 17 X 26.4\"): se deja pendiente de confirmación.",
+          "campos": [
+            "ancho",
+            "largo"
+          ],
+          "id": "MEDIDAS_MULTIPLES:ancho+largo",
+          "nivel": "PENDIENTE",
+          "seccion": "bind",
+          "camposFormulario": [
+            "ancho",
+            "largo"
+          ],
+          "explicaFaltante": false
+        },
+        {
+          "codigo": "CALIBRE_AUSENTE",
+          "mensaje": "El título no indica el calibre (CAL.).",
+          "campos": [
+            "calibre"
+          ],
+          "id": "CALIBRE_AUSENTE:calibre",
+          "nivel": "PENDIENTE",
+          "seccion": "bind",
+          "camposFormulario": [
+            "calibre"
+          ],
+          "explicaFaltante": true
+        },
+        {
+          "codigo": "PRESENTACION_AUSENTE",
+          "mensaje": "El título no indica la presentación (Rollo o Paquete).",
+          "campos": [
+            "presentacion"
+          ],
+          "id": "PRESENTACION_AUSENTE:presentacion",
+          "nivel": "PENDIENTE",
+          "seccion": "bind",
+          "camposFormulario": [
+            "presentacion"
+          ],
+          "explicaFaltante": true
+        },
+        {
+          "codigo": "CANTIDAD_AUSENTE",
+          "mensaje": "El título no indica la cantidad de bolsas u hojas por paquete o rollo.",
+          "campos": [
+            "cantidad"
+          ],
+          "id": "CANTIDAD_AUSENTE:cantidad",
+          "nivel": "PENDIENTE",
+          "seccion": "bind",
+          "camposFormulario": [
+            "cantidad"
+          ],
+          "explicaFaltante": true
+        },
+        {
+          "codigo": "FAMILIA_NO_CONFIRMADA",
+          "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+          "campos": [
+            "familia"
+          ],
+          "id": "FAMILIA_NO_CONFIRMADA",
+          "nivel": "PENDIENTE",
+          "seccion": "familia",
+          "camposFormulario": [],
+          "explicaFaltante": false
+        }
+      ]
+    },
+    "datosSugeridosPlantilla": {
+      "codigo": "FFFFPMG01",
+      "descripcion": "BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\")",
+      "comp_pmg": "X",
+      "comp_cp5000": "NA",
+      "comp_natural": "NA",
+      "peso_bolsa_lb": "0.1000"
+    },
+    "familiaSugerida": [
+      "BOLSA_FUELLE"
+    ],
+    "sugerencias": {
+      "productoEspecifico": null,
+      "familia": {
+        "valor": "BOLSA_FUELLE",
+        "motivo": "Bolsa con tres medidas: se sugiere Ancho × Fuelle total × Largo; confirma que tenga fuelles.",
+        "incompatibles": [
+          {
+            "familia": "HOJA_PAQ",
+            "motivo": "BIND describe una bolsa, no una hoja."
+          },
+          {
+            "familia": "BOLSA_PLANA_1",
+            "motivo": "El título indica fuelle o tres dimensiones: no corresponde a una bolsa plana de dos medidas."
+          }
+        ]
+      },
+      "coexVariante": {
+        "valor": null,
+        "nota": "BIND no declara el color: elige la variante COEX (Azul o Verde)."
+      },
+      "resinaVci": {
+        "valor": "PMG AL 3%",
+        "regla": "RESINA_VCI_PMG_3PCT",
+        "nota": "Sugerida para composición PMG; el 3 % es la concentración histórica más frecuente, no una obligación."
+      },
+      "resinaVciPorComposicion": {
+        "PMG": "PMG AL 3%",
+        "CP5000": "CP5000 AL 3%"
+      },
+      "color": {
+        "preset": "DAUBERT_AZUL",
+        "concentracionPct": "2",
+        "detectado": null,
+        "regla": "COLOR_POR_DEFECTO_VCI_AZUL_2",
+        "nota": "BIND no indica color: se sugiere Daubert Azul con 2 % de concentración de color (práctica más frecuente en hojas VCI históricas; confírmalo)."
+      },
+      "etiqueta": {
+        "valor": "BOLSA VCI PMG 69 x 43 x 66 cm (27 x 17 x 26.4\")",
+        "regla": "ETIQUETA_TITLE_BIND",
+        "nota": "Título completo de BIND (incluye números de ítem o parte del cliente)."
+      }
+    },
+    "pendientes": [
+      "ancho",
+      "largo",
+      "unidadDimensiones",
+      "calibre",
+      "presentacion",
+      "cantidad"
+    ],
+    "advertencias": [
+      {
+        "codigo": "MEDIDAS_MULTIPLES",
+        "mensaje": "El título contiene varias expresiones de medidas (69 X 43 X 66 CM | 27 X 17 X 26.4\"): se deja pendiente de confirmación.",
+        "campos": [
+          "ancho",
+          "largo"
+        ],
+        "id": "MEDIDAS_MULTIPLES:ancho+largo",
+        "nivel": "PENDIENTE",
+        "seccion": "bind",
+        "camposFormulario": [
+          "ancho",
+          "largo"
+        ],
+        "explicaFaltante": false
+      },
+      {
+        "codigo": "CALIBRE_AUSENTE",
+        "mensaje": "El título no indica el calibre (CAL.).",
+        "campos": [
+          "calibre"
+        ],
+        "id": "CALIBRE_AUSENTE:calibre",
+        "nivel": "PENDIENTE",
+        "seccion": "bind",
+        "camposFormulario": [
+          "calibre"
+        ],
+        "explicaFaltante": true
+      },
+      {
+        "codigo": "PRESENTACION_AUSENTE",
+        "mensaje": "El título no indica la presentación (Rollo o Paquete).",
+        "campos": [
+          "presentacion"
+        ],
+        "id": "PRESENTACION_AUSENTE:presentacion",
+        "nivel": "PENDIENTE",
+        "seccion": "bind",
+        "camposFormulario": [
+          "presentacion"
+        ],
+        "explicaFaltante": true
+      },
+      {
+        "codigo": "CANTIDAD_AUSENTE",
+        "mensaje": "El título no indica la cantidad de bolsas u hojas por paquete o rollo.",
+        "campos": [
+          "cantidad"
+        ],
+        "id": "CANTIDAD_AUSENTE:cantidad",
+        "nivel": "PENDIENTE",
+        "seccion": "bind",
+        "camposFormulario": [
+          "cantidad"
+        ],
+        "explicaFaltante": true
+      },
+      {
+        "codigo": "FAMILIA_NO_CONFIRMADA",
+        "mensaje": "La familia de manufactura no se confirma automáticamente: la sugerida es provisional y la confirma el usuario.",
+        "campos": [
+          "familia"
+        ],
+        "id": "FAMILIA_NO_CONFIRMADA",
+        "nivel": "PENDIENTE",
+        "seccion": "familia",
+        "camposFormulario": [],
+        "explicaFaltante": false
+      }
+    ],
+    "especificacionConfirmada": false
+  }
+}

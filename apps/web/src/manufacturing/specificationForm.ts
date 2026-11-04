@@ -66,17 +66,20 @@ const field = (value = '', origin: BaseOrigin = 'SIN_DATO', note?: string, fuent
 /** Fuente que se muestra: la conciliada con el código o, si no hay código que la contradiga ni corrobore, el título. */
 const fuenteDe = (campo: CampoInterpretado<unknown>): FuenteDato | undefined => campo.procedencia ?? (campo.origen === 'EXTRAIDO' ? 'TITLE' : undefined);
 
+/** Solo los datos que vienen (o se corroboran) con Description muestran su fuente; el resto conserva su presentación de siempre. */
+const fuenteDescription = (campo: CampoInterpretado<unknown>): FuenteDato | undefined => (campo.procedencia === 'DESCRIPTION' || campo.procedencia === 'TITLE_Y_DESCRIPTION' ? campo.procedencia : undefined);
+
 const originOf = (campo: CampoInterpretado<unknown>): BaseOrigin => (campo.origen === 'EXTRAIDO' ? 'BIND' : campo.origen === 'SUGERIDO' ? 'SUGERIDO' : 'PENDIENTE');
 
 function fromCampo<T>(campo: CampoInterpretado<T>, toValue: (valor: T) => string): FieldState {
   if (campo.valor === null) return field('', 'PENDIENTE', campo.nota);
-  return field(toValue(campo.valor), originOf(campo), campo.nota);
+  return field(toValue(campo.valor), originOf(campo), campo.nota, fuenteDescription(campo));
 }
 
 /** Fuelles: si el título no los sugiere no son un «pendiente» (la mayoría de los productos no los tiene): quedan para captura manual. */
 function fuelleField(campo: CampoInterpretado<number> | undefined): FieldState {
   if (!campo || campo.valor === null) return field();
-  return field(String(campo.valor), originOf(campo), campo.nota);
+  return field(String(campo.valor), originOf(campo), campo.nota, fuenteDescription(campo));
 }
 
 const TIPO_LABEL: Record<string, string> = { BOLSA: 'Bolsa', HOJA: 'Hoja' };
@@ -132,7 +135,7 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
   const calibreField = calibre.valor === null
     ? field('', 'PENDIENTE', calibre.nota)
     : field(calibre.valor.textoLiteral ?? [calibre.valor.valorOriginal, calibre.valor.unidadOriginal].filter((x): x is string => Boolean(x)).join(' '), 'BIND',
-      calibre.valor.unidadOriginal === null ? 'BIND no indica unidad: se conserva el valor tal cual (sin MIL ni conversión). Puedes corregirlo.' : undefined);
+      calibre.valor.unidadOriginal === null ? 'BIND no indica unidad: se conserva el valor tal cual (sin MIL ni conversión). Puedes corregirlo.' : undefined, fuenteDescription(calibre));
 
   const color = sug?.color;
   const preset = color?.preset ?? null;
@@ -168,13 +171,13 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
         : field('', 'PENDIENTE', resina.valor === null ? resina.nota : `La resina ${resina.valor} no tiene casilla en estas familias: selecciona la composición.`, resina.procedencia),
       presentacion: fromCampo(campos.presentacion, (v) => v),
       cantidad: fromCampo(cantidad, (v) => String(v.cantidad)),
-      cantidadUnidad: cantidad.valor?.unidad ? field(cantidad.valor.unidad, originOf(cantidad), cantidad.nota) : field('', 'PENDIENTE', cantidad.nota),
+      cantidadUnidad: cantidad.valor?.unidad ? field(cantidad.valor.unidad, originOf(cantidad), cantidad.nota, fuenteDescription(cantidad)) : field('', 'PENDIENTE', cantidad.nota),
       ancho: fromCampo(campos.ancho, String),
       fuelleTotal: fuelleField(campos.fuelleTotal),
       fuelleDerecho: fuelleField(campos.fuelleDerecho),
       fuelleIzquierdo: fuelleField(campos.fuelleIzquierdo),
       largo: fromCampo(campos.largo, String),
-      unidadDimensiones: unidad.valor !== null && unidad.origen !== 'PENDIENTE' ? field(unidad.valor, originOf(unidad), unidad.nota) : field('', 'PENDIENTE', unidad.nota),
+      unidadDimensiones: unidad.valor !== null && unidad.origen !== 'PENDIENTE' ? field(unidad.valor, originOf(unidad), unidad.nota, fuenteDescription(unidad)) : field('', 'PENDIENTE', unidad.nota),
       calibre: calibreField,
       pesoLb: fromCampo(campos.pesoLb, String),
       // Etiqueta: Title completo de BIND, editable de forma independiente a la descripción.

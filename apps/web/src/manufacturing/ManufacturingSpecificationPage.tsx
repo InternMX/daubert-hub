@@ -62,6 +62,8 @@ const sourcePresentation: Record<FuenteDato, { label: string; color: 'default' |
   TITLE: { label: 'Extraído de Title', color: 'success' },
   CODE: { label: 'Inferido de Code', color: 'info' },
   TITLE_Y_CODE: { label: 'Corroborado por Title y Code', color: 'success' },
+  DESCRIPTION: { label: 'Extraído de Description', color: 'success' },
+  TITLE_Y_DESCRIPTION: { label: 'Corroborado por Title y Description', color: 'success' },
   CONTRADICCION: { label: 'Contradicción Title/Code', color: 'error' }
 };
 
