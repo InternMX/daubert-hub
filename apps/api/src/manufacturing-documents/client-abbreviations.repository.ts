@@ -52,10 +52,10 @@ export class ClientAbbreviationsRepository {
     return r.rows[0] ? vista(r.rows[0]) : null;
   }
 
-  async listar(c: PoolClient, estado: string | undefined, q: string | undefined): Promise<AbreviaturaVista[]> {
+  async listar(c: PoolClient, estado: string | undefined, q: string | undefined, clienteId?: string): Promise<AbreviaturaVista[]> {
     const r = await c.query<FilaLista>(
-      `${SELECT_VISTA} WHERE ($1::text IS NULL OR a.estado = $1) AND ($2::text IS NULL OR a.abreviatura ILIKE $2 || '%' OR e.nombre_comercial ILIKE '%' || $2 || '%')
-        ORDER BY (a.estado = 'PROPUESTA') DESC, a.created_at DESC, a.abreviatura_id DESC LIMIT 300`, [estado ?? null, q ?? null]);
+      `${SELECT_VISTA} WHERE ($1::text IS NULL OR a.estado = $1) AND ($2::text IS NULL OR a.abreviatura ILIKE $2 || '%' OR e.nombre_comercial ILIKE '%' || $2 || '%') AND ($3::bigint IS NULL OR a.cliente_empresa_id = $3::bigint)
+        ORDER BY (a.estado = 'PROPUESTA') DESC, a.created_at DESC, a.abreviatura_id DESC LIMIT 300`, [estado ?? null, q ?? null, clienteId ?? null]);
     return r.rows.map(vista);
   }
 

@@ -101,12 +101,13 @@ export class ClientAbbreviationsService {
     } catch (error) { throw traducir(error); }
   }
 
-  /** Administración (solo ADMIN): lista y conteos por estado. */
-  async listar(actor: ActorDocumental, estado: string | undefined, q: string | undefined): Promise<{ disponible: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> }> {
-    if (actor.role !== 'ADMIN') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo un ADMIN administra el catálogo de abreviaturas.' });
+  /** Administración (solo ADMIN): lista y conteos por estado. Con `clienteId` (ficha de un cliente) cualquier cuenta CONSULTA; la base limita a una cuenta GENERAL a lo confirmado y a sus propuestas. */
+  async listar(actor: ActorDocumental, estado: string | undefined, q: string | undefined, clienteId?: string): Promise<{ disponible: boolean; puedeResolver: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> }> {
+    const admin = actor.role === 'ADMIN';
+    if (!admin && clienteId === undefined) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo un ADMIN administra el catálogo de abreviaturas.' });
     return this.repo.conSesion(actor, async (c) => {
-      if (!(await this.abrev.disponible(c))) return { disponible: false, data: [], conteos: {} };
-      return { disponible: true, data: await this.abrev.listar(c, estado, q?.trim() || undefined), conteos: await this.abrev.contarPorEstado(c) };
+      if (!(await this.abrev.disponible(c))) return { disponible: false, puedeResolver: admin, data: [], conteos: {} };
+      return { disponible: true, puedeResolver: admin, data: await this.abrev.listar(c, estado, q?.trim() || undefined, clienteId), conteos: admin ? await this.abrev.contarPorEstado(c) : {} };
     });
   }
 }

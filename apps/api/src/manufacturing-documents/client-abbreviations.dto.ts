@@ -17,6 +17,8 @@ export class SuggestionsQueryDto {
 export class ListAbbreviationsQueryDto {
   @IsOptional() @IsIn([...ESTADOS_ABREVIATURA]) estado?: string;
   @IsOptional() @IsString() @MaxLength(60) q?: string;
+  /** Abreviaturas de UN cliente (core.empresas.empresa_id): la ficha del cliente. Una cuenta GENERAL solo puede consultar con este filtro. */
+  @IsOptional() @IsString() @Matches(ID_ENTERO) clienteId?: string;
 }
 
 export class CreateAbbreviationDto {

@@ -33,7 +33,7 @@ function rutas(ruta: string, usuario = testAdminUser) {
 
 describe('navegación de la configuración de Hojas de manufactura', () => {
   it('la configuración muestra la sección «Identificación de clientes» con su ruta bajo Hojas de manufactura', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: false, data: [], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: false, puedeResolver: false, data: [], conteos: {} });
     rutas(MANUFACTURING_SHEETS_SETTINGS_ROUTE);
     expect(await screen.findByRole('heading', { name: 'Configuración de hojas de manufactura' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Identificación de clientes' })).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe('navegación de la configuración de Hojas de manufactura', () => {
   });
 
   it('la ruta antigua /client-abbreviations redirige a la configuración (sin enlaces rotos)', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: true, data: [], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: true, puedeResolver: true, data: [], conteos: {} });
     rutas('/client-abbreviations');
     expect(await screen.findByRole('heading', { name: 'Identificación de clientes' })).toBeInTheDocument();
   });

@@ -8,6 +8,7 @@ import { CompanyStatusChip } from '../components/CompanyStatusChip';
 import { CompanyAddressesSection } from '../companies/CompanyAddressesSection';
 import { CompanyAliasesSection } from '../companies/CompanyAliasesSection';
 import { CompanyContactsSection } from '../companies/CompanyContactsSection';
+import { AbreviaturasDeCliente } from '../manufacturing/AbreviaturasDeCliente';
 import { ClientApiError, deactivateClient, getClient, reactivateClient, type ClientDetail } from '../services/clients';
 
 const roleLabels: Record<string, string> = {
@@ -96,6 +97,7 @@ export function ClientDetailPage() {
           {client.fiscal ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 2, sm: 6 }} sx={{ mt: 2 }}><DetailField label="Razón social" value={client.fiscal.legalName} /><DetailField label="RFC" value={client.fiscal.rfc} /></Stack> : <Typography color="text.secondary" sx={{ mt: 1 }}>No hay datos fiscales registrados.</Typography>}
         </Paper>
         <CompanyAliasesSection companyId={client.id} />
+        {isActive && <AbreviaturasDeCliente cliente={{ id: client.id, nombre: client.commercialName }} />}
         <CompanyContactsSection companyId={client.id} />
       </Stack>
       <Dialog open={confirming} onClose={() => !changingStatus && setConfirming(false)}>

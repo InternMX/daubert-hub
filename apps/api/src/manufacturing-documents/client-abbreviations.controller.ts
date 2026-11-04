@@ -22,10 +22,10 @@ export class ClientAbbreviationsController {
     return this.servicio.sugerir(actorDeSolicitud(request), query.codigo);
   }
 
-  /** Administración (ADMIN). */
+  /** Administración (ADMIN) o, con `clienteId`, consulta de la ficha de un cliente (la base limita a una cuenta GENERAL a lo confirmado y a sus propias propuestas). */
   @Get()
   list(@Query() query: ListAbbreviationsQueryDto, @Req() request: AuthenticatedRequest): ReturnType<ClientAbbreviationsService['listar']> {
-    return this.servicio.listar(actorDeSolicitud(request), query.estado, query.q);
+    return this.servicio.listar(actorDeSolicitud(request), query.estado, query.q, query.clienteId);
   }
 
   /** GENERAL propone; ADMIN registra (confirmada por omisión). */

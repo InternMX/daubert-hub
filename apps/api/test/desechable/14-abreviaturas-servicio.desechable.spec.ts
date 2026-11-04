@@ -108,3 +108,29 @@ describe('abreviaturas de cliente · servicio (instancia desechable con la 104)'
     expect((await falla(servicio.resolver(admin(), x.id, 'RECHAZAR', 'no aplica desde inactiva'))).body.code).toBe('TRANSICION_NO_PERMITIDA');
   });
 });
+
+describe('abreviaturas de cliente · ficha del cliente (consulta por empresa)', () => {
+  it('GENERAL consulta una ficha: ve lo confirmado y SUS propuestas (no las ajenas), sin poder resolver; sin clienteId sigue prohibido', async () => {
+    const c = await cliente('Ficha'); const otro = await cliente('Otra');
+    const conf = await servicio.crear(admin(), { abreviatura: pref(), clienteId: c });
+    const propia = await servicio.crear(actor(2), { abreviatura: pref(), clienteId: c });
+    const ajena = await servicio.crear(actor(3), { abreviatura: pref(), clienteId: c });
+    await servicio.crear(admin(), { abreviatura: pref(), clienteId: otro });
+    const r = await servicio.listar(actor(2), undefined, undefined, c);
+    expect(r).toMatchObject({ disponible: true, puedeResolver: false, conteos: {} });
+    expect(r.data.map((x) => x.id).sort()).toEqual([conf.id, propia.id].sort());
+    expect(r.data.map((x) => x.id)).not.toContain(ajena.id);
+    expect(r.data.every((x) => x.clienteId === c)).toBe(true);
+    expect((await falla(servicio.listar(actor(2), undefined, undefined))).status).toBe(403);
+  });
+
+  it('ADMIN ve todos los estados de ESE cliente y filtra por estado; puede resolver', async () => {
+    const c = await cliente('Admin ficha');
+    await servicio.crear(admin(), { abreviatura: pref(), clienteId: c });
+    await servicio.crear(actor(2), { abreviatura: pref(), clienteId: c });
+    const todos = await servicio.listar(admin(), undefined, undefined, c);
+    expect(todos).toMatchObject({ puedeResolver: true });
+    expect(todos.data).toHaveLength(2);
+    expect((await servicio.listar(admin(), 'PROPUESTA', undefined, c)).data).toHaveLength(1);
+  });
+});

@@ -63,10 +63,11 @@ export const estadoCatalogoAbreviaturas = (signal?: AbortSignal): Promise<{ disp
 export const sugerirClientes = (codigo: string, signal?: AbortSignal): Promise<Sugerencias> => call('GET', `/suggestions?codigo=${enc(codigo)}`, undefined, signal);
 export const crearAbreviatura = (cuerpo: NuevaAbreviatura): Promise<AbreviaturaVista> => call('POST', '', cuerpo);
 export const resolverAbreviatura = (id: string, accion: AccionAbreviatura, motivo?: string): Promise<AbreviaturaVista> => call('POST', `/${enc(id)}/resolve`, motivo ? { accion, motivo } : { accion });
-export const listarAbreviaturas = (filtro: { estado?: EstadoAbreviatura; q?: string }, signal?: AbortSignal): Promise<{ disponible: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> }> => {
+export const listarAbreviaturas = (filtro: { estado?: EstadoAbreviatura; q?: string; clienteId?: string }, signal?: AbortSignal): Promise<{ disponible: boolean; puedeResolver: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> }> => {
   const p = new URLSearchParams();
   if (filtro.estado) p.set('estado', filtro.estado);
   if (filtro.q?.trim()) p.set('q', filtro.q.trim());
+  if (filtro.clienteId) p.set('clienteId', filtro.clienteId);
   const s = p.toString();
   return call('GET', s ? `?${s}` : '', undefined, signal);
 };

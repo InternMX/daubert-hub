@@ -28,11 +28,11 @@ function acciones(a: AbreviaturaVista): Array<{ accion: AccionAbreviatura; texto
   }
 }
 
-function NuevaAsociacion({ onCreada }: { onCreada: (mensaje: string) => void }) {
+function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (mensaje: string) => void; fijo?: { id: string; nombre: string }; puedeResolver: boolean }) {
   const [abierta, setAbierta] = useState(false);
   const [busca, setBusca] = useState('');
   const [opciones, setOpciones] = useState<Array<{ id: string; nombre: string }>>([]);
-  const [cliente, setCliente] = useState<{ id: string; nombre: string } | null>(null);
+  const [cliente, setCliente] = useState<{ id: string; nombre: string } | null>(fijo ?? null);
   const [abreviatura, setAbreviatura] = useState('');
   const [alcance, setAlcance] = useState<Alcance>('GENERAL');
   const [patron, setPatron] = useState('');
@@ -53,17 +53,17 @@ function NuevaAsociacion({ onCreada }: { onCreada: (mensaje: string) => void }) 
     try {
       const r = await crearAbreviatura({ abreviatura: abreviatura.trim().toUpperCase(), clienteId: cliente.id, alcance, ...(alcance === 'GENERAL' ? {} : { codigoPatron: patron.trim().toUpperCase() }), evidencia: evidencia.trim() || undefined, soloProponer });
       onCreada(`Abreviatura ${r.abreviatura} → ${r.cliente} registrada como ${r.estado === 'CONFIRMADA' ? 'confirmada' : 'propuesta'}.`);
-      setAbierta(false); setAbreviatura(''); setPatron(''); setEvidencia(''); setCliente(null);
+      setAbierta(false); setAbreviatura(''); setPatron(''); setEvidencia(''); setCliente(fijo ?? null);
     } catch (e) { setError(mensajeError(e)); } finally { setOcupado(false); }
   };
-  if (!abierta) return <Box><Button variant="outlined" onClick={() => setAbierta(true)}>Registrar abreviatura</Button></Box>;
+  if (!abierta) return <Box><Button variant="outlined" onClick={() => setAbierta(true)}>{puedeResolver ? 'Registrar abreviatura' : 'Proponer abreviatura'}</Button></Box>;
   return (
     <Paper variant="outlined" sx={{ p: 2 }} component="section" aria-label="Registrar abreviatura">
       <Stack spacing={2}>
         <Typography variant="h2" sx={{ fontSize: '1.0625rem' }}>Registrar abreviatura</Typography>
-        <Autocomplete options={opciones} value={cliente} inputValue={busca} onInputChange={(_e, v) => setBusca(v)} onChange={(_e, v) => setCliente(v)} filterOptions={(x) => x}
+        {fijo ? <Typography variant="body2">Cliente: <strong>{fijo.nombre}</strong></Typography> : <Autocomplete options={opciones} value={cliente} inputValue={busca} onInputChange={(_e, v) => setBusca(v)} onChange={(_e, v) => setCliente(v)} filterOptions={(x) => x}
           getOptionLabel={(o) => o.nombre} isOptionEqualToValue={(o, v) => o.id === v.id} noOptionsText="Escribe al menos 2 letras del cliente (debe tener rol CLIENTE activo)"
-          renderInput={(p) => <TextField {...p} label="Cliente (empresa con rol CLIENTE activo)" size="small" />} />
+          renderInput={(p) => <TextField {...p} label="Cliente (empresa con rol CLIENTE activo)" size="small" />} />}
         <TextField size="small" label="Abreviatura (2 a 5 caracteres)" value={abreviatura} onChange={(e) => setAbreviatura(e.target.value.toUpperCase().slice(0, 5))} sx={{ maxWidth: 260 }} />
         <RadioGroup value={alcance} onChange={(e) => setAlcance(e.target.value as Alcance)} aria-label="Alcance">
           <FormControlLabel value="GENERAL" control={<Radio size="small" />} label="General (la abreviatura sola)" />
@@ -74,8 +74,8 @@ function NuevaAsociacion({ onCreada }: { onCreada: (mensaje: string) => void }) 
         <TextField size="small" label="Evidencia o nota (opcional)" value={evidencia} onChange={(e) => setEvidencia(e.target.value)} multiline minRows={2} inputProps={{ maxLength: 1000 }} />
         {error && <Alert severity="error">{error}</Alert>}
         <Stack direction="row" spacing={1}>
-          <Button variant="contained" disabled={!valida || ocupado} onClick={() => void guardar(false)}>Registrar y confirmar</Button>
-          <Button disabled={!valida || ocupado} onClick={() => void guardar(true)}>Solo proponer</Button>
+          {puedeResolver && <Button variant="contained" disabled={!valida || ocupado} onClick={() => void guardar(false)}>Registrar y confirmar</Button>}
+          <Button variant={puedeResolver ? 'text' : 'contained'} disabled={!valida || ocupado} onClick={() => void guardar(true)}>{puedeResolver ? 'Solo proponer' : 'Proponer'}</Button>
           <Button color="inherit" disabled={ocupado} onClick={() => setAbierta(false)}>Cancelar</Button>
         </Stack>
       </Stack>
@@ -84,8 +84,8 @@ function NuevaAsociacion({ onCreada }: { onCreada: (mensaje: string) => void }) 
 }
 
 /** Administración de abreviaturas (contenido reutilizable: hoy en Configuración de Hojas de manufactura; mañana también en el detalle de un cliente). */
-export function AdministracionAbreviaturas() {
-  const [estado, setEstado] = useState<'' | EstadoAbreviatura>('PROPUESTA');
+export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string; nombre: string } } = {}) {
+  const [estado, setEstado] = useState<'' | EstadoAbreviatura>(cliente ? '' : 'PROPUESTA');
   const [q, setQ] = useState('');
   const [datos, setDatos] = useState<{ disponible: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> } | null>(null);
   const [error, setError] = useState('');
@@ -98,10 +98,10 @@ export function AdministracionAbreviaturas() {
   useEffect(() => {
     const c = new AbortController();
     const t = setTimeout(() => {
-      listarAbreviaturas({ estado: estado || undefined, q }, c.signal).then((r) => { setDatos(r); setError(''); }).catch((e: unknown) => { if (!(e instanceof DOMException)) setError(mensajeError(e)); });
+      listarAbreviaturas({ estado: estado || undefined, q, clienteId: cliente?.id }, c.signal).then((r) => { setDatos(r); setError(''); }).catch((e: unknown) => { if (!(e instanceof DOMException)) setError(mensajeError(e)); });
     }, q ? 300 : 0);
     return () => { clearTimeout(t); c.abort(); };
-  }, [estado, q, recarga]);
+  }, [estado, q, recarga, cliente?.id]);
 
   const resolver = useCallback(async (a: AbreviaturaVista, accion: AccionAbreviatura, texto?: string): Promise<void> => {
     setOcupado(true); setError('');
@@ -117,7 +117,7 @@ export function AdministracionAbreviaturas() {
         {datos && !datos.disponible && <Alert severity="info" data-testid="catalogo-no-habilitado">El catálogo de abreviaturas aún no está habilitado en este entorno (falta aplicar la migración correspondiente). Las hojas de manufactura siguen funcionando sin sugerencias.</Alert>}
         {datos?.disponible && (
           <>
-            <NuevaAsociacion onCreada={(m) => { setAviso(m); setRecarga((n) => n + 1); }} />
+            <NuevaAsociacion fijo={cliente} puedeResolver={datos.puedeResolver} onCreada={(m) => { setAviso(m); setRecarga((n) => n + 1); }} />
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value as '' | EstadoAbreviatura)} sx={{ minWidth: 240 }}>
                 {ESTADOS.map((o) => <MenuItem key={o.v} value={o.v}>{o.t}{o.v && datos.conteos[o.v] ? ` (${datos.conteos[o.v]})` : ''}</MenuItem>)}
@@ -141,7 +141,7 @@ export function AdministracionAbreviaturas() {
                             <TableCell>{ORIGEN[a.origen] ?? a.origen} · {a.propuestaPor}<br /><Typography variant="caption" color="text.secondary">{a.documentos > 0 ? `${a.documentos} hojas · ${a.codigos} códigos distintos` : 'Sin conteo de evidencia'}{a.evidencia ? ` · ${a.evidencia}` : ''}</Typography></TableCell>
                             <TableCell>{a.resueltaPor ? <>{a.resueltaPor}<br /><Typography variant="caption" color="text.secondary">{fecha(a.resueltaEn)}{a.motivo ? ` · ${a.motivo}` : ''}</Typography></> : '—'}</TableCell>
                             <TableCell align="right">
-                              {acciones(a).map((x) => <Button key={x.accion} size="small" color={x.color} disabled={ocupado} aria-label={`${x.texto} ${a.abreviatura} de ${a.cliente}`} onClick={() => (x.accion === 'RECHAZAR' ? setRechazando(a) : void resolver(a, x.accion))}>{x.texto}</Button>)}
+                              {datos.puedeResolver && acciones(a).map((x) => <Button key={x.accion} size="small" color={x.color} disabled={ocupado} aria-label={`${x.texto} ${a.abreviatura} de ${a.cliente}`} onClick={() => (x.accion === 'RECHAZAR' ? setRechazando(a) : void resolver(a, x.accion))}>{x.texto}</Button>)}
                             </TableCell>
                           </TableRow>
                         ))}

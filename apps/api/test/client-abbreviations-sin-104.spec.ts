@@ -27,7 +27,7 @@ describe('abreviaturas de cliente sin la migración 104', () => {
     const { s } = servicio(false);
     await expect(s.crear(actorDe('ADMIN'), { abreviatura: 'AUD', clienteId: '1' })).rejects.toMatchObject({ status: 409, response: { code: 'CATALOGO_NO_HABILITADO' } });
     await expect(s.resolver(actorDe('ADMIN'), '00000000-0000-4000-8000-000000000000', 'CONFIRMAR', undefined)).rejects.toMatchObject({ status: 409 });
-    expect(await s.listar(actorDe('ADMIN'), undefined, undefined)).toEqual({ disponible: false, data: [], conteos: {} });
+    expect(await s.listar(actorDe('ADMIN'), undefined, undefined)).toEqual({ disponible: false, puedeResolver: true, data: [], conteos: {} });
   });
 
   it('solo un ADMIN lista y resuelve, aun sin consultar la base', async () => {

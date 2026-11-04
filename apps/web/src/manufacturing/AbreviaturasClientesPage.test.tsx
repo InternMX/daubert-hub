@@ -18,21 +18,21 @@ const montar = (usuario = testAdminUser) => render(<TestAuthProvider value={{ us
 
 describe('administración de abreviaturas de clientes', () => {
   it('solo un ADMIN entra a la página; una cuenta GENERAL es redirigida', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: true, data: [], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: true, puedeResolver: true, data: [], conteos: {} });
     montar(testGeneralUser);
     expect(await screen.findByText('Fuera')).toBeInTheDocument();
     expect(m.listarAbreviaturas).not.toHaveBeenCalled();
   });
 
   it('catálogo no habilitado: mensaje claro, sin tabla ni formulario; el resto de la app no se ve afectado', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: false, data: [], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: false, puedeResolver: false, data: [], conteos: {} });
     montar();
     expect(await screen.findByTestId('catalogo-no-habilitado')).toHaveTextContent(/aún no está habilitado/);
     expect(screen.queryByRole('button', { name: 'Registrar abreviatura' })).toBeNull();
   });
 
   it('muestra por omisión las propuestas por revisar con procedencia; el ADMIN confirma con una acción explícita', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: true, data: [fila({})], conteos: { PROPUESTA: 1, CONFIRMADA: 3 } });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: true, puedeResolver: true, data: [fila({})], conteos: { PROPUESTA: 1, CONFIRMADA: 3 } });
     m.resolverAbreviatura.mockResolvedValue(fila({ estado: 'CONFIRMADA' }));
     montar();
     const f = await screen.findByTestId('abreviatura-fila');
@@ -46,7 +46,7 @@ describe('administración de abreviaturas de clientes', () => {
   });
 
   it('rechazar exige un motivo', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: true, data: [fila({})], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: true, puedeResolver: true, data: [fila({})], conteos: {} });
     m.resolverAbreviatura.mockResolvedValue(fila({ estado: 'RECHAZADA' }));
     montar();
     await userEvent.click(await screen.findByRole('button', { name: 'Rechazar AUD de AUDI' }));
@@ -58,7 +58,7 @@ describe('administración de abreviaturas de clientes', () => {
   });
 
   it('una confirmada se puede inactivar y una inactiva reactivar; una rechazada no ofrece acciones', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: true, data: [fila({ id: 'c', estado: 'CONFIRMADA' }), fila({ id: 'i', abreviatura: 'XYZ', estado: 'INACTIVA' }), fila({ id: 'r', abreviatura: 'RRR', estado: 'RECHAZADA', motivo: 'no aplica', resueltaPor: 'admin' })], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: true, puedeResolver: true, data: [fila({ id: 'c', estado: 'CONFIRMADA' }), fila({ id: 'i', abreviatura: 'XYZ', estado: 'INACTIVA' }), fila({ id: 'r', abreviatura: 'RRR', estado: 'RECHAZADA', motivo: 'no aplica', resueltaPor: 'admin' })], conteos: {} });
     montar();
     await screen.findAllByTestId('abreviatura-fila');
     expect(screen.getByRole('button', { name: 'Inactivar AUD de AUDI' })).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe('administración de abreviaturas de clientes', () => {
   });
 
   it('un error del servidor se muestra en español y no rompe la lista', async () => {
-    m.listarAbreviaturas.mockResolvedValue({ disponible: true, data: [fila({})], conteos: {} });
+    m.listarAbreviaturas.mockResolvedValue({ disponible: true, puedeResolver: true, data: [fila({})], conteos: {} });
     m.resolverAbreviatura.mockRejectedValue(new svc.AbbreviationApiError('CLIENTE_INVALIDO', 422));
     montar();
     await userEvent.click(await screen.findByRole('button', { name: 'Confirmar AUD de AUDI' }));
