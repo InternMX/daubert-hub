@@ -40,6 +40,17 @@ async function buscar(user: ReturnType<typeof userEvent.setup>, code = 'SCHFPMG0
 
 const campo = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
 const frameOf = (label: string) => campo(label).closest('div.MuiBox-root') as HTMLElement;
+// La procedencia vive en un ícono de información (Popover): se abre, se lee y se cierra con Escape.
+async function leerProcedencia(frame: HTMLElement): Promise<{ texto: string; fuentes: string[]; nota: string }> {
+  const boton = within(frame).queryByTestId('procedencia-info');
+  if (!boton) return { texto: '', fuentes: [], nota: '' };
+  fireEvent.click(boton);
+  const detalle = await screen.findByTestId('procedencia-detalle');
+  const lectura = { texto: detalle.textContent ?? '', fuentes: within(detalle).queryAllByTestId('source-chip').map((c) => c.textContent ?? ''), nota: within(detalle).queryByTestId('detalle-nota')?.textContent ?? '' };
+  fireEvent.keyDown(detalle, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByTestId('procedencia-detalle')).not.toBeInTheDocument());
+  return lectura;
+}
 const CLIENTE = 'Cliente (opcional)';
 const clienteCatalogo = { id: 'c-1', commercialName: 'Schneider Electric', companyType: 'CLIENTE', status: 'ACTIVO', clientStatus: 'ACTIVO' as const, notes: null, roles: ['CLIENTE'], fiscal: null };
 
@@ -118,12 +129,15 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(campo('Ancho').value).toBe('13');
     expect(campo('Calibre').value).toBe('3 MIL');
     expect(campo('Resina VCI').value).toBe('PMG AL 3%');
-    expect(within(frameOf('Resina VCI')).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Resina VCI'))).texto).toContain('Sugerido por el sistema');
     expect(campo('Fecha de emisión de la hoja').value).toBe(localIsoDate());
     expect(campo('Etiqueta').value).toBe('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
     expect(campo('Texto del color en el documento').value).toBe('DAUBERT AZUL AL 2%');
     expect(screen.getByTestId('color-hex-readonly')).toHaveTextContent('#538DD5');
-    expect(within(frameOf('Ancho')).getByText('Recuperado de BIND')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Ancho'))).texto).toContain('Recuperado de BIND');
+    expect(screen.queryByText('Ver detalles')).not.toBeInTheDocument();                                    // sin enlaces repetidos bajo los campos
+    expect(within(frameOf('Ancho')).getByRole('button', { name: 'Procedencia de Ancho' })).toHaveAttribute('aria-haspopup', 'dialog');   // ícono accesible (teclado/táctil), no solo hover
+    expect(within(frameOf('Ancho')).queryByText('Recuperado de BIND')).not.toBeInTheDocument();
     // las familias disponibles vienen de la configuración del backend
     for (const familia of familyConfigs) expect(screen.getByRole('radio', { name: familia.nombre })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
@@ -210,7 +224,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(campo('Fuelle izquierdo').value).toBe('24');
     expect(campo('Largo').value).toBe('70.9');
     expect(campo('Calibre').value).toBe('2.7');
-    expect(within(frameOf('Fuelle derecho')).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Fuelle derecho'))).texto).toContain('Sugerido por el sistema');
     expect(within(frameOf('Unidad de las medidas')).getByText('Pendiente de confirmar')).toBeInTheDocument();
     // editar el fuelle total recalcula las mitades derivadas
     fireEvent.change(campo('Fuelle total'), { target: { value: '50' } });
@@ -488,9 +502,8 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     await buscar(user, 'COEXAZUL');
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(campo('Producto').value).toBe('Bolsa con Fuelle - 20% de material reciclado');
-    expect(screen.queryByText(/no es una característica universal/)).not.toBeInTheDocument();                // la explicación completa queda en el detalle expandible
-    fireEvent.click(within(frameOf('Producto')).getByTestId('detalle-toggle'));
-    expect(screen.getByText(/no es una característica universal/)).toBeInTheDocument();
+    expect(screen.queryByText(/no es una característica universal/)).not.toBeInTheDocument();                // la explicación completa queda en el ícono de información
+    expect((await leerProcedencia(frameOf('Producto'))).nota).toMatch(/no es una característica universal/);
     fireEvent.change(campo('Peso de la capa interior (lb)'), { target: { value: '0.20000' } });
     fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
     expect(campo('Peso de la capa interior (lb)').value).toBe('0.20000');
@@ -505,7 +518,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     await user.click(screen.getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' }));
     await user.click(screen.getByRole('button', { name: 'Reemplazar pesos por sugerencias actuales' }));
     expect(campo('Peso de la capa interior (lb)').value).toBe('0.25133');
-    expect(within(frameOf('Peso de la capa interior (lb)')).getByText('Calculado por el sistema')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Peso de la capa interior (lb)'))).texto).toContain('Calculado por el sistema');
     expect(campo('Libras de VCI de la capa interior').value).toBe('0.010053');      // 0.25133 × 4 %
   });
   it('libras de VCI: calculadas por capa, el valor manual se conserva con aviso y «Restaurar» vuelve al cálculo', async () => {
@@ -517,7 +530,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(campo('Libras de VCI de la capa interior').value).toBe('0.005239');
     expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.002619');
     expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
-    expect(within(frameOf('Libras de VCI de la capa interior')).getByText('Calculado por el sistema')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Libras de VCI de la capa interior'))).texto).toContain('Calculado por el sistema');
     // la coherencia del cálculo es del backend: la simulamos con su misma regla (id COEX_VCI:lbVciInterior)
     previewMock.mockImplementation(async (familia, datos) => ({
       html: '<p>coex</p>', familia, borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null,
@@ -561,7 +574,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(screen.getAllByRole('radio', { name: /COEX/ })).toHaveLength(1);              // una sola opción de familia: COEX
     expect(screen.getByRole('radio', { name: 'COEX' })).toBeChecked();
     expect(campo('Variante COEX')).toBeInTheDocument();
-    expect(within(frameOf('Variante COEX')).getByText('Sugerido por el sistema')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Variante COEX'))).texto).toContain('Sugerido por el sistema');
     expect(campo('Texto del color en el documento').value).toBe('AZUL');
     expect(screen.queryByLabelText('Resina VCI')).not.toBeInTheDocument();                // sin concentración general de 3 %
     expect(screen.getByTestId('capa-interior')).toHaveTextContent('VCI PMG al 4%');
@@ -569,7 +582,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(screen.getByTestId('capa-exterior')).toHaveTextContent('SIN VCI');
     expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
     expect(campo('Peso de la capa interior (lb)').value).toBe('0.13097');
-    expect(within(frameOf('Peso de la capa interior (lb)')).getByText('Calculado por el sistema')).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Peso de la capa interior (lb)'))).texto).toContain('Calculado por el sistema');
     expect(campo('Fuelle derecho').value).toBe('11.8');
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeDisabled();
     expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();  // sin selector de color libre: solo la variante
@@ -611,7 +624,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
 });
 
 describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 30_000 }, () => {
-  const chipsDe = (label: string) => within(frameOf(label)).queryAllByTestId('source-chip').map((c) => c.textContent);
+  const chipsDe = async (label: string) => (await leerProcedencia(frameOf(label))).fuentes;
 
   it('composición inferida del Code: se muestra como «Inferido de Code» (y sugerida), nunca como extraída del Title; el material interpretado también', async () => {
     const user = userEvent.setup();
@@ -621,21 +634,21 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
     const composicion = screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
-    expect(within(composicion).getByText('Sugerido por el sistema')).toBeInTheDocument();
-    expect(within(composicion).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
-    fireEvent.click(within(composicion).getByTestId('detalle-toggle'));
-    expect(within(composicion).getByText(/Inferida de la clave PMG del código/)).toBeInTheDocument();
+    const lectura = await leerProcedencia(composicion);
+    expect(lectura.texto).toContain('Sugerido por el sistema');
+    expect(lectura.fuentes).toEqual(['Inferido de Code']);
+    expect(lectura.nota).toMatch(/Inferida de la clave PMG del código/);
+    expect(within(composicion).queryByText('Sugerido por el sistema')).not.toBeInTheDocument();           // el campo no repite la etiqueta debajo
     expect(screen.getByTestId('material-row')).toHaveTextContent('Film / plástico · clave PMG');
     expect(within(screen.getByTestId('material-row')).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
     expect(screen.queryByText(/se infirió de la clave PMG del código/)).not.toBeInTheDocument();         // la procedencia ya la dicen el chip y la nota del campo: no se repite como alerta
     // una corrección manual reemplaza la procedencia y se puede restaurar
     await user.click(screen.getByRole('radio', { name: 'CP5000' }));
-    expect(within(composicion).queryByTestId('source-chip')).not.toBeInTheDocument();
     expect(within(composicion).getByText('Editado por el usuario')).toBeInTheDocument();
     expect(campo('Resina VCI').value).toBe('CP5000 AL 3%');            // la resina sugerida (no editada) sigue a la composición del usuario
     await user.click(within(composicion).getByRole('button', { name: 'Restaurar Composición' }));
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
-    expect(within(composicion).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
+    expect((await leerProcedencia(composicion)).fuentes).toEqual(['Inferido de Code']);
   });
 
   it('Title y Code coinciden: «Corroborado por Title y Code»; solo Title: «Extraído de Title»', async () => {
@@ -645,10 +658,10 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     await buscar(user);
     await screen.findByRole('region', { name: 'Producto en BIND' });
     const composicion = () => screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
-    expect(within(composicion()).getByTestId('source-chip')).toHaveTextContent('Corroborado por Title y Code');
+    expect((await leerProcedencia(composicion())).fuentes).toEqual(['Corroborado por Title y Code']);
     await user.click(screen.getByRole('button', { name: 'Buscar en BIND' }));
-    await waitFor(() => expect(within(composicion()).getByTestId('source-chip')).toHaveTextContent('Extraído de Title'));
-    expect(chipsDe('Calibre')).toEqual([]);                                 // los demás campos no muestran fuente de Code
+    await waitFor(async () => expect((await leerProcedencia(composicion())).fuentes).toEqual(['Extraído de Title']));
+    expect(await chipsDe('Calibre')).toEqual([]);                                 // los demás campos no muestran fuente de Code
   });
 
   it('contradicción Title/Code: se conserva el Title, se muestra «Contradicción Title/Code» y la advertencia', async () => {

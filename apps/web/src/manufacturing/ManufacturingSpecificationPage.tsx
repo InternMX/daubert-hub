@@ -1,8 +1,9 @@
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, IconButton, InputAdornment, MenuItem, Paper, Popover, Radio, RadioGroup, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
@@ -86,36 +87,66 @@ interface FieldFrameProps {
   children: ReactNode;
 }
 
-// Marco común de cada campo: procedencia, nota del sistema, valor original de BIND cuando el usuario lo modificó y botón para restaurarlo.
+// Marco común de cada campo. Solo se ve lo que pide una acción (pendiente, contradicción, editado por el usuario, cliente sin vincular); la procedencia completa
+// (origen, fuente, transformación y precauciones) vive en un ícono de información junto a la etiqueta que abre un Popover (ratón, teclado y táctil).
+const ORIGENES_CON_DETALLE: ReadonlySet<DisplayOrigin> = new Set<DisplayOrigin>(['BIND', 'SUGERIDO', 'CALCULADO']);
+
+function ProcedenciaInfo({ fieldKey, state }: { fieldKey: FieldKey; state: SpecificationForm['fields'][FieldKey] }) {
+  const [ancla, setAncla] = useState<HTMLElement | null>(null);
+  const id = useId();
+  const base = state.base;
+  const nota = base.note && fieldKey !== 'fechaEmision' ? base.note : null;
+  const etiqueta = originPresentation[base.origin as DisplayOrigin]?.label ?? '';
+  return (
+    <>
+      <Tooltip title={etiqueta} placement="top">
+        <IconButton size="small" data-testid="procedencia-info" aria-label={`Procedencia de ${FIELD_LABELS[fieldKey]}`} aria-haspopup="dialog" aria-expanded={ancla !== null} aria-controls={ancla ? id : undefined}
+          onClick={(e) => setAncla(e.currentTarget)}
+          sx={{ position: 'absolute', top: -10, right: 4, p: 0.25, bgcolor: 'background.paper', color: 'text.secondary', '&:hover': { bgcolor: 'background.paper' } }}>
+          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Tooltip>
+      <Popover id={id} open={ancla !== null} anchorEl={ancla} onClose={() => setAncla(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }} slotProps={{ paper: { sx: { maxWidth: 'min(340px, calc(100vw - 32px))', p: 1.5 }, role: 'dialog', 'aria-label': `Procedencia de ${FIELD_LABELS[fieldKey]}` } }}>
+        <Stack spacing={0.75} data-testid="procedencia-detalle">
+          <Typography variant="subtitle2">{FIELD_LABELS[fieldKey]}</Typography>
+          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+            <OriginChip origin={base.origin as DisplayOrigin} />
+            {base.fuente && <SourceChip source={base.fuente} />}
+          </Stack>
+          {nota && <Typography variant="body2" color="text.secondary" data-testid="detalle-nota">{nota}</Typography>}
+          {base.origin === 'SUGERIDO' && <Typography variant="caption" color="text.secondary">Es una propuesta editable: revísala antes de finalizar.</Typography>}
+        </Stack>
+      </Popover>
+    </>
+  );
+}
+
 function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
   const state = form.fields[fieldKey];
   const origin = displayOrigin(state);
   const edited = isEdited(state) && state.base.origin !== 'SIN_DATO';
-  // La explicación completa de una sugerencia o cálculo no estorba: queda en un detalle expandible (los avisos PENDIENTES y las incidencias siguen visibles).
-  const [verDetalle, setVerDetalle] = useState(false);
-  const nota = (origin === 'SUGERIDO' || origin === 'CALCULADO') && state.base.note && fieldKey !== 'fechaEmision' ? state.base.note : null;
+  const conDetalle = ORIGENES_CON_DETALLE.has(state.base.origin as DisplayOrigin) && state.base.value !== '';
+  const chipVisible = origin === 'PENDIENTE' || origin === 'USUARIO' || origin === 'CATALOGO' || origin === 'PROVISIONAL';
+  const contradiccion = state.base.fuente === 'CONTRADICCION';
   return (
-    <Box sx={{ minWidth: 0 }} data-field={fieldKey}>
+    <Box sx={{ minWidth: 0, position: 'relative' }} data-field={fieldKey}>
+      {conDetalle && <ProcedenciaInfo fieldKey={fieldKey} state={state} />}
       {children}
-      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
-        <OriginChip origin={origin} />
-        {state.base.fuente && origin !== 'USUARIO' && <SourceChip source={state.base.fuente} />}
-        {edited && (
-          <>
-            <Typography variant="caption" color="text.secondary">{state.base.value === '' ? 'Sin valor inicial.' : `${state.base.origin === 'BIND' ? 'Valor de BIND' : 'Valor inicial sugerido'}: ${state.base.value}`}</Typography>
-            <Tooltip title={state.base.origin === 'BIND' ? 'Restaurar el valor de BIND' : 'Restaurar sugerencia (en capas usa el peso total actual)'}>
-              <IconButton size="small" aria-label={`Restaurar ${FIELD_LABELS[fieldKey]}`} onClick={() => onRestore(fieldKey)}><RestoreRoundedIcon fontSize="inherit" /></IconButton>
-            </Tooltip>
-          </>
-        )}
-      </Stack>
-      {origin === 'PENDIENTE' && state.base.note && <Typography variant="caption" color="warning.main" display="block">{state.base.note}</Typography>}
-      {nota && (
-        <>
-          <Button size="small" variant="text" sx={{ p: 0, minWidth: 0, textTransform: 'none' }} data-testid="detalle-toggle" aria-expanded={verDetalle} onClick={() => setVerDetalle((v) => !v)}>{verDetalle ? 'Ocultar detalles' : 'Ver detalles'}</Button>
-          {verDetalle && <Typography variant="caption" color="text.secondary" display="block" data-testid="detalle-nota">{nota}</Typography>}
-        </>
+      {(chipVisible || contradiccion || edited) && (
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+          {chipVisible && <OriginChip origin={origin} />}
+          {contradiccion && origin !== 'USUARIO' && <SourceChip source="CONTRADICCION" />}
+          {edited && (
+            <>
+              <Typography variant="caption" color="text.secondary">{state.base.value === '' ? 'Sin valor inicial.' : `${state.base.origin === 'BIND' ? 'Valor de BIND' : 'Valor inicial sugerido'}: ${state.base.value}`}</Typography>
+              <Tooltip title={state.base.origin === 'BIND' ? 'Restaurar el valor de BIND' : 'Restaurar sugerencia (en capas usa el peso total actual)'}>
+                <IconButton size="small" aria-label={`Restaurar ${FIELD_LABELS[fieldKey]}`} onClick={() => onRestore(fieldKey)}><RestoreRoundedIcon fontSize="inherit" /></IconButton>
+              </Tooltip>
+            </>
+          )}
+        </Stack>
       )}
+      {origin === 'PENDIENTE' && state.base.note && <Typography variant="caption" color="warning.main" display="block">{state.base.note}</Typography>}
       {state.confirmed && <Typography variant="caption" display="block">Peso revisado para este borrador; protegido frente al recálculo automático.</Typography>}
       <IncidenciasDeCampo campo={fieldKey} />
     </Box>
