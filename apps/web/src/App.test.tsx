@@ -137,6 +137,12 @@ describe('alta de clientes reservada a ADMIN (interfaz)', () => {
     expect(screen.queryByRole('heading', { level: 1, name: 'Nuevo cliente' })).not.toBeInTheDocument();
   });
 
+  it('una cuenta GENERAL que abre /clients/:id/edit directamente es redirigida; ADMIN abre la edición', async () => {
+    activityMock.mockResolvedValue([]);
+    renderApp('/clients/1/edit', testGeneralUser);
+    expect(screen.queryByText(/Editar cliente/)).not.toBeInTheDocument();
+  });
+
   it('ADMIN sí abre el formulario de alta', () => {
     renderApp('/clients/new', testAdminUser);
     expect(screen.getByRole('heading', { level: 1, name: 'Nuevo cliente' })).toBeInTheDocument();

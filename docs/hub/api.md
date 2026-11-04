@@ -44,7 +44,7 @@ Prefijo global: `/api`. Fuente: decoradores de `apps/api/src/**/*.controller.ts`
 | Módulo | Rutas |
 | --- | --- |
 | Proveedores | `GET/POST /api/providers`, `GET/PATCH /api/providers/:id`, `POST …/:id/deactivate`, `…/:id/reactivate` |
-| Clientes | `GET/POST /api/clients` (el alta `POST` es solo ADMIN: 403 `ROLE_NOT_ALLOWED` para GENERAL), `GET/PATCH /api/clients/:clientId`, `POST …/deactivate`, `…/reactivate` |
+| Clientes | `GET/POST /api/clients` (`GET` abierto a GENERAL y ADMIN; `POST`, `PATCH`, `…/deactivate` y `…/reactivate` son solo ADMIN: 403 `ROLE_NOT_ALLOWED` para GENERAL), `GET/PATCH /api/clients/:clientId` |
 | Contactos | `POST /api/contacts`, `PATCH /api/contacts/:id`, `POST …/deactivate`, `…/reactivate`; `POST /api/contacts/:id/methods`; `PATCH /api/contact-methods/:id`, `POST …/deactivate`, `…/reactivate` |
 | Directorio | `GET /api/contact-directory/companies`, `GET /api/contact-directory/companies/:id` |
 | Empresas | `GET /api/companies/search`, `GET /api/companies/dropbox-path-suggestion` (solo cálculo) |

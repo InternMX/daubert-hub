@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { CanActivate, ExecutionContext, INestApplication, Injectable, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { CanActivate, ExecutionContext, INestApplication, Injectable, UnauthorizedException } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -7,9 +7,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ClientsController } from '../../src/clients/clients.controller';
 import { ClientsRepository } from '../../src/clients/clients.repository';
 import { ClientsService } from '../../src/clients/clients.service';
+import { CreateClientDto } from '../../src/clients/dto/create-client.dto';
+import { ListClientsDto } from '../../src/clients/dto/list-clients.dto';
+import { UpdateClientDto } from '../../src/clients/dto/update-client.dto';
+import { SafeExceptionFilter } from '../../src/common/http-exception.filter';
+import { createGlobalValidationPipe } from '../../src/config/validation-pipe';
 import type { DatabaseService } from '../../src/database/database.service';
 import { RolesGuard } from '../../src/security/roles.guard';
+import { emitirTiposDeParametros } from '../support/design-metadata';
 import { poolAdmin, poolApp } from './entorno';
+
+// Configuración EFECTIVA de la API: el mismo ValidationPipe global y SafeExceptionFilter de main.ts, con los metadatos de tipos que emite `tsc` (vitest no los emite).
+emitirTiposDeParametros(ClientsController, { list: [ListClientsDto], detail: [String], create: [CreateClientDto, Object], update: [String, UpdateClientDto, Object], deactivate: [String, Object], reactivate: [String, Object] });
 
 // Alta de clientes por HTTP real (Nest + RolesGuard global + ClientsService/ClientsRepository REALES) contra la instancia desechable: ADMIN crea, GENERAL recibe 403 sin crear nada, y los duplicados se detectan
 // sin generar empresas repetidas. La réplica mínima no trae las tablas fiscales de core: se completan aquí (solo en la instancia desechable).
@@ -49,7 +58,8 @@ beforeAll(async () => {
     providers: [{ provide: APP_GUARD, useClass: SesionDePrueba }, { provide: APP_GUARD, useFactory: (r: Reflector) => new RolesGuard(r), inject: [Reflector] }]
   }).compile();
   app = modulo.createNestApplication();
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+  app.useGlobalPipes(createGlobalValidationPipe());
+  app.useGlobalFilters(new SafeExceptionFilter());
   await app.init();
 });
 afterAll(async () => { await app.close(); });
@@ -64,9 +74,10 @@ describe('alta de clientes · ADMIN crea, GENERAL no (HTTP + base desechable)', 
     const aud = await poolAdmin.query("SELECT usuario_id FROM audit.cambios WHERE esquema = 'core' AND tabla = 'empresas' AND datos_nuevos->>'nombre_comercial' = $1", [nuevo]);
     expect(aud.rowCount === 0 || aud.rows[0].usuario_id === '1').toBe(true);          // la réplica no instala el trigger de core: si existiera, la identidad es la del ADMIN
     const conFiscal = nombre('Con Fiscal');
-    const f = await post('ADMIN', { commercialName: conFiscal, fiscal: { legalName: 'Con Fiscal SA de CV', rfc: 'CFI010101AAA' } });
+    const f = await post('ADMIN', { commercialName: conFiscal, fiscal: { legalName: 'Con Fiscal SA de CV', rfc: 'cfi010101aaa' } });
     expect(f.status).toBe(201);
-    expect(f.body.data.fiscal).toMatchObject({ legalName: 'Con Fiscal SA de CV', rfc: 'CFI010101AAA' });
+    expect(f.body.data.fiscal).toMatchObject({ legalName: 'Con Fiscal SA de CV', rfc: 'CFI010101AAA' });      // el DTO real convierte el RFC a mayúsculas antes de guardarlo
+    expect((await poolAdmin.query('SELECT rfc FROM core.empresas_fiscales WHERE empresa_id = $1', [f.body.data.id])).rows[0].rfc).toBe('CFI010101AAA');
   });
 
   it('GENERAL recibe 403 ROLE_NOT_ALLOWED llamando directamente al endpoint y la base queda intacta (ni empresa ni rol ni datos fiscales)', async () => {
@@ -117,5 +128,52 @@ describe('alta de clientes · ADMIN crea, GENERAL no (HTTP + base desechable)', 
     expect(lista.status).toBe(200);
     expect(lista.body.data.map((c: { id: string }) => c.id)).toContain(creado.body.data.id);
     expect((await request(app.getHttpServer()).get(`/clients/${creado.body.data.id}`).set('x-test-role', 'GENERAL')).status).toBe(200);
+  });
+});
+
+describe('clientes · edición, desactivación y reactivación: ADMIN sí, GENERAL no (HTTP + base desechable con fixtures propios)', () => {
+  const estadoRol = async (id: string): Promise<string> => (await poolAdmin.query("SELECT estatus FROM core.empresa_roles WHERE empresa_id = $1 AND rol = 'CLIENTE'", [id])).rows[0].estatus;
+  const nombreDe = async (id: string): Promise<string> => (await poolAdmin.query('SELECT nombre_comercial FROM core.empresas WHERE empresa_id = $1', [id])).rows[0].nombre_comercial;
+  const crearCliente = async (base: string): Promise<{ id: string; nombre: string }> => {
+    const nombreNuevo = nombre(base);
+    const r = await post('ADMIN', { commercialName: nombreNuevo });
+    expect(r.status).toBe(201);
+    return { id: r.body.data.id, nombre: nombreNuevo };
+  };
+
+  it('PATCH: ADMIN renombra y anota; GENERAL recibe 403 y el dato queda intacto', async () => {
+    const c = await crearCliente('Edicion');
+    const denegado = await request(app.getHttpServer()).patch(`/clients/${c.id}`).set('x-test-role', 'GENERAL').send({ commercialName: 'Intento de GENERAL' });
+    expect(denegado.status).toBe(403);
+    expect(denegado.body.code).toBe('ROLE_NOT_ALLOWED');
+    expect(await nombreDe(c.id)).toBe(c.nombre);
+    const nuevo = nombre('Renombrado');
+    const ok = await request(app.getHttpServer()).patch(`/clients/${c.id}`).set('x-test-role', 'ADMIN').send({ commercialName: `  ${nuevo}  `, notes: 'Nota' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data).toMatchObject({ commercialName: nuevo, notes: 'Nota' });
+    expect(await nombreDe(c.id)).toBe(nuevo);
+  });
+
+  it('desactivar / reactivar: ADMIN cambia el estado del rol CLIENTE; GENERAL recibe 403 y el estado no cambia', async () => {
+    const c = await crearCliente('Ciclo');
+    const d = await request(app.getHttpServer()).post(`/clients/${c.id}/deactivate`).set('x-test-role', 'GENERAL');
+    expect(d.status).toBe(403);
+    expect(await estadoRol(c.id)).toBe('ACTIVO');
+    expect((await request(app.getHttpServer()).post(`/clients/${c.id}/deactivate`).set('x-test-role', 'ADMIN')).status).toBe(200);
+    expect(await estadoRol(c.id)).toBe('INACTIVO');
+    expect((await request(app.getHttpServer()).post(`/clients/${c.id}/reactivate`).set('x-test-role', 'GENERAL')).status).toBe(403);
+    expect(await estadoRol(c.id)).toBe('INACTIVO');                                                  // GENERAL tampoco puede reactivar
+    expect((await request(app.getHttpServer()).post(`/clients/${c.id}/reactivate`).set('x-test-role', 'ADMIN')).status).toBe(200);
+    expect(await estadoRol(c.id)).toBe('ACTIVO');
+  });
+
+  it('validaciones reales de la base y el servicio: renombrar a un nombre que ya existe → 409 CLIENT_NAME_CONFLICT sin cambios; PATCH vacío → 400; propiedades desconocidas → 400', async () => {
+    const a = await crearCliente('Nombre A'); const b = await crearCliente('Nombre B');
+    const choque = await request(app.getHttpServer()).patch(`/clients/${b.id}`).set('x-test-role', 'ADMIN').send({ commercialName: a.nombre });
+    expect(choque.status).toBe(409);
+    expect(await nombreDe(b.id)).toBe(b.nombre);
+    expect((await request(app.getHttpServer()).patch(`/clients/${b.id}`).set('x-test-role', 'ADMIN').send({})).status).toBe(400);
+    expect((await request(app.getHttpServer()).patch(`/clients/${b.id}`).set('x-test-role', 'ADMIN').send({ estatus: 'BLOQUEADO' })).status).toBe(400);
+    expect((await request(app.getHttpServer()).post('/clients').set('x-test-role', 'ADMIN').send({ commercialName: 'X', status: 'BLOQUEADO' })).status).toBe(400);
   });
 });

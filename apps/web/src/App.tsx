@@ -72,7 +72,6 @@ export function App() {
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
         <Route path="/providers/:id" element={<ProviderDetailPage />} />
         <Route path="/clients" element={<ClientsPage />} />
-        <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
@@ -83,6 +82,7 @@ export function App() {
         <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
           <Route path="/clients/new" element={<NewClientPage />} />
+          <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path={MANUFACTURING_SHEETS_SETTINGS_ROUTE} element={<ConfiguracionManufacturaPage />} />
           <Route path="/client-abbreviations" element={<Navigate to={MANUFACTURING_SHEETS_SETTINGS_ROUTE} replace />} />

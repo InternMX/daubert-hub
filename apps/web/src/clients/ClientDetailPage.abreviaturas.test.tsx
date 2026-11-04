@@ -38,3 +38,25 @@ describe('Clientes → detalle → abreviaturas', () => {
     expect(listarAbreviaturas).not.toHaveBeenCalled();
   });
 });
+
+describe('Clientes → detalle: modificar datos maestros es solo de ADMIN (interfaz)', () => {
+  it('una cuenta GENERAL consulta la ficha pero no ve Editar, Desactivar ni Reactivar; ADMIN los conserva', async () => {
+    const { AuthContext } = await import('../auth/authContext.core');
+    const { createAuthContextValue, testAdminUser, testGeneralUser } = await import('../test/authTestUtils');
+    const montar = (user: typeof testAdminUser) => {
+      vi.mocked(getClient).mockResolvedValue(cliente('ACTIVO') as never);
+      vi.mocked(listCompanyAddresses).mockResolvedValue([]);
+      vi.mocked(getCompanyAliases).mockResolvedValue({ aliases: [], otherAliases: [] });
+      vi.mocked(listarAbreviaturas).mockResolvedValue({ disponible: true, puedeResolver: false, data: [], conteos: {} });
+      return render(<AuthContext.Provider value={createAuthContextValue({ user })}><MemoryRouter initialEntries={['/clients/877']}><Routes><Route path="/clients/:clientId" element={<ClientDetailPage />} /></Routes></MemoryRouter></AuthContext.Provider>);
+    };
+    const general = montar(testGeneralUser);
+    expect(await screen.findByRole('heading', { name: 'AUDI' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Editar cliente' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Desactivar cliente|Reactivar cliente/ })).toBeNull();
+    general.unmount();
+    montar(testAdminUser);
+    expect(await screen.findByRole('link', { name: 'Editar cliente' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Desactivar cliente' })).toBeInTheDocument();
+  });
+});
