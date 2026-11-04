@@ -1,10 +1,11 @@
-import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Radio, RadioGroup, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 import {
   abbreviationErrorText, AbbreviationApiError, crearAbreviatura, listarAbreviaturas, resolverAbreviatura,
   type AbreviaturaVista, type AccionAbreviatura, type Alcance, type EstadoAbreviatura
 } from '../services/clientAbbreviations';
 import { listClients } from '../services/clients';
+import { AbreviaturasDelCliente, ListaAbreviaturas } from './ListaAbreviaturas';
 
 // Administración (solo ADMIN, protegida por AdminRoute y por la API): abreviaturas confirmadas, propuestas de usuarios y candidatas. Una abreviatura puede asociarse a varios clientes.
 // Nada se importa automáticamente: cada alta o resolución es una acción explícita. El cliente debe ser una empresa activa con rol CLIENTE (la base lo valida).
@@ -12,21 +13,7 @@ import { listClients } from '../services/clients';
 const ESTADOS: Array<{ v: 'TODAS' | EstadoAbreviatura; t: string }> = [
   { v: 'TODAS', t: 'Todas' }, { v: 'PROPUESTA', t: 'Propuestas por revisar' }, { v: 'CONFIRMADA', t: 'Confirmadas' }, { v: 'CANDIDATA', t: 'Candidatas (extracción)' }, { v: 'RECHAZADA', t: 'Rechazadas' }, { v: 'INACTIVA', t: 'Inactivas' }
 ];
-const ALCANCE: Record<Alcance, string> = { GENERAL: 'General', CONTEXTO: 'Contexto', CODIGO_COMPLETO: 'Código completo' };
-const ORIGEN: Record<string, string> = { EXTRACCION_HISTORICA: 'Extracción histórica', OCR_HISTORICO: 'OCR histórico', MANUAL_ADMIN: 'Registro de ADMIN', PROPUESTA_USUARIO: 'Propuesta de usuario' };
-const COLOR: Record<EstadoAbreviatura, 'default' | 'success' | 'warning' | 'error'> = { CANDIDATA: 'default', PROPUESTA: 'warning', CONFIRMADA: 'success', RECHAZADA: 'error', INACTIVA: 'default' };
-const fecha = (iso: string | null): string => (iso ? new Date(iso).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const mensajeError = (e: unknown): string => (e instanceof AbbreviationApiError ? abbreviationErrorText[e.kind] : abbreviationErrorText.FAILED);
-
-function acciones(a: AbreviaturaVista): Array<{ accion: AccionAbreviatura; texto: string; color?: 'warning' | 'inherit' }> {
-  switch (a.estado) {
-    case 'CANDIDATA': return [{ accion: 'CONFIRMAR', texto: 'Confirmar' }, { accion: 'RECHAZAR', texto: 'Rechazar', color: 'inherit' }];
-    case 'PROPUESTA': return [{ accion: 'CONFIRMAR', texto: 'Confirmar' }, { accion: 'RECHAZAR', texto: 'Rechazar', color: 'inherit' }];
-    case 'CONFIRMADA': return [{ accion: 'INACTIVAR', texto: 'Inactivar', color: 'warning' }];
-    case 'INACTIVA': return [{ accion: 'REACTIVAR', texto: 'Reactivar' }];
-    default: return [];
-  }
-}
 
 function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (creada: AbreviaturaVista, mensaje: string) => void; fijo?: { id: string; nombre: string }; puedeResolver: boolean }) {
   const [abierta, setAbierta] = useState(false);
@@ -84,7 +71,10 @@ function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (creada:
   );
 }
 
-/** Administración de abreviaturas (contenido reutilizable: hoy en Configuración de Hojas de manufactura; mañana también en el detalle de un cliente). */
+/**
+ * Administración de abreviaturas. Sin `cliente`: la vista general de Configuración de Hojas de manufactura (búsqueda, filtros por estado y tabla de TODOS los clientes).
+ * Con `cliente`: la ficha de ese cliente (lista compacta, sin filtros ni nombre repetido). Ambas usan los mismos endpoints, estado, refresco y reglas.
+ */
 export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string; nombre: string } } = {}) {
   const [estado, setEstado] = useState<'TODAS' | EstadoAbreviatura>(cliente ? 'TODAS' : 'PROPUESTA');
   const [q, setQ] = useState('');
@@ -131,6 +121,9 @@ export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string
     catch (e) { setError(mensajeError(e)); setRechazando(null); } finally { setOcupado(false); }
   }, []);
 
+  // En la ficha, la API ya filtra por empresa; además, JAMÁS se muestra una abreviatura de otro cliente (defensa en profundidad, aunque compartan prefijo).
+  const visibles = cliente ? (datos?.data ?? []).filter((a) => a.clienteId === cliente.id) : (datos?.data ?? []);
+
   return (
     <>
       <Stack spacing={2} sx={{ maxWidth: 1200 }}>
@@ -140,38 +133,17 @@ export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string
         {datos?.disponible && (
           <>
             <NuevaAsociacion fijo={cliente} puedeResolver={datos.puedeResolver} onCreada={alCrear} />
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
+            {!cliente && <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value as 'TODAS' | EstadoAbreviatura)} sx={{ minWidth: 240 }}>
                 {ESTADOS.map((o) => <MenuItem key={o.v} value={o.v}>{o.t}{o.v !== 'TODAS' && datos.conteos[o.v] ? ` (${datos.conteos[o.v]})` : ''}</MenuItem>)}
               </TextField>
               <TextField size="small" label="Buscar abreviatura o cliente" value={q} onChange={(e) => setQ(e.target.value)} sx={{ minWidth: 260 }} />
-            </Stack>
-            {datos.data.length === 0
-              ? <Typography color="text.secondary" data-testid="sin-resultados">No hay abreviaturas con este filtro.</Typography>
-              : (
-                <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-                  <Box sx={{ overflowX: 'auto' }}>
-                    <Table size="small" aria-label="Abreviaturas de clientes">
-                      <TableHead><TableRow><TableCell>Abreviatura</TableCell><TableCell>Cliente</TableCell><TableCell>Alcance</TableCell><TableCell>Estado</TableCell><TableCell>Procedencia y evidencia</TableCell><TableCell>Resolución</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead>
-                      <TableBody>
-                        {datos.data.map((a) => (
-                          <TableRow key={a.id} hover data-testid="abreviatura-fila" data-destacado={a.id === destacado ? 'true' : undefined} sx={{ transition: 'background-color 600ms', bgcolor: a.id === destacado ? 'action.selected' : undefined }}>
-                            <TableCell sx={{ fontWeight: 600 }}>{a.abreviatura}</TableCell>
-                            <TableCell>{a.cliente}</TableCell>
-                            <TableCell>{ALCANCE[a.alcance]}{a.codigoPatron ? ` · ${a.codigoPatron}` : ''}</TableCell>
-                            <TableCell><Chip size="small" color={COLOR[a.estado]} variant={a.estado === 'CONFIRMADA' ? 'filled' : 'outlined'} label={a.estado.charAt(0) + a.estado.slice(1).toLowerCase()} /></TableCell>
-                            <TableCell>{ORIGEN[a.origen] ?? a.origen} · {a.propuestaPor}<br /><Typography variant="caption" color="text.secondary">{a.documentos > 0 ? `${a.documentos} hojas · ${a.codigos} códigos distintos` : 'Sin conteo de evidencia'}{a.evidencia ? ` · ${a.evidencia}` : ''}</Typography></TableCell>
-                            <TableCell>{a.resueltaPor ? <>{a.resueltaPor}<br /><Typography variant="caption" color="text.secondary">{fecha(a.resueltaEn)}{a.motivo ? ` · ${a.motivo}` : ''}</Typography></> : '—'}</TableCell>
-                            <TableCell align="right">
-                              {datos.puedeResolver && acciones(a).map((x) => <Button key={x.accion} size="small" color={x.color} disabled={ocupado} aria-label={`${x.texto} ${a.abreviatura} de ${a.cliente}`} onClick={() => (x.accion === 'RECHAZAR' ? setRechazando(a) : void resolver(a, x.accion))}>{x.texto}</Button>)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </Box>
-                </Paper>
-              )}
+            </Stack>}
+            {visibles.length === 0
+              ? <Typography color="text.secondary" data-testid="sin-resultados">{cliente ? 'Este cliente aún no tiene abreviaturas.' : 'No hay abreviaturas con este filtro.'}</Typography>
+              : cliente
+                ? <AbreviaturasDelCliente datos={visibles} puedeResolver={datos.puedeResolver} ocupado={ocupado} destacado={destacado} onAccion={(a, x) => (x === 'RECHAZAR' ? setRechazando(a) : void resolver(a, x))} />
+                : <ListaAbreviaturas datos={visibles} puedeResolver={datos.puedeResolver} ocupado={ocupado} destacado={destacado} onAccion={(a, x) => (x === 'RECHAZAR' ? setRechazando(a) : void resolver(a, x))} />}
           </>
         )}
         {datos === null && !error && <Box role="status"><CircularProgress size={20} aria-label="Cargando abreviaturas" /></Box>}

@@ -37,7 +37,8 @@ describe('administración de abreviaturas de clientes', () => {
     montar();
     const f = await screen.findByTestId('abreviatura-fila');
     expect(within(f).getByText('AUDI')).toBeInTheDocument();
-    expect(within(f).getByText(/Propuesta de usuario · general@example.invalid/)).toBeInTheDocument();
+    expect(within(f).getByText('Propuesta de usuario')).toBeInTheDocument();
+    expect(within(f).queryByText(/general@example.invalid/)).toBeNull();                // el correo no estira la tabla: está en «Ver detalles»
     expect(m.listarAbreviaturas).toHaveBeenCalledWith({ estado: 'PROPUESTA', q: '' }, expect.anything());
     expect(m.resolverAbreviatura).not.toHaveBeenCalled();                              // nada se confirma solo
     await userEvent.click(within(f).getByRole('button', { name: 'Confirmar AUD de AUDI' }));
@@ -63,7 +64,7 @@ describe('administración de abreviaturas de clientes', () => {
     await screen.findAllByTestId('abreviatura-fila');
     expect(screen.getByRole('button', { name: 'Inactivar AUD de AUDI' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reactivar XYZ de AUDI' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /RRR/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /(Confirmar|Rechazar|Inactivar|Reactivar) RRR/ })).toBeNull();
   });
 
   it('un error del servidor se muestra en español y no rompe la lista', async () => {

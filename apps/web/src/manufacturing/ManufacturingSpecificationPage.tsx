@@ -143,8 +143,8 @@ function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }:
         }}
         onChange={(_event, value) => { if (value !== null && typeof value !== 'string') onChange(value.name, 'CATALOGO', value.id); }}
         renderInput={(params) => requerido
-          ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Elige un cliente del catálogo o escribe su nombre (en TEST queda como cliente sin verificar). El código puede sugerir un cliente; nunca se asigna solo." />
-          : <TextField {...params} label="Cliente (opcional)" helperText="Elige un cliente del catálogo. Puede quedar vacío en la demostración; una emisión futura lo exigirá. El código puede sugerir un cliente; nunca se asigna solo." />}
+          ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Selecciona un cliente del catálogo o escribe su nombre." />
+          : <TextField {...params} label="Cliente (opcional)" helperText="Selecciona un cliente del catálogo o escribe su nombre." />}
       />
       <ClienteSugerencias codigo={form.fields.codigo.value} actual={current} onUsar={onUsarSugerencia} />
     </FieldFrame>

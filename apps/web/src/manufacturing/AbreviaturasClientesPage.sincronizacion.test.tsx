@@ -93,10 +93,10 @@ describe('Identificación de clientes · sincronización de la interfaz tras cad
     render(<AdministracionAbreviaturas cliente={{ id: '877', nombre: 'AUDI' }} />);                  // ficha del cliente: todos los estados
     await userEvent.click(await screen.findByRole('button', { name: 'Inactivar CNF de AUDI' }));
     expect(await screen.findByRole('button', { name: 'Reactivar CNF de AUDI' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('abreviatura-fila')).toHaveLength(1);
+    expect(screen.getAllByTestId('abreviatura-item')).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'Reactivar CNF de AUDI' }));
     expect(await screen.findByRole('button', { name: 'Inactivar CNF de AUDI' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('abreviatura-fila')).toHaveLength(1);
+    expect(screen.getAllByTestId('abreviatura-item')).toHaveLength(1);
   });
 
   it('en la ficha del cliente un alta nueva aparece en la lista completa (sin cambiar el filtro) y sin duplicarse', async () => {
@@ -106,10 +106,10 @@ describe('Identificación de clientes · sincronización de la interfaz tras cad
     const form = screen.getByRole('region', { name: 'Registrar abreviatura' });
     await userEvent.type(within(form).getByLabelText(/Abreviatura \(2 a 5/), 'AUD');
     await userEvent.click(within(form).getByRole('button', { name: 'Registrar y confirmar' }));
-    const filas = await screen.findAllByTestId('abreviatura-fila');
+    const filas = await screen.findAllByTestId('abreviatura-item');
     expect(filas).toHaveLength(1);
     expect(filas[0]).toHaveAttribute('data-destacado', 'true');
-    expect(filtro()).toHaveTextContent('Todas');
+    expect(screen.queryByRole('combobox', { name: 'Estado' })).toBeNull();                          // la ficha no tiene filtros
   });
 
   it('si el servidor rechaza el alta NUNCA se muestra éxito: queda el error, el formulario abierto y la lista intacta', async () => {

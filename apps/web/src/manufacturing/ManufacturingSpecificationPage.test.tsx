@@ -142,7 +142,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(grupo).toHaveTextContent('Abreviatura SCH');
     expect(campo(CLIENTE).value).toBe('');                                                      // jamás se selecciona solo
     expect(screen.queryByText(/No se infiere por el prefijo/)).toBeNull();
-    expect(screen.getByText(/El código puede sugerir un cliente; nunca se asigna solo/)).toBeInTheDocument();
+    expect(screen.getByText('Selecciona un cliente del catálogo o escribe su nombre.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Usar SCHAEFFLER' }));
     await waitFor(() => expect(campo(CLIENTE).value).toBe('SCHAEFFLER'));
     expect(screen.queryByRole('group', { name: 'Cliente sugerido por el código' })).toBeNull();
@@ -159,7 +159,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto para emisión futura');
     expect(screen.getByTestId('status-approval')).toHaveTextContent('fuera de alcance');
     expect(screen.getByTestId('resumen-INFORMACION')).toHaveTextContent('informativa');                 // el cliente es informativo: se cuenta una vez en la revisión
-    expect(screen.getByText(/Puede quedar vacío en la demostración/)).toBeInTheDocument();             // y se explica donde se captura
+    expect(screen.getByText('Selecciona un cliente del catálogo o escribe su nombre.')).toBeInTheDocument();             // y se explica donde se captura
     expect(screen.queryByTestId('emission-pending-list')).not.toBeInTheDocument();
     await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1', undefined, { timeout: 3000 });
     expect(screen.queryByTestId('preview-emission-pending')).not.toBeInTheDocument();                    // el cliente no afecta la representación: la vista previa no lo repite
