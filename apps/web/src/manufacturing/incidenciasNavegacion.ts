@@ -20,6 +20,8 @@ export interface IncidenciasContexto {
   revision: 'vigente' | 'revisando' | 'no-disponible';
   /** Gestor documental: ids de los datos obligatorios pendientes para finalizar; su campo muestra una indicación discreta aunque aún no se haya intentado finalizar. */
   pendientes?: ReadonlySet<string>;
+  /** Datos técnicos prellenados como sugerencia y aún sin revisar (informativo; no bloquea). */
+  sugeridos?: number;
 }
 
 /** Resalta un momento el control al que se navega (se restaura el estilo previo). */

@@ -170,7 +170,8 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
         ? field(resina.valor, originOf(resina), resina.nota, fuenteDe(resina))
         : field('', 'PENDIENTE', resina.valor === null ? resina.nota : `La resina ${resina.valor} no tiene casilla en estas familias: selecciona la composición.`, resina.procedencia),
       presentacion: fromCampo(campos.presentacion, (v) => v),
-      cantidad: fromCampo(cantidad, (v) => String(v.cantidad)),
+      // El número de la cantidad es explícito en el texto; lo que puede ser una sugerencia es solo la UNIDAD (según el tipo de producto).
+      cantidad: cantidad.valor === null ? field('', 'PENDIENTE', cantidad.nota) : field(String(cantidad.valor.cantidad), 'BIND', undefined, fuenteDescription(cantidad)),
       cantidadUnidad: cantidad.valor?.unidad ? field(cantidad.valor.unidad, originOf(cantidad), cantidad.nota, fuenteDescription(cantidad)) : field('', 'PENDIENTE', cantidad.nota),
       ancho: fromCampo(campos.ancho, String),
       fuelleTotal: fuelleField(campos.fuelleTotal),
@@ -477,6 +478,13 @@ export interface SpecificationValidation {
   clientIdentified: boolean;
   /** Nivel 3 · Apto para emisión futura: datos técnicos suficientes + cliente del catálogo + familia confirmada por el usuario. Aún no se guarda ni se emite nada. */
   emissionReady: boolean;
+}
+
+/** Datos técnicos que el sistema prellenó como SUGERENCIA (no extraídos con certeza) y que el usuario aún no ha tocado ni confirmado: es lo que conviene revisar antes de finalizar. */
+export const CAMPOS_TECNICOS_REVISABLES: FieldKey[] = ['composicion', 'presentacion', 'cantidad', 'cantidadUnidad', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'pesoLb', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'];
+export function sugeridosPorRevisar(form: SpecificationForm, config: FamilyConfig | null): FieldKey[] {
+  if (!config) return [];
+  return CAMPOS_TECNICOS_REVISABLES.filter((k) => config.campos.includes(k) && form.fields[k].value.trim() !== '' && form.fields[k].base.origin === 'SUGERIDO' && isAuto(form.fields[k]));
 }
 
 /** Valores capturados que la familia ELEGIDA no admite o no tiene: se conservan (no se borran) pero no se envían a la vista previa. */

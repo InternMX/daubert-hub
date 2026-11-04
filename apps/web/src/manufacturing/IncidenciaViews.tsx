@@ -92,7 +92,11 @@ export function ResumenIncidencias({ lista, ctx }: { lista: Incidencia[]; ctx: I
         {ctx.revision === 'revisando' && <Chip size="small" variant="outlined" icon={<CircularProgress size={12} />} label="Revisando…" role="status" data-testid="resumen-revisando" />}
         {ctx.revision === 'no-disponible' && <Chip size="small" color="warning" variant="outlined" label="Revisión técnica no disponible" data-testid="resumen-no-disponible" />}
         {cuenta.total === 0 && ctx.revision === 'vigente' && <Chip size="small" color="success" variant="outlined" label="Sin incidencias" data-testid="resumen-vacio" />}
-        {chip('ERROR', 'error')}{chip('CONTRADICCION', 'warning')}{chip('PENDIENTE', 'warning')}{chip('INFORMACION', 'default')}
+        {/* Cuatro cosas distintas: lo que falta completar, lo sugerido por revisar, las contradicciones por resolver y los errores reales. */}
+        {cuenta.faltantes > 0 && <Chip size="small" color="warning" variant="outlined" data-testid="resumen-FALTANTES" label={`${cuenta.faltantes} por completar`} />}
+        {(ctx.sugeridos ?? 0) > 0 && <Chip size="small" variant="outlined" data-testid="resumen-SUGERIDOS" label={`${ctx.sugeridos} sugerido${ctx.sugeridos === 1 ? '' : 's'} por revisar`} />}
+        {cuenta.ERROR - cuenta.faltantes > 0 && <Chip size="small" color="error" variant="filled" data-testid="resumen-ERROR" label={`${cuenta.ERROR - cuenta.faltantes} ${cuenta.ERROR - cuenta.faltantes === 1 ? NIVEL_ETIQUETA.ERROR.singular : NIVEL_ETIQUETA.ERROR.plural}`} />}
+        {chip('CONTRADICCION', 'warning')}{chip('PENDIENTE', 'warning')}{chip('INFORMACION', 'default')}
         {cuenta.reconocidas > 0 && <Chip size="small" variant="outlined" label={`${cuenta.reconocidas} reconocida${cuenta.reconocidas === 1 ? '' : 's'}`} data-testid="resumen-reconocidas" />}
         {pendientesDeRevisar.length > 0 && <Button size="small" onClick={() => setAbierto((v) => !v)} sx={{ ml: 'auto' }} aria-expanded={abierto}>{abierto ? 'Ocultar detalle' : 'Ver detalle'}</Button>}
       </Stack>

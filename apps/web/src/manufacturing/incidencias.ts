@@ -108,11 +108,13 @@ export const estaReconocida = (i: Incidencia, valores: (key: FieldKey) => string
 /** Impiden confirmar la revisión: los errores y las contradicciones no reconocidas. Los pendientes y las informativas no bloquean. */
 export const bloquea = (i: Incidencia, valores: (key: FieldKey) => string, reconocidas: Reconocimientos): boolean => i.nivel === 'ERROR' || (i.nivel === 'CONTRADICCION' && !estaReconocida(i, valores, reconocidas));
 
-export function resumir(lista: readonly Incidencia[], valores: (key: FieldKey) => string, reconocidas: Reconocimientos): Record<NivelIncidencia, number> & { total: number; reconocidas: number } {
-  const cuenta = { ERROR: 0, CONTRADICCION: 0, PENDIENTE: 0, INFORMACION: 0, total: 0, reconocidas: 0 };
+/** `faltantes`: datos obligatorios por completar (subconjunto de ERROR que sigue bloqueando la finalización); los errores REALES son `ERROR - faltantes`. */
+export function resumir(lista: readonly Incidencia[], valores: (key: FieldKey) => string, reconocidas: Reconocimientos): Record<NivelIncidencia, number> & { total: number; reconocidas: number; faltantes: number } {
+  const cuenta = { ERROR: 0, CONTRADICCION: 0, PENDIENTE: 0, INFORMACION: 0, total: 0, reconocidas: 0, faltantes: 0 };
   for (const i of lista) {
     if (estaReconocida(i, valores, reconocidas)) { cuenta.reconocidas += 1; continue; }
     cuenta[i.nivel] += 1;
+    if (i.codigo === 'FALTANTE') cuenta.faltantes += 1;
     cuenta.total += 1;
   }
   return cuenta;

@@ -299,7 +299,8 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByRole('region', { name: 'Datos de Hojas' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Doblada' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeEnabled();
-    expect(screen.getByTestId('resumen-ERROR')).toBeInTheDocument();                                     // faltan datos: se cuenta en la revisión; el campo lo marca al validar
+    expect(screen.getByTestId('resumen-FALTANTES')).toBeInTheDocument();                                 // faltan datos: se cuentan como «por completar» (no como errores); el campo lo marca al validar
+    expect(screen.queryByTestId('resumen-ERROR')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Falta hoja doblada o extendida/i)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Extendida' }));
@@ -687,7 +688,7 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     await screen.findByRole('region', { name: 'Producto en BIND' });
     await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
     // antes de validar: el campo no se marca en rojo, pero la revisión ya lo cuenta (y el texto de BIND «no indica la unidad» no se repite como alerta)
-    expect(screen.getByTestId('resumen-ERROR')).toBeInTheDocument();
+    expect(screen.getByTestId('resumen-FALTANTES')).toBeInTheDocument();
     expect(screen.queryByText(/El título no indica la unidad de las dimensiones/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
     expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(1);
@@ -695,7 +696,7 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     // el resumen coincide con las incidencias reales (errores + contradicciones + pendientes listados) y localiza el campo
     await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
     const items = screen.getAllByTestId('resumen-item');
-    const cuentas = ['ERROR', 'CONTRADICCION', 'PENDIENTE'].map((n) => Number(screen.queryByTestId(`resumen-${n}`)?.textContent?.split(' ')[0] ?? 0));
+    const cuentas = ['FALTANTES', 'ERROR', 'CONTRADICCION', 'PENDIENTE'].map((n) => Number(screen.queryByTestId(`resumen-${n}`)?.textContent?.split(' ')[0] ?? 0));
     expect(items).toHaveLength(cuentas.reduce((a, b) => a + b, 0));
     const ids = items.map((e) => e.getAttribute('data-incidencia-id'));
     expect(new Set(ids).size).toBe(ids.length);
@@ -736,6 +737,7 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     await waitFor(() => expect(screen.getByTestId('resumen-INFORMACION')).toBeInTheDocument());       // solo informativas (cliente)
     await waitFor(() => expect(revisar).toBeEnabled(), { timeout: 3000 });
     expect(screen.queryByTestId('resumen-ERROR')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resumen-FALTANTES')).not.toBeInTheDocument();
     expect(screen.queryByTestId('resumen-CONTRADICCION')).not.toBeInTheDocument();
     await user.click(revisar);
     expect(screen.getByTestId('status-reviewed')).toHaveTextContent('Datos revisados para este borrador');

@@ -156,7 +156,7 @@ describe('resumen y ubicación', () => {
   ];
 
   it('el resumen coincide con las incidencias reales y excluye las reconocidas', () => {
-    expect(resumir(lista, v, {})).toEqual({ ERROR: 2, CONTRADICCION: 1, PENDIENTE: 1, INFORMACION: 1, total: 5, reconocidas: 0 });
+    expect(resumir(lista, v, {})).toEqual({ ERROR: 2, CONTRADICCION: 1, PENDIENTE: 1, INFORMACION: 1, total: 5, reconocidas: 0, faltantes: 2 });
     const c = lista[2] as Incidencia;
     expect(resumir(lista, v, { [c.id]: huella(c, v) })).toMatchObject({ CONTRADICCION: 0, total: 4, reconocidas: 1 });
   });

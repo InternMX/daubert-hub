@@ -108,3 +108,24 @@ describe('medición de captura manual (datos obligatorios de la familia sugerida
     for (const x of filas) expect(x.listos + x.sugeridos + x.vacios.length).toBe(x.obligatorios);
   });
 });
+
+describe('revisión del borrador: por completar, sugeridos por revisar, contradicciones y errores reales', () => {
+  it('DANFPMGOC04: nada por completar y los datos técnicos prellenados como sugerencia se cuentan para revisar', async () => {
+    const { sugeridosPorRevisar } = await import('./specificationForm');
+    const f = formulario('DANFPMGOC04');
+    const config = configOf(familyConfigs, f.family);
+    expect(sugeridosPorRevisar(f, config).sort()).toEqual(['ancho', 'cantidadUnidad', 'fuelleDerecho', 'fuelleIzquierdo', 'fuelleTotal', 'largo']);   // la cantidad (200) es explícita; solo su unidad se sugiere
+    // Al editar un dato sugerido, deja de contar como «por revisar» (el usuario ya lo tocó).
+    expect(sugeridosPorRevisar(setFieldValue(f, 'ancho', '28'), config)).not.toContain('ancho');
+    expect(validar(f, 'DANFPMGOC04').incidencias.filter((i) => i.codigo === 'FALTANTE')).toEqual([]);
+  });
+
+  it('con datos faltantes, la revisión los llama «por completar» y los separa de los errores reales', async () => {
+    const { resumir } = await import('./incidencias');
+    const f = formulario('SIN_DESCRIPTION_CON_DOS_SISTEMAS');
+    const lista = validar(f, 'SIN_DESCRIPTION_CON_DOS_SISTEMAS').incidencias;
+    const cuenta = resumir(lista, (k) => f.fields[k].value, {});
+    expect(cuenta.faltantes).toBeGreaterThanOrEqual(9);
+    expect(cuenta.ERROR - cuenta.faltantes).toBe(0);                                             // ningún error real: solo datos por completar
+  });
+});

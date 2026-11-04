@@ -27,7 +27,7 @@ import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
   buildInitialForm, changedFields, COLOR_OTRO, configOf, confirmFamily, displayOrigin, FIELD_LABELS, isEdited, restoreField, selectFamily, setColorConcentracion, setColorPreset, setComposition,
-  setCoexVariante, setCustomColor, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, toPreviewData, validateSpecification,
+  setCoexVariante, setCustomColor, setFieldValue, setFuelleTotal, suggestLayerWeights, confirmLayerWeights, sugeridosPorRevisar, toPreviewData, validateSpecification,
   type DisplayOrigin, type FamilyCode, type FieldKey, type SpecificationForm, type SpecificationValidation
 } from './specificationForm';
 
@@ -527,7 +527,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   // Datos obligatorios pendientes para finalizar. Coincide con el servidor: el cliente es obligatorio (texto libre válido en TEST); el catálogo solo lo verifica. Ver `motivosNoLista`.
   const faltantesFinal = todas.filter((i) => i.nivel === 'ERROR' || i.codigo === 'FALTANTE' || (i.codigo === 'CLIENTE_SIN_IDENTIFICAR' && valores('cliente').trim() === ''));
   const pendientes = documentos ? new Set(faltantesFinal.map((i) => i.id)) : undefined;
-  const ctx = { pendientes, lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: intentoFinal || validation !== null, reveladas, revelar, revision };
+  const ctx = { pendientes, lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: intentoFinal || validation !== null, reveladas, revelar, revision, sugeridos: form ? sugeridosPorRevisar(form, config).length : 0 };
   const reviewed = reviewedKey === reviewKey && Boolean(currentAssessment?.completo) && !currentAssessment?.bloqueado && Boolean(live?.technicalReady) && form?.familyOrigin === 'USUARIO' && sinReconocer.length === 0;
   // Validación automática (modo gestor documental): ninguna acción manual. Mientras no haya respuesta VIGENTE del servidor para estos datos no se afirma que estén completos.
   const estadoDatos: EstadoDatos = !form || revision === 'revisando' ? 'comprobando'
