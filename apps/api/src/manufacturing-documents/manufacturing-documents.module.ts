@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { ManufacturingSheetsModule } from '../manufacturing-sheets/manufacturing-sheets.module';
+import { ClientAbbreviationsController } from './client-abbreviations.controller';
+import { ClientAbbreviationsRepository } from './client-abbreviations.repository';
+import { ClientAbbreviationsService } from './client-abbreviations.service';
 import { DocumentsController } from './documents.controller';
 import { DocumentsRepository } from './documents.repository';
 import { DocumentsService } from './documents.service';
@@ -13,7 +16,7 @@ import { SheetEngine, SheetEngineAdapter } from './sheet-engine.port';
 // `daubert_hub_test` (donde está aplicada la migración `manufactura`); en cualquier otra base devuelven 404.
 @Module({
   imports: [DatabaseModule, ManufacturingSheetsModule],
-  controllers: [DocumentsController],
-  providers: [DocumentsRepository, ResponsablesRepository, DocumentsService, TestOnlyGuard, { provide: SheetEngine, useClass: SheetEngineAdapter }]
+  controllers: [DocumentsController, ClientAbbreviationsController],
+  providers: [DocumentsRepository, ResponsablesRepository, ClientAbbreviationsRepository, ClientAbbreviationsService, DocumentsService, TestOnlyGuard, { provide: SheetEngine, useClass: SheetEngineAdapter }]
 })
 export class ManufacturingDocumentsModule {}
