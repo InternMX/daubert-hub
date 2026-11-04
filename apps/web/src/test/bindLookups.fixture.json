@@ -55,36 +55,31 @@
           "valor": 27,
           "origen": "SUGERIDO",
           "fuente": "27 X 17 X 26.4\"",
-          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. Corroborado por Title y Description.",
-          "procedencia": "TITLE_Y_DESCRIPTION"
+          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. La expresión coincide en Title y Description; la interpretación sigue pendiente de confirmar."
         },
         "largo": {
           "valor": 26.4,
           "origen": "SUGERIDO",
           "fuente": "27 X 17 X 26.4\"",
-          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. Corroborado por Title y Description.",
-          "procedencia": "TITLE_Y_DESCRIPTION"
+          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. La expresión coincide en Title y Description; la interpretación sigue pendiente de confirmar."
         },
         "fuelleTotal": {
           "valor": 17,
           "origen": "SUGERIDO",
           "fuente": "27 X 17 X 26.4\"",
-          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. Corroborado por Title y Description.",
-          "procedencia": "TITLE_Y_DESCRIPTION"
+          "nota": "Patrón Ancho × Fuelle total × Largo supuesto por las tres medidas de una bolsa: confírmalo. La expresión coincide en Title y Description; la interpretación sigue pendiente de confirmar."
         },
         "fuelleDerecho": {
           "valor": 8.5,
           "origen": "SUGERIDO",
           "fuente": "27 X 17 X 26.4\"",
-          "nota": "Fuelle total ÷ 2 (derivado; editable). Corroborado por Title y Description.",
-          "procedencia": "TITLE_Y_DESCRIPTION"
+          "nota": "Fuelle total ÷ 2 (derivado; editable). La expresión coincide en Title y Description; la interpretación sigue pendiente de confirmar."
         },
         "fuelleIzquierdo": {
           "valor": 8.5,
           "origen": "SUGERIDO",
           "fuente": "27 X 17 X 26.4\"",
-          "nota": "Fuelle total ÷ 2 (derivado; editable). Corroborado por Title y Description.",
-          "procedencia": "TITLE_Y_DESCRIPTION"
+          "nota": "Fuelle total ÷ 2 (derivado; editable). La expresión coincide en Title y Description; la interpretación sigue pendiente de confirmar."
         },
         "unidadDimensiones": {
           "valor": "IN",

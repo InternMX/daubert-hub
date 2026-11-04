@@ -58,7 +58,7 @@ const SECCION_DE_CAMPO: Partial<Record<FieldKey, SeccionIncidencia>> = {
 export const seccionDeCampo = (key: FieldKey): SeccionIncidencia => SECCION_DE_CAMPO[key] ?? 'datos';
 
 /** Advertencias de BIND que solo EXPLICAN la procedencia de un valor ya mostrado con su chip («Inferido de Code», «Sugerido…») y su nota en el campo: no son incidencias. */
-const EXPLICA_PROCEDENCIA = new Set(['DATO_INFERIDO_DEL_CODIGO', 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'CALIBRE_SIN_UNIDAD']);
+const EXPLICA_PROCEDENCIA = new Set(['DATO_INFERIDO_DEL_CODIGO', 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS', 'MEDIDAS_EN_VARIOS_SISTEMAS', 'CALIBRE_SIN_UNIDAD']);
 
 const ORIGEN_DE_BIND = (codigo: string): Incidencia['origen'] => (codigo.startsWith('CODIGO_') ? 'CODE' : 'TITLE');
 

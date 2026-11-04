@@ -8,6 +8,7 @@ import { SheetPreviewService } from '../src/manufacturing-sheets/preview/sheet-p
 import { denominacionEspecifica } from '../src/manufacturing-sheets/preview/product-denomination';
 import { interpretarProductoBind } from '../src/manufacturing-sheets/bind-product-interpreter/bind-product-interpreter';
 import { sugerirEspecificacion } from '../src/manufacturing-sheets/bind-product-interpreter/specification-suggestions';
+import { huellaIncidencia, incidenciasQueBloquean } from '../src/manufacturing-documents/documents.spec-model';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -111,5 +112,34 @@ describe('Coherencia del borrador (sin confirmar ni sobrescribir)', () => {
     expect(r.completo).toBe(false);
     expect(r.html).not.toContain('<img src=x');
     expect(r.html).not.toContain('<script>');
+  });
+});
+
+describe('INTERPRETACIÓN DIMENSIONAL: una sola decisión sobre Ancho × Fuelle × Largo', () => {
+  const contexto = { title: 'BOLSA PMG 69 X 43 X 66 CM (27 X 17 X 26.4")', code: 'DANFPMGOC04', description: 'PAQUETE 200/B CAL. 200 27 x 17 x 26.4"' };
+  const datos = { ancho: '27', fuelleTotal: '17', fuelleDerecho: '8.5', fuelleIzquierdo: '8.5', largo: '26.4', unidadDimensiones: 'IN' };
+  const dimensional = (d: Record<string, string>, ctx = contexto) => revisarCoherencia('BOLSA_FUELLE', d, ctx).filter((a) => a.id === 'INTERPRETACION_DIMENSIONAL');
+
+  it('agrupa ancho, fuelles, largo y unidad en UNA contradicción reconocible; no hay avisos sueltos por fuelle', () => {
+    const lista = dimensional(datos);
+    expect(lista).toHaveLength(1);
+    expect(lista[0]).toMatchObject({ nivel: 'CONTRADICCION', reconocible: true, seccion: 'medidas' });
+    expect(lista[0]?.campos).toEqual(['ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones']);
+    expect(revisarCoherencia('BOLSA_FUELLE', datos, contexto).map((a) => a.id)).not.toContain('CONFIRMAR_FUELLE_TOTAL');
+  });
+
+  it('bloquea la finalización hasta que se reconoce con los mismos valores; cambiar una medida invalida el reconocimiento', () => {
+    const inc = dimensional(datos)[0]!;
+    expect(incidenciasQueBloquean([inc], datos, undefined).map((i) => i.id)).toEqual(['INTERPRETACION_DIMENSIONAL']);
+    const reconocida = [{ id: inc.id, huella: huellaIncidencia(inc, datos) }];
+    expect(incidenciasQueBloquean([inc], datos, reconocida)).toEqual([]);
+    const cambiado = { ...datos, ancho: '28' };
+    const inc2 = dimensional(cambiado)[0]!;
+    expect(incidenciasQueBloquean([inc2], cambiado, reconocida).map((i) => i.id)).toEqual(['INTERPRETACION_DIMENSIONAL']);
+  });
+
+  it('no aparece sin tres medidas en BIND ni en familias sin fuelle', () => {
+    expect(dimensional(datos, { title: 'BOLSA PMG 20 X 30 IN', code: 'DEMOFPMG001', description: '' })).toEqual([]);
+    expect(revisarCoherencia('BOLSA_PLANA_1', datos, contexto).map((a) => a.id)).not.toContain('INTERPRETACION_DIMENSIONAL');
   });
 });

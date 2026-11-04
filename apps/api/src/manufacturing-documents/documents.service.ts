@@ -207,7 +207,7 @@ export class DocumentsService {
 
   private contextoBind(spec: EspecificacionDocumento): BindReviewContext | undefined {
     if (!spec.bind || (!spec.bind.Title && !spec.bind.Code)) return undefined;
-    return { title: spec.bind.Title ?? '', code: spec.bind.Code ?? '', ...(spec.datos.composicion ? { composicionSeleccionada: spec.datos.composicion } : {}) };
+    return { title: spec.bind.Title ?? '', code: spec.bind.Code ?? '', ...(spec.bind.Description ? { description: spec.bind.Description } : {}), ...(spec.datos.composicion ? { composicionSeleccionada: spec.datos.composicion } : {}) };
   }
 
   // ================================================================== soporte

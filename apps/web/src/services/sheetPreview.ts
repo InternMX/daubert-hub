@@ -5,7 +5,7 @@ import type { FamilyCode, FieldKey } from './manufacturingFamilies';
 // resultante y lo muestra en un iframe aislado. No se guarda nada.
 
 export type PreviewFamilyCode = FamilyCode;
-export interface BindReviewContext { title: string; code: string; composicionSeleccionada?: string }
+export interface BindReviewContext { title: string; code: string; description?: string; composicionSeleccionada?: string }
 export type NivelIncidencia = 'INFORMACION' | 'PENDIENTE' | 'CONTRADICCION' | 'ERROR';
 export type SeccionIncidencia = 'familia' | 'bind' | 'datos' | 'color' | 'capas' | 'composicion' | 'medidas' | 'vista-previa';
 

@@ -48,6 +48,7 @@ export class SheetPreviewDataDto {
 export class BindReviewContextDto {
   @IsString() @MaxLength(500) title!: string;
   @IsString() @MaxLength(64) code!: string;
+  @IsOptional() @IsString() @MaxLength(2000) description?: string;
   @IsOptional() @IsString() @MaxLength(40) composicionSeleccionada?: string;
 }
 

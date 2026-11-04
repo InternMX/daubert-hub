@@ -91,6 +91,9 @@ function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
   const state = form.fields[fieldKey];
   const origin = displayOrigin(state);
   const edited = isEdited(state) && state.base.origin !== 'SIN_DATO';
+  // La explicación completa de una sugerencia o cálculo no estorba: queda en un detalle expandible (los avisos PENDIENTES y las incidencias siguen visibles).
+  const [verDetalle, setVerDetalle] = useState(false);
+  const nota = (origin === 'SUGERIDO' || origin === 'CALCULADO') && state.base.note && fieldKey !== 'fechaEmision' ? state.base.note : null;
   return (
     <Box sx={{ minWidth: 0 }} data-field={fieldKey}>
       {children}
@@ -107,7 +110,12 @@ function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
         )}
       </Stack>
       {origin === 'PENDIENTE' && state.base.note && <Typography variant="caption" color="warning.main" display="block">{state.base.note}</Typography>}
-      {(origin === 'SUGERIDO' || origin === 'CALCULADO') && state.base.note && fieldKey !== 'fechaEmision' && <Typography variant="caption" color="text.secondary" display="block">{state.base.note}</Typography>}
+      {nota && (
+        <>
+          <Button size="small" variant="text" sx={{ p: 0, minWidth: 0, textTransform: 'none' }} data-testid="detalle-toggle" aria-expanded={verDetalle} onClick={() => setVerDetalle((v) => !v)}>{verDetalle ? 'Ocultar detalles' : 'Ver detalles'}</Button>
+          {verDetalle && <Typography variant="caption" color="text.secondary" display="block" data-testid="detalle-nota">{nota}</Typography>}
+        </>
+      )}
       {state.confirmed && <Typography variant="caption" display="block">Peso revisado para este borrador; protegido frente al recálculo automático.</Typography>}
       <IncidenciasDeCampo campo={fieldKey} />
     </Box>
@@ -510,7 +518,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const live = form && configStatus === 'ready' ? validateSpecification(form, configs, lookup ?? undefined) : null;
   const reviewKey = JSON.stringify({ form, producto: lookup?.producto });
   const previewData = form && config ? { ...toPreviewData(form, config), ...(config.fuelles ? { fuelleTotal: form.fields.fuelleTotal.value } : {}) } : {};
-  const previewContext = lookup && form ? { title: lookup.producto.Title, code: lookup.producto.Code, composicionSeleccionada: form.fields.composicion.value } : undefined;
+  const previewContext = lookup && form ? { title: lookup.producto.Title, code: lookup.producto.Code, ...(lookup.producto.Description ? { description: lookup.producto.Description } : {}), composicionSeleccionada: form.fields.composicion.value } : undefined;
   const assessmentKey = JSON.stringify({ family: form?.family, data: previewData, context: previewContext });
   const currentAssessment = assessment?.key === assessmentKey ? assessment.result : null;
   // UNA lista de incidencias por causa (mismo id), reunida de: validación local, coherencia del backend (solo la respuesta VIGENTE para estos datos) y advertencias de BIND.

@@ -1,6 +1,6 @@
 import { interpretarProductoBind } from '../bind-product-interpreter/bind-product-interpreter';
 import { sugerirEspecificacion } from '../bind-product-interpreter/specification-suggestions';
-import { normalizarTitulo } from '../bind-product-interpreter/title-parser';
+import { cadenasDeMedidas, normalizarTitulo } from '../bind-product-interpreter/title-parser';
 import { FAMILIAS, type FamilyCode, type FieldKey } from './family-registry';
 import { incidencia, type Incidencia, type NivelIncidencia, type SeccionIncidencia } from './incidencias';
 import type { PreviewFormData } from './sheet-data.mapper';
@@ -10,6 +10,8 @@ import { calcularLibrasVci, mismaCantidad } from './vci-calculation';
 export interface BindReviewContext {
   title: string;
   code: string;
+  /** Información adicional de BIND (Description): se interpreta junto con el Title, igual que al buscar el producto. */
+  description?: string;
   composicionSeleccionada?: string;
 }
 
@@ -72,9 +74,20 @@ export function revisarCoherencia(family: FamilyCode, data: PreviewFormData, con
   if (seleccionada && !def.composiciones.includes(seleccionada as never)) add('COMPOSICION_FAMILIA', `La composición ${seleccionada} no es compatible con ${def.nombre}${def.composicionFija ? `: el formato imprime ${def.composicionFija}` : ''}.`, 'CONTRADICCION', { campos: ['composicion'], seccion: 'composicion' });
   if (def.capas && data.lbVciExterior && Number(data.lbVciExterior.replace(',', '.')) !== 0) add('COEX_EXTERIOR', 'La capa exterior es SIN VCI, pero se capturaron libras de VCI distintas de cero.', 'CONTRADICCION', { campos: ['lbVciExterior'], seccion: 'capas' });
   if (!context) return avisos;
-  const r = interpretarProductoBind({ ID: 'borrador', Code: context.code, Title: context.title });
+  const r = interpretarProductoBind({ ID: 'borrador', Code: context.code, Title: context.title, Description: context.description ?? null });
   const sug = sugerirEspecificacion(r);
-  if (def.fuelles && r.campos.fuelleTotal.valor !== null && !data.fuelleTotal) add('CONFIRMAR_FUELLE_TOTAL', 'Falta confirmar el fuelle total sugerido por las tres medidas de BIND.', 'PENDIENTE', { campos: ['fuelleTotal'], seccion: 'medidas' });
+  // UNA sola decisión sobre la interpretación dimensional (en lugar de varios avisos): una bolsa con tres medidas se lee como Ancho × Fuelle total × Largo y el fuelle total se reparte en dos mitades. Esa convención
+  // aún no está validada por Manufactura y las mitades son DERIVADAS (no datos explícitos de BIND), así que la revisión no puede darla por confirmada en silencio: hasta que el usuario la reconozca (con estos
+  // mismos valores) la finalización queda bloqueada, como cualquier contradicción. Si cambia alguna de las medidas, el reconocimiento deja de valer.
+  if (def.fuelles && r.campos.fuelleTotal.valor !== null) {
+    const tres = (texto: string): string[] => cadenasDeMedidas(normalizarTitulo(texto)).filter((c) => c.split(/\s*X\s*/).length === 3);
+    const expresiones = [...new Set([...tres(context.title), ...tres(context.description ?? '')])];
+    const varias = expresiones.length > 1;
+    add('INTERPRETACION_DIMENSIONAL',
+      `Interpretación dimensional por confirmar: ${expresiones.length > 0 ? `las medidas de BIND («${expresiones.join('» y «')}»)` : 'las tres medidas de BIND'} se leyeron como Ancho × Fuelle total × Largo y los fuelles derecho e izquierdo son la mitad del fuelle total (derivados, no datos explícitos). `
+      + `Esa convención aún no está validada por Manufactura.${varias ? ' BIND expresa las medidas de más de una forma: compáralas, el sistema no convierte unidades.' : ''} Revisa las medidas y los fuelles y reconoce la interpretación para finalizar.`,
+      'CONTRADICCION', { id: 'INTERPRETACION_DIMENSIONAL', campos: ['ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones'], seccion: 'medidas', resumen: 'Confirma la interpretación dimensional (Ancho × Fuelle × Largo).', origen: 'TITLE' });
+  }
   const colores = coloresExplicitos(context.title);
   const variante = def.variantes?.find((v) => v.valor === data.coexVariante);
   const preset = def.colores.find((c) => c.hex.toLowerCase() === data.colorHex?.toLowerCase());

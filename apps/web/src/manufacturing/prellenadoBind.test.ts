@@ -3,6 +3,7 @@ import type { BindProductLookup } from '../services/bindProducts';
 import type { FieldKey } from '../services/manufacturingFamilies';
 import { familyConfigs } from '../test/bindProductFixtures';
 import lookups from '../test/bindLookups.fixture.json';
+import { bloquea, crearIncidencia, huella } from './incidencias';
 import { buildInitialForm, configOf, restoreField, selectFamily, setFieldValue, validateSpecification, type SpecificationForm } from './specificationForm';
 
 // Prellenado desde BIND con respuestas REALES del backend (bindLookups.fixture.json, sincronizado con una prueba de la API). Mide cuántos datos obligatorios deja preparados el sistema, cuántos son
@@ -33,7 +34,7 @@ describe('DANFPMGOC04: antes faltaban 9 datos obligatorios; ahora la hoja queda 
     expect(v('calibre')).toBe('200');                                                       // literal: jamás «2 MIL»
     expect(v('pesoLb')).toBe('0.155');
     expect(f.fields.presentacion.base.fuente).toBe('DESCRIPTION');
-    expect(f.fields.ancho.base.fuente).toBe('TITLE_Y_DESCRIPTION');
+    expect(f.fields.ancho.base.fuente).toBeUndefined();                                      // las tres medidas son una interpretación: no se presentan como «corroboradas»
     expect(f.fields.calibre.base.fuente).toBe('DESCRIPTION');
   });
 
@@ -138,5 +139,23 @@ describe('modalidad explícita', () => {
     const f = buildInitialForm(conModalidad, familyConfigs, '2026-11-05');
     expect(f.fields.modalidad).toMatchObject({ value: 'DOBLADA', base: { origin: 'SUGERIDO' } });
     expect(validateSpecification(f, familyConfigs, conModalidad).errors).toEqual({});
+  });
+});
+
+describe('interpretación dimensional: una sola decisión que no se confirma en silencio', () => {
+  const inc = crearIncidencia({ codigo: 'INTERPRETACION_DIMENSIONAL', id: 'INTERPRETACION_DIMENSIONAL', nivel: 'CONTRADICCION', campos: ['ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones'], seccion: 'medidas', mensaje: 'Interpretación dimensional por confirmar.', reconocible: true });
+  const f = formulario('DANFPMGOC04');
+  const valores = (k: FieldKey) => f.fields[k].value;
+
+  it('pendiente: bloquea la finalización; reconocida con estos valores: deja de bloquear; si cambia una medida, vuelve a bloquear', () => {
+    expect(bloquea(inc, valores, {})).toBe(true);
+    const reconocidas = { [inc.id]: huella(inc, valores) };
+    expect(bloquea(inc, valores, reconocidas)).toBe(false);
+    const editado = setFieldValue(f, 'ancho', '28');
+    expect(bloquea(inc, (k) => editado.fields[k].value, reconocidas)).toBe(true);
+  });
+
+  it('las medidas siguen siendo propuestas editables (sugeridas), no datos corroborados', () => {
+    for (const k of ['ancho', 'largo', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'] as const) expect(f.fields[k].base).toMatchObject({ origin: 'SUGERIDO' });
   });
 });

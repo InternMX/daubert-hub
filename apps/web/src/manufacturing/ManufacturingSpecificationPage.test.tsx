@@ -488,6 +488,8 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     await buscar(user, 'COEXAZUL');
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(campo('Producto').value).toBe('Bolsa con Fuelle - 20% de material reciclado');
+    expect(screen.queryByText(/no es una característica universal/)).not.toBeInTheDocument();                // la explicación completa queda en el detalle expandible
+    fireEvent.click(within(frameOf('Producto')).getByTestId('detalle-toggle'));
     expect(screen.getByText(/no es una característica universal/)).toBeInTheDocument();
     fireEvent.change(campo('Peso de la capa interior (lb)'), { target: { value: '0.20000' } });
     fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
@@ -621,6 +623,7 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     const composicion = screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
     expect(within(composicion).getByText('Sugerido por el sistema')).toBeInTheDocument();
     expect(within(composicion).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');
+    fireEvent.click(within(composicion).getByTestId('detalle-toggle'));
     expect(within(composicion).getByText(/Inferida de la clave PMG del código/)).toBeInTheDocument();
     expect(screen.getByTestId('material-row')).toHaveTextContent('Film / plástico · clave PMG');
     expect(within(screen.getByTestId('material-row')).getByTestId('source-chip')).toHaveTextContent('Inferido de Code');

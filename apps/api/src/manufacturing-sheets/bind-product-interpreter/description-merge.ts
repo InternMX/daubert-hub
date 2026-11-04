@@ -74,8 +74,10 @@ export function fusionarTituloDescripcion(titulo: TituloInterpretado, desc: Titu
       fuelleTotal = pendienteContradiccion(nota); fuelleDerecho = pendienteContradiccion(nota); fuelleIzquierdo = pendienteContradiccion(nota);
       unidadDimensiones = pendienteContradiccion('Unidad pendiente: medidas contradictorias.');
     } else {
-      ancho = corroborado(titulo.ancho); largo = corroborado(titulo.largo);
-      if (titulo.fuelleTotal.valor !== null) { fuelleTotal = corroborado(titulo.fuelleTotal); fuelleDerecho = corroborado(titulo.fuelleDerecho); fuelleIzquierdo = corroborado(titulo.fuelleIzquierdo); }
+      // Que Title y Description digan lo mismo corrobora los NÚMEROS, no la interpretación: una lectura sugerida (tres medidas = Ancho × Fuelle × Largo) sigue siendo una sugerencia y NO se marca como corroborada.
+      const coinciden = <T,>(c: Campo<T>): Campo<T> => (c.origen === 'SUGERIDO' ? { ...c, nota: [c.nota, 'La expresión coincide en Title y Description; la interpretación sigue pendiente de confirmar.'].filter(Boolean).join(' ') } : corroborado(c));
+      ancho = coinciden(titulo.ancho); largo = coinciden(titulo.largo);
+      if (titulo.fuelleTotal.valor !== null) { fuelleTotal = coinciden(titulo.fuelleTotal); fuelleDerecho = coinciden(titulo.fuelleDerecho); fuelleIzquierdo = coinciden(titulo.fuelleIzquierdo); }
       if (!tiene(titulo.unidadDimensiones) && tiene(desc.unidadDimensiones)) unidadDimensiones = desdeDescripcion(desc.unidadDimensiones);
       else if (tiene(titulo.unidadDimensiones) && tiene(desc.unidadDimensiones) && titulo.unidadDimensiones.valor !== desc.unidadDimensiones.valor) {
         adv.push({ codigo: 'UNIDAD_CONTRADICTORIA', mensaje: `La unidad de las medidas difiere entre el título (${titulo.unidadDimensiones.valor}) y Description (${desc.unidadDimensiones.valor}).`, campos: ['unidadDimensiones'] });
