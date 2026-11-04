@@ -9,8 +9,8 @@ import { listClients } from '../services/clients';
 // Administración (solo ADMIN, protegida por AdminRoute y por la API): abreviaturas confirmadas, propuestas de usuarios y candidatas. Una abreviatura puede asociarse a varios clientes.
 // Nada se importa automáticamente: cada alta o resolución es una acción explícita. El cliente debe ser una empresa activa con rol CLIENTE (la base lo valida).
 
-const ESTADOS: Array<{ v: '' | EstadoAbreviatura; t: string }> = [
-  { v: '', t: 'Todas' }, { v: 'PROPUESTA', t: 'Propuestas por revisar' }, { v: 'CONFIRMADA', t: 'Confirmadas' }, { v: 'CANDIDATA', t: 'Candidatas (extracción)' }, { v: 'RECHAZADA', t: 'Rechazadas' }, { v: 'INACTIVA', t: 'Inactivas' }
+const ESTADOS: Array<{ v: 'TODAS' | EstadoAbreviatura; t: string }> = [
+  { v: 'TODAS', t: 'Todas' }, { v: 'PROPUESTA', t: 'Propuestas por revisar' }, { v: 'CONFIRMADA', t: 'Confirmadas' }, { v: 'CANDIDATA', t: 'Candidatas (extracción)' }, { v: 'RECHAZADA', t: 'Rechazadas' }, { v: 'INACTIVA', t: 'Inactivas' }
 ];
 const ALCANCE: Record<Alcance, string> = { GENERAL: 'General', CONTEXTO: 'Contexto', CODIGO_COMPLETO: 'Código completo' };
 const ORIGEN: Record<string, string> = { EXTRACCION_HISTORICA: 'Extracción histórica', OCR_HISTORICO: 'OCR histórico', MANUAL_ADMIN: 'Registro de ADMIN', PROPUESTA_USUARIO: 'Propuesta de usuario' };
@@ -28,7 +28,7 @@ function acciones(a: AbreviaturaVista): Array<{ accion: AccionAbreviatura; texto
   }
 }
 
-function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (mensaje: string) => void; fijo?: { id: string; nombre: string }; puedeResolver: boolean }) {
+function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (creada: AbreviaturaVista, mensaje: string) => void; fijo?: { id: string; nombre: string }; puedeResolver: boolean }) {
   const [abierta, setAbierta] = useState(false);
   const [busca, setBusca] = useState('');
   const [opciones, setOpciones] = useState<Array<{ id: string; nombre: string }>>([]);
@@ -52,7 +52,8 @@ function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (mensaje
     setOcupado(true); setError('');
     try {
       const r = await crearAbreviatura({ abreviatura: abreviatura.trim().toUpperCase(), clienteId: cliente.id, alcance, ...(alcance === 'GENERAL' ? {} : { codigoPatron: patron.trim().toUpperCase() }), evidencia: evidencia.trim() || undefined, soloProponer });
-      onCreada(`Abreviatura ${r.abreviatura} → ${r.cliente} registrada como ${r.estado === 'CONFIRMADA' ? 'confirmada' : 'propuesta'}.`);
+      // Solo llega aquí si el servidor confirmó el alta (un error salta al catch y nunca se muestra como éxito).
+      onCreada(r, `Abreviatura ${r.abreviatura} → ${r.cliente} registrada como ${r.estado === 'CONFIRMADA' ? 'confirmada' : 'propuesta'}.`);
       setAbierta(false); setAbreviatura(''); setPatron(''); setEvidencia(''); setCliente(fijo ?? null);
     } catch (e) { setError(mensajeError(e)); } finally { setOcupado(false); }
   };
@@ -85,7 +86,7 @@ function NuevaAsociacion({ onCreada, fijo, puedeResolver }: { onCreada: (mensaje
 
 /** Administración de abreviaturas (contenido reutilizable: hoy en Configuración de Hojas de manufactura; mañana también en el detalle de un cliente). */
 export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string; nombre: string } } = {}) {
-  const [estado, setEstado] = useState<'' | EstadoAbreviatura>(cliente ? '' : 'PROPUESTA');
+  const [estado, setEstado] = useState<'TODAS' | EstadoAbreviatura>(cliente ? 'TODAS' : 'PROPUESTA');
   const [q, setQ] = useState('');
   const [datos, setDatos] = useState<{ disponible: boolean; data: AbreviaturaVista[]; conteos: Record<string, number> } | null>(null);
   const [error, setError] = useState('');
@@ -94,18 +95,39 @@ export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string
   const [motivo, setMotivo] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [recarga, setRecarga] = useState(0);
+  const [destacado, setDestacado] = useState<string | null>(null);
 
   useEffect(() => {
     const c = new AbortController();
     const t = setTimeout(() => {
-      listarAbreviaturas({ estado: estado || undefined, q, clienteId: cliente?.id }, c.signal).then((r) => { setDatos(r); setError(''); }).catch((e: unknown) => { if (!(e instanceof DOMException)) setError(mensajeError(e)); });
+      listarAbreviaturas({ estado: estado === 'TODAS' ? undefined : estado, q, clienteId: cliente?.id }, c.signal).then((r) => { setDatos(r); setError(''); }).catch((e: unknown) => { if (!(e instanceof DOMException)) setError(mensajeError(e)); });
     }, q ? 300 : 0);
     return () => { clearTimeout(t); c.abort(); };
   }, [estado, q, recarga, cliente?.id]);
 
+  // El destacado dura unos segundos.
+  useEffect(() => {
+    if (!destacado) return undefined;
+    const t = setTimeout(() => setDestacado(null), 4000);
+    return () => clearTimeout(t);
+  }, [destacado]);
+
+  /**
+   * Tras un alta correcta: el filtro pasa a lo que el usuario acaba de crear (Confirmadas / Propuestas; en la ficha de un cliente se muestran todas), se limpia la búsqueda que pudiera ocultarla,
+   * la fila aparece al instante (sin duplicarse) y se vuelve a consultar la API para traer también los contadores.
+   */
+  const alCrear = useCallback((creada: AbreviaturaVista, mensaje: string): void => {
+    setAviso(mensaje); setError('');
+    setQ('');
+    if (!cliente) setEstado(creada.estado === 'CONFIRMADA' ? 'CONFIRMADA' : 'PROPUESTA');
+    setDatos((prev) => (prev ? { ...prev, data: [creada, ...prev.data.filter((x) => x.id !== creada.id)] } : prev));
+    setDestacado(creada.id);
+    setRecarga((n) => n + 1);
+  }, [cliente]);
+
   const resolver = useCallback(async (a: AbreviaturaVista, accion: AccionAbreviatura, texto?: string): Promise<void> => {
     setOcupado(true); setError('');
-    try { await resolverAbreviatura(a.id, accion, texto); setAviso(`${a.abreviatura} → ${a.cliente}: ${accion === 'CONFIRMAR' ? 'confirmada' : accion === 'RECHAZAR' ? 'rechazada' : accion === 'INACTIVAR' ? 'inactivada' : 'reactivada'}.`); setRechazando(null); setMotivo(''); setRecarga((n) => n + 1); }
+    try { const r = await resolverAbreviatura(a.id, accion, texto); setDestacado(r.id); setAviso(`${a.abreviatura} → ${a.cliente}: ${accion === 'CONFIRMAR' ? 'confirmada' : accion === 'RECHAZAR' ? 'rechazada' : accion === 'INACTIVAR' ? 'inactivada' : 'reactivada'}.`); setRechazando(null); setMotivo(''); setRecarga((n) => n + 1); }
     catch (e) { setError(mensajeError(e)); setRechazando(null); } finally { setOcupado(false); }
   }, []);
 
@@ -117,10 +139,10 @@ export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string
         {datos && !datos.disponible && <Alert severity="info" data-testid="catalogo-no-habilitado">El catálogo de abreviaturas aún no está habilitado en este entorno (falta aplicar la migración correspondiente). Las hojas de manufactura siguen funcionando sin sugerencias.</Alert>}
         {datos?.disponible && (
           <>
-            <NuevaAsociacion fijo={cliente} puedeResolver={datos.puedeResolver} onCreada={(m) => { setAviso(m); setRecarga((n) => n + 1); }} />
+            <NuevaAsociacion fijo={cliente} puedeResolver={datos.puedeResolver} onCreada={alCrear} />
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-              <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value as '' | EstadoAbreviatura)} sx={{ minWidth: 240 }}>
-                {ESTADOS.map((o) => <MenuItem key={o.v} value={o.v}>{o.t}{o.v && datos.conteos[o.v] ? ` (${datos.conteos[o.v]})` : ''}</MenuItem>)}
+              <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value as 'TODAS' | EstadoAbreviatura)} sx={{ minWidth: 240 }}>
+                {ESTADOS.map((o) => <MenuItem key={o.v} value={o.v}>{o.t}{o.v !== 'TODAS' && datos.conteos[o.v] ? ` (${datos.conteos[o.v]})` : ''}</MenuItem>)}
               </TextField>
               <TextField size="small" label="Buscar abreviatura o cliente" value={q} onChange={(e) => setQ(e.target.value)} sx={{ minWidth: 260 }} />
             </Stack>
@@ -133,7 +155,7 @@ export function AdministracionAbreviaturas({ cliente }: { cliente?: { id: string
                       <TableHead><TableRow><TableCell>Abreviatura</TableCell><TableCell>Cliente</TableCell><TableCell>Alcance</TableCell><TableCell>Estado</TableCell><TableCell>Procedencia y evidencia</TableCell><TableCell>Resolución</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead>
                       <TableBody>
                         {datos.data.map((a) => (
-                          <TableRow key={a.id} hover data-testid="abreviatura-fila">
+                          <TableRow key={a.id} hover data-testid="abreviatura-fila" data-destacado={a.id === destacado ? 'true' : undefined} sx={{ transition: 'background-color 600ms', bgcolor: a.id === destacado ? 'action.selected' : undefined }}>
                             <TableCell sx={{ fontWeight: 600 }}>{a.abreviatura}</TableCell>
                             <TableCell>{a.cliente}</TableCell>
                             <TableCell>{ALCANCE[a.alcance]}{a.codigoPatron ? ` · ${a.codigoPatron}` : ''}</TableCell>
