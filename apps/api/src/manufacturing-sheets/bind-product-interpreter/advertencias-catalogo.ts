@@ -24,6 +24,10 @@ const REGLAS: Record<CodigoAdvertencia, Regla> = {
   MEDIDAS_NO_ESTANDAR: { nivel: 'PENDIENTE' },
   MEDIDAS_MULTIPLES: { nivel: 'PENDIENTE' },
   MEDIDAS_TRES_DIMENSIONES_SUGERIDAS: { nivel: 'INFORMACION' },
+  // El mismo producto trae sus medidas en dos sistemas (p. ej. cm y pulgadas): se usó el que corrobora Description; el otro se informa para que se compare.
+  MEDIDAS_EN_VARIOS_SISTEMAS: { nivel: 'INFORMACION' },
+  // Title y Description dicen cosas distintas del mismo dato: no se elige una fuente; el usuario decide (reconocible como cualquier contradicción).
+  TITULO_DESCRIPCION_DISTINTOS: { nivel: 'CONTRADICCION' },
   DATO_INFERIDO_DEL_CODIGO: { nivel: 'INFORMACION' },
   MATERIAL_PAPEL_SIN_PLANTILLA: { nivel: 'PENDIENTE', id: 'MATERIAL_PAPEL_SIN_PLANTILLA', seccion: 'familia' },
   UNIDAD_AUSENTE: { nivel: 'PENDIENTE', explicaFaltante: true },

@@ -13,6 +13,8 @@ export interface TituloInterpretado {
   calibre: Campo<CalibreOriginal>;
   presentacion: Campo<Presentacion>;
   cantidad: Campo<CantidadPiezas>;
+  /** Cuántas expresiones de medidas trae el texto (cadenas «A x B…» o etiquetas ANCHO/LARGO): 0 = el texto no habla de medidas, por lo que otra fuente puede aportarlas sin contradecirlo. */
+  expresionesDeMedidas: number;
   advertencias: AdvertenciaBase[];
 }
 
@@ -76,7 +78,7 @@ function interpretarResina(t: string, adv: (c: CodigoAdvertencia, m: string, cam
 // ---------------------------------------------------------------- dimensiones
 const UNIDAD = '(?:"|MM\\b|CM\\b|CENT[ÍI]METROS?\\b|IN\\b|PULGADAS?\\b|PULG\\b|METROS?\\b|MTS?\\b|M\\b)';
 const NUM = '\\d+(?:[.,]\\d+)?';
-const CADENA_MEDIDAS = new RegExp(`${NUM}\\s*${UNIDAD}?(?:\\s*X\\s*${NUM}\\s*${UNIDAD}?)+`, 'g');
+export const CADENA_MEDIDAS = new RegExp(`${NUM}\\s*${UNIDAD}?(?:\\s*X\\s*${NUM}\\s*${UNIDAD}?)+`, 'g');
 const PARTE_MEDIDA = new RegExp(`^(${NUM})\\s*(${UNIDAD})?$`);
 
 function unidadDe(texto: string): UnidadDimension {
@@ -95,12 +97,15 @@ interface Medidas {
   unidad: Campo<UnidadDimension>;
 }
 
-function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Medidas {
+/** Expresiones de medidas (cadenas «A x B [x C]» con su unidad) de un texto ya normalizado. */
+export const cadenasDeMedidas = (textoNormalizado: string): string[] => textoNormalizado.match(CADENA_MEDIDAS) ?? [];
+
+function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void, preferida: string | null = null, soloEtiquetas = false): Medidas {
   const sinFuelles = { fuelleTotal: pendiente<number>('Sin fuelles en el título.'), fuelleDerecho: pendiente<number>('Sin fuelles en el título.'), fuelleIzquierdo: pendiente<number>('Sin fuelles en el título.') };
   const vacio = (nota: string): Medidas => ({ ancho: pendiente(nota), largo: pendiente(nota), ...sinFuelles, unidad: pendiente('Unidad dimensional sin determinar.') });
   // En rollos y termoencogibles no se presupone el orden comercial de las medidas.
   // Solo las etiquetas ANCHO / LARGO identifican esos dos campos; las cotas del dibujo siguen siendo independientes.
-  if (/\bROLLO\s+CONTINUO\b|\bTERMOENCOG\w*\b/.test(t)) {
+  if (soloEtiquetas || /\bROLLO\s+CONTINUO\b|\bTERMOENCOG\w*\b/.test(t)) {
     const anchos = [...t.matchAll(new RegExp(`\\bANCHO\\s*[:=]?\\s*(${NUM})\\s*(${UNIDAD})?`, 'g'))];
     const largos = [...t.matchAll(new RegExp(`\\bLARGO\\s*[:=]?\\s*(${NUM})\\s*(${UNIDAD})?`, 'g'))];
     if (anchos.length === 1 && largos.length === 1) {
@@ -112,7 +117,12 @@ function interpretarMedidas(t: string, tipo: TipoProducto | null, adv: (c: Codig
     adv('MEDIDAS_NO_ESTANDAR', 'Rollo o termoencogible: el orden de las dimensiones no es inequívoco. Captura ancho, largo y las cotas independientes del dibujo.', ['ancho', 'largo']);
     return vacio('Orden dimensional pendiente: no se supone Ancho × Largo.');
   }
-  const cadenas = t.match(CADENA_MEDIDAS) ?? [];
+  let cadenas = cadenasDeMedidas(t);
+  // El mismo producto expresado en dos sistemas (p. ej. «69 x 43 x 66 cm (27 x 17 x 26.4")»): si Description corrobora EXACTAMENTE una de las expresiones, se usa esa y se informa de la otra.
+  if (cadenas.length > 1 && preferida !== null && cadenas.includes(preferida)) {
+    adv('MEDIDAS_EN_VARIOS_SISTEMAS', `El título expresa las medidas en más de una forma (${cadenas.join(' | ')}): se usó «${preferida}» porque la corrobora Description. Compara con la otra expresión; no se convierten unidades.`, ['ancho', 'largo', 'unidadDimensiones']);
+    cadenas = [preferida];
+  }
   if (cadenas.length === 0) {
     adv('MEDIDAS_INCOMPLETAS', 'El título no contiene dos dimensiones (Ancho × Largo).', ['ancho', 'largo']);
     return vacio('No se encontraron dimensiones.');
@@ -224,14 +234,25 @@ const CANTIDAD_PATRONES = [
   new RegExp(`\\b(\\d+)\\s*(BOLSAS|HOJAS)\\b`, 'g')
 ];
 
+// «PAQUETE 200/B»: la «B» NO se interpreta como «bolsas» (no está comprobado); solo cuenta cuando el texto habla de un paquete o rollo, y la unidad se sugiere por el tipo de producto.
+const CANTIDAD_BARRA_B = /\b(\d+)\s*\/\s*B\b/g;
+const HABLA_DE_PRESENTACION = /\b(?:PAQUETES?|PAQ|ROLLOS?)\b/;
+
 function interpretarCantidad(t: string, tipo: TipoProducto | null, adv: (c: CodigoAdvertencia, m: string, campos: string[]) => void): Campo<CantidadPiezas> {
   const encontradas = new Map<string, { cantidad: number; unidad: 'BOLSAS' | 'HOJAS' | null; fuente: string }>();
+  let soloBarraB = false;
   for (const patron of CANTIDAD_PATRONES) {
     for (const m of t.matchAll(patron)) {
       const palabra = m[2];
       const unidad = palabra === undefined ? null : palabra.startsWith('BOLSA') ? 'BOLSAS' : palabra.startsWith('HOJA') ? 'HOJAS' : null;
       const cantidad = Number(m[1]);
       encontradas.set(`${cantidad}`, { cantidad, unidad: unidad ?? encontradas.get(`${cantidad}`)?.unidad ?? null, fuente: m[0] });
+    }
+  }
+  if (HABLA_DE_PRESENTACION.test(t)) {
+    for (const m of t.matchAll(CANTIDAD_BARRA_B)) {
+      const cantidad = Number(m[1]);
+      if (!encontradas.has(`${cantidad}`)) { encontradas.set(`${cantidad}`, { cantidad, unidad: null, fuente: m[0] }); soloBarraB = true; }
     }
   }
   if (encontradas.size === 0) {
@@ -246,13 +267,16 @@ function interpretarCantidad(t: string, tipo: TipoProducto | null, adv: (c: Codi
   if (unidad === null) {
     // «C/200» sin la palabra Bolsas/Hojas: la unidad solo se sugiere a partir del tipo de producto.
     const sugerida = tipo === 'BOLSA' ? 'BOLSAS' : tipo === 'HOJA' ? 'HOJAS' : null;
-    return { valor: { cantidad, unidad: sugerida }, origen: 'SUGERIDO', fuente, nota: 'La unidad (bolsas u hojas) no está escrita en el título: se sugiere según el tipo de producto.' };
+    const nota = soloBarraB && /\/\s*B\b/.test(fuente)
+      ? 'La «B» de «/B» no está confirmada como «bolsas»: la unidad se sugiere según el tipo de producto. Revísala.'
+      : 'La unidad (bolsas u hojas) no está escrita en el título: se sugiere según el tipo de producto.';
+    return { valor: { cantidad, unidad: sugerida }, origen: 'SUGERIDO', fuente, nota };
   }
   return extraido({ cantidad, unidad }, fuente);
 }
 
 /** Interpreta el título de un producto de BIND. No convierte unidades ni asume la familia de manufactura. */
-export function interpretarTitulo(titulo: string): TituloInterpretado {
+export function interpretarTitulo(titulo: string, opciones: { medidasPreferidas?: string | null; soloEtiquetas?: boolean } = {}): TituloInterpretado {
   const t = normalizarTitulo(titulo ?? '');
   const advertencias: AdvertenciaBase[] = [];
   const adv = (codigo: CodigoAdvertencia, mensaje: string, campos: string[]): void => {
@@ -260,7 +284,7 @@ export function interpretarTitulo(titulo: string): TituloInterpretado {
   };
   const tipo = interpretarTipo(t, adv);
   const resina = interpretarResina(t, adv);
-  const medidas = interpretarMedidas(t, tipo.valor, adv);
+  const medidas = interpretarMedidas(t, tipo.valor, adv, opciones.medidasPreferidas ?? null, opciones.soloEtiquetas ?? false);
   const calibre = interpretarCalibre(t, titulo ?? '', adv);
   const presentacion = interpretarPresentacion(t, adv);
   const cantidad = interpretarCantidad(t, tipo.valor, adv);
@@ -269,5 +293,6 @@ export function interpretarTitulo(titulo: string): TituloInterpretado {
     advertencias.length = 0;
     adv('TITULO_NO_INTERPRETABLE', 'El título no contiene datos técnicos reconocibles: todos los campos quedan pendientes de captura.', ['tipo', 'resina', 'ancho', 'largo', 'unidadDimensiones', 'calibre', 'presentacion', 'cantidad']);
   }
-  return { tipo, resina, ancho: medidas.ancho, largo: medidas.largo, fuelleTotal: medidas.fuelleTotal, fuelleDerecho: medidas.fuelleDerecho, fuelleIzquierdo: medidas.fuelleIzquierdo, unidadDimensiones: medidas.unidad, calibre, presentacion, cantidad, advertencias };
+  return { tipo, resina, ancho: medidas.ancho, largo: medidas.largo, fuelleTotal: medidas.fuelleTotal, fuelleDerecho: medidas.fuelleDerecho, fuelleIzquierdo: medidas.fuelleIzquierdo, unidadDimensiones: medidas.unidad, calibre, presentacion, cantidad,
+    expresionesDeMedidas: cadenasDeMedidas(t).length + [...t.matchAll(/\bANCHO\s*[:=]?\s*\d/g)].length + [...t.matchAll(/\bLARGO\s*[:=]?\s*\d/g)].length, advertencias };
 }

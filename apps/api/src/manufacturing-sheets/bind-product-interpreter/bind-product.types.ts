@@ -17,7 +17,7 @@ export interface BindProductInput {
   Code: string;
   /** Descripción comercial: de aquí se interpretan los datos técnicos. */
   Title: string;
-  /** Información adicional (opcional). Se conserva, no se interpreta en esta fase. */
+  /** Información adicional (opcional). Se interpreta con la misma gramática que el Title y se concilia campo por campo (description-merge.ts). */
   Description?: string | null;
   /** Peso en libras, conforme a la convención de Daubert México. */
   Weight?: number | string | null;
@@ -28,7 +28,7 @@ export interface BindProductInput {
 export type Origen = 'EXTRAIDO' | 'SUGERIDO' | 'PENDIENTE';
 
 /** Procedencia de una interpretación cuando interviene el código: del título, inferida del código, corroborada por ambos o contradictoria. */
-export type FuenteDato = 'TITLE' | 'CODE' | 'TITLE_Y_CODE' | 'CONTRADICCION';
+export type FuenteDato = 'TITLE' | 'CODE' | 'TITLE_Y_CODE' | 'DESCRIPTION' | 'TITLE_Y_DESCRIPTION' | 'CONTRADICCION';
 
 export interface Campo<T> {
   /** Valor interpretado; null si no se pudo determinar. Un campo PENDIENTE puede conservar una lectura literal que requiere confirmación. */
@@ -70,6 +70,8 @@ export type CodigoAdvertencia =
   | 'MEDIDAS_NO_ESTANDAR'
   | 'MEDIDAS_MULTIPLES'
   | 'MEDIDAS_TRES_DIMENSIONES_SUGERIDAS'
+  | 'MEDIDAS_EN_VARIOS_SISTEMAS'
+  | 'TITULO_DESCRIPCION_DISTINTOS'
   | 'DATO_INFERIDO_DEL_CODIGO'
   | 'MATERIAL_PAPEL_SIN_PLANTILLA'
   | 'UNIDAD_AUSENTE'

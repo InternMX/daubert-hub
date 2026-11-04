@@ -33,7 +33,7 @@ export function conciliarConCodigo(titulo: TituloInterpretado, codigo: CodigoInt
     const omitida = resina.valor === null && resina.origen === 'PENDIENTE' && /no indica una resina/.test(resina.nota ?? '');
     if (resina.valor !== null && resina.origen !== 'PENDIENTE') {
       resina = resina.valor === codigo.resina
-        ? { ...resina, procedencia: 'TITLE_Y_CODE', nota: `Corroborada por el código (${clave}).` }
+        ? { ...resina, procedencia: resina.procedencia === 'DESCRIPTION' ? 'DESCRIPTION' : 'TITLE_Y_CODE', nota: `Corroborada por el código (${clave}).` }
         : { ...resina, procedencia: 'CONTRADICCION', nota: `El título indica ${resina.valor} y el código indica ${clave}: se conserva el título.` };
     } else if (omitida) {
       resina = { valor: codigo.resina, origen: 'SUGERIDO', fuente: `Code ${code} (${clave})`, procedencia: 'CODE', nota: `Inferida de la clave ${clave} del código; el título no indica la resina.${nota ? ` ${nota}` : ''}` };

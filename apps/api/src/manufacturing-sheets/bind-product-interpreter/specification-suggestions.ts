@@ -141,7 +141,8 @@ function sugerirColor(r: ResultadoInterpretacion, t: string): SugerenciaColor {
 
 /** Sugerencias del formulario (familia, resina VCI, color y etiqueta). La resina VCI nunca se asigna a composiciones Natural u otras sin regla confirmada. */
 export function sugerirEspecificacion(r: ResultadoInterpretacion): SugerenciasEspecificacion {
-  const t = normalizarTitulo(r.producto.title);
+  // Las marcas explícitas de familia/color se buscan en Title y en Description (la información adicional también puede decir «fuelle», «COEX», «azul»).
+  const t = normalizarTitulo(`${r.producto.title} ${r.producto.informacionAdicional ?? ''}`);
   const composicion = r.campos.resina.origen === 'PENDIENTE' ? null : r.campos.resina.valor;
   const porComposicion = composicion === null ? undefined : RESINA_VCI_POR_COMPOSICION[composicion];
   const resinaVci: SugerenciaTexto = porComposicion

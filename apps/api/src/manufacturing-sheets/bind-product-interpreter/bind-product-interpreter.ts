@@ -2,7 +2,8 @@ import { clasificarAdvertencias } from './advertencias-catalogo';
 import type { AdvertenciaBase, BindProductInput, Campo, FamiliaPosible, ResultadoInterpretacion } from './bind-product.types';
 import { interpretarCodigo } from './code-parser';
 import { conciliarConCodigo } from './code-reconciliation';
-import { interpretarTitulo } from './title-parser';
+import { fusionarTituloDescripcion } from './description-merge';
+import { cadenasDeMedidas, interpretarTitulo, normalizarTitulo } from './title-parser';
 import { UNIT_LABELS, UNIT_MARKS } from '../preview/family-registry';
 
 const textoONulo = (valor: unknown): string | null => (typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null);
@@ -39,9 +40,16 @@ export function interpretarProductoBind(producto: BindProductInput): ResultadoIn
   // Solo se leen los campos permitidos (cualquier otro, como precios o costos, se ignora aunque venga en el objeto).
   const { ID, Code, Title, Description, Weight, CreationDate } = producto;
   const code = (Code ?? '').trim();
-  const titulo = interpretarTitulo(Title ?? '');
+  // Title y Description se interpretan con LA MISMA gramática y se concilian campo por campo (description-merge.ts): un dato que solo aparece en Description se aprovecha; si ambos dicen cosas distintas se advierte.
+  const descripcion = textoONulo(Description);
+  const cadenasDescription = descripcion === null ? [] : cadenasDeMedidas(normalizarTitulo(descripcion));
+  // Rollo continuo y termoencogible: las medidas solo se leen con las etiquetas ANCHO / LARGO, también en Description (no se aplican reglas de bolsa a rollos).
+  const soloEtiquetas = /\bROLLO\s+CONTINUO\b|\bTERMOENCOG\w*\b/.test(normalizarTitulo(`${Title ?? ''} ${descripcion ?? ''}`));
+  const tituloSolo = interpretarTitulo(Title ?? '', { medidasPreferidas: cadenasDescription.length === 1 ? (cadenasDescription[0] as string) : null, soloEtiquetas });
+  const fusion = descripcion === null ? null : fusionarTituloDescripcion(tituloSolo, interpretarTitulo(descripcion, { soloEtiquetas }));
+  const titulo = fusion?.titulo ?? tituloSolo;
   const codigo = interpretarCodigo(code);
-  const advertencias: AdvertenciaBase[] = [...titulo.advertencias];
+  const advertencias: AdvertenciaBase[] = [...titulo.advertencias, ...(fusion?.advertencias ?? [])];
   const peso = interpretarPeso(Weight, advertencias);
   // Conciliación Title ↔ Code: el título manda; el código solo sugiere cuando el título omite el dato (con su procedencia) y las contradicciones se advierten.
   const conciliado = conciliarConCodigo(titulo, codigo, code, Title ?? '', advertencias);
