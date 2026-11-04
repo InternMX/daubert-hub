@@ -18,8 +18,9 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { AuthContext } from '../auth/authContext.core';
 import { EmptyState } from '../components/EmptyState';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
@@ -44,6 +45,7 @@ function getQuery(searchParams: URLSearchParams) {
 }
 
 export function ClientsPage() {
+  const role = useContext(AuthContext)?.user?.role;
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const query = getQuery(searchParams);
@@ -99,7 +101,8 @@ export function ClientsPage() {
     <>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Clientes' }]} />
       <PageHeader title="Clientes" description="Consulta y administra los clientes registrados.">
-        <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>
+        {/* El alta definitiva es solo de ADMIN (la API lo impone con 403); a una cuenta GENERAL no se le ofrece un botón que terminaría en un error. */}
+        {role !== 'GENERAL' && <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>}
       </PageHeader>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mt: 4, maxWidth: 1080 }}>
         <TextField label="Buscar cliente" placeholder="Nombre, razón social o RFC" value={search} onChange={(event) => setSearch(event.target.value)} fullWidth />

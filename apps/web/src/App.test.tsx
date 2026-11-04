@@ -129,6 +129,20 @@ describe('application navigation', () => {
   });
 });
 
+describe('alta de clientes reservada a ADMIN (interfaz)', () => {
+  beforeEach(() => { activityMock.mockResolvedValue([]); automationsOverviewMock.mockResolvedValue([]); });
+
+  it('una cuenta GENERAL que abre /clients/new directamente es redirigida (no ve el formulario) y conserva el listado de clientes', () => {
+    renderApp('/clients/new', testGeneralUser);
+    expect(screen.queryByRole('heading', { level: 1, name: 'Nuevo cliente' })).not.toBeInTheDocument();
+  });
+
+  it('ADMIN sí abre el formulario de alta', () => {
+    renderApp('/clients/new', testAdminUser);
+    expect(screen.getByRole('heading', { level: 1, name: 'Nuevo cliente' })).toBeInTheDocument();
+  });
+});
+
 describe('Home operational landing page', () => {
   beforeEach(() => { activityMock.mockResolvedValue([]); automationsOverviewMock.mockResolvedValue([]); });
 
@@ -141,7 +155,9 @@ describe('Home operational landing page', () => {
     expect(screen.getByText(identity)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Acciones rápidas' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Nuevo proveedor' })).toHaveAttribute('href', '/providers/new');
-    expect(screen.getByRole('link', { name: 'Nuevo cliente' })).toHaveAttribute('href', '/clients/new');
+    // El alta de clientes es solo de ADMIN (la API lo impone): una cuenta GENERAL no ve el acceso rápido.
+    if (authenticatedUser.role === 'ADMIN') expect(screen.getByRole('link', { name: 'Nuevo cliente' })).toHaveAttribute('href', '/clients/new');
+    else expect(screen.queryByRole('link', { name: 'Nuevo cliente' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Nuevo contacto' })).toHaveAttribute('href', '/contacts?action=new-contact');
     expect(screen.queryByRole('link', { name: 'Nuevo usuario' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Actividad reciente' })).toBeInTheDocument();

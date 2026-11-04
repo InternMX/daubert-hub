@@ -46,7 +46,7 @@ function HomePage() {
         <Typography id="quick-actions-title" variant="h2">Acciones rápidas</Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
           <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
-          <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>
+          {user.role === 'ADMIN' && <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>}
           <Button component={Link} to="/contacts?action=new-contact" variant="contained">Nuevo contacto</Button>
         </Stack>
       </Box>
@@ -72,7 +72,6 @@ export function App() {
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
         <Route path="/providers/:id" element={<ProviderDetailPage />} />
         <Route path="/clients" element={<ClientsPage />} />
-        <Route path="/clients/new" element={<NewClientPage />} />
         <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
@@ -83,6 +82,7 @@ export function App() {
         <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />
         <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
+          <Route path="/clients/new" element={<NewClientPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path={MANUFACTURING_SHEETS_SETTINGS_ROUTE} element={<ConfiguracionManufacturaPage />} />
           <Route path="/client-abbreviations" element={<Navigate to={MANUFACTURING_SHEETS_SETTINGS_ROUTE} replace />} />

@@ -12,6 +12,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { identityFromRequest, type AuthenticatedRequest } from '../common/authenticated-request';
+import { Roles } from '../security/route-access.decorators';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsDto } from './dto/list-clients.dto';
@@ -32,6 +33,9 @@ export class ClientsController {
     return this.clients.detail(clientId);
   }
 
+  // El alta definitiva de un cliente (incluida la que agrega el rol CLIENTE a una empresa existente) es solo de ADMIN. Lo impone el RolesGuard global (403 ROLE_NOT_ALLOWED): no depende de la interfaz.
+  // La consulta (GET) y el resto de rutas conservan su acceso actual.
+  @Roles('ADMIN')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() input: CreateClientDto, @Req() request: AuthenticatedRequest) {
