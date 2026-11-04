@@ -8,7 +8,8 @@ import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
-import { capacidadesDocumentales, DocumentApiError, documentErrorText, historialPorCodigo, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
+import { capacidadesDocumentales, DocumentApiError, documentErrorText, historialPorCodigo, obtenerDocumento, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
+import { useSearchParams } from 'react-router-dom';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
 import { IncidenciasDeCampo, IncidenciasDeSeccion, IncidenciasProvider, ResumenIncidencias } from './IncidenciaViews';
 import { localizar } from './incidenciasNavegacion';
@@ -356,6 +357,23 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     setResponsables(desdeVista(doc.responsables ?? [])); setRespEditados(false);
   }
 
+  // Enlace directo a una hoja (p. ej. desde «Actividad reciente»): /…/manufacturing-sheets?revision=<uuid>. Abrir un documento NO modifica nada (la base decide el acceso: un borrador ajeno responde 404).
+  const [errorEnlace, setErrorEnlace] = useState<string | null>(null);
+  const [parametros, setParametros] = useSearchParams();
+  const revisionDeEnlace = parametros.get('revision');
+  useEffect(() => {
+    if (!documentos || configStatus !== 'ready' || !revisionDeEnlace) return undefined;
+    const quitar = (): void => setParametros((p) => { const n = new URLSearchParams(p); n.delete('revision'); return n; }, { replace: true });
+    if (!/^[0-9a-f-]{36}$/i.test(revisionDeEnlace)) { quitar(); return undefined; }
+    let activo = true;
+    obtenerDocumento(revisionDeEnlace)
+      .then((d) => { if (activo) abrirDocumento(d); })
+      .catch((e: unknown) => { if (activo) setErrorEnlace(e instanceof DocumentApiError ? (e.kind === 'NOT_FOUND' ? 'La hoja ya no está disponible o no tienes acceso a ella.' : documentErrorText[e.kind]) : documentErrorText.NETWORK); })
+      .finally(() => { if (activo) quitar(); });
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo debe reaccionar al enlace y a que las familias estén listas
+  }, [documentos, configStatus, revisionDeEnlace]);
+
   // Consulta EXPLÍCITA de los datos actuales de BIND, solo lectura: no toca el formulario, el borrador ni lo guardado, y su indisponibilidad no afecta al documento abierto.
   async function consultarBindActual(): Promise<void> {
     if (!lookup) return;
@@ -552,6 +570,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         onPrepare={(c) => { setCode(c); void search(c); }}
       />
 
+      {errorEnlace && <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setErrorEnlace(null)} data-testid="error-enlace">{errorEnlace}</Alert>}
       {mensaje && <Alert severity="success" sx={{ mt: 2 }} role="status" onClose={() => setMensaje(null)} data-testid="mensaje-pagina">{mensaje}</Alert>}
 
       {documentos && busqueda && (

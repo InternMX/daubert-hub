@@ -1283,3 +1283,35 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
   });
 
 });
+
+// Enlace directo a una hoja (desde «Actividad reciente»): ?revision=<uuid>. Abrir no modifica nada; si no hay acceso, aviso claro y el resto de la página sigue funcionando.
+describe('enlace directo a una hoja (?revision=)', () => {
+  const UUID = '11111111-2222-4333-8444-555555555555';
+  const conEnlace = (consulta: string) => render(<MemoryRouter initialEntries={[`/automations/manufacturing-sheets${consulta}`]}><ManufacturingSpecificationPage documentos retardoAutoguardado={RETARDO} /></MemoryRouter>);
+
+  it('abre la revisión indicada (solo lectura del servidor) y muestra su contenido guardado', async () => {
+    m.obtenerDocumento.mockResolvedValue(guardado({ id: UUID }));
+    conEnlace(`?revision=${UUID}`);
+    expect(((await screen.findByLabelText('Ancho')) as HTMLInputElement).value).toBe('77');
+    expect(m.obtenerDocumento).toHaveBeenCalledTimes(1);
+    expect(m.obtenerDocumento).toHaveBeenCalledWith(UUID);
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('error-enlace')).toBeNull();
+  });
+
+  it('sin acceso o inexistente (404): aviso claro, nada se abre y la búsqueda sigue disponible', async () => {
+    m.obtenerDocumento.mockRejectedValue(new docs.DocumentApiError('NOT_FOUND', 404));
+    conEnlace(`?revision=${UUID}`);
+    expect(await screen.findByTestId('error-enlace')).toHaveTextContent('La hoja ya no está disponible o no tienes acceso a ella.');
+    expect(screen.queryByLabelText('Ancho')).toBeNull();
+    expect(screen.getByLabelText('Código DCMX a buscar')).toBeEnabled();
+  });
+
+  it('un valor que no es un UUID se ignora sin consultar a la API', async () => {
+    conEnlace('?revision=../../admin');
+    await screen.findByLabelText('Código DCMX a buscar');
+    await esperar();
+    expect(m.obtenerDocumento).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('error-enlace')).toBeNull();
+  });
+});

@@ -3,6 +3,7 @@ import { mapAudiExecutionState } from '../automations/audi-processing-status';
 import { derivePaymentNotificationOutcome } from '../automations/payment-notifications/payment-notification-status';
 import { caterpillarProcessLabel } from '../automations/remisiones-caterpillar/caterpillar-process-labels';
 import { RecentActivityCategoryFilter, type ListRecentActivityDto } from './dto/list-recent-activity.dto';
+import { ManufacturingActivityRepository, type ManufacturingActivityRow } from './manufacturing-activity.repository';
 import { DocumentSeriesActivityRepository, type DocumentSeriesActivityRow } from './document-series-activity.repository';
 import { PaymentNotificationActivityRepository, type PaymentNotificationActivityRow } from './payment-notification-activity.repository';
 import { RecentActivityRepository, type RecentActivitySource } from './recent-activity.repository';
@@ -11,7 +12,7 @@ import { RemisionesAudiActivityRepository, type RemisionesAudiActivityRow } from
 import { RemisionesCaterpillarActivityRepository, type RemisionesCaterpillarActivityRow } from './remisiones-caterpillar-activity.repository';
 
 type Snapshot = Record<string, unknown> | null;
-type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED';
+type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED' | 'MANUFACTURING_DOCUMENT_CREATED' | 'MANUFACTURING_REVISION_FINALIZED';
 export type ActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 // The actor who performed the action, when known. Never fabricated: for a
@@ -39,6 +40,8 @@ export interface RecentActivityItem {
   context: string | null;
   occurredAt: string;
   actor: RecentActivityActor | null;
+  /** Ruta de la aplicación a la que enlaza la actividad (solo cuando existe un destino real, p. ej. una hoja de manufactura). */
+  link?: string;
 }
 
 export interface RecentActivityResponse {
@@ -75,6 +78,8 @@ const titles: Record<ActivityType, string> = {
   CONTACT_METHOD_DEACTIVATED: 'Medio de contacto desactivado',
   CONTACT_METHOD_REACTIVATED: 'Medio de contacto reactivado',
   AUTOMATION_COMPLETED: 'Automatización completada',
+  MANUFACTURING_DOCUMENT_CREATED: 'Hoja de manufactura creada',
+  MANUFACTURING_REVISION_FINALIZED: 'Hoja de manufactura finalizada',
   AUTOMATION_PROCESSING: 'Automatización en proceso',
   AUTOMATION_PARTIAL: 'Automatización con incidencias',
   AUTOMATION_FAILED: 'Automatización con error',
@@ -100,6 +105,8 @@ const categories: Record<ActivityType, ActivityCategory> = {
   CONTACT_METHOD_DEACTIVATED: 'CONTACT',
   CONTACT_METHOD_REACTIVATED: 'CONTACT',
   AUTOMATION_COMPLETED: 'AUTOMATION',
+  MANUFACTURING_DOCUMENT_CREATED: 'AUTOMATION',
+  MANUFACTURING_REVISION_FINALIZED: 'AUTOMATION',
   AUTOMATION_PROCESSING: 'AUTOMATION',
   AUTOMATION_PARTIAL: 'AUTOMATION',
   AUTOMATION_FAILED: 'AUTOMATION',
@@ -142,19 +149,22 @@ export class RecentActivityService {
     private readonly paymentNotifications: PaymentNotificationActivityRepository,
     private readonly remisionesAudi: RemisionesAudiActivityRepository,
     private readonly remisionesCaterpillar: RemisionesCaterpillarActivityRepository,
-    private readonly documentSeries: DocumentSeriesActivityRepository
+    private readonly documentSeries: DocumentSeriesActivityRepository,
+    // Hojas de manufactura (proceso asistido). Opcional: sin el repositorio, o sin el esquema `manufactura`, simplemente no aporta eventos.
+    private readonly manufacturing?: ManufacturingActivityRepository
   ) {}
 
-  async list(input: ListRecentActivityDto): Promise<RecentActivityResponse> {
+  async list(input: ListRecentActivityDto, actor?: { userId: string; role: string } | null): Promise<RecentActivityResponse> {
     const needsAudit = input.category !== RecentActivityCategoryFilter.AUTOMATION;
     const needsAutomation = input.category === undefined || input.category === RecentActivityCategoryFilter.AUTOMATION;
     const auditCategory = input.category === RecentActivityCategoryFilter.PROVIDER || input.category === RecentActivityCategoryFilter.CONTACT || input.category === RecentActivityCategoryFilter.CLIENT ? input.category : undefined;
-    const [source, paymentRows, audiRows, caterpillarRows, seriesRows] = await Promise.all([
+    const [source, paymentRows, audiRows, caterpillarRows, seriesRows, manufacturingRows] = await Promise.all([
       needsAudit ? (auditCategory ? this.repository.findRecent(input.limit, auditCategory) : this.repository.findRecent(input.limit)) : null,
       needsAutomation ? this.paymentNotifications.findRecent(input.limit) : [],
       needsAutomation ? this.remisionesAudi.findRecent(input.limit) : [],
       needsAutomation ? this.remisionesCaterpillar.findRecent(input.limit) : [],
-      needsAutomation ? this.documentSeries.findRecent(input.limit) : []
+      needsAutomation ? this.documentSeries.findRecent(input.limit) : [],
+      needsAutomation && actor && this.manufacturing ? this.manufacturing.findRecent(input.limit, actor) : []
     ]);
     const seriesActorIds = [...new Set(seriesRows.map((row) => row.actor_id).filter((actorId): actorId is string => actorId !== null))];
     const seriesActorNames = seriesActorIds.length === 0 ? new Map<string, string>() : await this.documentSeries.findActorDisplayNames(seriesActorIds);
@@ -163,13 +173,31 @@ export class RecentActivityService {
       ...paymentRows.map((row) => this.paymentNotification(row)),
       ...audiRows.map((row) => this.audiActivity(row)),
       ...caterpillarRows.map((row) => this.caterpillarActivity(row)),
-      ...seriesRows.map((row) => this.documentSeriesAdjustment(row, seriesActorNames))
+      ...seriesRows.map((row) => this.documentSeriesAdjustment(row, seriesActorNames)),
+      ...manufacturingRows.map((row) => this.manufacturingActivity(row))
     ]
       .filter((item): item is RecentActivityItem => item !== null)
       .filter((item) => input.category === undefined || item.category === input.category)
       .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
       .slice(0, input.limit);
     return { data };
+  }
+
+  // Hojas de manufactura (proceso asistido; su lógica es independiente de n8n y de Caterpillar). Código DCMX, revisión, estado, responsable y fecha cuando existen; enlaza a la hoja.
+  private manufacturingActivity(row: ManufacturingActivityRow): RecentActivityItem | null {
+    const occurredAt = new Date(row.occurred_at);
+    const codigo = row.codigo?.trim();
+    if (!codigo || !Number.isFinite(occurredAt.getTime()) || !/^[0-9a-f-]{36}$/i.test(row.revision_public_id)) return null;
+    const entity = row.variante ? `${codigo}-${row.variante.trim().toUpperCase()}` : codigo;
+    const revision = row.revision !== null && Number.isInteger(row.revision) ? `REV${String(row.revision).padStart(2, '0')}` : null;
+    const estado = { BORRADOR: 'Borrador', FINALIZANDO: 'Finalizando', FINALIZADA: 'Finalizada' }[row.estado];
+    const finalizada = row.tipo === 'REVISION_FINALIZADA';
+    const type = finalizada ? 'MANUFACTURING_REVISION_FINALIZED' : 'MANUFACTURING_DOCUMENT_CREATED';
+    const actor = row.actor_id ? { id: row.actor_id, displayName: row.actor_nombre?.trim() || null, email: row.actor_email ?? null } : null;
+    return {
+      type, category: categories[type], title: titles[type], entity, context: [revision, estado].filter(Boolean).join(' · ') || null,
+      occurredAt: occurredAt.toISOString(), actor, link: `/automations/manufacturing-sheets?revision=${row.revision_public_id}`
+    };
   }
 
   private auditActivities(source: RecentActivitySource): RecentActivityItem[] {

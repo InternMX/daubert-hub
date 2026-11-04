@@ -5,7 +5,7 @@ import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
-import { AUTOMATION_ROUTE_BY_CODE } from './automationRoutes';
+import { AUTOMATION_ROUTE_BY_CODE, MANUFACTURING_SHEETS_ROUTE } from './automationRoutes';
 import { automationHealthAccent, automationHealthTexts, formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel } from './automationOverviewPresentation';
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -79,6 +79,27 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
   );
 }
 
+// «Hojas de manufactura» es un PROCESO ASISTIDO (lo opera una persona desde el gestor), no un workflow de n8n: no tiene horario, ejecuciones ni estado de procesamiento, así que esta tarjeta no los
+// inventa. Es estática a propósito (no sale del catálogo de automatizaciones) y reutiliza el patrón visual de las demás tarjetas. Su actividad (hojas creadas y finalizadas) vive en «Actividad reciente».
+function AssistedProcessCard() {
+  return (
+    <Paper variant="outlined" data-testid="assisted-process-card" sx={{ p: { xs: 2.5, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'flex-start' }} spacing={1}>
+        <Typography variant="h2" sx={{ fontSize: '1.125rem' }}>Hojas de manufactura</Typography>
+        <Chip label="Proceso asistido" size="small" />
+      </Stack>
+      <Typography color="text.secondary" variant="body2" sx={{ mt: 0.75 }}>Elabora, revisa y finaliza las hojas de instrucción de manufactura a partir del código DCMX, con historial de revisiones y PDF.</Typography>
+      <Stack sx={{ mt: 2 }}>
+        <Row label="Tipo" value="Asistido por una persona" />
+        <Row label="Ejecución" value="Bajo demanda (no programada)" />
+      </Stack>
+      <Box sx={{ mt: 'auto', pt: 2.5 }}>
+        <Button component={Link} to={MANUFACTURING_SHEETS_ROUTE} variant="contained">Abrir gestor</Button>
+      </Box>
+    </Paper>
+  );
+}
+
 // Total/integrated/not-integrated counts were removed (Phase 10F cleanup): they duplicated
 // information already visible on each card. Only an actionable signal remains: a single
 // restrained warning notice, shown only when at least one automation's review state (Phase 10I;
@@ -124,7 +145,10 @@ export function AutomationsPage() {
         </Alert>
       )}
       {!loading && !error && automations && automations.length === 0 && (
-        <EmptyState title="Aún no hay automatizaciones registradas." description="Cuando haya automatizaciones disponibles, aparecerán aquí." />
+        <>
+          <EmptyState title="Aún no hay automatizaciones registradas." description="Cuando haya automatizaciones disponibles, aparecerán aquí." />
+          <Box sx={{ mt: 3, maxWidth: 520 }}><AssistedProcessCard /></Box>
+        </>
       )}
       {!loading && !error && automations && automations.length > 0 && (
         <>
@@ -139,6 +163,7 @@ export function AutomationsPage() {
             }}
           >
             {automations.map((automation) => <AutomationCard key={automation.code} automation={automation} />)}
+            <AssistedProcessCard />
           </Box>
         </>
       )}

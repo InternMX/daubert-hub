@@ -1,6 +1,6 @@
 import { apiBaseUrl } from './api';
 
-export type RecentActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED';
+export type RecentActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED' | 'MANUFACTURING_DOCUMENT_CREATED' | 'MANUFACTURING_REVISION_FINALIZED';
 export type RecentActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 // Present only for events with a known human actor. displayName is a best-effort current lookup
@@ -20,9 +20,11 @@ export interface RecentActivityItem {
   context: string | null;
   occurredAt: string;
   actor: RecentActivityActor | null;
+  /** Ruta interna de la aplicación (p. ej. una hoja de manufactura); ausente cuando la actividad no tiene un destino propio. */
+  link?: string;
 }
 
-const activityTypes = new Set<RecentActivityType>(['PROVIDER_CREATED', 'PROVIDER_UPDATED', 'PROVIDER_DEACTIVATED', 'PROVIDER_REACTIVATED', 'CLIENT_CREATED', 'CLIENT_UPDATED', 'CLIENT_DEACTIVATED', 'CLIENT_REACTIVATED', 'CONTACT_CREATED', 'CONTACT_UPDATED', 'CONTACT_DEACTIVATED', 'CONTACT_REACTIVATED', 'CONTACT_METHOD_ADDED', 'CONTACT_METHOD_UPDATED', 'CONTACT_METHOD_DEACTIVATED', 'CONTACT_METHOD_REACTIVATED', 'AUTOMATION_COMPLETED', 'AUTOMATION_PROCESSING', 'AUTOMATION_PARTIAL', 'AUTOMATION_FAILED', 'AUTOMATION_CANCELLED', 'DOCUMENT_SERIES_ADJUSTED']);
+const activityTypes = new Set<RecentActivityType>(['PROVIDER_CREATED', 'PROVIDER_UPDATED', 'PROVIDER_DEACTIVATED', 'PROVIDER_REACTIVATED', 'CLIENT_CREATED', 'CLIENT_UPDATED', 'CLIENT_DEACTIVATED', 'CLIENT_REACTIVATED', 'CONTACT_CREATED', 'CONTACT_UPDATED', 'CONTACT_DEACTIVATED', 'CONTACT_REACTIVATED', 'CONTACT_METHOD_ADDED', 'CONTACT_METHOD_UPDATED', 'CONTACT_METHOD_DEACTIVATED', 'CONTACT_METHOD_REACTIVATED', 'AUTOMATION_COMPLETED', 'AUTOMATION_PROCESSING', 'AUTOMATION_PARTIAL', 'AUTOMATION_FAILED', 'AUTOMATION_CANCELLED', 'DOCUMENT_SERIES_ADJUSTED', 'MANUFACTURING_DOCUMENT_CREATED', 'MANUFACTURING_REVISION_FINALIZED']);
 const activityCategories = new Set<RecentActivityCategory>(['PROVIDER', 'CONTACT', 'AUTOMATION', 'CLIENT']);
 
 function isRecentActivityActor(value: unknown): value is RecentActivityActor {
@@ -41,7 +43,8 @@ function isRecentActivityItem(value: unknown): value is RecentActivityItem {
     && typeof item.title === 'string' && typeof item.entity === 'string'
     && (item.context === null || typeof item.context === 'string')
     && typeof item.occurredAt === 'string' && Number.isFinite(new Date(item.occurredAt).getTime())
-    && (item.actor === null || isRecentActivityActor(item.actor));
+    && (item.actor === null || isRecentActivityActor(item.actor))
+    && (item.link === undefined || (typeof item.link === 'string' && /^\/[A-Za-z0-9/_?=&.-]{1,200}$/.test(item.link) && !item.link.includes('//')));
 }
 
 export async function listRecentActivity(limit = 6, category?: RecentActivityCategory): Promise<RecentActivityItem[]> {
