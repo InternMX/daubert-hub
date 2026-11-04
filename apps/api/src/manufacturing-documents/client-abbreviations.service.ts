@@ -19,7 +19,7 @@ export interface AlternativaCliente {
  *  · ELEGIR            — varios clientes en el nivel que decide (ambigüedad o contradicción): se muestran todas las alternativas.
  */
 export type EstadoSugerencia = 'NO_HABILITADO' | 'SIN_SUGERENCIAS' | 'EXACTA' | 'ELEGIR';
-export interface Sugerencias { disponible: boolean; estado: EstadoSugerencia; codigo: string; alternativas: AlternativaCliente[]; relacionadas: AlternativaCliente[]; sinConfirmar: AlternativaCliente[] }
+export interface Sugerencias { disponible: boolean; puedeResolver: boolean; estado: EstadoSugerencia; codigo: string; alternativas: AlternativaCliente[]; relacionadas: AlternativaCliente[]; sinConfirmar: AlternativaCliente[] }
 
 function agrupar(filas: FilaSugerencia[]): AlternativaCliente[] {
   const mapa = new Map<string, AlternativaCliente>();
@@ -57,14 +57,14 @@ export class ClientAbbreviationsService {
   async sugerir(actor: ActorDocumental, codigoEntrada: string): Promise<Sugerencias> {
     const codigo = codigoEntrada.trim().toUpperCase();
     return this.repo.conSesion(actor, async (c) => {
-      if (!(await this.abrev.disponible(c))) return { disponible: false, estado: 'NO_HABILITADO' as const, codigo, alternativas: [], relacionadas: [], sinConfirmar: [] };
+      if (!(await this.abrev.disponible(c))) return { disponible: false, puedeResolver: actor.role === 'ADMIN', estado: 'NO_HABILITADO' as const, codigo, alternativas: [], relacionadas: [], sinConfirmar: [] };
       const filas = await this.abrev.sugerir(c, codigo);
       const decisivas = filas.filter((f) => f.decisivo);
       const alternativas = agrupar(decisivas);
       const relacionadas = agrupar(filas.filter((f) => f.nivel < 9 && !f.decisivo)).filter((r) => !alternativas.some((a) => a.clienteId === r.clienteId));
       const sinConfirmar = agrupar(filas.filter((f) => f.nivel === 9));
       const estado: EstadoSugerencia = alternativas.length === 0 ? 'SIN_SUGERENCIAS' : decisivas.some((f) => f.requiere_eleccion) || alternativas.length > 1 ? 'ELEGIR' : 'EXACTA';
-      return { disponible: true, estado, codigo, alternativas, relacionadas, sinConfirmar };
+      return { disponible: true, puedeResolver: actor.role === 'ADMIN', estado, codigo, alternativas, relacionadas, sinConfirmar };
     });
   }
 

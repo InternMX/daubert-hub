@@ -19,7 +19,7 @@ describe('abreviaturas de cliente sin la migración 104', () => {
   it('estado: no disponible; las sugerencias responden NO_HABILITADO sin consultar el catálogo ni lanzar error', async () => {
     const { s, consultas } = servicio(false);
     expect(await s.estado(actorDe('GENERAL'))).toEqual({ disponible: false, puedeResolver: false });
-    expect(await s.sugerir(actorDe('GENERAL'), 'audfpmg001')).toEqual({ disponible: false, estado: 'NO_HABILITADO', codigo: 'AUDFPMG001', alternativas: [], relacionadas: [], sinConfirmar: [] });
+    expect(await s.sugerir(actorDe('GENERAL'), 'audfpmg001')).toEqual({ disponible: false, puedeResolver: false, estado: 'NO_HABILITADO', codigo: 'AUDFPMG001', alternativas: [], relacionadas: [], sinConfirmar: [] });
     expect(consultas.every((q) => !q.includes('fn_sugerir_cliente($1'))).toBe(true);
   });
 
