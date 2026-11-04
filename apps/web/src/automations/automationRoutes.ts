@@ -22,3 +22,5 @@ export const AUTOMATION_ROUTE_BY_CODE: Record<string, string> = {
 // «Hojas de manufactura» (búsqueda en BIND, formulario editable y vista previa) vive dentro de Automatizaciones, pero NO es una automatización del catálogo
 // (GET /automations/overview): por eso su ruta no va en AUTOMATION_ROUTE_BY_CODE, que está indexado por código de automatización y alimenta las tarjetas de /automations.
 export const MANUFACTURING_SHEETS_ROUTE = '/automations/manufacturing-sheets';
+/** Configuración de Hojas de manufactura (solo ADMIN): identificación de clientes por abreviatura. */
+export const MANUFACTURING_SHEETS_SETTINGS_ROUTE = `${MANUFACTURING_SHEETS_ROUTE}/settings`;

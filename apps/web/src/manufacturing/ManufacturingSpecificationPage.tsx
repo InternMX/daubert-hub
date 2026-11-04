@@ -19,6 +19,7 @@ import { desdeVista, haciaEnvio, type ResponsableLocal } from './responsablesMod
 import { etiquetaRevision } from './documentLabels';
 import { BarraDocumento, DocumentoProvider, FinalizarHojaDocumento, ResponsablesDocumento, type BloqueoFinal, type EstadoDatos } from './DocumentPanel';
 import { BotonMisHojas, HojasDelCodigo } from './HojasDelCodigo';
+import { ClienteSugerencias, EnlaceConfiguracion } from './ClienteSugerencias';
 import { NovedadesCatalogo } from './NovedadesCatalogo';
 import { SheetPreviewPanel } from './SheetPreviewPanel';
 import {
@@ -525,7 +526,9 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Automatizaciones', to: '/automations' }, { label: 'Hojas de manufactura' }]} />
       <PageHeader title="Especificación de manufactura" description={documentos
         ? 'Escribe el código DCMX del producto: verás sus hojas guardadas y podrás continuar una, ver su historial y PDF, crear una nueva revisión o preparar una hoja nueva. Todo documento es de PRUEBA y no es válido para producción.'
-        : 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Los datos solo existen en memoria: no se guardan ni se emite ninguna hoja.'} />
+        : 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Los datos solo existen en memoria: no se guardan ni se emite ninguna hoja.'}>
+        <EnlaceConfiguracion />
+      </PageHeader>
 
       {configStatus === 'error' && <Alert severity="error" sx={{ mt: 2 }}>No se pudo cargar la configuración de las familias de manufactura. Recarga la página.</Alert>}
 
@@ -631,6 +634,9 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             {text('descripcion', { multiline: true, minRows: 2 })}
             {text('producto')}
             <ClientField form={form} requerido={documentos} onRestore={restore} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
+            <Box sx={{ gridColumn: '1 / -1', '&:empty': { display: 'none' } }}>
+              <ClienteSugerencias codigo={form.fields.codigo.value} actual={form.fields.cliente} onUsar={(clienteId, nombre) => update((f) => setFieldValue(f, 'cliente', nombre, 'CATALOGO', clienteId))} />
+            </Box>
             {text('fechaEmision', { type: 'date', helperText: 'Fecha local sugerida; editable. No es la fecha de alta en BIND ni la emisión definitiva.' })}
             {text('resinaVci', { helperText: 'Editable. Sugerencia según la composición; el porcentaje no es una obligación.' })}
           </SectionCard>

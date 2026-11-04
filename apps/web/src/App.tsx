@@ -20,13 +20,14 @@ import { CaterpillarRemissionsPage } from './automations/CaterpillarRemissionsPa
 import { PaymentNotificationsPage } from './automations/PaymentNotificationsPage';
 import { PaymentNotificationExecutionDetailPage } from './automations/PaymentNotificationExecutionDetailPage';
 import { AuditPage } from './audit/AuditPage';
+import { ConfiguracionManufacturaPage } from './manufacturing/ConfiguracionManufacturaPage';
 import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
 import { UserSignaturesPage } from './users/UserSignaturesPage';
 import { ProfilePage } from './account/ProfilePage';
 import { EditUserPage } from './users/EditUserPage';
-import { MANUFACTURING_SHEETS_ROUTE } from './automations/automationRoutes';
+import { MANUFACTURING_SHEETS_ROUTE, MANUFACTURING_SHEETS_SETTINGS_ROUTE } from './automations/automationRoutes';
 import { ManufacturingSpecificationPage } from './manufacturing/ManufacturingSpecificationPage';
 import { roleLabels } from './services/userLabels';
 
@@ -83,6 +84,8 @@ export function App() {
         <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
           <Route path="/audit" element={<AuditPage />} />
+          <Route path={MANUFACTURING_SHEETS_SETTINGS_ROUTE} element={<ConfiguracionManufacturaPage />} />
+          <Route path="/client-abbreviations" element={<Navigate to={MANUFACTURING_SHEETS_SETTINGS_ROUTE} replace />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
           <Route path="/users/signatures" element={<UserSignaturesPage />} />
