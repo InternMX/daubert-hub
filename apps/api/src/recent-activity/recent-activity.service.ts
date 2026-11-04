@@ -12,7 +12,7 @@ import { RemisionesAudiActivityRepository, type RemisionesAudiActivityRow } from
 import { RemisionesCaterpillarActivityRepository, type RemisionesCaterpillarActivityRow } from './remisiones-caterpillar-activity.repository';
 
 type Snapshot = Record<string, unknown> | null;
-type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED' | 'MANUFACTURING_DOCUMENT_CREATED' | 'MANUFACTURING_REVISION_FINALIZED';
+type ActivityType = 'PROVIDER_CREATED' | 'PROVIDER_UPDATED' | 'PROVIDER_DEACTIVATED' | 'PROVIDER_REACTIVATED' | 'CLIENT_CREATED' | 'CLIENT_UPDATED' | 'CLIENT_DEACTIVATED' | 'CLIENT_REACTIVATED' | 'CONTACT_CREATED' | 'CONTACT_UPDATED' | 'CONTACT_DEACTIVATED' | 'CONTACT_REACTIVATED' | 'CONTACT_METHOD_ADDED' | 'CONTACT_METHOD_UPDATED' | 'CONTACT_METHOD_DEACTIVATED' | 'CONTACT_METHOD_REACTIVATED' | 'AUTOMATION_COMPLETED' | 'AUTOMATION_PROCESSING' | 'AUTOMATION_PARTIAL' | 'AUTOMATION_FAILED' | 'AUTOMATION_CANCELLED' | 'DOCUMENT_SERIES_ADJUSTED' | 'MANUFACTURING_DOCUMENT_CREATED' | 'MANUFACTURING_REVISION_CREATED' | 'MANUFACTURING_REVISION_FINALIZED';
 export type ActivityCategory = 'PROVIDER' | 'CONTACT' | 'AUTOMATION' | 'CLIENT';
 
 // The actor who performed the action, when known. Never fabricated: for a
@@ -79,6 +79,7 @@ const titles: Record<ActivityType, string> = {
   CONTACT_METHOD_REACTIVATED: 'Medio de contacto reactivado',
   AUTOMATION_COMPLETED: 'Automatización completada',
   MANUFACTURING_DOCUMENT_CREATED: 'Hoja de manufactura creada',
+  MANUFACTURING_REVISION_CREATED: 'Nueva revisión de hoja de manufactura creada',
   MANUFACTURING_REVISION_FINALIZED: 'Hoja de manufactura finalizada',
   AUTOMATION_PROCESSING: 'Automatización en proceso',
   AUTOMATION_PARTIAL: 'Automatización con incidencias',
@@ -106,6 +107,7 @@ const categories: Record<ActivityType, ActivityCategory> = {
   CONTACT_METHOD_REACTIVATED: 'CONTACT',
   AUTOMATION_COMPLETED: 'AUTOMATION',
   MANUFACTURING_DOCUMENT_CREATED: 'AUTOMATION',
+  MANUFACTURING_REVISION_CREATED: 'AUTOMATION',
   MANUFACTURING_REVISION_FINALIZED: 'AUTOMATION',
   AUTOMATION_PROCESSING: 'AUTOMATION',
   AUTOMATION_PARTIAL: 'AUTOMATION',
@@ -189,13 +191,19 @@ export class RecentActivityService {
     const codigo = row.codigo?.trim();
     if (!codigo || !Number.isFinite(occurredAt.getTime()) || !/^[0-9a-f-]{36}$/i.test(row.revision_public_id)) return null;
     const entity = row.variante ? `${codigo}-${row.variante.trim().toUpperCase()}` : codigo;
-    const revision = row.revision !== null && Number.isInteger(row.revision) ? `REV${String(row.revision).padStart(2, '0')}` : null;
-    const estado = { BORRADOR: 'Borrador', FINALIZANDO: 'Finalizando', FINALIZADA: 'Finalizada' }[row.estado];
-    const finalizada = row.tipo === 'REVISION_FINALIZADA';
-    const type = finalizada ? 'MANUFACTURING_REVISION_FINALIZED' : 'MANUFACTURING_DOCUMENT_CREATED';
+    const rev = (n: number | null): string | null => (n !== null && Number.isInteger(n) && n >= 1 ? `REV${String(n).padStart(2, '0')}` : null);
+    // Cada evento describe lo que ocurrió EN SU FECHA, nunca el estado actual de la hoja.
+    const type = { DOCUMENTO_CREADO: 'MANUFACTURING_DOCUMENT_CREATED', REVISION_CREADA: 'MANUFACTURING_REVISION_CREATED', REVISION_FINALIZADA: 'MANUFACTURING_REVISION_FINALIZED' }[row.tipo] as ActivityType | undefined;
+    if (!type) return null;
+    const context = row.tipo === 'REVISION_FINALIZADA' ? [rev(row.revision), 'Finalizada'].filter(Boolean).join(' · ')
+      : row.tipo === 'REVISION_CREADA' ? (rev(row.revision_base) ? `Basada en ${rev(row.revision_base)}` : null)
+        : 'Borrador inicial';
+    if (row.tipo === 'REVISION_FINALIZADA' && !rev(row.revision)) return null;       // una finalización sin número de revisión no es demostrable
+    if (row.tipo === 'REVISION_CREADA' && context === null) return null;
+
     const actor = row.actor_id ? { id: row.actor_id, displayName: row.actor_nombre?.trim() || null, email: row.actor_email ?? null } : null;
     return {
-      type, category: categories[type], title: titles[type], entity, context: [revision, estado].filter(Boolean).join(' · ') || null,
+      type, category: categories[type], title: titles[type], entity, context,
       occurredAt: occurredAt.toISOString(), actor, link: `/automations/manufacturing-sheets?revision=${row.revision_public_id}`
     };
   }

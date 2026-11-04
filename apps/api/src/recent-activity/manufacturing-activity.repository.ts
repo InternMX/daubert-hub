@@ -2,17 +2,21 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 // Actividad de Hojas de manufactura para «Actividad reciente». Fuente de verdad: las tablas `manufactura.*` (NO el autoguardado ni audit.cambios, que registran cada edición). Eventos fiables del esquema:
-//   · DOCUMENTO_CREADO     — manufactura.documentos.created_at (la hoja se abrió por primera vez).
+//   · DOCUMENTO_CREADO     — manufactura.documentos.created_at: se creó el documento inicial (su primera revisión siempre nace como borrador). NO describe el estado actual de la hoja.
+//   · REVISION_CREADA      — manufactura.revisiones.created_at de una revisión con `basada_en_revision_id` (nueva revisión sobre una finalizada: «basada en REV0n»).
 //   · REVISION_FINALIZADA  — manufactura.revisiones.finalizado_en (REV01, REV02…).
+// Cada evento describe lo que ocurrió EN SU FECHA. No se reconstruye nada que la base no demuestre (p. ej. no se infiere una «creación» a partir de la última revisión ni del estado actual).
 // PERMISOS: se consulta con la identidad de la sesión (RLS de la base) y, además, con el mismo predicado de visibilidad de forma explícita: una cuenta ve borradores propios o asignados como revisor,
 // un ADMIN ve todo y las revisiones FINALIZADAS son visibles para todos. Un borrador ajeno JAMÁS aparece. Sin el esquema `manufactura` (otros entornos) no devuelve nada.
 
 export interface ManufacturingActivityRow {
-  tipo: 'DOCUMENTO_CREADO' | 'REVISION_FINALIZADA';
+  tipo: 'DOCUMENTO_CREADO' | 'REVISION_CREADA' | 'REVISION_FINALIZADA';
   codigo: string;
   variante: string | null;
+  /** REVISION_FINALIZADA: la revisión que se finalizó. Otros eventos: null. */
   revision: number | null;
-  estado: 'BORRADOR' | 'FINALIZANDO' | 'FINALIZADA';
+  /** REVISION_CREADA: número de la revisión finalizada sobre la que se basa. */
+  revision_base: number | null;
   revision_public_id: string;
   occurred_at: Date | string;
   actor_id: string | null;
@@ -37,20 +41,26 @@ export class ManufacturingActivityRepository {
       await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.user_email', 'actividad-reciente', true), set_config('app.origin', 'DAUBERT_HUB', true)", [actor.userId]);
       const r = await client.query<ManufacturingActivityRow>(
         `WITH visibles AS (
-           SELECT r.documento_id, r.public_id, r.estado, r.revision, r.created_at, r.finalizado_en, r.finalizado_por_usuario_id
+           SELECT r.documento_id, r.public_id, r.estado, r.revision, r.created_at, r.finalizado_en, r.finalizado_por_usuario_id, r.creado_por_usuario_id, r.basada_en_revision_id
              FROM manufactura.revisiones r
             WHERE r.estado IN ('BORRADOR', 'FINALIZANDO', 'FINALIZADA')
               AND (r.estado = 'FINALIZADA' OR r.creado_por_usuario_id = $1::bigint OR r.revisor_usuario_id = $1::bigint OR $2::boolean)
          ), eventos AS (
-           SELECT 'REVISION_FINALIZADA'::text AS tipo, d.codigo_dcmx AS codigo, d.variante, v.revision, v.estado, v.public_id::text AS revision_public_id, v.finalizado_en AS occurred_at, v.finalizado_por_usuario_id AS actor_id
+           SELECT 'REVISION_FINALIZADA'::text AS tipo, d.codigo_dcmx AS codigo, d.variante, v.revision, NULL::int AS revision_base, v.public_id::text AS revision_public_id, v.finalizado_en AS occurred_at, v.finalizado_por_usuario_id AS actor_id
              FROM visibles v JOIN manufactura.documentos d ON d.documento_id = v.documento_id
             WHERE v.estado = 'FINALIZADA' AND v.finalizado_en IS NOT NULL
            UNION ALL
-           SELECT 'DOCUMENTO_CREADO', d.codigo_dcmx, d.variante, ult.revision, ult.estado, ult.public_id::text, d.created_at, d.creado_por_usuario_id
+           SELECT 'REVISION_CREADA', d.codigo_dcmx, d.variante, NULL::int, b.revision, v.public_id::text, v.created_at, v.creado_por_usuario_id
+             FROM visibles v JOIN manufactura.documentos d ON d.documento_id = v.documento_id
+             JOIN manufactura.revisiones b ON b.documento_id = v.documento_id AND b.revision_id = v.basada_en_revision_id
+            WHERE b.revision IS NOT NULL
+           UNION ALL
+           -- Creación del documento: el enlace apunta a la PRIMERA revisión que esta cuenta puede ver (no al estado actual).
+           SELECT 'DOCUMENTO_CREADO', d.codigo_dcmx, d.variante, NULL::int, NULL::int, prim.public_id::text, d.created_at, d.creado_por_usuario_id
              FROM manufactura.documentos d
-             JOIN LATERAL (SELECT v.* FROM visibles v WHERE v.documento_id = d.documento_id ORDER BY v.created_at DESC, v.public_id LIMIT 1) ult ON true
+             JOIN LATERAL (SELECT v.* FROM visibles v WHERE v.documento_id = d.documento_id ORDER BY v.created_at ASC, v.public_id LIMIT 1) prim ON true
          )
-         SELECT e.tipo, e.codigo, e.variante, e.revision, e.estado, e.revision_public_id, e.occurred_at, e.actor_id::text AS actor_id, u.display_name AS actor_nombre, u.email AS actor_email
+         SELECT e.tipo, e.codigo, e.variante, e.revision, e.revision_base, e.revision_public_id, e.occurred_at, e.actor_id::text AS actor_id, u.display_name AS actor_nombre, u.email AS actor_email
            FROM eventos e LEFT JOIN security.users u ON u.user_id = e.actor_id
           ORDER BY e.occurred_at DESC LIMIT $3`, [actor.userId, actor.role === 'ADMIN', limit]);
       await client.query('ROLLBACK');
