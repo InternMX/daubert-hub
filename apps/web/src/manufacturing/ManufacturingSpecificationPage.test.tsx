@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BindProductApiError, lookupBindProductByCode } from '../services/bindProducts';
 import { listBindRecent } from '../services/bindRecent';
 import { listClients } from '../services/clients';
+import { sugerirClientes } from '../services/clientAbbreviations';
 import { listManufacturingFamilies } from '../services/manufacturingFamilies';
 import { downloadDraftPdf, previewManufacturingSheet } from '../services/sheetPreview';
 import { bolsaFuelle, bolsaNatural, casoB, coexAzul, coexSinColor, deepFreeze, familyConfigs, productoPapel, resinaContradictoria, resinaCorroborada, resinaInferidaDeCode, rolloContinuo, schfpmg001, termoencogible } from '../test/bindProductFixtures';
@@ -14,6 +15,7 @@ import { localIsoDate } from './specificationForm';
 vi.mock('../services/bindProducts', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindProducts')>()), lookupBindProductByCode: vi.fn() }));
 vi.mock('../services/bindRecent', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/bindRecent')>()), listBindRecent: vi.fn() }));
 vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), listClients: vi.fn() }));
+vi.mock('../services/clientAbbreviations', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clientAbbreviations')>()), sugerirClientes: vi.fn() }));
 vi.mock('../services/manufacturingFamilies', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/manufacturingFamilies')>()), listManufacturingFamilies: vi.fn() }));
 
 vi.mock('../services/sheetPreview', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/sheetPreview')>()), previewManufacturingSheet: vi.fn(), downloadDraftPdf: vi.fn() }));
@@ -44,6 +46,7 @@ async function elegirCliente(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+  vi.mocked(sugerirClientes).mockResolvedValue({ disponible: true, puedeResolver: false, estado: 'SIN_SUGERENCIAS', codigo: '', alternativas: [], relacionadas: [], sinConfirmar: [] });
   familiesMock.mockResolvedValue(familyConfigs);
   previewMock.mockImplementation(async (familia, datos) => ({
     html: `<p>${familia} ancho=${datos.ancho} largo=${datos.largo} cantidad=${datos.cantidad} calibre=${datos.calibre} etiqueta=${datos.etiqueta} color=${datos.colorNombre}|${datos.colorHex} cliente=${datos.cliente} fuelles=${datos.fuelleDerecho}/${datos.fuelleIzquierdo}</p>`,
@@ -124,6 +127,25 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     // una bolsa plana no muestra campos de fuelles ni modalidad
     expect(screen.queryByLabelText('Fuelle derecho')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Doblada' })).not.toBeInTheDocument();
+  });
+
+  it('la sugerencia de cliente vive DENTRO del campo Cliente (misma columna), es compacta, exige «Usar» y desaparece al usarla; la ayuda ya no dice que no se infiere por el código', async () => {
+    const user = userEvent.setup();
+    vi.mocked(sugerirClientes).mockResolvedValue({ disponible: true, puedeResolver: false, estado: 'EXACTA', codigo: 'SCHFPMG001', relacionadas: [], sinConfirmar: [],
+      alternativas: [{ clienteId: '55', cliente: 'SCHAEFFLER', nivel: 3, nivelNombre: 'GENERAL', confirmada: true, respaldo: [{ id: 'r1', abreviatura: 'SCH', alcance: 'GENERAL', codigoPatron: null, estado: 'CONFIRMADA', documentos: 1, codigos: 1 }] }] });
+    lookupMock.mockResolvedValue(schfpmg001());
+    renderPage();
+    await buscar(user);
+    const grupo = await screen.findByRole('group', { name: 'Cliente sugerido por el código' }, { timeout: 3000 });
+    expect(frameOf(CLIENTE).contains(grupo)).toBe(true);                                      // dentro de la columna del campo Cliente
+    expect(grupo).toHaveTextContent('SCHAEFFLER');
+    expect(grupo).toHaveTextContent('Abreviatura SCH');
+    expect(campo(CLIENTE).value).toBe('');                                                      // jamás se selecciona solo
+    expect(screen.queryByText(/No se infiere por el prefijo/)).toBeNull();
+    expect(screen.getByText(/El código puede sugerir un cliente; nunca se asigna solo/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Usar SCHAEFFLER' }));
+    await waitFor(() => expect(campo(CLIENTE).value).toBe('SCHAEFFLER'));
+    expect(screen.queryByRole('group', { name: 'Cliente sugerido por el código' })).toBeNull();
   });
 
   it('cliente vacío en la demostración: datos técnicos suficientes y borrador visible; el pendiente para una emisión futura es claro y el cliente sigue siendo requisito', async () => {

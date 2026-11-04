@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Chip, CircularProgress, FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthContext } from '../auth/authContext.core';
@@ -8,11 +8,10 @@ import {
   type Alcance, type AlternativaCliente, type Sugerencias
 } from '../services/clientAbbreviations';
 
-// Sugerencias de cliente por abreviatura del código DCMX, junto al campo Cliente. REGLAS: nunca asigna un cliente (cada sugerencia exige «Usar este cliente»); muestra primero lo confirmado y,
-// si hay ambigüedad, todas las alternativas; no supone que los primeros caracteres del código sean la abreviatura (el usuario elige qué parte lo es); el buscador y el texto manual siguen disponibles.
+// Ayuda contextual DENTRO del campo Cliente (misma columna): sugiere el cliente asociado a la abreviatura del código DCMX. REGLAS: nunca asigna un cliente (cada sugerencia exige «Usar [cliente]»);
+// si hay ambigüedad muestra todas las alternativas; solo se ofrece mientras el campo está vacío (una decisión manual se respeta); sin sugerencias no ocupa espacio; el buscador y el texto manual siguen igual.
 
 const CODIGO_VALIDO = /^[A-Za-z0-9][A-Za-z0-9._/-]{3,39}$/;
-const NIVEL_TEXTO: Record<string, string> = { CODIGO_COMPLETO: 'código completo', CONTEXTO: 'contexto específico', GENERAL: 'abreviatura general' };
 
 interface Props {
   codigo: string;
@@ -21,14 +20,15 @@ interface Props {
   onUsar: (clienteId: string, nombre: string) => void;
 }
 
-function Alternativa({ a, elegida, onUsar }: { a: AlternativaCliente; elegida: boolean; onUsar: () => void }) {
-  const respaldo = a.respaldo.map((r) => `${r.abreviatura}${r.codigoPatron && r.alcance !== 'GENERAL' ? ` (${r.codigoPatron})` : ''}`).join(', ');
-  const docs = a.respaldo.reduce((n, r) => Math.max(n, r.documentos), 0);
+function Alternativa({ a, onUsar }: { a: AlternativaCliente; onUsar: () => void }) {
+  const abreviaturas = [...new Set(a.respaldo.map((r) => r.abreviatura))].join(', ');
   return (
-    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap data-testid="alternativa-cliente">
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>{a.cliente}</Typography>
-      <Typography variant="caption" color="text.secondary">{NIVEL_TEXTO[a.nivelNombre] ?? a.nivelNombre}: {respaldo}{docs > 0 ? ` · ${docs} hoja${docs === 1 ? '' : 's'}` : ''}</Typography>
-      {elegida ? <Chip size="small" color="success" variant="outlined" label="Cliente seleccionado" /> : <Button size="small" variant="outlined" onClick={onUsar} aria-label={`Usar este cliente: ${a.cliente}`}>Usar este cliente</Button>}
+    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap data-testid="alternativa-cliente">
+      <Box sx={{ minWidth: 0, flex: '1 1 140px' }}>
+        <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{a.cliente}</Typography>
+        <Typography variant="caption" color="text.secondary">Abreviatura {abreviaturas}</Typography>
+      </Box>
+      <Button size="small" variant="outlined" onClick={onUsar} sx={{ textTransform: 'none', maxWidth: '100%' }}>Usar {a.cliente}</Button>
     </Stack>
   );
 }
@@ -81,51 +81,42 @@ export function ClienteSugerencias({ codigo, actual, onUsar }: Props) {
   const limpio = codigo.trim();
   const valido = CODIGO_VALIDO.test(limpio);
   const [res, setRes] = useState<Sugerencias | null>(null);
-  const [fallo, setFallo] = useState(false);
-  const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState('');
   const [asociando, setAsociando] = useState(false);
   const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
-    if (!valido) { setRes(null); setFallo(false); return undefined; }
+    if (!valido) { setRes(null); return undefined; }
     const c = new AbortController();
-    setCargando(true);
     const t = setTimeout(() => {
-      sugerirClientes(limpio.toUpperCase(), c.signal)
-        .then((r) => { setRes(r); setFallo(false); })
-        .catch((e: unknown) => { if (!(e instanceof DOMException)) { setRes(null); setFallo(true); } })
-        .finally(() => setCargando(false));
+      sugerirClientes(limpio.toUpperCase(), c.signal).then((r) => setRes(r)).catch((e: unknown) => { if (!(e instanceof DOMException)) setRes(null); });
     }, 400);
-    return () => { clearTimeout(t); c.abort(); setCargando(false); };
+    return () => { clearTimeout(t); c.abort(); };
   }, [limpio, valido, recarga]);
 
   const hecho = useCallback((texto: string) => { setMensaje(texto); setAsociando(false); setRecarga((n) => n + 1); }, []);
-  if (!valido) return null;
-  if (fallo) return <Typography variant="caption" color="text.secondary" display="block" data-testid="sugerencias-error">No se pudieron consultar las sugerencias de cliente; puedes elegir el cliente con el buscador o escribirlo.</Typography>;
-  if (res === null) return cargando ? <Box role="status" sx={{ py: 0.5 }}><CircularProgress size={14} aria-label="Buscando sugerencias de cliente" /></Box> : null;
-  if (res.estado === 'NO_HABILITADO') return <Typography variant="caption" color="text.secondary" display="block" data-testid="catalogo-no-habilitado">Catálogo de abreviaturas no habilitado en este entorno: no hay sugerencias por abreviatura. Elige el cliente con el buscador o escríbelo.</Typography>;
+  // Sin código válido, sin catálogo (migración 104 ausente), con error de consulta o sin coincidencias, el campo Cliente se queda exactamente como estaba.
+  if (!valido || res === null || res.estado === 'NO_HABILITADO') return null;
 
-  const elegido = (a: AlternativaCliente): boolean => actual.source === 'CATALOGO' && actual.ref === a.clienteId;
-  // «Para futuras hojas»: solo si el cliente elegido del catálogo aún no está entre las alternativas ya asociadas a este código.
+  // Se sugiere solo mientras el campo está vacío: si el usuario ya eligió o escribió un cliente, su decisión se respeta y no se insiste.
+  const sugerir = actual.value.trim() === '' && res.alternativas.length > 0;
+  // «Para futuras hojas»: solo con un cliente del catálogo que aún no esté entre las alternativas ya asociadas a este código.
   const asociable = actual.source === 'CATALOGO' && actual.ref && !res.alternativas.some((a) => a.clienteId === actual.ref) ? { id: actual.ref, nombre: actual.value } : null;
+  if (!sugerir && !asociable && !mensaje) return null;
   return (
-    <Box component="section" aria-label="Sugerencias de cliente por abreviatura" data-testid="sugerencias-cliente" sx={{ mt: 1.5, p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-      <Stack spacing={1}>
-        <Typography variant="subtitle2">Sugerencias para el código {res.codigo}</Typography>
-        {res.estado === 'EXACTA' && <Alert severity="info" icon={false}>Coincide con una abreviatura confirmada. <strong>No se asignó ningún cliente:</strong> confírmalo si es el de esta hoja.</Alert>}
-        {res.estado === 'ELEGIR' && <Alert severity="warning" icon={false}>Este código admite más de un cliente. <strong>No se asignó ninguno:</strong> elige el correcto.</Alert>}
-        {res.estado === 'SIN_SUGERENCIAS' && <Alert severity="info" icon={false} data-testid="sin-sugerencias">Sin sugerencias: ninguna abreviatura confirmada coincide con este código. Elige el cliente con el buscador o escribe su nombre.</Alert>}
-        {res.alternativas.map((a) => <Alternativa key={a.clienteId} a={a} elegida={elegido(a)} onUsar={() => onUsar(a.clienteId, a.cliente)} />)}
-        {res.relacionadas.length > 0 && <Typography variant="caption" color="text.secondary" display="block">También coinciden en un nivel de menor prioridad: {res.relacionadas.map((r) => r.cliente).join(', ')}.</Typography>}
-        {res.sinConfirmar.length > 0 && <Typography variant="caption" color="text.secondary" display="block" data-testid="sin-confirmar">Pendientes de confirmación (no se usan para sugerir): {res.sinConfirmar.map((r) => `${r.cliente} (${r.respaldo.map((x) => x.abreviatura).join(', ')})`).join('; ')}.</Typography>}
-        {mensaje && <Alert severity="success" onClose={() => setMensaje('')} role="status">{mensaje}</Alert>}
-        {asociable
-          ? (asociando
-            ? <Box><AsociarAbreviatura codigo={limpio} clienteId={asociable.id} clienteNombre={asociable.nombre} esAdmin={res.puedeResolver} onHecho={hecho} /><Button size="small" onClick={() => setAsociando(false)} sx={{ mt: 1 }}>Cancelar</Button></Box>
-            : <Box><Button size="small" onClick={() => { setAsociando(true); setMensaje(''); }}>Proponer asociación para futuras hojas</Button></Box>)
-          : actual.source === 'CATALOGO' ? null : <Typography variant="caption" color="text.secondary">Si eliges un cliente del catálogo podrás proponer su asociación para futuras hojas.</Typography>}
-      </Stack>
+    <Box data-testid="sugerencias-cliente" sx={{ mt: 0.5, minWidth: 0 }}>
+      {sugerir && (
+        <Box role="group" aria-label="Cliente sugerido por el código">
+          <Typography variant="caption" color="text.secondary" display="block">{res.alternativas.length > 1 ? 'Clientes posibles según el código' : 'Cliente sugerido por el código'}</Typography>
+          <Stack spacing={0.75} sx={{ mt: 0.25 }}>
+            {res.alternativas.map((a) => <Alternativa key={a.clienteId} a={a} onUsar={() => onUsar(a.clienteId, a.cliente)} />)}
+          </Stack>
+        </Box>
+      )}
+      {mensaje && <Typography variant="caption" color="success.main" display="block" role="status">{mensaje}</Typography>}
+      {asociable && (asociando
+        ? <Box><AsociarAbreviatura codigo={limpio} clienteId={asociable.id} clienteNombre={asociable.nombre} esAdmin={res.puedeResolver} onHecho={hecho} /><Button size="small" onClick={() => setAsociando(false)} sx={{ mt: 1 }}>Cancelar</Button></Box>
+        : <Button size="small" variant="text" color="inherit" onClick={() => { setAsociando(true); setMensaje(''); }} sx={{ textTransform: 'none', px: 0, color: 'text.secondary' }}>Proponer asociación para futuras hojas</Button>)}
     </Box>
   );
 }

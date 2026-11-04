@@ -111,7 +111,7 @@ function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
 
 interface ClientOption { id: string; name: string }
 
-function ClientField({ form, onChange, onRestore, requerido }: { form: SpecificationForm; requerido?: boolean; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
+function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }: { form: SpecificationForm; requerido?: boolean; onUsarSugerencia: (clienteId: string, nombre: string) => void; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
   const [options, setOptions] = useState<ClientOption[]>([]);
   const [input, setInput] = useState(form.fields.cliente.value);
   useEffect(() => {
@@ -143,9 +143,10 @@ function ClientField({ form, onChange, onRestore, requerido }: { form: Specifica
         }}
         onChange={(_event, value) => { if (value !== null && typeof value !== 'string') onChange(value.name, 'CATALOGO', value.id); }}
         renderInput={(params) => requerido
-          ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Elige un cliente del catálogo o escribe su nombre (en TEST queda como cliente sin verificar). No se infiere por el prefijo del código." />
-          : <TextField {...params} label="Cliente (opcional)" helperText="Elige un cliente del catálogo. Puede quedar vacío en la demostración; una emisión futura lo exigirá. No se infiere por el prefijo del código." />}
+          ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Elige un cliente del catálogo o escribe su nombre (en TEST queda como cliente sin verificar). El código puede sugerir un cliente; nunca se asigna solo." />
+          : <TextField {...params} label="Cliente (opcional)" helperText="Elige un cliente del catálogo. Puede quedar vacío en la demostración; una emisión futura lo exigirá. El código puede sugerir un cliente; nunca se asigna solo." />}
       />
+      <ClienteSugerencias codigo={form.fields.codigo.value} actual={current} onUsar={onUsarSugerencia} />
     </FieldFrame>
   );
 }
@@ -633,10 +634,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             {text('codigo')}
             {text('descripcion', { multiline: true, minRows: 2 })}
             {text('producto')}
-            <ClientField form={form} requerido={documentos} onRestore={restore} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
-            <Box sx={{ gridColumn: '1 / -1', '&:empty': { display: 'none' } }}>
-              <ClienteSugerencias codigo={form.fields.codigo.value} actual={form.fields.cliente} onUsar={(clienteId, nombre) => update((f) => setFieldValue(f, 'cliente', nombre, 'CATALOGO', clienteId))} />
-            </Box>
+            <ClientField form={form} requerido={documentos} onRestore={restore} onUsarSugerencia={(clienteId, nombre) => update((f) => setFieldValue(f, 'cliente', nombre, 'CATALOGO', clienteId))} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
             {text('fechaEmision', { type: 'date', helperText: 'Fecha local sugerida; editable. No es la fecha de alta en BIND ni la emisión definitiva.' })}
             {text('resinaVci', { helperText: 'Editable. Sugerencia según la composición; el porcentaje no es una obligación.' })}
           </SectionCard>
