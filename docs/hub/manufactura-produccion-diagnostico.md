@@ -93,3 +93,33 @@ Prob./Impacto: B=bajo, M=medio, A=alto.
 6. **Smoke:** `/api/health` = `PRODUCTION`; con un usuario **ADMIN**: crear hoja desde BIND, guardar, finalizar un PDF de prueba interno, registrar firma/autorización, abreviatura; con un usuario **GENERAL**: crear/editar su borrador, consultar borrador ajeno en solo lectura, intento de edición ajena rechazado; Actividad reciente; pantallas de Caterpillar/Audi/Pagos sin cambios; revisar logs y `audit.cambios`.
 7. **Detener o revertir si:** falla cualquier postcheck; cambia la huella de estructura fuera de `manufactura`; un proceso n8n reporta errores nuevos; el PDF no pasa la aprobación visual; hay errores 5xx sostenidos. **Revertir:** volver a las imágenes anteriores (sin tocar la base); `DOWN` del esquema solo si está vacío; si ya hay documentos reales, corregir hacia adelante. **Recuperación ante daño de datos:** restaurar el respaldo en un entorno aislado y reconciliar, nunca sobre `daubert_global` sin autorización.
 8. **Después:** registrar la nota de despliegue en `docs/deployments/`, actualizar roles/permisos y la matriz de drift TEST-PROD.
+
+## 8. Resultados del inventario real (ejecutado por el operador el 2026-11-05; PROD vs TEST)
+Archivos analizados: `Inventarios_PostgreSQL\inventario_PROD.txt` e `inventario_TEST.txt` (UTF-16, generados con `>` de PowerShell; para el siguiente use `-o archivo`). **Ambas bases están en el MISMO servidor** PostgreSQL 18.4 (Windows).
+
+### 8.1 Compatible / sin conflicto
+| Comprobación | PROD (`daubert_global`) |
+|---|---|
+| Esquema `manufactura` | no existe, 0 objetos → los UP «no existe» pasarán |
+| Conflictos de nombres | ninguno (solo `core.documentos` y `staging.manufactura_*`, esquemas distintos) |
+| Rol `daubert_hub_app` | sin superusuario, sin CREATEROLE/CREATEDB, **sin BYPASSRLS**; no es dueño de ninguna dependencia |
+| Dependencias (`security.users`, `core.empresas`, `core.empresa_roles`, `audit.cambios`) | **mismas columnas y tipos que TEST** (`H_DEPENDENCIAS` coincide); dueño `postgres`, sin RLS |
+| Privilegios de `daubert_hub_app` sobre ellas | `security.users` SIU-, `core.empresas` SIU-, `core.empresa_roles` SIU-, `core.alias_empresa` SIUD, `audit.cambios` S--- ; USAGE en `audit/core/security` → **suficientes, no hace falta ampliar nada** |
+| Auditoría | `audit.fn_registrar_cambio*` con el mismo cuerpo que TEST; `audit.cambios` sin triggers propios |
+| Mecanismos que interfieren | sin triggers de evento, sin publicaciones, sin privilegios por defecto (`pg_default_acl`), solo la extensión `plpgsql` (`gen_random_uuid()` y `sha256()` son nativas de PG 18) |
+| `daubert_hub_test_user` en PROD | **cero** privilegios de tabla y sin USAGE en esquemas (solo el CONNECT por defecto de la base) |
+| Tamaño y carga | base de 13 MB; `audit.cambios` 146 filas; una sola conexión de la aplicación (`daubert_hub_app`, inactiva) y sesiones de pgAdmin inactivas |
+
+### 8.2 Diferencias PROD ↔ TEST relevantes
+1. **La huella de estructura fuera de `manufactura` NO coincide** (`8e9162…` PROD vs `e47f44…` TEST) aunque los conteos por esquema sí (tablas, vistas, secuencias, funciones, triggers). Hay una diferencia a nivel de columna, índice, restricción, vista o texto de función que **no se puede identificar con este inventario**. Es la prioridad #1: la rama usa TEST como fuente de verdad y podría depender de un objeto o columna que PROD no tiene. Para localizarla: `database/maintenance/daubert_global/estructura_items.readonly.sql` (una línea por objeto; se compara con `diff`).
+2. **Usuarios:** PROD tiene **4 ADMIN y 0 GENERAL**; TEST, 2 ADMIN y 45 GENERAL. Para la prueba «con un usuario GENERAL» habrá que crear una cuenta GENERAL en PROD (cambio de datos que requiere autorización).
+3. **Clientes:** PROD tiene 124 empresas y **solo 2 con rol CLIENTE** (TEST: 207 y 5). El catálogo de abreviaturas necesita clientes con rol CLIENTE activo: antes de importar abreviaturas hay que dar de alta/clasificar los clientes reales (ADMIN). Los ids difieren entre bases: confirma que **no se copia nada de TEST**.
+4. **Roles:** en PROD existe además `n8n_cat_prod` (con USAGE en `core/operacion/ops`; la documentación decía que Caterpillar usaba `n8n_app`: **actualizar `roles.md`**). TEST tiene `n8n_app_test` y `n8n_cat_test`. El postcheck de PROD debe comprobar que **ninguno** de `n8n_app`, `n8n_cat_prod`, `daubert_docs_ro`, `daubert_hub_test_user` ni PUBLIC recibe privilegios en `manufactura` (`daubert_docs_ro` tiene USAGE por esquema y SELECT en las demás tablas: debe quedar fuera de `manufactura`).
+5. **`daubert_hub_test_user` conserva CONNECT sobre `daubert_global`** (por el valor por defecto de PostgreSQL). Sin privilegios sobre objetos no hay acceso, pero conviene un `REVOKE CONNECT` en una migración aparte y autorizada.
+6. **Configuración del servidor:** `archive_mode = off` → no hay recuperación a un punto en el tiempo; el respaldo es `pg_dump` (con la prueba de restauración como compuerta). `lock_timeout` y `statement_timeout` globales en 0: los scripts ya fijan los suyos con `SET LOCAL`.
+7. **Volumen:** auditoría de TEST tras todo el desarrollo: 322 filas de `manufactura` y 3.5 MB en total; el riesgo R11 (crecimiento) baja a **bajo**.
+
+### 8.3 Efecto en los riesgos y en el plan
+- R1/R2/R3/R14 **bajan** (privilegios y dependencias verificados; sin interferencias).
+- **Sube a prioridad 1** la diferencia de estructura (8.2-1) y la falta de usuarios GENERAL / clientes en PROD (8.2-2, 8.2-3), que condicionan la validación y la carga inicial.
+- El plan de migración no cambia: esquema nuevo, grants solo a `daubert_hub_app`, postcheck con la huella de estructura (corregida cuando se identifique la diferencia) y comprobación negativa de privilegios.

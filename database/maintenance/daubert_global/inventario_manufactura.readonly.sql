@@ -23,10 +23,10 @@ SELECT current_database() AS base, current_user AS rol, version() AS version, cu
 
 \echo '== S2. Roles del clúster (atributos; sin contraseñas)'
 SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls, rolcanlogin, rolinherit, rolconnlimit
-  FROM pg_roles WHERE rolname IN ('postgres', 'daubert_hub_app', 'daubert_hub_test_user', 'n8n_app', 'n8n_cat_test', 'daubert_docs_ro') ORDER BY 1;
+  FROM pg_roles WHERE rolname IN ('postgres', 'daubert_hub_app', 'daubert_hub_test_user', 'n8n_app', 'n8n_cat_test', 'n8n_cat_prod', 'n8n_app_test', 'daubert_docs_ro') ORDER BY 1;
 SELECT r.rolname AS rol, string_agg(g.rolname, ',' ORDER BY g.rolname) AS miembro_de
   FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
- WHERE r.rolname IN ('daubert_hub_app', 'daubert_hub_test_user', 'n8n_app', 'n8n_cat_test', 'daubert_docs_ro') GROUP BY 1 ORDER BY 1;
+ WHERE r.rolname IN ('daubert_hub_app', 'daubert_hub_test_user', 'n8n_app', 'n8n_cat_test', 'n8n_cat_prod', 'n8n_app_test', 'daubert_docs_ro') GROUP BY 1 ORDER BY 1;
 SELECT rolname, array_to_string(setconfig, ' ; ') AS configuracion_por_rol_o_base
   FROM pg_db_role_setting s LEFT JOIN pg_roles r ON r.oid = s.setrole WHERE s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database())) ORDER BY 1 NULLS FIRST;
 
