@@ -15,7 +15,7 @@ async function finalizado(n: 1 | 2 | 3 = 2, codigo = codigoUnico('HIS'), extra: 
 }
 
 describe('bloque 7 · historial y descarga de versiones finalizadas', () => {
-  it('las versiones finalizadas las ve cualquier cuenta autenticada; los borradores ajenos, no', async () => {
+  it('las versiones finalizadas las ve cualquier cuenta autenticada; el historial no duplica los borradores ajenos (van en «Borradores del equipo»)', async () => {
     const codigo = codigoUnico('HIS');
     const f = await finalizado(2, codigo);
     const abierto = await service.crearRevisionNueva(actor(2), f.documentoId) as Vista;

@@ -39,6 +39,7 @@ export interface ActorDocumental {
 
 /** Fila de revisión tal como la devuelve la consulta común (ids bigint como texto). */
 export interface RevisionRow {
+  creado_por_nombre: string | null;
   revision_id: string;
   public_id: string;
   documento_public_id: string;

@@ -16,13 +16,14 @@ export const REVISION_SELECT = `
          r.revisor_usuario_id::text, rv.display_name AS revisor_nombre,
          r.cliente_empresa_id::text, r.cliente_nombre, r.cliente_verificado, r.entorno_emision,
          r.basada_en_revision_id::text, b.revision AS basada_en_revision,
-         r.creado_por_usuario_id::text, r.creado_por_email, ${iso('r.created_at')} AS created_at, r.actualizado_por_email, ${iso('r.updated_at')} AS updated_at,
+         r.creado_por_usuario_id::text, r.creado_por_email, cu.display_name AS creado_por_nombre, ${iso('r.created_at')} AS created_at, r.actualizado_por_email, ${iso('r.updated_at')} AS updated_at,
          r.finalizando_token::text, ${iso('r.finalizando_desde')} AS finalizando_desde, r.finalizando_por_usuario_id::text,
          r.finalizado_por_email, ${iso('r.finalizado_en')} AS finalizado_en,
          p.pdf_sha256, p.bytes AS pdf_bytes, p.nombre_archivo AS pdf_nombre
     FROM manufactura.revisiones r
     JOIN manufactura.documentos d ON d.documento_id = r.documento_id
     LEFT JOIN security.users rv ON rv.user_id = r.revisor_usuario_id
+    LEFT JOIN security.users cu ON cu.user_id = r.creado_por_usuario_id
     LEFT JOIN manufactura.revisiones b ON b.revision_id = r.basada_en_revision_id
     LEFT JOIN manufactura.pdfs p ON p.revision_id = r.revision_id`;
 
@@ -124,8 +125,14 @@ export class DocumentsRepository {
     return r.rows[0] ?? null;
   }
 
-  async listarAbiertas(c: PoolClient): Promise<RevisionRow[]> {
-    const r = await c.query<RevisionRow>(`${REVISION_SELECT} WHERE r.estado IN ('BORRADOR', 'FINALIZANDO') ORDER BY r.updated_at DESC, r.revision_id DESC LIMIT 100`);
+  /**
+   * Borradores y finalizaciones en curso, SEPARADOS en el servidor para que no haya duplicados entre «Mis borradores» y «Borradores del equipo»:
+   * `propios` = creados por la sesión; `equipo` = de otras cuentas (consultables en solo lectura; la RLS de la migración 105 es quien los deja ver; sin ella la base solo entrega los asignados como revisor o, a un ADMIN, todos).
+   */
+  async listarAbiertas(c: PoolClient, ambito: 'propios' | 'equipo' = 'propios', codigo?: string): Promise<RevisionRow[]> {
+    const filtroAmbito = ambito === 'propios' ? 'r.creado_por_usuario_id = manufactura.fn_actor_id()' : 'r.creado_por_usuario_id <> manufactura.fn_actor_id()';
+    const r = await c.query<RevisionRow>(
+      `${REVISION_SELECT} WHERE r.estado IN ('BORRADOR', 'FINALIZANDO') AND ${filtroAmbito} AND ($1::text IS NULL OR d.codigo_clave = lower($1::text)) ORDER BY r.updated_at DESC, r.revision_id DESC LIMIT 100`, [codigo ?? null]);
     return r.rows;
   }
 
@@ -136,7 +143,7 @@ export class DocumentsRepository {
 
   async historialPorCodigo(c: PoolClient, codigo: string): Promise<RevisionRow[]> {
     const r = await c.query<RevisionRow>(
-      `${REVISION_SELECT} WHERE d.codigo_clave = lower($1) AND r.estado IN ('FINALIZADA', 'BORRADOR', 'FINALIZANDO') ORDER BY d.variante_clave, r.revision DESC NULLS FIRST, r.revision_id DESC LIMIT 300`, [codigo]);
+      `${REVISION_SELECT} WHERE d.codigo_clave = lower($1) AND (r.estado = 'FINALIZADA' OR (r.estado IN ('BORRADOR', 'FINALIZANDO') AND r.creado_por_usuario_id = manufactura.fn_actor_id())) ORDER BY d.variante_clave, r.revision DESC NULLS FIRST, r.revision_id DESC LIMIT 300`, [codigo]);
     return r.rows;
   }
 

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query, Req, Res, StreamableFile, UnauthorizedException, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
 import type { Response } from 'express';
-import { Matches } from 'class-validator';
+import { IsOptional, Matches } from 'class-validator';
 import type { AuthenticatedRequest } from '../common/authenticated-request';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminSignaturesQueryDto, AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from './documents.dto';
@@ -8,6 +8,10 @@ import { DocumentsService } from './documents.service';
 import { TestOnlyGuard } from './test-only.guard';
 import { DetalleValidacionFilter } from './validation-detail.filter';
 import type { ActorDocumental } from './documents.types';
+
+export class TeamQueryDto {
+  @IsOptional() @Matches(/^[A-Za-z0-9._-]{1,64}$/) codigo?: string;
+}
 
 export class HistoryQueryDto {
   @Matches(/^[A-Za-z0-9._-]{1,64}$/) codigo!: string;
@@ -93,6 +97,12 @@ export class DocumentsController {
   @Get('open')
   open(@Req() request: AuthenticatedRequest): ReturnType<DocumentsService['listarAbiertas']> {
     return this.documents.listarAbiertas(actorDeSolicitud(request));
+  }
+
+  /** Borradores y finalizaciones en curso de OTRAS cuentas, solo lectura (consulta compartida). `?codigo=` opcional. */
+  @Get('team')
+  team(@Query() query: TeamQueryDto, @Req() request: AuthenticatedRequest): ReturnType<DocumentsService['listarDelEquipo']> {
+    return this.documents.listarDelEquipo(actorDeSolicitud(request), query.codigo);
   }
 
   /** Historial por código DCMX: versiones finalizadas de todas sus variantes y revisiones abiertas visibles. */

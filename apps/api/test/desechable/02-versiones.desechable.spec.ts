@@ -50,9 +50,9 @@ describe('bloque 2 · actualizar con control de versiones', () => {
     expect(final.version).toBe(2);
   });
 
-  it('solo el creador o un ADMIN editan; otra cuenta GENERAL ni siquiera ve el borrador (404) y un ADMIN sí puede editarlo', async () => {
+  it('solo el creador o un ADMIN editan; otra cuenta GENERAL puede verlo pero no editarlo (403) y un ADMIN sí puede editarlo', async () => {
     const v1 = await crear(2, codigoUnico());
-    expect((await falla(actualizar(3, v1.id, { version: 1, datos: v1.especificacion.datos }))).status).toBe(404);
+    expect((await falla(actualizar(3, v1.id, { version: 1, datos: v1.especificacion.datos }))).status).toBe(403);
     const porAdmin = await actualizar(1, v1.id, { version: 1, datos: { ...v1.especificacion.datos, ancho: '14' } });
     expect(porAdmin.version).toBe(2);
     expect(porAdmin.actualizadoPor).toBe('admin1@example.invalid');

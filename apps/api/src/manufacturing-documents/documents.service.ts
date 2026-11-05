@@ -92,7 +92,12 @@ export class DocumentsService {
 
   /** Borradores y finalizaciones en curso que la base deja ver a esta cuenta (propios, asignados como revisor, o todos si es ADMIN). */
   async listarAbiertas(actor: ActorDocumental): Promise<{ data: unknown[] }> {
-    return this.repo.conSesion(actor, async (c) => ({ data: (await this.repo.listarAbiertas(c)).map((r) => this.resumen(r, actor)) }));
+    return this.repo.conSesion(actor, async (c) => ({ data: (await this.repo.listarAbiertas(c, 'propios')).map((r) => this.resumen(r, actor)) }));
+  }
+
+  /** Borradores y finalizaciones en curso de OTRAS cuentas: consulta en solo lectura (el filtro por propietario se hace aquí, no en el navegador). `codigo` opcional. */
+  async listarDelEquipo(actor: ActorDocumental, codigo?: string): Promise<{ data: unknown[] }> {
+    return this.repo.conSesion(actor, async (c) => ({ data: (await this.repo.listarAbiertas(c, 'equipo', codigo)).map((r) => this.resumen(r, actor)) }));
   }
 
   async obtener(actor: ActorDocumental, id: string): Promise<unknown> {
@@ -273,7 +278,7 @@ export class DocumentsService {
       id: fila.public_id, documentoId: fila.documento_public_id, codigo: fila.codigo_dcmx, variante: fila.variante, familia: fila.familia, estado: fila.estado,
       revision: fila.revision, revisionPrevista: fila.revision_prevista, version: fila.version,
       cliente: fila.cliente_nombre ? { empresaId: fila.cliente_empresa_id, nombre: fila.cliente_nombre, verificado: fila.cliente_verificado } : null,
-      creadoPor: fila.creado_por_email, actualizadoEn: fila.updated_at, finalizadoEn: fila.finalizado_en, finalizadoPor: fila.finalizado_por_email,
+      creadoPor: fila.creado_por_email, propietario: { nombre: fila.creado_por_nombre ?? fila.creado_por_email, email: fila.creado_por_email }, actualizadoEn: fila.updated_at, finalizadoEn: fila.finalizado_en, finalizadoPor: fila.finalizado_por_email,
       entorno: fila.entorno_emision, propio: fila.creado_por_usuario_id === actor.userId, asignadoComoRevisor: fila.revisor_usuario_id === actor.userId,
       pdf: fila.pdf_nombre ? { nombre: fila.pdf_nombre, sha256: fila.pdf_sha256, bytes: fila.pdf_bytes } : null
     };

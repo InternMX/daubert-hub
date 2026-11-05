@@ -20,11 +20,11 @@ async function listo(n: 1 | 2 | 3 = 2, extra: Record<string, unknown> = {}): Pro
 const contarPdf = async (revisionPublicId: string): Promise<number> => (await poolAdmin.query('SELECT count(*)::int AS n FROM manufactura.pdfs p JOIN manufactura.revisiones r USING (revision_id) WHERE r.public_id = $1', [revisionPublicId])).rows[0].n;
 
 describe('bloque 5 · revisor opcional y revisión autenticada', () => {
-  it('el creador asigna un revisor; el revisor ve el borrador (no los ajenos) pero no lo edita', async () => {
+  it('el creador asigna un revisor; el revisor tiene la revisión asignada; los demás solo consultan y nadie ajeno lo edita', async () => {
     restablecer();
     const v = await crear(2, codigoUnico());
     const otro = await crear(2, codigoUnico());
-    expect((await falla(service.obtener(actor(3), v.id))).status).toBe(404);
+    expect(((await service.obtener(actor(3), v.id)) as Vista).permisos).toMatchObject({ editar: false, registrarRevision: false });   // consulta compartida: lo ve, sin permisos
     const asignado = await service.asignarRevisor(actor(2), v.id, { version: 1, revisorUsuarioId: '3' }) as Vista;
     expect(asignado.revisor).toEqual({ id: '3', nombre: 'General Tres' });
     expect(asignado.version).toBe(2);
@@ -32,15 +32,17 @@ describe('bloque 5 · revisor opcional y revisión autenticada', () => {
     expect(visto.asignadoComoRevisor).toBe(true);
     expect(visto.permisos).toMatchObject({ editar: false, finalizar: false, asignarRevisor: false, registrarRevision: true });
     expect((await falla(actualizar(3, v.id, { version: 2, datos: v.especificacion.datos }))).status).toBe(403);
-    expect((await falla(service.obtener(actor(3), otro.id))).status).toBe(404);
-    const lista = await service.listarAbiertas(actor(3));
-    expect((lista.data as Vista[]).map((r) => r.id)).toContain(v.id);
-    expect((lista.data as Vista[]).map((r) => r.id)).not.toContain(otro.id);
+    expect(((await service.obtener(actor(3), otro.id)) as Vista).permisos).toMatchObject({ editar: false, registrarRevision: false });   // el ajeno sin asignación: solo consulta
+    // «Mis borradores» son solo los propios; el asignado como revisor aparece en «Borradores del equipo» con su marca, y el no asignado también (solo lectura) pero sin ella.
+    expect(((await service.listarAbiertas(actor(3))).data as Vista[]).map((r) => r.id)).not.toContain(v.id);
+    const equipo = (await service.listarDelEquipo(actor(3))).data as Vista[];
+    expect(equipo.find((r) => r.id === v.id)).toMatchObject({ asignadoComoRevisor: true });
+    expect(equipo.find((r) => r.id === otro.id)).toMatchObject({ asignadoComoRevisor: false });
   });
 
   it('solo el creador o un ADMIN asignan; el revisor debe ser un usuario ACTIVO; null retira al revisor', async () => {
     const v = await crear(2, codigoUnico());
-    expect((await falla(service.asignarRevisor(actor(3), v.id, { version: 1, revisorUsuarioId: '3' }))).status).toBe(404);
+    expect((await falla(service.asignarRevisor(actor(3), v.id, { version: 1, revisorUsuarioId: '3' }))).status).toBe(403);
     expect((await falla(service.asignarRevisor(actor(2), v.id, { version: 1, revisorUsuarioId: '4' }))).status).toBe(422);
     expect((await falla(service.asignarRevisor(actor(2), v.id, { version: 1, revisorUsuarioId: '9999' }))).status).toBe(422);
     const porAdmin = await service.asignarRevisor(actor(1), v.id, { version: 1, revisorUsuarioId: '5' }) as Vista;
@@ -75,7 +77,7 @@ describe('bloque 5 · revisor opcional y revisión autenticada', () => {
   it('una cuenta ajena al borrador no puede revisarlo; un ADMIN sí; la versión debe ser la que se vio', async () => {
     restablecer();
     const v = await crear(2, codigoUnico());
-    expect((await falla(service.registrarRevision(actor(3), v.id, 1))).status).toBe(404);
+    expect((await falla(service.registrarRevision(actor(3), v.id, 1))).status).toBe(403);
     expect((await falla(service.registrarRevision(actor(2), v.id, 7))).code).toBe('VERSION_CONFLICT');
     const porAdmin = await service.registrarRevision(actor(1), v.id, 1) as Vista;
     expect(porAdmin.confirmaciones[0]).toMatchObject({ usuario: 'Admin Uno', autorrevision: false, comoRevisorAsignado: false });
@@ -231,10 +233,10 @@ describe('bloque 6 · finalizar desde la copia guardada y producir el PDF', () =
     restablecer();
   });
 
-  it('permisos: otra cuenta GENERAL ni ve el borrador; el revisor asignado no finaliza; un ADMIN sí y queda como quien finalizó', async () => {
+  it('permisos: otra cuenta GENERAL solo lo consulta (403 al finalizar); el revisor asignado no finaliza; un ADMIN sí y queda como quien finalizó', async () => {
     restablecer();
     const v = await listo();
-    expect((await falla(service.finalizar(actor(3), v.id, v.version))).status).toBe(404);
+    expect((await falla(service.finalizar(actor(3), v.id, v.version))).status).toBe(403);
     const a = await service.asignarRevisor(actor(2), v.id, { version: v.version, revisorUsuarioId: '3' }) as Vista;
     expect((await falla(service.finalizar(actor(3), v.id, a.version))).status).toBe(403);
     const f = await service.finalizar(actor(1), v.id, a.version) as Vista;

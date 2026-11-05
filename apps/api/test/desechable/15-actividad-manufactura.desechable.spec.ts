@@ -18,12 +18,12 @@ async function finalizar(n: 1 | 2 | 3, v: Vista): Promise<Vista> {
 const finalizada = async (n: 1 | 2 | 3, codigo: string): Promise<Vista> => finalizar(n, await crear(n, codigo));
 
 describe('actividad reciente de manufactura (instancia desechable)', () => {
-  it('un documento creado aparece como creación del documento inicial (sin estado ni revisión actuales) con responsable y enlace; solo lo ven su autor y los ADMIN', async () => {
+  it('un documento creado aparece como creación del documento inicial (sin estado ni revisión actuales) con responsable y enlace; lo ven su autor, los ADMIN y (consulta compartida) las demás cuentas', async () => {
     const codigo = codigoUnico('ACT');
     const v = await crear(2, codigo);
     expect(await de(2, codigo)).toMatchObject([{ tipo: 'DOCUMENTO_CREADO', revision: null, revision_base: null, revision_public_id: v.id, actor_id: '2', actor_nombre: 'General Dos' }]);
     expect(await de(1, codigo)).toHaveLength(1);
-    expect(await de(3, codigo)).toEqual([]);                                     // un borrador ajeno jamás se muestra
+    expect(await de(3, codigo)).toMatchObject([{ tipo: 'DOCUMENTO_CREADO', revision_public_id: v.id, actor_id: '2' }]);   // consulta compartida: el enlace abre el borrador ajeno en solo lectura
   });
 
   it('la finalización genera «REVISION_FINALIZADA» con su número, visible para todas las cuentas; el documento creado NO cambia para reflejar el estado actual', async () => {
@@ -36,7 +36,7 @@ describe('actividad reciente de manufactura (instancia desechable)', () => {
     }
   });
 
-  it('una NUEVA REVISIÓN genera su propio evento «basada en REV01» con su autor; mientras es borrador solo la ven su autor y los ADMIN; al finalizarla se suma «REV02 finalizada»', async () => {
+  it('una NUEVA REVISIÓN genera su propio evento «basada en REV01» con su autor; mientras es borrador también la consultan las demás cuentas (solo lectura); al finalizarla se suma «REV02 finalizada»', async () => {
     const codigo = codigoUnico('REV');
     const v1 = await finalizada(2, codigo);
     const doc = await service.listarAbiertas(actor(2));                           // (el documento ya no tiene borradores abiertos)
@@ -44,7 +44,7 @@ describe('actividad reciente de manufactura (instancia desechable)', () => {
     const v2 = await service.crearRevisionNueva(actor(2), v1.documentoId) as Vista;
     const propios = await de(2, codigo);
     expect(propios.find((e) => e.tipo === 'REVISION_CREADA')).toMatchObject({ revision: null, revision_base: 1, revision_public_id: v2.id, actor_id: '2' });
-    expect((await de(3, codigo)).some((e) => e.tipo === 'REVISION_CREADA')).toBe(false);       // borrador ajeno: no se ve
+    expect((await de(3, codigo)).some((e) => e.tipo === 'REVISION_CREADA')).toBe(true);        // borrador ajeno: consultable
     expect((await de(1, codigo)).some((e) => e.tipo === 'REVISION_CREADA')).toBe(true);
     await finalizar(2, v2);
     const todas = await de(3, codigo);

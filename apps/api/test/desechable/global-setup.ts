@@ -18,6 +18,7 @@ const PREFIJO = '20261030_101_manufactura_gestor_documental_test';
 const PREFIJO_102 = '20261103_102_manufactura_responsables_firmas_test';
 const PREFIJO_103 = '20261105_103_manufactura_inventario_firmas_admin_test';
 const PREFIJO_104 = '20261106_104_manufactura_cliente_abreviaturas_test';
+const PREFIJO_105 = '20261107_105_manufactura_consulta_compartida_borradores_test';
 
 const docker = (args: string[]) => spawnSync('docker', args, { encoding: 'utf8' });
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -43,13 +44,15 @@ export async function setup(): Promise<void> {
       copyFileSync(join(MIGRACIONES, `${PREFIJO_102}.up.sql`), join(tmp, 'up102.sql'));
       copyFileSync(join(MIGRACIONES, `${PREFIJO_103}.up.sql`), join(tmp, 'up103.sql'));
       copyFileSync(join(MIGRACIONES, `${PREFIJO_104}.up.sql`), join(tmp, 'up104.sql'));
-      for (const f of ['init.sql', 'up.sql', 'up102.sql', 'up103.sql', 'up104.sql']) docker(['cp', join(tmp, f), `${CONTENEDOR}:/tmp/${f}`]);
+      copyFileSync(join(MIGRACIONES, `${PREFIJO_105}.up.sql`), join(tmp, 'up105.sql'));
+      for (const f of ['init.sql', 'up.sql', 'up102.sql', 'up103.sql', 'up104.sql', 'up105.sql']) docker(['cp', join(tmp, f), `${CONTENEDOR}:/tmp/${f}`]);
     } finally { rmSync(tmp, { recursive: true, force: true }); }
     psql('init.sql');
     psql('up.sql');
     psql('up102.sql');
     psql('up103.sql');
     psql('up104.sql');
+    psql('up105.sql');
   } catch (error) {
     docker(['rm', '-f', CONTENEDOR]);
     throw error;

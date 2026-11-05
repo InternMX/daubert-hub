@@ -78,15 +78,16 @@ describe('bloque 1 · crear y recuperar borradores', () => {
     expect(perdedor.reason.getResponse()).toEqual(cuerpos[0]!.body);
   });
 
-  it('otra cuenta GENERAL no ve el borrador ajeno: ni lo recupera, ni lo abre, ni se entera de su id', async () => {
+  it('otra cuenta GENERAL consulta el borrador ajeno en solo lectura (sin permisos de escritura); no lo recupera como propio y crear uno nuevo sigue sin revelar ids', async () => {
     const codigo = codigoUnico();
     const mio = await crear(2, codigo);
     const e = await falla(crear(3, codigo));
     expect(e).toMatchObject({ status: 409, code: 'DOCUMENT_EXISTS' });
     expect(e.body.borradorId ?? null).toBeNull();
     expect(e.body.documentoId ?? null).toBeNull();
-    const abrir = await falla(service.obtener(actor(3), mio.id));
-    expect(abrir.status).toBe(404);
+    const abrir = await service.obtener(actor(3), mio.id) as Vista;
+    expect(abrir).toMatchObject({ id: mio.id, propio: false, estado: 'BORRADOR', propietario: { nombre: 'General Dos' } });
+    expect(abrir.permisos).toMatchObject({ editar: false, finalizar: false, asignarRevisor: false, registrarRevision: false, descargarPdf: false });
     const lista = await service.listarAbiertas(actor(3));
     expect((lista.data as Vista[]).some((r) => r.id === mio.id)).toBe(false);
     const hist = await service.historial(actor(3), codigo);
@@ -98,8 +99,9 @@ describe('bloque 1 · crear y recuperar borradores', () => {
     const mio = await crear(2, codigo);
     const propia = await service.listarAbiertas(actor(2));
     expect((propia.data as Vista[]).find((r) => r.id === mio.id)).toMatchObject({ codigo, estado: 'BORRADOR', propio: true });
-    const admin = await service.listarAbiertas(actor(1));
+    const admin = await service.listarDelEquipo(actor(1));
     expect((admin.data as Vista[]).find((r) => r.id === mio.id)).toMatchObject({ propio: false });
+    expect(((await service.listarAbiertas(actor(1))).data as Vista[]).some((r) => r.id === mio.id)).toBe(false);          // no se duplica en «Mis borradores»
     const abierto = await service.obtener(actor(1), mio.id) as Vista;
     expect(abierto.especificacion.datos.codigo).toBe(codigo);
     expect(abierto.permisos.editar).toBe(true);
