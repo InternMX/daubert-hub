@@ -101,7 +101,7 @@ function ProcedenciaInfo({ fieldKey, state }: { fieldKey: FieldKey; state: Speci
   return (
     <>
       <Tooltip title={etiqueta} placement="top">
-        <IconButton size="small" data-testid="procedencia-info" aria-label={`Procedencia de ${FIELD_LABELS[fieldKey]}`} aria-haspopup="dialog" aria-expanded={ancla !== null} aria-controls={ancla ? id : undefined}
+        <IconButton component="span" size="small" data-testid="procedencia-info" aria-label={`Procedencia de ${FIELD_LABELS[fieldKey]}`} aria-haspopup="dialog" aria-expanded={ancla !== null} aria-controls={ancla ? id : undefined}
           onClick={(e) => setAncla(e.currentTarget)}
           sx={{ position: 'absolute', top: -10, right: 4, p: 0.25, bgcolor: 'background.paper', color: 'text.secondary', '&:hover': { bgcolor: 'background.paper' } }}>
           <InfoOutlinedIcon sx={{ fontSize: 16 }} />
@@ -158,7 +158,7 @@ function FieldFrame({ form, fieldKey, onRestore, children }: FieldFrameProps) {
 
 interface ClientOption { id: string; name: string }
 
-function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }: { form: SpecificationForm; requerido?: boolean; onUsarSugerencia: (clienteId: string, nombre: string) => void; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
+function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido, soloLectura = false }: { form: SpecificationForm; requerido?: boolean; soloLectura?: boolean; onUsarSugerencia: (clienteId: string, nombre: string) => void; onChange: (value: string, source: 'CATALOGO' | 'PROVISIONAL' | undefined, ref?: string) => void; onRestore: (key: FieldKey) => void }) {
   const [options, setOptions] = useState<ClientOption[]>([]);
   const [input, setInput] = useState(form.fields.cliente.value);
   // Alta rápida (solo ADMIN): se ofrece cuando la búsqueda del catálogo terminó SIN resultados para lo escrito. Una cuenta GENERAL conserva la captura manual de siempre.
@@ -182,6 +182,7 @@ function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }:
     <FieldFrame form={form} fieldKey="cliente" onRestore={onRestore}>
       <Autocomplete
         freeSolo
+        disabled={soloLectura}
         options={options}
         getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
         isOptionEqualToValue={(option, value) => option.id === value.id}
@@ -198,14 +199,14 @@ function ClientField({ form, onChange, onRestore, onUsarSugerencia, requerido }:
           ? <TextField {...params} label="Cliente (obligatorio para finalizar)" helperText="Selecciona un cliente del catálogo o escribe su nombre." />
           : <TextField {...params} label="Cliente (opcional)" helperText="Selecciona un cliente del catálogo o escribe su nombre." />}
       />
-      {esAdmin && current.source !== 'CATALOGO' && sinResultados !== null && sinResultados === input.trim() && (
+      {!soloLectura && esAdmin && current.source !== 'CATALOGO' && sinResultados !== null && sinResultados === input.trim() && (
         <Typography variant="caption" color="text.secondary" display="block" data-testid="alta-rapida-oferta" sx={{ mt: 0.5 }}>
           ¿No encuentras «{input.trim()}» en el catálogo?
           <Button size="small" variant="text" onClick={() => { setAltaAbierta(true); setCreado(''); }} sx={{ textTransform: 'none', px: 0.75, minWidth: 0 }}>Registrar cliente</Button>
         </Typography>
       )}
       {creado && <Typography variant="caption" color="success.main" display="block" role="status" data-testid="alta-rapida-aviso" sx={{ mt: 0.5 }}>{creado}</Typography>}
-      <ClienteSugerencias codigo={form.fields.codigo.value} actual={current} onUsar={onUsarSugerencia} />
+      {!soloLectura && <ClienteSugerencias codigo={form.fields.codigo.value} actual={current} onUsar={onUsarSugerencia} />}
       {esAdmin && (
         <AltaRapidaCliente open={altaAbierta} nombreInicial={input.trim()} onClose={() => setAltaAbierta(false)}
           onCreado={(c) => { setAltaAbierta(false); setSinResultados(null); setCreado(c.nuevo ? `Cliente «${c.nombre}» registrado y seleccionado.` : `Cliente «${c.nombre}» seleccionado.`); onChange(c.nombre, 'CATALOGO', c.id); }} />
@@ -454,8 +455,10 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   useEffect(() => {
     if (docActual) { setResponsables(desdeVista(docActual.responsables ?? [])); setRespEditados(false); }
   }, [docActual?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const cambiarResponsables = (r: ResponsableLocal[]): void => { setResponsables(r); setRespEditados(true); setEdiciones((n) => n + 1); };
+  const cambiarResponsables = (r: ResponsableLocal[]): void => { if (soloLecturaRef.current) return; setResponsables(r); setRespEditados(true); setEdiciones((n) => n + 1); };
   const soloLectura = documentos && docActual !== null && (docActual.estado !== 'BORRADOR' || !docActual.permisos.editar);
+  const soloLecturaRef = useRef(soloLectura);
+  soloLecturaRef.current = soloLectura;
 
   async function recargarHojas(codigo: string): Promise<void> {
     try {
@@ -491,6 +494,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   }
 
   const update = (updater: (previous: SpecificationForm) => SpecificationForm): void => {
+    if (soloLecturaRef.current) return;                                  // consulta / finalizada: ningún control puede modificar el formulario ni activar el autoguardado
     setEdiciones((n) => n + 1);
     setForm((previous) => (previous ? updater(previous) : previous));
     setValidation(null);
@@ -526,7 +530,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const select = (key: FieldKey, options: Array<[string, string]>) => (
     form && has(key) && (
       <FieldFrame form={form} fieldKey={key} error={errors[key]} onRestore={restore}>
-        <TextField select fullWidth label={FIELD_LABELS[key]} value={form.fields[key].value} error={Boolean(errors[key])} onChange={(e) => setValue(key, e.target.value)}>
+        <TextField select fullWidth disabled={soloLectura} label={FIELD_LABELS[key]} value={form.fields[key].value} error={Boolean(errors[key])} onChange={(e) => setValue(key, e.target.value)}>
           <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
           {options.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
         </TextField>
@@ -562,8 +566,8 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     : [];
   const sinReconocer = todas.filter((i) => i.nivel === 'CONTRADICCION' && !estaReconocida(i, valores, reconocidas));
   const avisosVistaPrevia = todas.filter((i) => i.afectaVistaPrevia && i.codigo !== 'FALTANTE' && !estaReconocida(i, valores, reconocidas));
-  const reconocer = (i: Incidencia): void => { setEdiciones((n) => n + 1); setReconocidas((r) => ({ ...r, [i.id]: huella(i, valores) })); };
-  const deshacer = (i: Incidencia): void => { setEdiciones((n) => n + 1); setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id))); };
+  const reconocer = (i: Incidencia): void => { if (soloLecturaRef.current) return; setEdiciones((n) => n + 1); setReconocidas((r) => ({ ...r, [i.id]: huella(i, valores) })); };
+  const deshacer = (i: Incidencia): void => { if (soloLecturaRef.current) return; setEdiciones((n) => n + 1); setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id))); };
   const revision: 'vigente' | 'revisando' | 'no-disponible' = !form?.family || currentAssessment ? 'vigente' : fallo === assessmentKey ? 'no-disponible' : 'revisando';
   const revelar = (id: string): void => setReveladas((r) => (r.has(id) ? r : new Set(r).add(id)));
   // Datos obligatorios pendientes para finalizar. Coincide con el servidor: el cliente es obligatorio (texto libre válido en TEST); el catálogo solo lo verifica. Ver `motivosNoLista`.
@@ -715,7 +719,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             {text('codigo')}
             {text('descripcion', { multiline: true, minRows: 2 })}
             {text('producto')}
-            <ClientField form={form} requerido={documentos} onRestore={restore} onUsarSugerencia={(clienteId, nombre) => update((f) => setFieldValue(f, 'cliente', nombre, 'CATALOGO', clienteId))} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
+            <ClientField form={form} requerido={documentos} soloLectura={soloLectura} onRestore={restore} onUsarSugerencia={(clienteId, nombre) => update((f) => setFieldValue(f, 'cliente', nombre, 'CATALOGO', clienteId))} onChange={(value, source, ref) => update((f) => setFieldValue(f, 'cliente', value, source, ref))} />
             {text('fechaEmision', { type: 'date', helperText: 'Fecha local sugerida; editable. No es la fecha de alta en BIND ni la emisión definitiva.' })}
             {text('resinaVci', { helperText: 'Editable. Sugerencia según la composición; el porcentaje no es una obligación.' })}
           </SectionCard>
@@ -728,7 +732,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
                   <FieldFrame form={form} fieldKey="colorPreset" error={errors.colorPreset} onRestore={restore}>
                     <Stack direction="row" spacing={1.5} alignItems="center">
                       {colorSwatch(form.fields.colorHex.value)}
-                      <TextField select fullWidth label="Color" value={colorSelect} error={Boolean(errors.colorPreset)} onChange={(e) => elegirColor(e.target.value, config)}>
+                      <TextField select fullWidth disabled={soloLectura} label="Color" value={colorSelect} error={Boolean(errors.colorPreset)} onChange={(e) => elegirColor(e.target.value, config)}>
                         <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
                         {config.colores.map((c) => <MenuItem key={c.id} value={c.id}>{c.etiqueta} ({c.hex})</MenuItem>)}
                         {personalizados.colores.map((c) => <MenuItem key={c.id} value={`${PERSONAL}${c.id}`}>{c.nombre} ({c.hex}) · personalizado</MenuItem>)}
@@ -743,7 +747,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
                   <FieldFrame form={form} fieldKey="coexVariante" error={errors.coexVariante} onRestore={restore}>
                     <Stack direction="row" spacing={1.5} alignItems="center">
                       {colorSwatch(config.variantes.find((v) => v.valor === form.fields.coexVariante.value)?.colorCuerpo ?? '')}
-                      <TextField select fullWidth label="Variante COEX" value={form.fields.coexVariante.value} error={Boolean(errors.coexVariante)} onChange={(e) => update((f) => setCoexVariante(f, e.target.value, config))}>
+                      <TextField select fullWidth disabled={soloLectura} label="Variante COEX" value={form.fields.coexVariante.value} error={Boolean(errors.coexVariante)} onChange={(e) => update((f) => setCoexVariante(f, e.target.value, config))}>
                         <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
                         {config.variantes.map((v) => <MenuItem key={v.valor} value={v.valor}>{v.etiqueta} (cuerpo {v.colorCuerpo})</MenuItem>)}
                       </TextField>
@@ -779,7 +783,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
                         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Colores personalizados ({personalizados.colores.length}/{CUSTOM_COLORS_MAX}) · solo en este navegador, no se comparten entre usuarios.</Typography>
                         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                           {personalizados.colores.map((c) => (
-                            <Chip key={c.id} size="small" variant="outlined" label={`${c.nombre} ${c.hex}`} avatar={<Box component="span" sx={{ bgcolor: c.hex, border: '1px solid', borderColor: 'divider' }} />} onClick={() => elegirColor(`${PERSONAL}${c.id}`, config)} onDelete={() => personalizados.eliminar(c.id)} deleteIcon={<span aria-label={`Eliminar ${c.nombre} del catálogo local`} role="img">✕</span>} data-testid="color-personalizado-chip" />
+                            <Chip key={c.id} size="small" variant="outlined" label={`${c.nombre} ${c.hex}`} avatar={<Box component="span" sx={{ bgcolor: c.hex, border: '1px solid', borderColor: 'divider' }} />} disabled={soloLectura} onClick={() => elegirColor(`${PERSONAL}${c.id}`, config)} onDelete={() => personalizados.eliminar(c.id)} deleteIcon={<span aria-label={`Eliminar ${c.nombre} del catálogo local`} role="img">✕</span>} data-testid="color-personalizado-chip" />
                           ))}
                         </Stack>
                       </>
@@ -855,7 +859,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
               <Button variant="contained" onClick={() => setValidation(validateSpecification(form, configs, lookup))}>Validar especificación</Button>
-              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO' || sinReconocer.length > 0} onClick={() => { const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>Confirmar revisión del borrador</Button>
+              <Button variant="outlined" disabled={!live?.technicalReady || !currentAssessment?.completo || Boolean(currentAssessment?.bloqueado) || form.familyOrigin !== 'USUARIO' || sinReconocer.length > 0} onClick={() => { if (soloLectura) return; const confirmed = confirmLayerWeights(form); setForm(confirmed); setReviewedKey(JSON.stringify({ form: confirmed, producto: lookup?.producto })); }}>Confirmar revisión del borrador</Button>
               {sinReconocer.length > 0 && <Typography variant="body2" color="text.secondary" data-testid="review-blocked-hint">Corrige o reconoce las contradicciones técnicas ({sinReconocer.length}) para confirmar la revisión.</Typography>}
               <Typography variant="body2" color="text.secondary">
                 {changedFields(form, config).length === 0 ? 'Sin cambios respecto a lo recuperado de BIND.' : `Campos modificados por el usuario: ${changedFields(form, config).map((k) => FIELD_LABELS[k]).join(', ')}.`}

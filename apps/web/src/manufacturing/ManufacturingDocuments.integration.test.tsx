@@ -360,6 +360,52 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     expect(m.crearBorrador).not.toHaveBeenCalled();
   });
 
+  // Regresión: <fieldset disabled> solo deshabilita controles NATIVOS; los Select de MUI (div role=combobox), los Chip clicables y el Autocomplete seguían activos en una consulta.
+  const controlesActivos = (): string[] => {
+    const raiz = screen.getByTestId('formulario-documento');
+    const candidatos = raiz.querySelectorAll<HTMLElement>('input, textarea, select, button, [role="combobox"], [role="radio"], [role="checkbox"], [role="switch"], [role="button"], [role="option"], [contenteditable="true"]');
+    return [...candidatos].filter((el) => {
+      if (el.closest('[data-testid="procedencia-info"]') || el.getAttribute('data-testid') === 'procedencia-info') return false;      // el ícono de información es de consulta
+      if (el.classList.contains('MuiAccordionSummary-root') || el.closest('.MuiAccordionSummary-root')) return false;               // plegar/desplegar no modifica datos
+      if (el.closest('fieldset:disabled') && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(el.tagName)) return false;           // nativo ya inactivo por el fieldset
+      if ((el as HTMLInputElement).disabled || el.getAttribute('aria-disabled') === 'true' || el.classList.contains('Mui-disabled')) return false;
+      return true;
+    }).map((el) => `${el.tagName.toLowerCase()}[${el.getAttribute('role') ?? el.getAttribute('type') ?? ''}] ${el.getAttribute('aria-label') ?? el.id ?? el.textContent?.slice(0, 30) ?? ''}`);
+  };
+
+  it.each(familyConfigs.map((c) => [c.codigo, c.nombre] as const))('9c) %s (%s): un borrador ajeno abierto por GENERAL no deja ningún control activo ni autoguarda', async (codigo) => {
+    const user = userEvent.setup();
+    pagina(true);
+    const datos = { codigo: 'SCHFPMG001', ancho: '77', largo: '88', colorPreset: 'AZUL', coexVariante: 'AZUL', unidadDimensiones: 'IN', cantidadUnidad: 'BOLSAS', colorNombre: 'AZUL', colorHex: '#0070C0' };
+    const ajeno = guardado({ familia: codigo as never, propio: false, especificacion: { datos }, permisos: { ...PERMISOS, editar: false, finalizar: false, asignarRevisor: false, registrarRevision: false } });
+    m.historialPorCodigo.mockResolvedValue({ data: [ajeno] });
+    m.obtenerDocumento.mockResolvedValue(ajeno);
+    const lista = await buscar(user);
+    await user.click(await enLista(lista, /Consultar SCHFPMG001/));
+    await screen.findByTestId('solo-lectura');
+    await screen.findByTestId('formulario-documento');
+    expect(controlesActivos()).toEqual([]);
+    for (const combo of screen.getAllByRole('combobox')) {                                          // intentar abrir cada selector (Color, Unidad, Variante, Cliente…) no debe mostrar opciones
+      await user.click(combo);
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    }
+    await esperar(RETARDO * 6);
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    expect(m.crearBorrador).not.toHaveBeenCalled();
+  });
+
+  it('9d) una hoja finalizada tampoco deja controles activos (Select, Chip, Autocomplete incluidos)', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    const fin = finalizada({ especificacion: { datos: { codigo: 'SCHFPMG001', ancho: '77', largo: '88', colorPreset: 'AZUL', unidadDimensiones: 'IN', cantidadUnidad: 'BOLSAS' } } });
+    m.historialPorCodigo.mockResolvedValue({ data: [fin] });
+    m.obtenerDocumento.mockResolvedValue(fin);
+    const lista = await buscar(user);
+    await user.click(await enLista(lista, /Ver hoja SCHFPMG001/));
+    await screen.findByTestId('formulario-documento');
+    expect(controlesActivos()).toEqual([]);
+  });
+
   it('9b) ADMIN: un borrador ajeno se abre en consulta (sin autoguardado) y solo se edita tras «Editar como administrador»', async () => {
     const user = userEvent.setup();
     pagina(true);
