@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { aplicarCapaFinalizada, MARCA_PRUEBA, type InfoFinalizada } from '../src/manufacturing-sheets/preview/draft-layer';
+import { aplicarCapaFinalizada, type InfoFinalizada } from '../src/manufacturing-sheets/preview/draft-layer';
 import { resolveChromePath, type PdfRendererOptions } from '../src/manufacturing-sheets/preview/sheet-pdf.renderer';
 import { nombreArchivoFinalizado, SheetPdfService, varianteParaArchivo } from '../src/manufacturing-sheets/preview/sheet-pdf.service';
 import { SheetPreviewService } from '../src/manufacturing-sheets/preview/sheet-preview.service';
@@ -17,31 +17,13 @@ beforeAll(() => { carpeta = mkdtempSync(join(tmpdir(), 'chrome-final-')); guion 
 afterAll(() => { rmSync(carpeta, { recursive: true, force: true }); });
 const opciones = (chromePath: string | null = process.execPath): PdfRendererOptions => ({ chromePath, argsPrefix: [guion], timeoutMs: 5_000, maxConcurrent: 1, maxQueue: 1, maxHtmlBytes: 2_000_000, maxPdfBytes: 10_000_000 });
 
-describe('capa de la versión finalizada (TEST)', () => {
-  const html = '<html><head></head><body><p>hoja</p></body></html>';
-  it('lleva «PRUEBA · NO VÁLIDO PARA PRODUCCIÓN», la revisión, los responsables y las firmas SIN FIRMA; no dice BORRADOR, APROBADA ni EMITIDA', () => {
+describe('versión finalizada: el PDF respeta la plantilla (sin leyenda superior ni pie del sistema)', () => {
+  const html = '<html><head><style>body{margin:0}</style></head><body><p>hoja</p></body></html>';
+  it('no añade NADA al HTML de la plantilla: ni leyenda roja, ni pie, ni revisión, fecha, TEST, huella, «No implica aprobación oficial» o nombres', () => {
     const r = aplicarCapaFinalizada(html, INFO);
-    expect(r).toContain(MARCA_PRUEBA);
-    expect(r).toContain('Revisión 02');
-    expect(r).toContain('Finalizada en TEST el 2026-10-30');
-    expect(r).toContain('Huella aaaaaaaaaaaa');
-    expect(r).toContain('Elaboró: Ana Pérez');
-    expect(r).toContain('Revisó: Luis Gómez');
-    expect(r).toContain('Firmas: SIN FIRMA');
-    expect(r).toContain('No implica aprobación oficial');
-    expect(r.replace(MARCA_PRUEBA, '')).not.toMatch(/BORRADOR|APROBAD[OA]\b|EMITID[OA]/);
-    expect(r.endsWith('</body></html>')).toBe(true);
-    expect(r).not.toMatch(/<script|url\(|https?:|<img|<link/i);
-  });
-  it('«Revisó» solo aparece si existe una revisión registrada; «Autorizó» solo si se capturó; los nombres se escapan y se acotan', () => {
-    const sin = aplicarCapaFinalizada(html, { ...INFO, reviso: null });
-    expect(sin).toContain('Revisó: sin revisión registrada');
-    expect(sin).not.toContain('Autorizó');
-    expect(aplicarCapaFinalizada(html, { ...INFO, autorizo: 'Dirección' })).toContain('Autorizó: Dirección');
-    const hostil = aplicarCapaFinalizada(html, { ...INFO, elaboro: '<script>alert(1)</script> ' + 'x'.repeat(200) });
-    expect(hostil).toContain('&lt;script&gt;');
-    expect(hostil).not.toContain('<script>');
-    expect(hostil).not.toContain('x'.repeat(61));
+    expect(r).toBe(html);                                                                 // idéntico: ningún elemento nuevo, ningún estilo nuevo, nada que desplace o pagine
+    for (const texto of ['NO VÁLIDO PARA PRODUCCIÓN', 'PRUEBA ·', 'Revisión 02', 'Finalizada en TEST', 'Huella', 'No implica aprobación oficial', 'Ana Pérez', 'Luis Gómez', 'Firmas: SIN FIRMA']) expect(r).not.toContain(texto);
+    expect(r).not.toMatch(/position:\s*fixed|marca-prueba|marca-borrador|#C00000/);
   });
   it('rechaza revisión, fecha o huella no válidas y plantillas sin </body>', () => {
     expect(() => aplicarCapaFinalizada(html, { ...INFO, revision: 0 })).toThrow();
@@ -88,7 +70,8 @@ describe('SheetPdfService.generarFinalizada: Chrome obligatorio y desde la copia
     expect(opts.capaBorrador).toBeUndefined();
     expect(opts.tituloPdf).toBe('FUELLE61');                                           // el título interno sigue siendo el código DCMX
     const html = (await espia.mock.results[0]!.value).html as string;
-    expect(html).toContain(MARCA_PRUEBA);
+    expect(html).not.toContain('NO VÁLIDO PARA PRODUCCIÓN');
+    expect(html).not.toMatch(/Finalizada en TEST|No implica aprobación|marca-prueba/);       // sin leyenda ni pie del sistema
     expect(html).not.toContain('BORRADOR · SIN APROBAR');
     expect(html).toContain('<title>FUELLE61</title>');
   });

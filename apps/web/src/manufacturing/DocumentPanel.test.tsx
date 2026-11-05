@@ -237,7 +237,8 @@ describe('DocumentPanel · finalizar, descargar y nueva revisión', () => {
     const { user } = await conDocumento(vista({ elaboro: { nombre: 'General Dos', confirmado: true, sugerido: 'General Dos' } }));
     await user.click(boton('Finalizar hoja'));
     const dialogo = await screen.findByRole('dialog', { name: 'Finalizar la hoja' });
-    expect(within(dialogo).getByText(/PRUEBA · NO VÁLIDO PARA PRODUCCIÓN/)).toBeInTheDocument();
+    expect(within(dialogo).getByText(/respeta la plantilla original, sin leyendas añadidas/)).toBeInTheDocument();
+    expect(within(dialogo).queryByText(/NO VÁLIDO PARA PRODUCCIÓN/)).not.toBeInTheDocument();
     m.finalizarDocumento.mockResolvedValue(finalizada());
     await user.click(within(dialogo).getByRole('button', { name: 'Finalizar' }));
     await screen.findByText('Hoja finalizada. El PDF quedó almacenado.');

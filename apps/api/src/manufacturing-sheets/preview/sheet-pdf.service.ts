@@ -66,7 +66,7 @@ export class SheetPdfService {
 
   /**
    * PDF de una versión FINALIZADA (TEST) generado desde la COPIA de especificación registrada (nunca desde datos del cliente). Chrome es OBLIGATORIO: sin él no se genera nada y se informa 501,
-   * de modo que la revisión no pueda marcarse como finalizada sin su documento. Mismo método de composición que la vista previa; solo cambia la capa (PRUEBA · NO VÁLIDO PARA PRODUCCIÓN).
+   * de modo que la revisión no pueda marcarse como finalizada sin su documento. Mismo método de composición que la vista previa; solo cambia la capa (pie de versión finalizada de TEST, sin leyenda superior).
    */
   async generarFinalizada(family: PreviewFamily, form: PreviewFormData, context: BindReviewContext | undefined, info: InfoFinalizada, variante?: string | null): Promise<DraftPdf> {
     if (!this.disponible) throw new HttpException({ code: 'PDF_NOT_AVAILABLE', message: 'No se puede finalizar: la generación de PDF no está disponible en este entorno.' }, HttpStatus.NOT_IMPLEMENTED);

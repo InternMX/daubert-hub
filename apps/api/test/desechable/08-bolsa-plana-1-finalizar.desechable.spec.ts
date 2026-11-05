@@ -33,7 +33,7 @@ function textoDelPdf(contenido: Buffer): string | null {
 }
 
 describe('SCHFPMG001 · Bolsa Plana 1: finalizar de extremo a extremo con Chrome real', () => {
-  it.skipIf(!chromePath)('borrador → Elaboró → finalizar → REV01 → PDF descargable con la leyenda de PRUEBA → reapertura desde el historial', async () => {
+  it.skipIf(!chromePath)('borrador → Elaboró → finalizar → REV01 → PDF descargable SIN leyendas del sistema → reapertura desde el historial', async () => {
     const b = await service.crearBorrador(actor(2), { codigo: 'SCHFPMG001', familia: 'BOLSA_PLANA_1', datos: DATOS, cliente: { nombre: 'SCHAEFFLER' } } as never) as Vista;
     expect(b).toMatchObject({ estado: 'BORRADOR', cliente: { nombre: 'SCHAEFFLER', verificado: false } });
 
@@ -44,15 +44,14 @@ describe('SCHFPMG001 · Bolsa Plana 1: finalizar de extremo a extremo con Chrome
     expect(fin.pdf.nombre).toBe('SCHFPMG001_REV01.pdf');
     expect(fin.especificacion.datos.colorConcentracion).toBe('3');
 
-    // Descarga del PDF almacenado: contenido, leyenda y datos impresos.
+    // Descarga del PDF almacenado: contenido y datos impresos (sin leyendas del sistema).
     const d = await service.descargarPdf(actor(2), b.id);
     expect(d.contenido.subarray(0, 5).toString()).toBe('%PDF-');
     expect(d.nombre).toBe('SCHFPMG001_REV01.pdf');
     const texto = textoDelPdf(d.contenido);
     expect(texto, 'pdftotext debe estar disponible para verificar el contenido impreso').not.toBeNull();
     if (texto !== null) {
-      expect(texto).toMatch(/PRUEBA/);
-      expect(texto).toMatch(/NO V.LIDO PARA PRODUCCI.N/);
+      expect(texto).not.toMatch(/PRUEBA|NO V.LIDO PARA PRODUCCI.N|Finalizada en TEST|No implica aprobaci.n|Huella/);   // la plantilla original, sin leyendas ni pie del sistema
       expect(texto).toContain('SCHAEFFLER');
       expect(texto).toContain('DAUBERT AZUL AL 3%');
       expect(texto).toContain('SCHFPMG001');
@@ -90,7 +89,7 @@ describe('SCHFPMG001 · responsables y firmas en el PDF finalizado (Chrome real)
     expect(fin).toMatchObject({ estado: 'FINALIZADA', revision: 1, elaboro: { confirmado: true, nombre: 'General Dos' } });
     const pdf = (await service.descargarPdf(actor(2), b.id)).contenido;
     const texto = textoDelPdf(pdf) ?? '';
-    expect(texto).toMatch(/NO V.LIDO PARA PRODUCCI.N/);
+    expect(texto).not.toMatch(/NO V.LIDO PARA PRODUCCI.N|Finalizada en TEST|No implica aprobaci.n|Huella/);            // sin leyendas ni pie del sistema; los nombres salen en los recuadros de la plantilla
     expect(texto).toContain('Persona Sin Imagen');
     expect(texto).toContain('General Dos');                                         // con imagen, el nombre impreso es el de su propietaria
     expect(texto).not.toContain('Se sustituye por la propietaria');                 // el nombre escrito a mano no se imprime junto a una firma ajena

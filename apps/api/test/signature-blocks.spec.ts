@@ -25,7 +25,8 @@ describe.each(FAMILY_CODES)('bloque de firmas de %s', (familia) => {
     expect(sinFirma(html)).toBe(2);
     expect(html).not.toContain('class="resp"');
     expect(html).not.toContain('firma_extra');
-    expect(html).toContain('PRUEBA · NO VÁLIDO PARA PRODUCCIÓN');
+    expect(html).not.toContain('NO VÁLIDO PARA PRODUCCIÓN');                                  // la leyenda roja superior ya no se imprime en ningún formato
+    expect(html).not.toMatch(/Finalizada en TEST|No implica aprobación|marca-prueba/);       // ni pie del sistema
   });
 
   it('un responsable sin imagen: función y nombre en el primer recuadro; el segundo queda vacío', async () => {
@@ -63,7 +64,8 @@ describe.each(FAMILY_CODES)('bloque de firmas de %s', (familia) => {
     expect(html.indexOf('id="seccion-firmas"')).toBeLessThan(html.indexOf('id="firma_extra"'));
     expect(html).toContain('.firmas-zona .firma-extra { left: 67% !important; }');
     expect(cuenta(html, 'Generó</div>')).toBe(2);
-    expect(html).toContain('Generó: Ana · Generó: Beto · Revisó: Carla');          // pie de la capa de prueba
+    for (const nombre of ['Ana', 'Beto', 'Carla']) expect(html).toContain(nombre);                    // los nombres se imprimen en los recuadros de la plantilla…
+    expect(html).not.toContain('Generó: Ana · Generó: Beto');                                          // …y ya no en un pie añadido por el sistema
   });
 });
 

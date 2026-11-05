@@ -372,7 +372,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
               </Box>
             </Box>
           )}
-          <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">Se imprimirá con la marca «PRUEBA · NO VÁLIDO PARA PRODUCCIÓN».{sucio ? ' Los cambios pendientes se guardan antes de finalizar.' : ''}</Typography>
+          <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">El PDF respeta la plantilla original, sin leyendas añadidas; la revisión, la fecha y la huella quedan en el historial del Hub.{sucio ? ' Los cambios pendientes se guardan antes de finalizar.' : ''}</Typography>
         </DialogContent>
         <DialogActions>
           <Button disabled={finalizando} onClick={() => setConfirmando(null)}>Cancelar</Button>
@@ -657,7 +657,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
           <Button variant="text" onClick={() => void d.nuevaRevisionDe(doc.documentoId)} disabled={d.ocupado || !doc.permisos.crearRevisionNueva}>Crear nueva revisión</Button>
         </Stack>
         {d.errorDescarga && <Alert severity="error" sx={{ mt: 1 }} role="alert" data-testid="final-error-descarga">{d.errorDescarga}</Alert>}
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>Este es el documento definitivo de PRUEBA («PRUEBA · NO VÁLIDO PARA PRODUCCIÓN»). La vista previa de la hoja es de trabajo y no lo sustituye.</Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>Este es el documento definitivo de PRUEBA (entorno TEST). La vista previa de la hoja es de trabajo y no lo sustituye.</Typography>
       </Paper>
     );
   }
