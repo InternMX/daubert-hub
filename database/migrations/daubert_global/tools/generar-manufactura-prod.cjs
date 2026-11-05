@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// GENERADOR DETERMINISTA de las migraciones PRODUCTIVAS de Manufactura (012–016) a partir de las migraciones de TEST 101–105 (que NO se modifican).
+// GENERADOR DETERMINISTA de las migraciones PRODUCTIVAS de Manufactura (020–024) a partir de las migraciones de TEST 101–105 (que NO se modifican).
 //   node database/migrations/daubert_global/tools/generar-manufactura-prod.cjs
 // Cada sustitución es explícita y CONTADA: si una no ocurre el número esperado de veces el generador falla (así TEST y PROD no pueden divergir en silencio). Al final comprueba que no queda
 // ninguna referencia a TEST en los archivos de PRODUCCIÓN, salvo las permitidas (roles que deben NO tener acceso). Los archivos generados son los que se revisan, se firman con SHA-256 y se aplican.
@@ -13,11 +13,11 @@ const REPLICA = path.join(PROD, 'replica_only');
 const FECHA = '20261108';
 
 const MIGRACIONES = [
-  { origen: '20261030_101_manufactura_gestor_documental_test', destino: `${FECHA}_012_manufactura_gestor_documental_prod`, n: '101', nueva: '012' },
-  { origen: '20261103_102_manufactura_responsables_firmas_test', destino: `${FECHA}_013_manufactura_responsables_firmas_prod`, n: '102', nueva: '013' },
-  { origen: '20261105_103_manufactura_inventario_firmas_admin_test', destino: `${FECHA}_014_manufactura_inventario_firmas_admin_prod`, n: '103', nueva: '014' },
-  { origen: '20261106_104_manufactura_cliente_abreviaturas_test', destino: `${FECHA}_015_manufactura_cliente_abreviaturas_prod`, n: '104', nueva: '015' },
-  { origen: '20261107_105_manufactura_consulta_compartida_borradores_test', destino: `${FECHA}_016_manufactura_consulta_compartida_borradores_prod`, n: '105', nueva: '016' }
+  { origen: '20261030_101_manufactura_gestor_documental_test', destino: `${FECHA}_020_manufactura_gestor_documental_prod`, n: '101', nueva: '020' },
+  { origen: '20261103_102_manufactura_responsables_firmas_test', destino: `${FECHA}_021_manufactura_responsables_firmas_prod`, n: '102', nueva: '021' },
+  { origen: '20261105_103_manufactura_inventario_firmas_admin_test', destino: `${FECHA}_022_manufactura_inventario_firmas_admin_prod`, n: '103', nueva: '022' },
+  { origen: '20261106_104_manufactura_cliente_abreviaturas_test', destino: `${FECHA}_023_manufactura_cliente_abreviaturas_prod`, n: '104', nueva: '023' },
+  { origen: '20261107_105_manufactura_consulta_compartida_borradores_test', destino: `${FECHA}_024_manufactura_consulta_compartida_borradores_prod`, n: '105', nueva: '024' }
 ];
 
 const errores = [];

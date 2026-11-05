@@ -1,8 +1,8 @@
--- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 016. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 024. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- DOWN · manufactura 105 · consulta compartida de borradores (SOLO PRODUCCIÓN: daubert_global). IDEMPOTENTE. No toca datos.
 -- Restaura las 3 políticas de lectura con su redacción de la migración 101.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_016_manufactura_consulta_compartida_borradores_prod.down.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_024_manufactura_consulta_compartida_borradores_prod.down.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 BEGIN;

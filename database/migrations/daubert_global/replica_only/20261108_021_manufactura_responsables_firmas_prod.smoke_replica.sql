@@ -1,8 +1,8 @@
--- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 013. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 021. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- SMOKE · manufactura 102 · responsables y firmas (SOLO RÉPLICA DESECHABLE; NO ejecutar en producción) — con el ROL DE LA APLICACIÓN
 -- Todo queda dentro de una transacción que termina en ROLLBACK: no deja filas de negocio ni de auditoría (solo huecos en las secuencias). Requiere 1 ADMIN y 2 GENERAL activos.
---   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 -f 20261108_013_manufactura_responsables_firmas_prod.smoke.sql
+--   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 -f 20261108_021_manufactura_responsables_firmas_prod.smoke.sql
 -- Esperado: todas las filas con ok = true.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

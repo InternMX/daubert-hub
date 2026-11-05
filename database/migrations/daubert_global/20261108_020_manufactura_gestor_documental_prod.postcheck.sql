@@ -1,4 +1,4 @@
--- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 012. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 020. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- POSTCHECK · manufactura · gestor documental (SOLO PRODUCCIÓN: daubert_global)
 -- SOLO LECTURA. Recibe la LÍNEA BASE del precheck con -v. Esperado: ALL_CHECKS_PASS = true.
@@ -7,7 +7,7 @@
 --        -v baseline_users=<n> -v baseline_empresas=<n> -v baseline_audit_cambios=<n> \
 --        -v baseline_tablas_fp=<md5> -v baseline_funciones_fp=<md5> -v baseline_columnas_fp=<md5> -v baseline_triggers_fp=<md5> \
 --        -v baseline_privilegios_fp=<md5> -v baseline_roles_fp=<md5> -v baseline_acl_bases_fp=<md5> -v baseline_esquemas_acl_fp=<md5> \
---        -f 20261108_012_manufactura_gestor_documental_prod.postcheck.sql
+--        -f 20261108_020_manufactura_gestor_documental_prod.postcheck.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off

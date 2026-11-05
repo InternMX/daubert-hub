@@ -1,7 +1,7 @@
--- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 013. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 021. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- POSTCHECK · manufactura 102 · responsables y firmas (SOLO PRODUCCIÓN: daubert_global). SOLO LECTURA.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -v huella_101=<valor del precheck> -f 20261108_013_manufactura_responsables_firmas_prod.postcheck.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -v huella_101=<valor del precheck> -f 20261108_021_manufactura_responsables_firmas_prod.postcheck.sql
 -- Esperado: todas las columnas en true y ALL_POSTCHECKS_PASS = true.
 -- (La huella del precheck cubre las 5 tablas de la 101; aquí se recalcula SOLO sobre ellas.)
 -- =====================================================================================================================

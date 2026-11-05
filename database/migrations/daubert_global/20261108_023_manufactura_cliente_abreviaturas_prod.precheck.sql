@@ -1,7 +1,7 @@
--- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 015. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 023. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- PRECHECK · manufactura 104 · abreviaturas de cliente (SOLO PRODUCCIÓN: daubert_global). SOLO LECTURA.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_015_manufactura_cliente_abreviaturas_prod.precheck.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_023_manufactura_cliente_abreviaturas_prod.precheck.sql
 -- Esperado: all_prechecks_pass = t. Anote HUELLA_MANUFACTURA: el postcheck la recibe con -v para demostrar que lo existente NO cambió.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

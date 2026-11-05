@@ -1,5 +1,5 @@
 -- =====================================================================================================================
--- VERIFICACIÓN TRANSVERSAL · Manufactura en PRODUCCIÓN (012–016) · SOLO LECTURA (una transacción READ ONLY que termina en ROLLBACK). Solo daubert_global.
+-- VERIFICACIÓN TRANSVERSAL · Manufactura en PRODUCCIÓN (020–024) · SOLO LECTURA (una transacción READ ONLY que termina en ROLLBACK). Solo daubert_global.
 --
 -- Hace DOS cosas con el MISMO script:
 --   1) CAPTURA (sin -v):  imprime la LÍNEA BASE del catálogo de TODO lo que NO es Manufactura: relaciones (dueño, ACL, RLS), columnas, ACL de columnas, restricciones, índices, funciones (cuerpo, dueño,
@@ -9,7 +9,7 @@
 --      los privilegios previstos para el nivel de migración aplicado (sin DELETE ni TRUNCATE salvo revision_responsables, sin DDL, sin privilegios sobre secuencias).
 --
 --   Captura:      psql -h localhost -p 5432 -d daubert_global -U postgres -W -X -v ON_ERROR_STOP=1 -f 20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql
---   Comparación:  (copie la línea «comando_comparacion» que imprime la captura; añada -v nivel=12|13|14|15|16 según la última migración aplicada)
+--   Comparación:  (copie la línea «comando_comparacion» que imprime la captura; añada -v nivel=20|21|22|23|24 según la última migración aplicada)
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off
@@ -51,20 +51,20 @@ SELECT rel.h AS f_rel, col.h AS f_col, acol.h AS f_acol, con.h AS f_con, idx.h A
   \echo '== COMPARACIÓN (nivel :nivel): todo lo que NO es Manufactura debe seguir IDÉNTICO; los demás roles sin NINGÚN privilegio; daubert_hub_app con la matriz exacta'
   \if :{?nivel}
   \else
-    \set nivel 16
+    \set nivel 24
   \endif
   WITH
    _esperado AS (SELECT * FROM (VALUES
     -- (nivel, objeto, privilegios de tabla de daubert_hub_app, columnas con UPDATE)
-    (12, 'documentos', 'INSERT,SELECT', ''), (12, 'revisiones', 'INSERT,SELECT,UPDATE', ''), (12, 'pdfs', 'INSERT,SELECT', ''), (12, 'pdf_contenidos', 'INSERT,SELECT', ''), (12, 'confirmaciones_revision', 'INSERT,SELECT', ''),
-    (13, 'firmas', 'INSERT,SELECT', 'estado,retirada_en'), (13, 'firma_autorizaciones', 'INSERT,SELECT', 'revocada_en,revocada_por_usuario_id'), (13, 'revision_responsables', 'DELETE,INSERT,SELECT,UPDATE', ''),
-    (15, 'cliente_abreviaturas', 'INSERT,SELECT', 'codigos_evidencia,documentos_evidencia,estado,evidencia,fuente,motivo_resolucion,resuelta_en,resuelta_por_email,resuelta_por_usuario_id,updated_at')
+    (20, 'documentos', 'INSERT,SELECT', ''), (20, 'revisiones', 'INSERT,SELECT,UPDATE', ''), (20, 'pdfs', 'INSERT,SELECT', ''), (20, 'pdf_contenidos', 'INSERT,SELECT', ''), (20, 'confirmaciones_revision', 'INSERT,SELECT', ''),
+    (21, 'firmas', 'INSERT,SELECT', 'estado,retirada_en'), (21, 'firma_autorizaciones', 'INSERT,SELECT', 'revocada_en,revocada_por_usuario_id'), (21, 'revision_responsables', 'DELETE,INSERT,SELECT,UPDATE', ''),
+    (23, 'cliente_abreviaturas', 'INSERT,SELECT', 'codigos_evidencia,documentos_evidencia,estado,evidencia,fuente,motivo_resolucion,resuelta_en,resuelta_por_email,resuelta_por_usuario_id,updated_at')
   ) AS t(nivel, tabla, privilegios, columnas_update)),
    _funciones_app AS (SELECT * FROM (VALUES
-    (12, 'fn_actor()'), (12, 'fn_actor_id()'), (12, 'fn_actor_es_admin()'), (12, 'fn_hash_revision(text,jsonb)'), (12, 'fn_nombre_pdf(text,text,integer)'), (12, 'fn_especificacion_valida(jsonb)'), (12, 'fn_claves_validas(jsonb)'),
-    (13, 'fn_firma_autorizada_a(bigint,bigint)'), (13, 'fn_firma_propietario(bigint)'), (13, 'fn_firma_utilizable(bigint,bigint)'),
-    (14, 'fn_firmas_inventario(bigint,boolean)'),
-    (15, 'fn_sugerir_cliente(text,boolean)'), (15, 'fn_cliente_vigente(bigint)')
+    (20, 'fn_actor()'), (20, 'fn_actor_id()'), (20, 'fn_actor_es_admin()'), (20, 'fn_hash_revision(text,jsonb)'), (20, 'fn_nombre_pdf(text,text,integer)'), (20, 'fn_especificacion_valida(jsonb)'), (20, 'fn_claves_validas(jsonb)'),
+    (21, 'fn_firma_autorizada_a(bigint,bigint)'), (21, 'fn_firma_propietario(bigint)'), (21, 'fn_firma_utilizable(bigint,bigint)'),
+    (22, 'fn_firmas_inventario(bigint,boolean)'),
+    (23, 'fn_sugerir_cliente(text,boolean)'), (23, 'fn_cliente_vigente(bigint)')
   ) AS t(nivel, firma)),
    igual AS (SELECT
      :'cur_f_rel' = :'f_rel' AS relaciones_y_acl_igual, :'cur_f_col' = :'f_col' AS columnas_igual, :'cur_f_acol' = :'f_acol' AS acl_de_columnas_igual,

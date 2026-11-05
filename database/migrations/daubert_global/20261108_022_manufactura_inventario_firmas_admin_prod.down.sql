@@ -1,8 +1,8 @@
--- GENERADO desde TEST 103 (20261105_103_manufactura_inventario_firmas_admin_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 014. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 103 (20261105_103_manufactura_inventario_firmas_admin_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 022. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- DOWN · manufactura 103 · inventario administrativo de firmas (SOLO PRODUCCIÓN: daubert_global). IDEMPOTENTE; no hay datos que perder.
 -- Elimina únicamente la función manufactura.fn_firmas_inventario. No toca tablas, firmas, autorizaciones, responsables ni auditoría. La API vuelve sola a la consulta limitada por RLS.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_014_manufactura_inventario_firmas_admin_prod.down.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_022_manufactura_inventario_firmas_admin_prod.down.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 BEGIN;

@@ -1,8 +1,8 @@
--- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 015. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 023. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- SMOKE · manufactura 104 · abreviaturas de cliente (SOLO RÉPLICA DESECHABLE; NO ejecutar en producción) — con el ROL DE LA APLICACIÓN
 -- Todo queda dentro de una transacción que termina en ROLLBACK (no deja abreviaturas ni residuos de auditoría; NO crea empresas). Requiere 1 ADMIN y 2 GENERAL activos y 2 clientes (rol CLIENTE activo).
---   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 -f 20261108_015_manufactura_cliente_abreviaturas_prod.smoke.sql
+--   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 -f 20261108_023_manufactura_cliente_abreviaturas_prod.smoke.sql
 -- Esperado: todas las filas con ok = true y smoke_all_pass = true.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

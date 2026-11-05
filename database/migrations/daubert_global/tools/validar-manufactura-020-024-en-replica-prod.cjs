@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// VALIDACIÓN de las migraciones PRODUCTIVAS de Manufactura 012–016 en una RÉPLICA DESECHABLE con la ESTRUCTURA REAL DE PRODUCCIÓN (nunca TEST, nunca daubert_global real).
-//   node database/migrations/daubert_global/tools/validar-manufactura-012-016-en-replica-prod.cjs --dump <respaldo pg_dump -F c de daubert_global> [--estructura-prod <estructura_PROD.txt>]
+// VALIDACIÓN de las migraciones PRODUCTIVAS de Manufactura 020–024 en una RÉPLICA DESECHABLE con la ESTRUCTURA REAL DE PRODUCCIÓN (nunca TEST, nunca daubert_global real).
+//   node database/migrations/daubert_global/tools/validar-manufactura-020-024-en-replica-prod.cjs --dump <respaldo pg_dump -F c de daubert_global> [--estructura-prod <estructura_PROD.txt>]
 //
 // La réplica se construye con `pg_restore --schema-only` de un respaldo REAL de daubert_global (sin datos: solo estructura, ACL y funciones), con los roles del clúster reales (daubert_hub_app,
 // n8n_app, n8n_cat_prod, daubert_docs_ro, daubert_hub_test_user, …) y sus atributos. Los usuarios y clientes que usan los smoke son SINTÉTICOS y viven solo en el contenedor (marcados con el esquema
@@ -19,11 +19,11 @@ const ESTRUCTURA_PROD = arg('--estructura-prod');
 if (!DUMP || !fs.existsSync(DUMP)) { console.error('Uso: --dump <respaldo pg_dump -F c de daubert_global> [--estructura-prod estructura_PROD.txt]'); process.exit(2); }
 
 const MIGRACIONES = [
-  { n: 12, base: '20261108_012_manufactura_gestor_documental_prod', params: 'baseline' },
-  { n: 13, base: '20261108_013_manufactura_responsables_firmas_prod', params: 'huella_101' },
-  { n: 14, base: '20261108_014_manufactura_inventario_firmas_admin_prod', params: 'huella_manufactura' },
-  { n: 15, base: '20261108_015_manufactura_cliente_abreviaturas_prod', params: 'huella_manufactura' },
-  { n: 16, base: '20261108_016_manufactura_consulta_compartida_borradores_prod', params: 'huella_resto' }
+  { n: 20, base: '20261108_020_manufactura_gestor_documental_prod', params: 'baseline' },
+  { n: 21, base: '20261108_021_manufactura_responsables_firmas_prod', params: 'huella_101' },
+  { n: 22, base: '20261108_022_manufactura_inventario_firmas_admin_prod', params: 'huella_manufactura' },
+  { n: 23, base: '20261108_023_manufactura_cliente_abreviaturas_prod', params: 'huella_manufactura' },
+  { n: 24, base: '20261108_024_manufactura_consulta_compartida_borradores_prod', params: 'huella_resto' }
 ];
 const VERIFICAR = '20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql';
 const SMOKE_RO = '20261108_000_manufactura_prod_smoke_solo_lectura.readonly.sql';
@@ -119,7 +119,7 @@ function verificar(comando, nivel, etiqueta) {
 }
 
 function main() {
-  console.log('== Validación 012–016 en réplica DESECHABLE con la estructura real de PRODUCCIÓN ==');
+  console.log('== Validación 020–024 en réplica DESECHABLE con la estructura real de PRODUCCIÓN ==');
   if (docker(['version', '--format', '{{.Server.Version}}']).status !== 0) { console.error('Docker no está disponible.'); process.exit(2); }
   levantar();
   try {
@@ -143,12 +143,12 @@ function main() {
     // ---- línea base ANTES de cualquier migración
     const cap = psql({ archivo: VERIFICAR, tuplas: true });
     const cmd = cap.out.split('\n').find((l) => l.startsWith('psql '));
-    registrar(cap.codigo === 0 && cmd, 'línea base capturada antes de la 012 (solo lectura)', cmd ? '' : cap.salida.slice(-700));
+    registrar(cap.codigo === 0 && cmd, 'línea base capturada antes de la 020 (solo lectura)', cmd ? '' : cap.salida.slice(-700));
     if (!cmd) throw new Error('sin línea base');
     const base = Object.fromEntries([...cmd.matchAll(/-v (f_[a-z]+)=([0-9a-f]{32})/g)].map((x) => [x[1], x[2]]));
     registrar(Object.keys(base).length === 14, 'la línea base tiene las 14 huellas', Object.keys(base).length);
 
-    // ---- 012 → 016 con verificación transversal y smoke con escrituras (rol daubert_hub_app) en cada paso
+    // ---- 020 → 024 con verificación transversal y smoke con escrituras (rol daubert_hub_app) en cada paso
     const baseline = {};
     for (const m of MIGRACIONES) {
       const vars = aplicarMigracion(m);
@@ -166,27 +166,27 @@ function main() {
 
     // ---- los controles DETECTAN violaciones (se provocan y se revierten)
     psql({ sql: 'GRANT SELECT ON manufactura.documentos TO n8n_app' });
-    const v1 = psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '16' } });
+    const v1 = psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } });
     registrar(!TODO_OK(v1.out), 'DETECCIÓN: si n8n_app recibiera SELECT en manufactura, la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON manufactura.documentos FROM n8n_app' });
     psql({ sql: 'GRANT SELECT ON manufactura.firmas TO PUBLIC' });
-    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '16' } }).out), 'DETECCIÓN: si PUBLIC recibiera SELECT en manufactura.firmas, la verificación FALLA');
+    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si PUBLIC recibiera SELECT en manufactura.firmas, la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON manufactura.firmas FROM PUBLIC' });
     psql({ sql: 'GRANT DELETE ON manufactura.documentos TO daubert_hub_app' });
-    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '16' } }).out), 'DETECCIÓN: si daubert_hub_app recibiera DELETE en documentos, la verificación FALLA');
+    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si daubert_hub_app recibiera DELETE en documentos, la verificación FALLA');
     psql({ sql: 'REVOKE DELETE ON manufactura.documentos FROM daubert_hub_app' });
     psql({ sql: 'GRANT SELECT ON core.empresas TO n8n_cat_prod' });
-    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '16' } }).out), 'DETECCIÓN: si cambiara un privilegio FUERA de manufactura (core.empresas), la verificación FALLA');
+    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si cambiara un privilegio FUERA de manufactura (core.empresas), la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON core.empresas FROM n8n_cat_prod' });
-    verificar(base, 16, 'tras revertir las violaciones provocadas');
+    verificar(base, 24, 'tras revertir las violaciones provocadas');
 
     // ---- negativas de ejecución
     for (const [t, usuario] of [['precheck', 'postgres'], ['up', 'postgres'], ['down', 'postgres']]) {
-      const r = psql({ archivo: `12.${t}.sql`, base: 'otra_base', usuario });
+      const r = psql({ archivo: `20.${t}.sql`, base: 'otra_base', usuario });
       registrar(r.codigo !== 0 && /ABORTO: .*daubert_global/.test(r.salida), `${t.toUpperCase()} en una base de otro nombre aborta antes de escribir`);
     }
-    registrar(/ya existe/.test(psql({ archivo: '12.up.sql' }).salida), 'UP repetido aborta (no se reaplica)');
-    registrar(/administrativo|no es administrador|permission denied/i.test(psql({ archivo: '12.up.sql', usuario: 'daubert_hub_app' }).salida), 'UP con el rol de la aplicación aborta');
+    registrar(/ya existe/.test(psql({ archivo: '20.up.sql' }).salida), 'UP repetido aborta (no se reaplica)');
+    registrar(/administrativo|no es administrador|permission denied/i.test(psql({ archivo: '20.up.sql', usuario: 'daubert_hub_app' }).salida), 'UP con el rol de la aplicación aborta');
     registrar(psql({ archivo: VERIFICAR, usuario: 'daubert_hub_app' }).codigo !== 0, 'la verificación transversal exige el rol administrativo');
 
     // ---- DOWN en orden inverso (esquema vacío) y vuelta exacta a la línea base
@@ -195,18 +195,18 @@ function main() {
       registrar(d.codigo === 0 && /DOWN_OK/.test(d.salida), `${m.n}: DOWN aplicado (esquema vacío)`, d.codigo ? d.salida.slice(-300) : '');
     }
     registrar(psql({ sql: "SELECT to_regnamespace('manufactura') IS NULL", tuplas: true }).out.trim() === 't', 'tras los 5 DOWN el esquema manufactura ya no existe');
-    verificar(base, 16, 'tras revertir TODO (DOWN 016→012): el catálogo fuera de manufactura es idéntico a la línea base');
+    verificar(base, 24, 'tras revertir TODO (DOWN 024→020): el catálogo fuera de manufactura es idéntico a la línea base');
     // ---- y se puede volver a aplicar
     for (const m of MIGRACIONES) aplicarMigracion(m);
-    verificar(base, 16, 'tras reaplicar 012–016');
+    verificar(base, 24, 'tras reaplicar 020–024');
 
     // ---- DOWN con datos: exige confirmaciones explícitas (no borra por accidente)
     psql({ sql: "SELECT set_config('app.user_id', '1', false), set_config('app.user_email', 'admin1@example.invalid', false); INSERT INTO manufactura.documentos (codigo_dcmx) VALUES ('X1')" });
-    const dd = psql({ archivo: '16.down.sql' });
+    const dd = psql({ archivo: '24.down.sql' });
     const d16 = dd.codigo === 0;
-    registrar(d16, '016: DOWN (solo restaura políticas; no toca datos)');
-    const dn = psql({ archivo: '12.down.sql' });
-    registrar(dn.codigo !== 0 && /hay datos en manufactura/.test(dn.salida), '012: DOWN con documentos existentes ABORTA sin las confirmaciones explícitas de producción');
+    registrar(d16, '024: DOWN (solo restaura políticas; no toca datos)');
+    const dn = psql({ archivo: '20.down.sql' });
+    registrar(dn.codigo !== 0 && /hay datos en manufactura/.test(dn.salida), '020: DOWN con documentos existentes ABORTA sin las confirmaciones explícitas de producción');
   } finally {
     docker(['rm', '-f', C]);
   }

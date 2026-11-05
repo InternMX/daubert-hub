@@ -1,4 +1,4 @@
--- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 013. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 021. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- UP · manufactura · RESPONSABLES Y FIRMAS (SOLO PRODUCCIÓN: daubert_global)   [migración 102, adicional a la 101]
 --
@@ -12,7 +12,7 @@
 --     daubert_global, n8n ni otras bases. Las 5 tablas de la 101 quedan idénticas.
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_app):
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_013_manufactura_responsables_firmas_prod.up.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_021_manufactura_responsables_firmas_prod.up.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off

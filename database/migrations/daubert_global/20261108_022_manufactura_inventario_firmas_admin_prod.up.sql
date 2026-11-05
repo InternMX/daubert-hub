@@ -1,4 +1,4 @@
--- GENERADO desde TEST 103 (20261105_103_manufactura_inventario_firmas_admin_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 014. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 103 (20261105_103_manufactura_inventario_firmas_admin_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 022. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- UP · manufactura · INVENTARIO ADMINISTRATIVO DE FIRMAS (SOLO PRODUCCIÓN: daubert_global)   [migración 103, adicional a la 101 y la 102]
 --
@@ -12,7 +12,7 @@
 --   · NO modifica tablas, políticas, triggers ni privilegios existentes; NO concede a nadie permiso de USO de ninguna firma (la autorización sigue siendo de la propietaria); NO toca daubert_global.
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_app):
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_014_manufactura_inventario_firmas_admin_prod.up.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_022_manufactura_inventario_firmas_admin_prod.up.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off

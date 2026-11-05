@@ -1,4 +1,4 @@
--- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 012. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 020. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- DOWN · manufactura · gestor documental (SOLO PRODUCCIÓN: daubert_global)   [revisión 2: idempotente y con doble confirmación]
 --
@@ -15,7 +15,7 @@
 --
 --   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 \
 --        [-v confirmar_borrado=SI_BORRAR_DATOS_DE_PRODUCCION_CON_RESPALDO_VERIFICADO] [-v confirmar_finalizadas=SI_BORRAR_REVISIONES_Y_PDF_FINALIZADOS_DE_PRODUCCION] \
---        -f 20261108_012_manufactura_gestor_documental_prod.down.sql
+--        -f 20261108_020_manufactura_gestor_documental_prod.down.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \if :{?confirmar_borrado}

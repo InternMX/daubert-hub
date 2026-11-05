@@ -1,8 +1,8 @@
--- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 015. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 023. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- DOWN · manufactura 104 · abreviaturas de cliente (SOLO PRODUCCIÓN: daubert_global). IDEMPOTENTE.
 -- Elimina manufactura.cliente_abreviaturas (con sus triggers, índices y políticas) y sus funciones. No toca ninguna otra tabla, core.empresas ni core.alias_empresa; el historial de audit.cambios se conserva.
---   Sin datos:  psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_015_manufactura_cliente_abreviaturas_prod.down.sql
+--   Sin datos:  psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_023_manufactura_cliente_abreviaturas_prod.down.sql
 --   Con datos:  añadir  -v confirmar_borrado=SI_BORRAR_ABREVIATURAS_DE_PRODUCCION   (haga antes: pg_dump -t manufactura.cliente_abreviaturas -F c -f abreviaturas_antes_del_down.dump)
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

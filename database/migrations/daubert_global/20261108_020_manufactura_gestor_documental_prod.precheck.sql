@@ -1,11 +1,11 @@
--- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 012. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 020. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- PRECHECK · manufactura · gestor documental de Hojas de Instrucción (SOLO PRODUCCIÓN: daubert_global)
 -- SOLO LECTURA: BEGIN TRANSACTION READ ONLY ... ROLLBACK. No crea ni modifica nada.
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_app):
 --   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 \
---        -f 20261108_012_manufactura_gestor_documental_prod.precheck.sql
+--        -f 20261108_020_manufactura_gestor_documental_prod.precheck.sql
 --
 -- Resultado esperado: todas las comprobaciones en true y ALL_PRECHECKS_PASS = true.
 -- Anote la LÍNEA BASE del bloque final: el postcheck la recibe con -v para comprobar que NADA MÁS cambió.

@@ -1,4 +1,4 @@
--- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 016. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 024. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- UP · manufactura · CONSULTA COMPARTIDA DE BORRADORES (SOLO PRODUCCIÓN: daubert_global)   [migración 105, adicional a la 101–104]
 --
@@ -18,7 +18,7 @@
 --   · NO deshabilita RLS, no crea tablas/funciones/triggers, no toca datos, PDF ni revisiones históricas, core, daubert_global ni n8n.
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_app):
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_016_manufactura_consulta_compartida_borradores_prod.up.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_024_manufactura_consulta_compartida_borradores_prod.up.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off

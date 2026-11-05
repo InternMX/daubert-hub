@@ -1,7 +1,7 @@
--- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 016. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 024. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- PRECHECK · manufactura 105 (SOLO PRODUCCIÓN: daubert_global). SOLO LECTURA.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_016_manufactura_consulta_compartida_borradores_prod.precheck.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_024_manufactura_consulta_compartida_borradores_prod.precheck.sql
 -- Esperado: all_prechecks_pass = t. Anote huella_resto: el postcheck la recibe con -v para demostrar que lo demás NO cambió.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

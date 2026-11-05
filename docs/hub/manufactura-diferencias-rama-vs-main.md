@@ -5,7 +5,7 @@ Estado: **reporte, sin cambios**. No se modificó ninguna función operativa de 
 ## 1. Alcance real
 - **API:** fuera de `manufacturing-*`, la rama toca **8 archivos** de producción: `app.module.ts`, `main.ts`, `config/environment.ts`, `config/validation-pipe.ts`, `clients/clients.controller.ts`, `recent-activity/{controller,module,service}.ts`. **No toca** `automations/*` (Caterpillar, Audi, Notificaciones de Pago), `auth`, `security`, `database` ni `common`.
 - **Web:** `App.tsx`, `AppShell.tsx`, `automations/{AutomationsPage,automationRoutes}`, `components/RecentActivity.tsx`, `clients/{ClientsPage,ClientDetailPage}`, `users/{UsersPage,UserDetailPage}` más páginas/servicios nuevos.
-- **Base de datos:** el código existente **no** requiere ningún objeto nuevo; solo Manufactura (esquema `manufactura`). Ninguna migración 012–016 es necesaria para que Caterpillar, Audi o Pagos sigan funcionando.
+- **Base de datos:** el código existente **no** requiere ningún objeto nuevo; solo Manufactura (esquema `manufactura`). Ninguna migración 020–024 es necesaria para que Caterpillar, Audi o Pagos sigan funcionando.
 - **Dependencias:** `jpeg-js`, `pngjs` (producción) y `@types/pngjs` (desarrollo); `package-lock.json` +28 líneas.
 
 ## 2. Cambios de comportamiento visibles para usuarios existentes (se activan al desplegar el código, independientemente de la base)
@@ -31,7 +31,7 @@ Estado: **reporte, sin cambios**. No se modificó ninguna función operativa de 
 ## 4. Lo que NO cambia
 - Código de Caterpillar, Audi y Notificaciones de Pago (API y n8n), rutas de n8n, credenciales y webhooks.
 - Autenticación, sesiones, CSRF/origen y guards globales (el gestor y las abreviaturas solo añaden controladores autenticados).
-- Funciones, tablas, vistas, triggers y privilegios existentes de la base: las migraciones 012–016 crean únicamente el esquema `manufactura` (verificado con huellas de catálogo, ACL incluidas, antes y después).
+- Funciones, tablas, vistas, triggers y privilegios existentes de la base: las migraciones 020–024 crean únicamente el esquema `manufactura` (verificado con huellas de catálogo, ACL incluidas, antes y después).
 
 ## 5. Recomendaciones (sin implementar todavía)
 1. **Resolver D4–D6 junto con el guard**: o se despliega la API con el guard sustituido y las migraciones aplicadas (flujo completo), o se oculta provisionalmente la sección de abreviaturas / firmas. No conviene desplegar el código con las pantallas visibles y el backend en 404.

@@ -1,7 +1,7 @@
--- GENERADO desde TEST 103 (20261105_103_manufactura_inventario_firmas_admin_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 014. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 103 (20261105_103_manufactura_inventario_firmas_admin_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 022. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- PRECHECK · manufactura 103 · inventario administrativo de firmas (SOLO PRODUCCIÓN: daubert_global). SOLO LECTURA.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_014_manufactura_inventario_firmas_admin_prod.precheck.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_022_manufactura_inventario_firmas_admin_prod.precheck.sql
 -- Esperado: all_prechecks_pass = t. Anote HUELLA_MANUFACTURA: el postcheck la recibe con -v para demostrar que tablas, triggers, políticas y privilegios NO cambiaron.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

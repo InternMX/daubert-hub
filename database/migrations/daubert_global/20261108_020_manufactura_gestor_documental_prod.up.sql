@@ -1,4 +1,4 @@
--- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 012. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 020. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- UP · manufactura · gestor documental de Hojas de Instrucción de Manufactura (SOLO PRODUCCIÓN: daubert_global)   [revisión 3]
 --
@@ -11,7 +11,7 @@
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_app):
 --   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 \
---        -f 20261108_012_manufactura_gestor_documental_prod.up.sql
+--        -f 20261108_020_manufactura_gestor_documental_prod.up.sql
 -- Requisito previo: backup confirmado y precheck con ALL_PRECHECKS_PASS = true.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

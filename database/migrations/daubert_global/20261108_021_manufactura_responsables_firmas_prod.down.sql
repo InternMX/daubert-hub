@@ -1,8 +1,8 @@
--- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 013. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 102 (20261103_102_manufactura_responsables_firmas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 021. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- DOWN · manufactura 102 · responsables y firmas (SOLO PRODUCCIÓN: daubert_global). IDEMPOTENTE y con confirmación si hay datos.
 -- Elimina SOLO las 3 tablas nuevas, sus funciones y triggers. No toca las 5 tablas de la 101 ni la auditoría ya escrita.
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 [-v confirmar_borrado=SI_BORRAR_FIRMAS_Y_RESPONSABLES_DE_PRODUCCION] -f 20261108_013_manufactura_responsables_firmas_prod.down.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 [-v confirmar_borrado=SI_BORRAR_FIRMAS_Y_RESPONSABLES_DE_PRODUCCION] -f 20261108_021_manufactura_responsables_firmas_prod.down.sql
 -- RESPALDE ANTES si hay datos:  pg_dump -h localhost -p 5432 -U postgres -d daubert_global -n manufactura -F c -f manufactura_antes_del_down102.dump
 -- Con revisiones FINALIZADAS que usaron responsables/firmas el DOWN pierde esa constancia: trátelo como corrección hacia adelante, no como rollback.
 -- =====================================================================================================================

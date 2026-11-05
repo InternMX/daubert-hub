@@ -1,8 +1,8 @@
--- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 016. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 105 (20261107_105_manufactura_consulta_compartida_borradores_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 024. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- SMOKE · manufactura 105 · consulta compartida de borradores (SOLO RÉPLICA DESECHABLE; NO ejecutar en producción) — con el ROL DE LA APLICACIÓN
 -- Todo queda dentro de una transacción que termina en ROLLBACK (no deja documentos, revisiones ni auditoría). Requiere 1 ADMIN y 2 GENERAL activos.
---   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 -f 20261108_016_manufactura_consulta_compartida_borradores_prod.smoke.sql
+--   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 -f 20261108_024_manufactura_consulta_compartida_borradores_prod.smoke.sql
 -- Esperado: todas las filas con ok = true y smoke_all_pass = true.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

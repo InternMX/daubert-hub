@@ -1,4 +1,4 @@
--- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 012. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 101 (20261030_101_manufactura_gestor_documental_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 020. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- SMOKE · manufactura (SOLO RÉPLICA DESECHABLE; NO ejecutar en producción) — comportamiento de integridad y permisos con el ROL DE LA APLICACIÓN
 -- [revisión 3: validación estructural de la copia (palabras legítimas aceptadas), auditoría redactora y comprobación de que NO quedan residuos]
@@ -7,7 +7,7 @@
 -- (lo único permanente son los números que consumen las secuencias de identidad: huecos en los ids). Al terminar, el propio script lo comprueba. Requiere ≥ 1 usuario ADMIN activo y ≥ 2 usuarios GENERAL activos.
 --
 --   psql -h localhost -p 5432 -d daubert_global -U daubert_hub_app -X -w -v ON_ERROR_STOP=1 \
---        -f 20261108_012_manufactura_gestor_documental_prod.smoke.sql
+--        -f 20261108_020_manufactura_gestor_documental_prod.smoke.sql
 -- Esperado: todas las filas con ok = true.
 -- =====================================================================================================================
 \set ON_ERROR_STOP on

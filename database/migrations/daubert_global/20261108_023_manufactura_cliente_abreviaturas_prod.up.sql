@@ -1,4 +1,4 @@
--- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 015. NO editar a mano: se regenera y se revisa el diff.
+-- GENERADO desde TEST 104 (20261106_104_manufactura_cliente_abreviaturas_test) por tools/generar-manufactura-prod.cjs — migración PRODUCTIVA 023. NO editar a mano: se regenera y se revisa el diff.
 -- =====================================================================================================================
 -- UP · manufactura · ABREVIATURAS DE CLIENTE (SOLO PRODUCCIÓN: daubert_global)   [migración 104, adicional a la 101, 102 y 103]
 --
@@ -17,7 +17,7 @@
 --   · NO modifica ninguna tabla, función, trigger, política ni privilegio existente; NO toca core.alias_empresa, core.empresas, roles, ACL, daubert_global ni n8n.
 --
 -- Uso (operador autorizado, rol administrativo; NUNCA con daubert_hub_app):
---   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_015_manufactura_cliente_abreviaturas_prod.up.sql
+--   psql -h localhost -p 5432 -d daubert_global -U postgres -X -w -v ON_ERROR_STOP=1 -f 20261108_023_manufactura_cliente_abreviaturas_prod.up.sql
 -- =====================================================================================================================
 \set ON_ERROR_STOP on
 \pset pager off
