@@ -15,12 +15,13 @@ async function finalizado(n: 1 | 2 | 3 = 2, codigo = codigoUnico('HIS'), extra: 
 }
 
 describe('bloque 7 · historial y descarga de versiones finalizadas', () => {
-  it('las versiones finalizadas las ve cualquier cuenta autenticada; el historial no duplica los borradores ajenos (van en «Borradores del equipo»)', async () => {
+  it('las versiones finalizadas las ve cualquier cuenta autenticada; el historial por código muestra los borradores ajenos como consulta (propio: false)', async () => {
     const codigo = codigoUnico('HIS');
     const f = await finalizado(2, codigo);
     const abierto = await service.crearRevisionNueva(actor(2), f.documentoId) as Vista;
     const visto3 = await service.historial(actor(3), codigo);
-    expect((visto3.data as Vista[]).map((r) => `${r.estado}:${r.revision}`)).toEqual(['FINALIZADA:1']);
+    expect((visto3.data as Vista[]).map((r) => `${r.estado}:${r.revision}`)).toEqual(['BORRADOR:null', 'FINALIZADA:1']);
+    expect((visto3.data as Vista[])[0]).toMatchObject({ propio: false, propietario: { nombre: 'General Dos' } });
     const visto2 = await service.historial(actor(2), codigo);
     expect((visto2.data as Vista[]).map((r) => `${r.estado}:${r.revision}`)).toEqual(['BORRADOR:null', 'FINALIZADA:1']);
     expect((visto2.data as Vista[])[0]!.id).toBe(abierto.id);

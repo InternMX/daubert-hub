@@ -143,7 +143,7 @@ export class DocumentsRepository {
 
   async historialPorCodigo(c: PoolClient, codigo: string): Promise<RevisionRow[]> {
     const r = await c.query<RevisionRow>(
-      `${REVISION_SELECT} WHERE d.codigo_clave = lower($1) AND (r.estado = 'FINALIZADA' OR (r.estado IN ('BORRADOR', 'FINALIZANDO') AND r.creado_por_usuario_id = manufactura.fn_actor_id())) ORDER BY d.variante_clave, r.revision DESC NULLS FIRST, r.revision_id DESC LIMIT 300`, [codigo]);
+      `${REVISION_SELECT} WHERE d.codigo_clave = lower($1) AND r.estado IN ('FINALIZADA', 'BORRADOR', 'FINALIZANDO') ORDER BY d.variante_clave, r.revision DESC NULLS FIRST, r.revision_id DESC LIMIT 300`, [codigo]);
     return r.rows;
   }
 

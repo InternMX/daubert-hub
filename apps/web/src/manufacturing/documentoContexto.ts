@@ -34,6 +34,11 @@ export interface Documento {
   guardadoEn: Date | null;
   /** Guarda ya (sin esperar el retardo): «Reintentar» / «Guardar ahora». */
   guardarAhora: () => Promise<void>;
+  /** Documento ajeno en CONSULTA (borrador o finalización en curso de otra cuenta, o de la propia mientras no se edita como administrador): solo lectura, sin autoguardado ni acciones de escritura. */
+  soloConsulta: boolean;
+  /** Un ADMIN puede pasar un borrador ajeno de consulta a edición con una acción explícita; GENERAL nunca. */
+  puedeEditarComoAdmin: boolean;
+  editarComoAdmin: () => void;
   /** Abre «Mis hojas»; con `porCodigo` muestra además el historial de ese código. */
   abrirHistorial: (porCodigo: boolean) => void;
   /** Deja el panel «sin guardar» (para preparar una hoja nueva). */

@@ -207,8 +207,8 @@ describe('consulta compartida: listas sin duplicados y Actividad reciente alinea
     const porCodigo = await service.listarDelEquipo(actor(3), codigoA) as { data: Vista[] };
     expect(porCodigo.data.map((r) => r.id)).toEqual([deDos.id]);
     expect(porCodigo.data[0]).toMatchObject({ codigo: codigoA, estado: 'BORRADOR', propio: false, propietario: { nombre: 'General Dos' } });
-    // El historial por código no repite el borrador ajeno (solo versiones finalizadas y borradores propios).
-    expect(ids(await service.historial(actor(3), codigoA))).not.toContain(deDos.id);
+    // El historial por código lista todo lo consultable del código (el diálogo reparte los borradores en sus secciones y deja aquí solo las finalizadas).
+    expect(ids(await service.historial(actor(3), codigoA))).toContain(deDos.id);
     expect(ids(await service.historial(actor(2), codigoA))).toContain(deDos.id);
   });
 

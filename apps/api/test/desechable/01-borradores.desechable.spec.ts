@@ -91,7 +91,8 @@ describe('bloque 1 · crear y recuperar borradores', () => {
     const lista = await service.listarAbiertas(actor(3));
     expect((lista.data as Vista[]).some((r) => r.id === mio.id)).toBe(false);
     const hist = await service.historial(actor(3), codigo);
-    expect(hist.data).toEqual([]);
+    expect((hist.data as Vista[]).map((r) => r.id)).toEqual([mio.id]);                        // consulta compartida: el historial por código lo muestra como ajeno
+    expect((hist.data as Vista[])[0]).toMatchObject({ propio: false });
   });
 
   it('el creador y un ADMIN sí recuperan el borrador', async () => {

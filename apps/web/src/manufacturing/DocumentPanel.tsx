@@ -3,7 +3,7 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   actualizarBorrador, asignarRevisor, cancelarFinalizacion, crearBorrador, crearRevisionNueva, descargarPdfFinalizado, descartarBorrador, DocumentApiError, documentErrorText, finalizarDocumento, FUNCIONES,
   listarRevisores, obtenerDocumento, registrarRevision, type DocumentoVista, type MotivoNoLista, type UsuarioRevisor
@@ -45,7 +45,16 @@ interface ProviderProps {
 }
 
 export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumentoCambio, onDescartado, autoguardar = false, puedeCrear = false, ediciones = 0, retardoMs = 1500, children }: ProviderProps) {
-  const [doc, setDoc] = useState<DocumentoVista | null>(null);
+  const [docServidor, setDoc] = useState<DocumentoVista | null>(null);
+  // Consulta compartida: un borrador AJENO se abre siempre en solo lectura (aunque el servidor permita editarlo a un ADMIN). La edición de un ADMIN exige la acción explícita «Editar como administrador»
+  // y vale solo para ESE documento; abrirlo no guarda nada (sin permiso de edición no hay autoguardado).
+  const [edicionAdminDe, setEdicionAdminDe] = useState<string | null>(null);
+  const doc = useMemo<DocumentoVista | null>(() => {
+    if (!docServidor || docServidor.propio || docServidor.estado !== 'BORRADOR' || edicionAdminDe === docServidor.id) return docServidor;
+    return { ...docServidor, permisos: { ...docServidor.permisos, editar: false, finalizar: false, asignarRevisor: false, registrarRevision: docServidor.asignadoComoRevisor && docServidor.permisos.registrarRevision } };
+  }, [docServidor, edicionAdminDe]);
+  const soloConsulta = docServidor !== null && !docServidor.propio && ((docServidor.estado === 'BORRADOR' && edicionAdminDe !== docServidor.id) || (docServidor.estado === 'FINALIZANDO' && !docServidor.permisos.finalizar));
+  const puedeEditarComoAdmin = docServidor !== null && !docServidor.propio && docServidor.estado === 'BORRADOR' && docServidor.permisos.editar && edicionAdminDe !== docServidor.id;
   const [variante, setVariante] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<Aviso | null>(null);
@@ -341,6 +350,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     doc, codigo, carga, variante, setVariante, finalizando, errorFin, errorDescarga, verFinalizada, ocupado: ocupado || autoOcupado || finalizando, aviso, motivos, conflicto, revisores, revisorSel, setRevisorSel, elaboro, setElaboro, autorizo, setAutorizo, sucio, vigentes, obsoletas, elaboroCambiado,
     confirmando, setConfirmando, guardar, recargar, abrirPorId, descargar, descargarPorId, nuevaRevisionDe, confirmarElaboro, guardarAutorizo, asignar, registrar, finalizar, descartar, cancelarFin, reintentarFin,
     autoguardar, guardado: guardado === 'guardando' ? 'guardando' : pendiente ? 'pendiente' : guardado, guardadoEn, guardarAhora: async () => { await guardarAuto(true); },
+    soloConsulta, puedeEditarComoAdmin, editarComoAdmin: () => { if (docServidor) setEdicionAdminDe(docServidor.id); },
     abrirHistorial: (porCodigo) => setHistorial({ abierto: true, codigo: porCodigo ? (codigo ?? '') : '' }), cerrar
   };
 
@@ -408,14 +418,25 @@ export function BarraDocumento() {
       <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
         {!doc && <Chip size="small" color="warning" variant="outlined" label="Hoja preparada · sin guardar" data-testid="estado-sin-guardar" />}
         {doc && <Chip size="small" color={doc.estado === 'FINALIZADA' ? 'success' : 'default'} label={nombre} data-testid="estado-guardado" />}
-        {doc && doc.estado !== 'DESCARTADA' && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
+        {doc && d.soloConsulta && <Chip size="small" color="info" label="Solo lectura" data-testid="solo-lectura" />}
+        {doc && !doc.propio && doc.estado !== 'FINALIZADA' && <Chip size="small" variant="outlined" label={`De ${doc.propietario?.nombre ?? doc.creadoPor}`} data-testid="propietario" />}
+        {doc && doc.estado !== 'DESCARTADA' && !d.soloConsulta && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
         {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (manual de TEST)" />}
         {!d.autoguardar && d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
-        {d.autoguardar && <IndicadorGuardado />}
+        {d.autoguardar && !d.soloConsulta && <IndicadorGuardado />}
         <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" />
         <Box sx={{ flex: 1 }} />
         <Button size="small" startIcon={<HistoryRoundedIcon />} onClick={() => d.abrirHistorial(true)}>Historial de este código</Button>
       </Stack>
+
+      {doc && d.soloConsulta && (
+        <Alert severity="info" sx={{ mt: 1 }} role="note" data-testid="aviso-consulta"
+          action={d.puedeEditarComoAdmin ? <Button color="inherit" size="small" onClick={d.editarComoAdmin}>Editar como administrador</Button> : undefined}>
+          {doc.estado === 'FINALIZANDO'
+            ? `Finalización en curso de ${doc.propietario?.nombre ?? doc.creadoPor}: el contenido está congelado y el PDF todavía no es definitivo. Es una consulta de solo lectura.`
+            : `Estás consultando el borrador de ${doc.propietario?.nombre ?? doc.creadoPor}. Es solo lectura: desde aquí no se modifica, descarta ni finaliza, y nada se guarda al abrirlo.`}
+        </Alert>
+      )}
 
       {/* ------------------------------------------------------------- acciones según el estado */}
       {d.autoguardar ? (
@@ -434,7 +455,7 @@ export function BarraDocumento() {
         </>
       ) : (
         <>
-          {(!doc || doc.estado === 'BORRADOR') && (
+          {(!doc || (doc.estado === 'BORRADOR' && !d.soloConsulta)) && (
             <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
               {!doc && <TextField size="small" label="Variante (opcional)" value={d.variante} onChange={(e) => d.setVariante(e.target.value)} sx={{ width: 220 }} slotProps={{ htmlInput: { maxLength: 40 } }} />}
               <Button variant="contained" onClick={() => void d.guardar()} disabled={d.ocupado || !d.carga || !d.codigo || (Boolean(doc) && !d.sucio) || (doc ? !doc.permisos.editar : false)}>
@@ -449,7 +470,7 @@ export function BarraDocumento() {
               {d.carga ? 'Esta hoja todavía no existe en la base de datos: se crea al pulsar «Guardar borrador». Variante: ej. Doblada, Extendida (un código puede tener varias hojas).' : 'Elige la familia para poder guardar. Esta hoja todavía no existe en la base de datos.'}
             </Typography>
           )}
-          {doc?.estado === 'BORRADOR' && (
+          {doc?.estado === 'BORRADOR' && !d.soloConsulta && (
             <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
               {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
               {d.sucio ? 'Guarda los cambios antes de finalizar: el PDF se genera desde la copia guardada. ' : ''}Para finalizar: «Elaboró» confirmado, cliente identificado, hoja completa y contradicciones reconocidas.
@@ -469,7 +490,7 @@ export function BarraDocumento() {
 
       {doc?.estado === 'FINALIZANDO' && (
         <Alert severity="info" sx={{ mt: 1 }}>
-          Hay una finalización en curso ({etiquetaRevision(doc)}). El contenido está congelado.
+          Hay una finalización en curso ({etiquetaRevision(doc)}). El contenido está congelado{d.soloConsulta ? ' y el PDF todavía no es definitivo' : ''}.
           {doc.permisos.finalizar && <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
             <Button size="small" onClick={() => void d.cancelarFin()} disabled={d.ocupado}>Cancelar finalización</Button>
             <Button size="small" onClick={() => void d.reintentarFin()} disabled={d.ocupado}>Reintentar (si pasaron más de 10 min)</Button>
@@ -504,6 +525,21 @@ export function ResponsablesDocumento({ revisionDatos, responsables, onResponsab
   const d = useDocumento();
   const { doc } = d;
   if (doc?.estado !== 'BORRADOR') return null;
+  if (d.soloConsulta) {
+    // Consulta de un borrador ajeno: solo se muestran los datos (sin campos ni controles de edición). La revisión autenticada del revisor asignado se conserva.
+    return (
+      <Paper component="section" variant="outlined" aria-label="Responsables y revisión (consulta)" id="responsables-seccion" sx={{ p: 2, mt: 2 }} data-testid="responsables-consulta">
+        <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Responsables y revisión</Typography>
+        <Stack spacing={0.5}>
+          {doc.responsables.map((r) => <Typography key={r.posicion} variant="body2"><b>{FUNCIONES.find((f) => f.valor === r.funcion)?.etiqueta ?? r.funcion}:</b> {r.nombre || '—'}{r.conFirma ? ' · con firma' : ''}</Typography>)}
+          <Typography variant="body2"><b>Autorizó:</b> {doc.autorizo ?? '—'}</Typography>
+          <Typography variant="body2"><b>Revisor asignado:</b> {doc.revisor?.nombre ?? 'ninguno'}</Typography>
+          {d.vigentes.map((k) => <Chip key={`${k.usuario}-${k.registradaEn}`} size="small" color="success" sx={{ alignSelf: 'flex-start' }} label={`Revisó: ${k.usuario}${k.autorrevision && !k.comoRevisorAsignado ? ' (autorrevisión)' : ''}`} />)}
+          {doc.permisos.registrarRevision && <Box><Button variant="outlined" size="small" onClick={() => void d.registrar()} disabled={d.ocupado}>Registrar mi revisión</Button></Box>}
+        </Stack>
+      </Paper>
+    );
+  }
   const revision = (
     <Box>
       {doc.permisos.asignarRevisor && (
@@ -606,6 +642,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
     if (doc?.estado === 'BORRADOR') eraBorrador.current = true;
     else if (doc?.estado === 'FINALIZADA' && eraBorrador.current) { eraBorrador.current = false; resultado.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); }
   }, [doc?.estado]);
+  if (d.soloConsulta) return null;                                   // consulta de un borrador ajeno: no hay finalización ni descarte
   if (doc?.estado === 'FINALIZADA') {
     return (
       <Paper component="section" variant="outlined" aria-label="Finalizar hoja" sx={{ p: 2, mt: 2 }} ref={resultado} data-testid="final-resultado">

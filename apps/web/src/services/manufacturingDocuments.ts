@@ -28,6 +28,8 @@ export interface ResumenDocumento {
   cliente: { empresaId: string | null; nombre: string; verificado: boolean } | null;
   creadoPor: string; actualizadoEn: string; finalizadoEn: string | null; finalizadoPor: string | null;
   entorno: 'PRUEBA'; propio: boolean; asignadoComoRevisor: boolean; pdf: PdfDocumento | null;
+  /** Propietario (quien creó el borrador); ausente en respuestas anteriores a la consulta compartida. */
+  propietario?: { nombre: string; email: string };
 }
 export interface ConfirmacionDocumento { usuario: string; correo: string; version: number; vigente: boolean; autorrevision: boolean; comoRevisorAsignado: boolean; registradaEn: string }
 export interface DocumentoVista extends ResumenDocumento {
@@ -123,6 +125,8 @@ export const obtenerDocumento = (id: string, signal?: AbortSignal): Promise<Docu
 export const actualizarBorrador = (id: string, cambios: CambiosBorrador, signal?: AbortSignal): Promise<DocumentoVista> => call('PATCH', `/revisions/${enc(id)}`, cambios, signal);
 export const descartarBorrador = (id: string, version: number): Promise<DocumentoVista> => call('POST', `/revisions/${enc(id)}/discard`, { version });
 export const listarAbiertos = (signal?: AbortSignal): Promise<{ data: ResumenDocumento[] }> => call('GET', '/open', undefined, signal);
+/** Borradores y finalizaciones en curso de OTRAS cuentas (consulta en solo lectura); el servidor ya los separa de los propios. */
+export const listarDelEquipo = (codigo?: string, signal?: AbortSignal): Promise<{ data: ResumenDocumento[] }> => call('GET', codigo ? `/team?codigo=${enc(codigo)}` : '/team', undefined, signal);
 export const historialPorCodigo = (codigo: string, signal?: AbortSignal): Promise<{ data: ResumenDocumento[] }> => call('GET', `/history?codigo=${enc(codigo)}`, undefined, signal);
 export const listarRevisores = (signal?: AbortSignal): Promise<{ data: UsuarioRevisor[] }> => call('GET', '/reviewers', undefined, signal);
 export const asignarRevisor = (id: string, version: number, revisorUsuarioId: string | null): Promise<DocumentoVista> => call('PUT', `/revisions/${enc(id)}/reviewer`, { version, revisorUsuarioId });

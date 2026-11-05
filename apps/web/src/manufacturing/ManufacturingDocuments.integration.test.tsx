@@ -25,7 +25,7 @@ vi.mock('../services/sheetPreview', async (importOriginal) => ({ ...(await impor
 vi.mock('./downloadFile', () => ({ guardarArchivo: vi.fn() }));
 vi.mock('../services/manufacturingDocuments', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/manufacturingDocuments')>()),
-  crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), listarAbiertos: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
+  crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), listarAbiertos: vi.fn(), listarDelEquipo: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
   finalizarDocumento: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn(), descartarBorrador: vi.fn(),
   capacidadesDocumentales: vi.fn(), listarFirmas: vi.fn(), subirFirma: vi.fn(), autorizacionesDeFirma: vi.fn(), autorizarUsoDeFirma: vi.fn(), revocarUsoDeFirma: vi.fn()
 }));
@@ -52,6 +52,7 @@ beforeEach(() => {
   vi.mocked(previewManufacturingSheet).mockResolvedValue({ html: '<p>x</p>', familia: 'BOLSA_PLANA_1', borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null });
   lookupMock.mockResolvedValue(schfpmg001());
   m.listarAbiertos.mockResolvedValue({ data: [] });
+  m.listarDelEquipo.mockResolvedValue({ data: [] });
   m.listarRevisores.mockResolvedValue({ data: [] });
   m.historialPorCodigo.mockResolvedValue({ data: [] });
   m.capacidades.mockResolvedValue({ firmas: false });
@@ -348,11 +349,33 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     m.obtenerDocumento.mockResolvedValue(ajeno);
     const lista = await buscar(user);
     expect(within(lista).queryByRole('button', { name: /Crear nueva revisión/ })).not.toBeInTheDocument();
-    await user.click(await enLista(lista, /Abrir SCHFPMG001/));
+    await user.click(await enLista(lista, /Consultar SCHFPMG001/));
     expect(await ancho()).toBeDisabled();
-    expect(screen.getByLabelText('Nombre de Generó')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Finalizar y generar PDF' })).toBeDisabled();
+    expect(screen.getByTestId('solo-lectura')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nombre de Generó')).not.toBeInTheDocument();                       // sin controles de edición
+    expect(screen.queryByRole('button', { name: 'Finalizar y generar PDF' })).not.toBeInTheDocument(); // ni de finalización
+    expect(screen.queryByRole('button', { name: 'Editar como administrador' })).not.toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 1800));                                                      // más que el retardo del autoguardado
     expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    expect(m.crearBorrador).not.toHaveBeenCalled();
+  });
+
+  it('9b) ADMIN: un borrador ajeno se abre en consulta (sin autoguardado) y solo se edita tras «Editar como administrador»', async () => {
+    const user = userEvent.setup();
+    pagina(true);
+    const ajeno = guardado({ propio: false, propietario: { nombre: 'General Dos', email: 'g2@example.invalid' } });          // el servidor deja editar a un ADMIN
+    m.historialPorCodigo.mockResolvedValue({ data: [ajeno] });
+    m.obtenerDocumento.mockResolvedValue(ajeno);
+    const lista = await buscar(user);
+    await user.click(await enLista(lista, /Consultar SCHFPMG001/));
+    expect(await ancho()).toBeDisabled();
+    expect(screen.getByTestId('aviso-consulta')).toHaveTextContent(/borrador de General Dos/);
+    await new Promise((r) => setTimeout(r, 1800));
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Editar como administrador' }));
+    await waitFor(async () => expect(await ancho()).toBeEnabled(), { timeout: 4000 });
+    expect(screen.queryByTestId('solo-lectura')).not.toBeInTheDocument();
+    expect(m.actualizarBorrador).not.toHaveBeenCalled();                                                // pasar a edición tampoco guarda por sí solo
   });
 
   it('10) «Mis hojas» abre un documento sin escribir su código', async () => {

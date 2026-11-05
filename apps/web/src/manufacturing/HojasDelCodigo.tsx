@@ -58,7 +58,7 @@ export function HojasDelCodigo({ codigo, hojas, estado, error, producto, bindErr
   const acciones = (h: ResumenDocumento, v: string) => (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
       {/* Abrir NO se bloquea mientras otra apertura está en curso: gana siempre la última solicitud y la respuesta tardía de la anterior se descarta. */}
-      {h.estado === 'BORRADOR' && <Button size="small" variant="contained" onClick={() => void d.abrirPorId(h.id)} aria-label={`${h.propio ? 'Continuar editando' : 'Abrir'} ${nombre(h)}`}>{h.propio ? 'Continuar editando' : 'Abrir'}</Button>}
+      {h.estado === 'BORRADOR' && <Button size="small" variant={h.propio ? 'contained' : 'outlined'} onClick={() => void d.abrirPorId(h.id)} aria-label={`${h.propio ? 'Continuar editando' : 'Consultar'} ${nombre(h)}`}>{h.propio ? 'Continuar editando' : 'Consultar'}</Button>}
       {h.estado === 'FINALIZANDO' && <Button size="small" variant="outlined" onClick={() => void d.abrirPorId(h.id)} aria-label={`Ver ${nombre(h)}`}>Ver</Button>}
       {h.estado === 'FINALIZADA' && <Button size="small" variant="outlined" onClick={() => void d.abrirPorId(h.id)} aria-label={`Ver hoja ${nombre(h)}`}>Ver hoja</Button>}
       {h.estado === 'FINALIZADA' && h.pdf && <Button size="small" startIcon={<PictureAsPdfRoundedIcon />} disabled={d.ocupado} onClick={() => void d.descargarPorId(h.id)} aria-label={`Descargar PDF ${h.pdf.nombre}`}>Descargar PDF</Button>}
@@ -115,8 +115,9 @@ export function HojasDelCodigo({ codigo, hojas, estado, error, producto, bindErr
                     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                       <Chip size="small" color={ESTADO_CHIP[h.estado].color} label={ESTADO_CHIP[h.estado].texto} />
                       <Typography variant="body2">{etiquetaRevision(h)}</Typography>
+                      {!h.propio && h.estado !== 'FINALIZADA' && <Chip size="small" variant="outlined" color="info" label="Solo lectura" />}
                       <Typography variant="caption" color="text.secondary">
-                        {h.cliente?.nombre ?? 'Sin cliente'} · {h.estado === 'FINALIZADA' ? `finalizada ${fecha(h.finalizadoEn)}` : `actualizada ${fecha(h.actualizadoEn)}`}{h.propio ? ' · tuya' : ''}
+                        {h.cliente?.nombre ?? 'Sin cliente'} · {h.estado === 'FINALIZADA' ? `finalizada ${fecha(h.finalizadoEn)}` : `actualizada ${fecha(h.actualizadoEn)}`}{h.propio ? ' · tuya' : h.estado !== 'FINALIZADA' ? ` · de ${h.propietario?.nombre ?? h.creadoPor}` : ''}
                       </Typography>
                     </Stack>
                     {acciones(h, v)}

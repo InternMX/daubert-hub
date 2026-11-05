@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as docs from '../services/manufacturingDocuments';
@@ -9,7 +9,7 @@ import { DocumentPanel } from './DocumentPanel';
 vi.mock('../services/manufacturingDocuments', async (importOriginal) => {
   const real = await importOriginal<typeof import('../services/manufacturingDocuments')>();
   return {
-    ...real, crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), descartarBorrador: vi.fn(), listarAbiertos: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
+    ...real, crearBorrador: vi.fn(), actualizarBorrador: vi.fn(), obtenerDocumento: vi.fn(), descartarBorrador: vi.fn(), listarAbiertos: vi.fn(), listarDelEquipo: vi.fn(), historialPorCodigo: vi.fn(), listarRevisores: vi.fn(),
     asignarRevisor: vi.fn(), registrarRevision: vi.fn(), finalizarDocumento: vi.fn(), cancelarFinalizacion: vi.fn(), crearRevisionNueva: vi.fn(), descargarPdfFinalizado: vi.fn()
   };
 });
@@ -34,6 +34,7 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:x'); URL.revokeObjectURL = vi.fn();
   clic = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
   m.listarAbiertos.mockResolvedValue({ data: [] });
+  m.listarDelEquipo.mockResolvedValue({ data: [] });
   m.listarRevisores.mockResolvedValue({ data: [{ id: '3', displayName: 'General Tres' }, { id: '1', displayName: 'Admin Uno' }] });
 });
 afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); });
@@ -198,14 +199,35 @@ describe('DocumentPanel · Elaboró, Autorizó, revisor y revisión', () => {
     expect(screen.getByText(/Guarda los cambios antes de revisar/)).toBeInTheDocument();
   });
 
+  it('finalización en curso de otra cuenta: se consulta como solo lectura, sin cancelar ni reintentar y sin presentar el PDF como definitivo', async () => {
+    await conDocumento(vista({ estado: 'FINALIZANDO', propio: false, propietario: { nombre: 'General Dos', email: 'g2@example.invalid' }, permisos: { ...PERMISOS, editar: false, finalizar: false, asignarRevisor: false, registrarRevision: false } }));
+    expect(screen.getByTestId('solo-lectura')).toBeInTheDocument();
+    expect(screen.getByTestId('aviso-consulta')).toHaveTextContent(/Finalización en curso de General Dos.*el PDF todavía no es definitivo/);
+    expect(screen.queryByRole('button', { name: /Cancelar finalización/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reintentar/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Descargar PDF/ })).not.toBeInTheDocument();
+  });
+
+  it('un ADMIN ve un borrador ajeno en consulta y la edición solo empieza con «Editar como administrador»; la cuenta GENERAL no tiene esa acción', async () => {
+    await conDocumento(vista({ propio: false, propietario: { nombre: 'General Dos', email: 'g2@example.invalid' } }));       // permisos del servidor: editar (ADMIN)
+    expect(screen.getByTestId('solo-lectura')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Finalizar hoja' })).not.toBeInTheDocument();
+    fireEvent.click(boton('Editar como administrador'));
+    await waitFor(() => expect(screen.queryByTestId('solo-lectura')).not.toBeInTheDocument());
+    expect(boton('Guardar cambios')).toBeDefined();
+  });
+
   it('una cuenta sin permiso de edición (revisor asignado) ve el borrador sin poder modificarlo ni finalizarlo', async () => {
     await conDocumento(vista({ propio: false, asignadoComoRevisor: true, revisor: { id: '3', nombre: 'General Tres' }, permisos: { ...PERMISOS, editar: false, finalizar: false, asignarRevisor: false } }));
-    expect(boton('Guardar cambios')).toBeDisabled();
-    expect(screen.getByLabelText('Elaboró')).toBeDisabled();
-    expect(boton('Finalizar hoja')).toBeDisabled();
-    expect(boton('Descartar borrador')).toBeDisabled();
+    // Consulta compartida: «Solo lectura» y SIN controles de edición, guardado, descarte ni finalización; solo queda la revisión autenticada del revisor asignado.
+    expect(screen.getByTestId('solo-lectura')).toHaveTextContent('Solo lectura');
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Elaboró')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Finalizar hoja' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Descartar borrador' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar como administrador' })).not.toBeInTheDocument();
     expect(boton('Registrar mi revisión')).toBeEnabled();
-    expect(screen.getByText('Revisor asignado: General Tres')).toBeInTheDocument();
+    expect(screen.getByTestId('responsables-consulta')).toHaveTextContent(/Revisor asignado:\s*General Tres/);
     expect(screen.queryByLabelText('Revisor asignado')).not.toBeInTheDocument();
   });
 });
@@ -321,6 +343,32 @@ describe('DocumentPanel · historial documental', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('«Mis hojas» se reparte en Mis borradores / Borradores del equipo (solo lectura) / Hojas finalizadas, sin repetir ninguna hoja', async () => {
+    const propio = resumen({ id: 'rev-p', codigo: 'PROP001', variante: null });
+    const ajeno = resumen({ id: 'rev-a', codigo: 'AJENO01', variante: null, propio: false, propietario: { nombre: 'General Dos', email: 'g2@example.invalid' } });
+    const enCurso = resumen({ id: 'rev-f', codigo: 'FINAL01', variante: null, estado: 'FINALIZANDO', propio: false, propietario: { nombre: 'General Tres', email: 'g3@example.invalid' } });
+    const final = resumen({ id: 'rev-x', codigo: 'DOC001', variante: null, estado: 'FINALIZADA', revision: 1, finalizadoEn: '2026-10-29T11:00:00Z', finalizadoPor: 'g2@example.invalid', pdf: { nombre: 'DOC001_REV01.pdf', sha256: 'a'.repeat(64), bytes: 10 } });
+    m.listarAbiertos.mockResolvedValue({ data: [propio] });
+    m.listarDelEquipo.mockResolvedValue({ data: [ajeno, enCurso] });
+    m.historialPorCodigo.mockResolvedValue({ data: [propio, ajeno, final] });                      // el historial por código trae todo lo consultable: el diálogo deja aquí solo lo definitivo
+    const { user } = montar();
+    await user.click(boton('Historial de este código'));
+    const dialogo = await screen.findByRole('dialog', { name: 'Mis hojas' });
+    const mis = await within(dialogo).findByRole('list', { name: 'Mis borradores' });
+    const equipo = within(dialogo).getByRole('list', { name: 'Borradores del equipo' });
+    expect(within(mis).getByText('PROP001')).toBeInTheDocument();
+    expect(within(equipo).getByText('AJENO01')).toBeInTheDocument();
+    expect(within(equipo).getByText('FINAL01')).toBeInTheDocument();
+    expect(within(equipo).getByText(/creada por General Dos/)).toBeInTheDocument();
+    expect(within(equipo).getByRole('button', { name: /Consultar AJENO01/ })).toBeInTheDocument();     // «Consultar», no «Abrir»
+    expect(within(mis).getByRole('button', { name: /Abrir PROP001/ })).toBeInTheDocument();
+    expect(within(dialogo).getByText('Solo lectura')).toBeInTheDocument();
+    const hist = await within(dialogo).findByRole('list', { name: 'Historial' });
+    expect(within(hist).getAllByRole('listitem')).toHaveLength(1);                                    // solo la finalizada: ningún borrador se repite
+    expect(within(hist).queryByText('PROP001')).not.toBeInTheDocument();
+    expect(within(hist).queryByText('AJENO01')).not.toBeInTheDocument();
+  });
+
   it('valida el código antes de buscar y no filtra nada en el navegador: lo que el backend no devuelve no se muestra', async () => {
     m.listarAbiertos.mockResolvedValue({ data: [] });
     const { user } = montar({ codigo: null });
@@ -334,6 +382,6 @@ describe('DocumentPanel · historial documental', () => {
     m.historialPorCodigo.mockResolvedValue({ data: [] });
     await user.clear(within(dialogo).getByLabelText('Código DCMX')); await user.type(within(dialogo).getByLabelText('Código DCMX'), 'AJENO1');
     await user.click(within(dialogo).getByRole('button', { name: 'Buscar' }));
-    await within(dialogo).findByText('No hay versiones visibles para ese código.');
+    await within(dialogo).findByText('No hay hojas finalizadas para ese código.');
   });
 });
