@@ -77,9 +77,28 @@ function fromCampo<T>(campo: CampoInterpretado<T>, toValue: (valor: T) => string
 }
 
 /** Fuelles: si el título no los sugiere no son un «pendiente» (la mayoría de los productos no los tiene): quedan para captura manual. */
-function fuelleField(campo: CampoInterpretado<number> | undefined): FieldState {
+function fuelleField(campo: CampoInterpretado<number> | undefined, explicacion?: string): FieldState {
   if (!campo || campo.valor === null) return field();
-  return field(String(campo.valor), originOf(campo), campo.nota, fuenteDescription(campo));
+  return field(String(campo.valor), originOf(campo), [explicacion, campo.nota].filter(Boolean).join(' ') || undefined, fuenteDescription(campo));
+}
+
+const NOMBRE_UNIDAD: Record<string, string> = { IN: 'pulgadas', CM: 'cm', MM: 'mm' };
+const conUnidad = (valor: string | number, unidad: string | null): string => `${valor}${unidad ? ` ${NOMBRE_UNIDAD[unidad] ?? unidad}` : ''}`;
+
+/** Procedencia legible de los fuelles, armada solo con los valores interpretados: el total es la segunda medida de «Ancho × Fuelle total × Largo» y las mitades son derivadas (no explícitas en BIND). */
+function explicacionFuelles(campos: { ancho?: CampoInterpretado<number>; largo?: CampoInterpretado<number>; fuelleTotal?: CampoInterpretado<number> }, unidad: string | null) {
+  const total = campos.fuelleTotal?.valor ?? null;
+  const ancho = campos.ancho?.valor ?? null;
+  const largo = campos.largo?.valor ?? null;
+  if (total === null) return { total: undefined, derecho: undefined, izquierdo: undefined };
+  const terna = ancho !== null && largo !== null ? `${ancho} × ${total} × ${largo}` : null;
+  const simetria = 'La distribución simétrica no es un dato explícito de BIND y requiere reconocer la interpretación dimensional.';
+  const mitad = (lado: string) => `Fuelle ${lado} ${conUnidad(formatHalf(total), unidad)}: derivado de ${total} ÷ 2. ${simetria}`;
+  return {
+    total: `Fuelle total ${conUnidad(total, unidad)}: procede de interpretar la segunda medida${terna ? ` de ${conUnidad(terna, unidad)}` : ''} como Ancho × Fuelle total × Largo. Es una interpretación sugerida, no un dato explícito de BIND.`,
+    derecho: mitad('derecho'),
+    izquierdo: mitad('izquierdo')
+  };
 }
 
 const TIPO_LABEL: Record<string, string> = { BOLSA: 'Bolsa', HOJA: 'Hoja' };
@@ -174,9 +193,9 @@ export function buildInitialForm(lookup: BindProductLookup, configs: FamilyConfi
       cantidad: cantidad.valor === null ? field('', 'PENDIENTE', cantidad.nota) : field(String(cantidad.valor.cantidad), 'BIND', undefined, fuenteDescription(cantidad)),
       cantidadUnidad: cantidad.valor?.unidad ? field(cantidad.valor.unidad, originOf(cantidad), cantidad.nota, fuenteDescription(cantidad)) : field('', 'PENDIENTE', cantidad.nota),
       ancho: fromCampo(campos.ancho, String),
-      fuelleTotal: fuelleField(campos.fuelleTotal),
-      fuelleDerecho: fuelleField(campos.fuelleDerecho),
-      fuelleIzquierdo: fuelleField(campos.fuelleIzquierdo),
+      fuelleTotal: fuelleField(campos.fuelleTotal, explicacionFuelles(campos, unidad.valor).total),
+      fuelleDerecho: fuelleField(campos.fuelleDerecho, explicacionFuelles(campos, unidad.valor).derecho),
+      fuelleIzquierdo: fuelleField(campos.fuelleIzquierdo, explicacionFuelles(campos, unidad.valor).izquierdo),
       largo: fromCampo(campos.largo, String),
       unidadDimensiones: unidad.valor !== null && unidad.origen !== 'PENDIENTE' ? field(unidad.valor, originOf(unidad), unidad.nota, fuenteDescription(unidad)) : field('', 'PENDIENTE', unidad.nota),
       calibre: calibreField,
@@ -443,7 +462,7 @@ export function setFuelleTotal(form: SpecificationForm, value: string): Specific
   const mitad = /^\d+([.,]\d+)?$/.test(value.trim()) && total > 0 ? formatHalf(total) : null;
   const fields = { ...f, fuelleTotal: { ...f.fuelleTotal, value } };
   for (const key of ['fuelleDerecho', 'fuelleIzquierdo'] as const) {
-    if (mitad !== null && (isAuto(f[key]) || f[key].value === '')) fields[key] = systemValue(mitad, 'SUGERIDO', 'Fuelle total ÷ 2 (derivado; editable).');
+    if (mitad !== null && (isAuto(f[key]) || f[key].value === '')) fields[key] = systemValue(mitad, 'SUGERIDO', `Fuelle ${key === 'fuelleDerecho' ? 'derecho' : 'izquierdo'} ${conUnidad(mitad, f.unidadDimensiones.value.trim() || null)}: derivado de ${value.trim()} ÷ 2 (editable). La distribución simétrica no es un dato explícito de BIND y requiere reconocer la interpretación dimensional.`);
   }
   return { ...form, fields };
 }

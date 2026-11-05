@@ -25,16 +25,39 @@ const colorDe = (nivel: NivelIncidencia): 'error' | 'warning.main' | 'text.secon
 const SE_MUESTRAN_AL_VALIDAR = new Set(['FALTANTE', 'FAMILIA_SIN_ELEGIR']);
 const seMuestra = (i: Incidencia, ctx: IncidenciasContexto): boolean => !CON_CONTROL_PROPIO.has(i.codigo) && (!SE_MUESTRAN_AL_VALIDAR.has(i.codigo) || ctx.validado || ctx.reveladas.has(i.id));
 
+// Decisiones con redacción propia: el estado (pendiente / reconocida) se dice en una línea corta y la explicación completa queda en un detalle consultable.
+// Reconocer es una decisión del usuario sobre ESTE borrador; no es una validación oficial de Manufactura.
+const DECISIONES: Record<string, { pendiente: string; reconocida: string; aviso: string }> = {
+  INTERPRETACION_DIMENSIONAL: {
+    pendiente: 'Interpretación dimensional pendiente de revisión.',
+    reconocida: 'Interpretación dimensional reconocida para esta versión del borrador.',
+    aviso: 'Reconocerla no equivale a una validación oficial de Manufactura; si cambias una medida, deberás reconocerla de nuevo.'
+  }
+};
+
+function CuerpoIncidencia({ incidencia, reconocida }: { incidencia: Incidencia; reconocida: boolean }) {
+  const [abierta, setAbierta] = useState(false);
+  const propia = DECISIONES[incidencia.id];
+  if (!propia) return <>{reconocida ? 'Diferencia reconocida para este borrador: ' : ''}{incidencia.mensaje}</>;
+  return (
+    <>
+      <span data-testid="incidencia-estado">{reconocida ? propia.reconocida : propia.pendiente}</span>{' '}
+      <Button size="small" variant="text" color="inherit" aria-expanded={abierta} data-testid="incidencia-detalle-toggle" onClick={() => setAbierta((v) => !v)} sx={{ minWidth: 0, p: 0, fontSize: 'inherit', textDecoration: 'underline', textTransform: 'none' }}>{abierta ? 'Ocultar explicación' : 'Ver explicación'}</Button>
+      {abierta && <Box component="span" display="block" data-testid="incidencia-detalle" sx={{ mt: 0.5 }}>{incidencia.mensaje} {propia.aviso}</Box>}
+    </>
+  );
+}
+
 export function MensajeIncidencia({ incidencia, ctx }: { incidencia: Incidencia; ctx: IncidenciasContexto }) {
   const reconocida = estaReconocida(incidencia, ctx.valores, ctx.reconocidas);
   return (
     <Box id={idMensaje(incidencia.id)} data-testid="incidencia" data-incidencia-id={incidencia.id} data-nivel={incidencia.nivel} sx={{ mt: 0.5 }}>
       <Typography variant="caption" display="block" role={incidencia.nivel === 'ERROR' ? 'alert' : undefined} sx={{ color: reconocida ? 'text.secondary' : colorDe(incidencia.nivel) }}>
-        {reconocida ? 'Diferencia reconocida para este borrador: ' : ''}{incidencia.mensaje}
+        <CuerpoIncidencia incidencia={incidencia} reconocida={reconocida} />
       </Typography>
       {incidencia.reconocible && (reconocida
         ? <Button size="small" onClick={() => ctx.deshacer(incidencia)} sx={{ minWidth: 0, p: 0, fontSize: '0.75rem' }}>Quitar reconocimiento</Button>
-        : <Button size="small" onClick={() => ctx.reconocer(incidencia)} sx={{ minWidth: 0, p: 0, fontSize: '0.75rem' }}>Reconocer esta diferencia</Button>)}
+        : <Button size="small" onClick={() => ctx.reconocer(incidencia)} sx={{ minWidth: 0, p: 0, fontSize: '0.75rem' }}>{DECISIONES[incidencia.id] ? 'Reconocer' : 'Reconocer esta diferencia'}</Button>)}
     </Box>
   );
 }
@@ -68,7 +91,7 @@ export function IncidenciasDeSeccion({ seccion, omitir = [] }: { seccion: Seccio
         return i.nivel === 'ERROR' || (i.nivel === 'CONTRADICCION' && !reconocida)
           ? (
             <Alert key={i.id} id={idMensaje(i.id)} severity={i.nivel === 'ERROR' ? 'error' : 'warning'} variant="outlined" data-testid="incidencia" data-incidencia-id={i.id} data-nivel={i.nivel}
-              action={i.reconocible ? <Button size="small" color="inherit" onClick={() => ctx.reconocer(i)}>Reconocer</Button> : undefined}>{i.mensaje}</Alert>
+              action={i.reconocible ? <Button size="small" color="inherit" onClick={() => ctx.reconocer(i)}>Reconocer</Button> : undefined}><CuerpoIncidencia incidencia={i} reconocida={false} /></Alert>
           )
           : <MensajeIncidencia key={i.id} incidencia={i} ctx={ctx} />;
       })}
