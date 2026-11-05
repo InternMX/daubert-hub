@@ -123,3 +123,9 @@ Archivos analizados: `Inventarios_PostgreSQL\inventario_PROD.txt` e `inventario_
 - R1/R2/R3/R14 **bajan** (privilegios y dependencias verificados; sin interferencias).
 - **Sube a prioridad 1** la diferencia de estructura (8.2-1) y la falta de usuarios GENERAL / clientes en PROD (8.2-2, 8.2-3), que condicionan la validación y la carga inicial.
 - El plan de migración no cambia: esquema nuevo, grants solo a `daubert_hub_app`, postcheck con la huella de estructura (corregida cuando se identifique la diferencia) y comprobación negativa de privilegios.
+
+## 9. Preparación local de las migraciones 012–016 (decisión del 2026-11-05)
+Decisión del operador: **las diferencias entre TEST y PROD se respetan** (`chk_resultado_estado` de `core.resultados_notificacion_pago`, funciones de Caterpillar con sufijo `_test`, cuerpos distintos en `ops` y `operacion`); no se homologa ni se modifica ninguna función productiva. No hay diferencias de columnas en las 4 dependencias de Manufactura.
+- Migraciones preparadas y probadas en réplica desechable con la estructura real de PROD: `database/migrations/daubert_global/` (`README-manufactura-012-016.md`: contenido, adaptaciones, verificaciones, límites del DOWN, procedimiento manual, criterios de interrupción y SHA-256). Resultado: **78 PASS / 0 FAIL** (`validacion-012-016-resultado.txt`).
+- Diferencias funcionales de la rama respecto a `main` que pueden tocar módulos existentes (reportadas por separado, sin modificar nada): `docs/hub/manufactura-diferencias-rama-vs-main.md`.
+- **Numeración:** se usan archivos `20261108_012…016_…_prod` (convención `YYYYMMDD_NNN`); confirmar que no choquen con el directorio externo de migraciones antes de aplicar.

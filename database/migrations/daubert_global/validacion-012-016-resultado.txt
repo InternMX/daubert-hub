@@ -1,0 +1,83 @@
+# Resultado de la validación 012–016 en réplica desechable (estructura real de PROD, respaldo del 2026-10-26). Generado 2026-11-05
+== Validación 012–016 en réplica DESECHABLE con la estructura real de PRODUCCIÓN ==
+PASS  roles reales del clúster creados (daubert_hub_app, n8n_app, n8n_cat_prod, daubert_docs_ro, daubert_hub_test_user, …)
+PASS  estructura REAL de PROD restaurada (pg_restore --schema-only del respaldo): esquemas, tablas, funciones, triggers y ACL
+PASS  datos SINTÉTICOS de réplica (5 usuarios, 3 empresas) y marca replica_desechable — CREATE SCHEMA
+INFO  fidelidad: la réplica tiene 1093 objetos; el inventario real de PROD (estructura_PROD.txt) 1181. Diferencias: 93 objetos que PROD tiene hoy y el respaldo no (cambios posteriores al respaldo), 5 que el respaldo tiene y PROD ya no/cambió.
+INFO  (los objetos nuevos son de Caterpillar/Notificaciones de Pago; Manufactura solo depende de security.users, core.empresas, core.empresa_roles y audit.cambios, que coinciden):
+PASS  las 4 dependencias de Manufactura (security.users, core.empresas, core.empresa_roles, audit.cambios) son IDÉNTICAS entre la réplica y el inventario real de PROD
+PASS  línea base capturada antes de la 012 (solo lectura)
+PASS  la línea base tiene las 14 huellas — 14
+PASS  12: precheck correcto (todas las comprobaciones en t)
+PASS  12: el precheck imprime la línea base (11 valores)
+PASS  12: UP aplicado
+PASS  12: postcheck con todas las comprobaciones en t — 40 t / 0 f
+PASS  tras la 12: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  12: smoke con escrituras como daubert_hub_app: 55 pruebas (RLS, triggers, inmutabilidad, permisos)
+PASS  13: precheck correcto (todas las comprobaciones en t)
+PASS  13: el precheck imprime la huella (huella_101)
+PASS  13: UP aplicado
+PASS  13: postcheck con todas las comprobaciones en t — 12 t / 0 f
+PASS  tras la 13: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  13: smoke con escrituras como daubert_hub_app: 12 pruebas (RLS, triggers, inmutabilidad, permisos)
+PASS  14: precheck correcto (todas las comprobaciones en t)
+PASS  14: el precheck imprime la huella (huella_manufactura)
+PASS  14: UP aplicado
+PASS  14: postcheck con todas las comprobaciones en t — 12 t / 0 f
+PASS  tras la 14: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  14: smoke con escrituras como daubert_hub_app: 11 pruebas (RLS, triggers, inmutabilidad, permisos)
+PASS  15: precheck correcto (todas las comprobaciones en t)
+PASS  15: el precheck imprime la huella (huella_manufactura)
+PASS  15: UP aplicado
+PASS  15: postcheck con todas las comprobaciones en t — 17 t / 0 f
+PASS  tras la 15: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  15: smoke con escrituras como daubert_hub_app: 19 pruebas (RLS, triggers, inmutabilidad, permisos)
+PASS  16: precheck correcto (todas las comprobaciones en t)
+PASS  16: el precheck imprime la huella (huella_resto)
+PASS  16: UP aplicado
+PASS  16: postcheck con todas las comprobaciones en t — 9 t / 0 f
+PASS  tras la 16: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  16: smoke con escrituras como daubert_hub_app: 15 pruebas (RLS, triggers, inmutabilidad, permisos)
+PASS  smoke de SOLO LECTURA (el que se ejecutará en PROD): 23 pruebas con los roles reales — nciones de manufactura DENEGADO|t
+PASS  DETECCIÓN: si n8n_app recibiera SELECT en manufactura, la verificación FALLA
+PASS  DETECCIÓN: si PUBLIC recibiera SELECT en manufactura.firmas, la verificación FALLA
+PASS  DETECCIÓN: si daubert_hub_app recibiera DELETE en documentos, la verificación FALLA
+PASS  DETECCIÓN: si cambiara un privilegio FUERA de manufactura (core.empresas), la verificación FALLA
+PASS  tras revertir las violaciones provocadas: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  PRECHECK en una base de otro nombre aborta antes de escribir
+PASS  UP en una base de otro nombre aborta antes de escribir
+PASS  DOWN en una base de otro nombre aborta antes de escribir
+PASS  UP repetido aborta (no se reaplica)
+PASS  UP con el rol de la aplicación aborta
+PASS  la verificación transversal exige el rol administrativo
+PASS  16: DOWN aplicado (esquema vacío)
+PASS  15: DOWN aplicado (esquema vacío)
+PASS  14: DOWN aplicado (esquema vacío)
+PASS  13: DOWN aplicado (esquema vacío)
+PASS  12: DOWN aplicado (esquema vacío)
+PASS  tras los 5 DOWN el esquema manufactura ya no existe
+PASS  tras revertir TODO (DOWN 016→012): el catálogo fuera de manufactura es idéntico a la línea base: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  12: precheck correcto (todas las comprobaciones en t)
+PASS  12: el precheck imprime la línea base (11 valores)
+PASS  12: UP aplicado
+PASS  12: postcheck con todas las comprobaciones en t — 40 t / 0 f
+PASS  13: precheck correcto (todas las comprobaciones en t)
+PASS  13: el precheck imprime la huella (huella_101)
+PASS  13: UP aplicado
+PASS  13: postcheck con todas las comprobaciones en t — 12 t / 0 f
+PASS  14: precheck correcto (todas las comprobaciones en t)
+PASS  14: el precheck imprime la huella (huella_manufactura)
+PASS  14: UP aplicado
+PASS  14: postcheck con todas las comprobaciones en t — 12 t / 0 f
+PASS  15: precheck correcto (todas las comprobaciones en t)
+PASS  15: el precheck imprime la huella (huella_manufactura)
+PASS  15: UP aplicado
+PASS  15: postcheck con todas las comprobaciones en t — 17 t / 0 f
+PASS  16: precheck correcto (todas las comprobaciones en t)
+PASS  16: el precheck imprime la huella (huella_resto)
+PASS  16: UP aplicado
+PASS  16: postcheck con todas las comprobaciones en t — 9 t / 0 f
+PASS  tras reaplicar 012–016: nada fuera de Manufactura cambió + matriz de privilegios exacta (19 comprobaciones en t)
+PASS  016: DOWN (solo restaura políticas; no toca datos)
+PASS  012: DOWN con documentos existentes ABORTA sin las confirmaciones explícitas de producción
+RESULTADO: 78 PASS / 0 FAIL
