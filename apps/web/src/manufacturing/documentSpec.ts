@@ -4,7 +4,7 @@ import type { BorradorNuevo, DocumentoVista, IncidenciaReconocida } from '../ser
 import type { Reconocimientos } from './incidencias';
 import { claveResponsables } from './responsablesModelo';
 import {
-  ALL_FIELDS, buildInitialForm, confirmFamily, configOf, displayOrigin, selectFamily, setCustomColor, setFieldValue, toPreviewData, type BaseOrigin, type FamilyCode, type FieldKey, type SpecificationForm
+  ALL_FIELDS, buildInitialForm, confirmFamily, configOf, displayOrigin, notasFuellesGuardados, selectFamily, setCustomColor, setFieldValue, toPreviewData, type BaseOrigin, type FamilyCode, type FieldKey, type SpecificationForm
 } from './specificationForm';
 
 // Traducción entre el formulario de la especificación y la copia que guarda el gestor documental. NO compone hojas ni interpreta BIND: solo empaqueta lo que el usuario ya ve y, al abrir
@@ -109,6 +109,11 @@ export function aplicarGuardado(form: SpecificationForm, doc: Pick<DocumentoVist
       // Valor de origen (no editado): se restaura tal cual, sin pasar por las reglas de sugerencia que podrían recalcularlo.
       if (f.fields[key].value !== valor || f.fields[key].base.origin !== origen) f = { ...f, fields: { ...f.fields, [key]: { ...f.fields[key], value: valor, manual: false, confirmed: false, source: undefined, base: { ...f.fields[key].base, value: valor, origin: origen as BaseOrigin } } } };
     } else if (f.fields[key].value !== valor) f = setFieldValue(f, key, valor);
+  }
+  const notas = notasFuellesGuardados(f.fields);
+  for (const k of ['fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo'] as const) {
+    const nota = notas[k];
+    if (nota && f.fields[k].base.origin === 'SUGERIDO' && !f.fields[k].base.note) f = { ...f, fields: { ...f.fields, [k]: { ...f.fields[k], base: { ...f.fields[k].base, note: nota } } } };
   }
   const config = configOf(configs, doc.familia as FamilyCode);
   if (config?.colorDibujo && (datos.colorNombre !== undefined || datos.colorHex !== undefined)) f = restaurarColor(f, config, datos, procedencia);

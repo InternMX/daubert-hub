@@ -230,6 +230,15 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     fireEvent.change(campo('Fuelle total'), { target: { value: '50' } });
     expect(campo('Fuelle derecho').value).toBe('25');
     expect(campo('Fuelle izquierdo').value).toBe('25');
+    // la procedencia distingue el valor original del actual y las mitades usan el valor vigente
+    const total = await leerProcedencia(frameOf('Fuelle total'));
+    expect(total.texto).toMatch(/Valor original sugerido: 48/);
+    expect(total.texto).toMatch(/Valor actual: 50/);
+    expect((await leerProcedencia(frameOf('Fuelle derecho'))).nota).toMatch(/derivado de 50 ÷ 2/);
+    fireEvent.click(within(frameOf('Fuelle total')).getByRole('button', { name: 'Restaurar Fuelle total' }));
+    expect([campo('Fuelle total').value, campo('Fuelle derecho').value]).toEqual(['48', '24']);
+    expect((await leerProcedencia(frameOf('Fuelle derecho'))).nota).toMatch(/derivado de 48 ÷ 2/);
+    fireEvent.change(campo('Fuelle total'), { target: { value: '50' } });
     // editar un fuelle lo marca como del usuario
     fireEvent.change(campo('Fuelle derecho'), { target: { value: '26' } });
     expect(within(frameOf('Fuelle derecho')).getByText('Editado por el usuario')).toBeInTheDocument();

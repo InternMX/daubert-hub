@@ -97,6 +97,7 @@ function ProcedenciaInfo({ fieldKey, state }: { fieldKey: FieldKey; state: Speci
   const base = state.base;
   const nota = base.note && fieldKey !== 'fechaEmision' ? base.note : null;
   const etiqueta = originPresentation[base.origin as DisplayOrigin]?.label ?? '';
+  const cambiado = state.value !== base.value;
   return (
     <>
       <Tooltip title={etiqueta} placement="top">
@@ -113,7 +114,9 @@ function ProcedenciaInfo({ fieldKey, state }: { fieldKey: FieldKey; state: Speci
             <OriginChip origin={base.origin as DisplayOrigin} />
             {base.fuente && <SourceChip source={base.fuente} />}
           </Stack>
+          {cambiado && <Typography variant="body2" data-testid="detalle-original">{base.origin === 'BIND' ? 'Valor original de BIND' : 'Valor original sugerido'}: <strong>{base.value === '' ? '(sin valor)' : base.value}</strong></Typography>}
           {nota && <Typography variant="body2" color="text.secondary" data-testid="detalle-nota">{nota}</Typography>}
+          {cambiado && <Typography variant="body2" data-testid="detalle-actual">Valor actual: <strong>{state.value === '' ? '(vacío)' : state.value}</strong> (editado por el usuario; la explicación anterior describe el valor original).</Typography>}
           {base.origin === 'SUGERIDO' && <Typography variant="caption" color="text.secondary">Es una propuesta editable: revísala antes de finalizar.</Typography>}
         </Stack>
       </Popover>

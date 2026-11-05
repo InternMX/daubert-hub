@@ -7,7 +7,9 @@ import lookups from '../test/bindLookups.fixture.json';
 import { familyConfigs } from '../test/bindProductFixtures';
 import { crearIncidencia, huella, type Reconocimientos } from './incidencias';
 import { IncidenciasDeSeccion, IncidenciasProvider } from './IncidenciaViews';
-import { buildInitialForm, setFieldValue, setFuelleTotal, type SpecificationForm } from './specificationForm';
+import type { DocumentoVista } from '../services/manufacturingDocuments';
+import { aplicarGuardado, construirCarga, lookupDesdeGuardado } from './documentSpec';
+import { buildInitialForm, restoreField, setFieldValue, setFuelleTotal, type SpecificationForm } from './specificationForm';
 
 const inicial = buildInitialForm(lookups.DANFPMGOC04 as unknown as BindProductLookup, familyConfigs, '2026-11-05');
 const incidencia = crearIncidencia({ codigo: 'INTERPRETACION_DIMENSIONAL', id: 'INTERPRETACION_DIMENSIONAL', nivel: 'CONTRADICCION', campos: ['ancho', 'fuelleTotal', 'fuelleDerecho', 'fuelleIzquierdo', 'largo', 'unidadDimensiones'], seccion: 'medidas', reconocible: true,
@@ -67,5 +69,43 @@ describe('procedencia de los fuelles (notas armadas con los valores interpretado
     const f = setFuelleTotal(inicial, '16');
     expect([f.fields.fuelleDerecho.value, f.fields.fuelleIzquierdo.value]).toEqual(['8', '8']);
     expect(f.fields.fuelleDerecho.base.note).toMatch(/derivado de 16 ÷ 2/);
+  });
+});
+
+describe('fuelle total editado y restaurado: valor original frente a valor actual', () => {
+  const editado = setFuelleTotal(inicial, '16');
+  it('mitades actuales = 16 ÷ 2 y su restauración no vuelve a una explicación de 17 ÷ 2', () => {
+    for (const k of ['fuelleDerecho', 'fuelleIzquierdo'] as const) {
+      expect(editado.fields[k].value).toBe('8');
+      expect(editado.fields[k].base.note).toMatch(/: derivado de 16 ÷ 2/);
+      expect(editado.fields[k].base.note).not.toMatch(/17 ÷ 2/);
+    }
+  });
+  it('restaurar el fuelle total devuelve 17 y recalcula las mitades derivadas (8.5) con su explicación de 17 ÷ 2; una mitad editada a mano no se toca', () => {
+    const f = restoreField(editado, 'fuelleTotal');
+    expect([f.fields.fuelleTotal.value, f.fields.fuelleDerecho.value, f.fields.fuelleIzquierdo.value]).toEqual(['17', '8.5', '8.5']);
+    expect(f.fields.fuelleDerecho.base.note).toMatch(/derivado de 17 ÷ 2/);
+    expect(f.fields.fuelleTotal.base.note).toMatch(/Fuelle total 17 pulgadas/);
+    const manual = restoreField(setFieldValue(editado, 'fuelleDerecho', '7'), 'fuelleTotal');
+    expect([manual.fields.fuelleDerecho.value, manual.fields.fuelleIzquierdo.value]).toEqual(['7', '8.5']);
+  });
+});
+
+describe('guardar y reabrir con el fuelle total editado (16)', () => {
+  const lookup = lookups.DANFPMGOC04 as unknown as BindProductLookup;
+  const cfg = familyConfigs.find((c) => c.codigo === 'BOLSA_FUELLE')!;
+  it('las mitades reabiertas se explican con el valor guardado (16 ÷ 2), nunca con 17 ÷ 2; restaurar una mitad vuelve a 8 coherente con el total', () => {
+    const carga = construirCarga(setFuelleTotal(inicial, '16'), cfg, lookup, {})!;
+    expect([carga.datos.fuelleTotal, carga.datos.fuelleDerecho, carga.datos.fuelleIzquierdo]).toEqual(['16', '8', '8']);
+    const doc = { codigo: lookup.producto.Code, familia: carga.familia, especificacion: { datos: carga.datos, procedencia: carga.procedencia, bind: carga.bind, incidenciasReconocidas: [] }, cliente: null } as unknown as DocumentoVista;
+    const base = buildInitialForm(lookupDesdeGuardado(doc), familyConfigs, '2026-11-05');
+    const f = aplicarGuardado(base, doc, familyConfigs);
+    expect([f.fields.fuelleTotal.value, f.fields.fuelleDerecho.value, f.fields.fuelleIzquierdo.value]).toEqual(['16', '8', '8']);
+    for (const k of ['fuelleDerecho', 'fuelleIzquierdo'] as const) {
+      expect(f.fields[k].base.note).toMatch(/derivado de 16 ÷ 2/);
+      expect(f.fields[k].base.note).not.toMatch(/17/);
+    }
+    const editada = setFieldValue(f, 'fuelleDerecho', '7');
+    expect(restoreField(editada, 'fuelleDerecho').fields.fuelleDerecho.value).toBe('8');
   });
 });

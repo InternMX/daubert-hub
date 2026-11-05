@@ -135,6 +135,18 @@ export const familyName = (configs: FamilyConfig[], code: FamilyCode): string =>
 
 const formatHalf = (n: number): string => String(Number((n / 2).toFixed(4)));
 
+/** Al reabrir un borrador no hay interpretación de BIND: las sugerencias de fuelles que el sistema había dejado se vuelven a explicar con los valores GUARDADOS (total y mitades coherentes). */
+export function notasFuellesGuardados(fields: SpecificationForm['fields']): Partial<Record<'fuelleTotal' | 'fuelleDerecho' | 'fuelleIzquierdo', string>> {
+  const num = (k: FieldKey): number | null => { const t = fields[k].value.trim().replace(',', '.'); return /^\d+(\.\d+)?$/.test(t) && Number(t) > 0 ? Number(t) : null; };
+  const como = (valor: number | null): CampoInterpretado<number> => ({ valor, origen: 'EXTRAIDO', fuente: null }) as CampoInterpretado<number>;
+  const e = explicacionFuelles({ ancho: como(num('ancho')), largo: como(num('largo')), fuelleTotal: como(num('fuelleTotal')) }, fields.unidadDimensiones.value.trim() || null);
+  const salida: Partial<Record<'fuelleTotal' | 'fuelleDerecho' | 'fuelleIzquierdo', string>> = {};
+  if (e.total) salida.fuelleTotal = e.total;
+  const total = num('fuelleTotal');
+  if (total !== null) for (const [k, texto] of [['fuelleDerecho', e.derecho], ['fuelleIzquierdo', e.izquierdo]] as const) if (texto && fields[k].value === formatHalf(total)) salida[k] = texto;
+  return salida;
+}
+
 /**
  * Construye el formulario inicial a partir de la respuesta del backend. No muta la respuesta.
  * `today` es la fecha local sugerida para la hoja (nunca la `CreationDate` de BIND). Solo se preselecciona una familia que el backend sugiere Y que existe en la configuración.
@@ -251,6 +263,8 @@ export function restoreField(form: SpecificationForm, key: FieldKey): Specificat
   }
   const current = form.fields[key];
   const restored = { ...form, fields: { ...form.fields, [key]: { ...current, value: current.base.value, source: undefined, ref: undefined, manual: false, confirmed: false } } };
+  // Al restaurar el fuelle total, las mitades que siguen derivadas (no editadas) vuelven a calcularse con el valor restaurado.
+  if (key === 'fuelleTotal') return setFuelleTotal(restored, current.base.value);
   return key === 'pesoLb' || form.layerWeightRule?.campos.includes(key) || form.layerVci?.some((c) => c.lbKey === key) ? suggestLayerWeights(restored) : restored;
 }
 
