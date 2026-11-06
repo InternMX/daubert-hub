@@ -2,6 +2,8 @@
 
 Estado: **código preparado, SIN desplegar y SIN habilitar.** Con la configuración por omisión, una API apuntada a `daubert_global` responde **404** a todas las rutas de Manufactura. No se aplicó ninguna migración en bases reales ni se tocó ningún servicio operativo.
 
+> **Fase 6A:** la preparación del ensayo de liberación (decisiones D1/D3 con su documento de origen, configuración de TEST, reproducibilidad del PDF, réplica, riesgos y comandos) está en [`manufactura-ensayo-liberacion.md`](manufactura-ensayo-liberacion.md). Ojo: «D1» designa dos cosas distintas según el documento (PDF en PROD vs. clientes solo ADMIN); ver su §1.
+
 ## 1. Qué impedía ejecutarla en producción (diagnóstico verificado sobre el código integrado)
 
 | # | Bloqueante | Estado antes | Estado ahora |
@@ -55,7 +57,7 @@ Estado: **código preparado, SIN desplegar y SIN habilitar.** Con la configuraci
 ## 4. Docker, Chromium y fuentes
 - `docker/api.Dockerfile` (etapa *runtime*): `apk add chromium font-carlito fontconfig ttf-dejavu`; `ENV MANUFACTURING_PDF_CHROME_PATH=/usr/bin/chromium` y `MANUFACTURING_PDF_CHROME_NO_SANDBOX=true`. Calibri se resuelve a **Carlito** (métricas compatibles), que es la fuente de respaldo de las plantillas.
 - El renderer agrega `--no-sandbox --disable-dev-shm-usage` solo con `…NO_SANDBOX=true` (sin él, Chromium falla como usuario `node` dentro de Docker: comprobado, resultado `ERROR`). El HTML es generado por el sistema, sin red (`--host-resolver-rules=MAP * ~NOTFOUND`), sin extensiones y con perfil temporal por solicitud.
-- La imagen crece (~1.48 GB medida, con Chromium). Los paquetes `apk` no están fijados a versión: la reconstrucción puede traer otra versión de Chromium (medida: 156.0.8078.79) → repetir la regresión de PDF (`sheet-pdf-sin-leyendas.real.spec.ts`, `sheets-regression`) en cada reconstrucción.
+- La imagen crece: ≈406 MB de contenido (≈1.48 GB de uso en disco en Docker Desktop), con Chromium. Los paquetes `apk` no están fijados a versión: la reconstrucción puede traer otra versión de Chromium (medida: 156.0.8078.79) → repetir la regresión de PDF (`sheet-pdf-sin-leyendas.real.spec.ts`, `sheets-regression`) en cada reconstrucción.
 
 ## 5. nginx
 `docker/nginx.conf`: `location = /api/manufacturing-sheets/documents/signatures { client_max_body_size 3m; … }`. Resto de rutas con el límite por omisión (1 MB). El API limita el archivo a 2 MB (413 con `File too large`) y reduce la imagen a ≤256 KB. Comprobado: nginx anterior → 413 con una firma de 1.5 MB; nginx nuevo → 201; 2.5 MB → 413 del API; 3.5 MB → 413 de nginx. Los tiempos de espera por omisión (60 s) cubren el tope de Chromium (25 s).
