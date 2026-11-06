@@ -242,7 +242,7 @@ export class DocumentsService {
     return { clienteEmpresaId: fila.cliente_empresa_id, clienteNombre: fila.cliente_nombre, clienteVerificado: fila.cliente_verificado };
   }
 
-  /** Cliente vinculado a core.empresas (rol CLIENTE, activo) o, solo en TEST, identificación manual SIN verificar (queda marcada y visible). */
+  /** Cliente vinculado a core.empresas (rol CLIENTE, activo) o identificación manual SIN verificar (queda marcada y visible). La política vigente la permite en TEST y en PROD (decisión D3 del diagnóstico: restringirla en PROD está pendiente y requiere autorización). */
   private async resolverCliente(c: PoolClient, cliente: ClienteDocumentoDto | undefined): Promise<Cliente> {
     if (!cliente || (!cliente.empresaId && !cliente.nombre)) return { clienteEmpresaId: null, clienteNombre: null, clienteVerificado: false };
     if (cliente.empresaId) {
@@ -450,7 +450,7 @@ export class DocumentsService {
     const motivos: MotivoNoLista[] = [];
     if (!fila.elaboro_nombre) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Indica el nombre de quien generó la hoja (Generó).' });
     else if (!fila.elaboro_confirmado) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' });
-    if (!fila.cliente_nombre) motivos.push({ codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente (vinculado a la lista de clientes o, en TEST, manual).' });
+    if (!fila.cliente_nombre) motivos.push({ codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente (vinculado a la lista de clientes o escrito manualmente).' });
     motivos.push(...(await this.motivosDeBloqueo(fila)));
     return motivos;
   }

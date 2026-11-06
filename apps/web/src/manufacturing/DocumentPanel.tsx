@@ -424,7 +424,7 @@ export function BarraDocumento() {
         {doc && d.soloConsulta && <Chip size="small" color="info" label="Solo lectura" data-testid="solo-lectura" />}
         {doc && !doc.propio && doc.estado !== 'FINALIZADA' && <Chip size="small" variant="outlined" label={`De ${doc.propietario?.nombre ?? doc.creadoPor}`} data-testid="propietario" />}
         {doc && doc.estado !== 'DESCARTADA' && !d.soloConsulta && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
-        {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (manual de TEST)" />}
+        {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (captura manual)" />}
         {!d.autoguardar && d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
         {d.autoguardar && !d.soloConsulta && <IndicadorGuardado />}
         {entorno.esPrueba ? <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" /> : <Chip size="small" variant="outlined" color="success" label="PRODUCCIÓN" />}

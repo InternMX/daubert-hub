@@ -15,7 +15,7 @@ export interface EspecificacionGuardada {
   incidenciasReconocidas?: IncidenciaReconocida[];
 }
 
-/** Cliente de un documento: `empresaId` solo si está vinculado al catálogo (verificado); el manual de TEST queda marcado como no verificado. */
+/** Cliente de un documento: `empresaId` solo si está vinculado al catálogo (verificado); el manual (TEST o PROD) queda marcado como no verificado. */
 export interface ClienteDocumento { empresaId?: string; nombre?: string }
 
 export interface PermisosDocumento {

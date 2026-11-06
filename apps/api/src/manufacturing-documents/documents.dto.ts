@@ -26,7 +26,7 @@ export class IncidenciaReconocidaDto {
   @IsString() @MaxLength(2000) huella!: string;
 }
 
-/** Identificación del cliente: vinculada a core.empresas (rol CLIENTE) o, solo en TEST, manual sin verificar (queda marcada). */
+/** Identificación del cliente: vinculada a core.empresas (rol CLIENTE) o manual sin verificar (queda marcada). Hoy se permite en TEST y en PROD; restringirla en PROD es la decisión D3 del diagnóstico (pendiente). */
 export class ClienteDocumentoDto {
   @IsOptional() @IsString() @Matches(ID_ENTERO) empresaId?: string;
   @IsOptional() @IsString() @MinLength(1) @MaxLength(200) nombre?: string;

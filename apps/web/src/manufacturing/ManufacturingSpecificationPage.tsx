@@ -572,7 +572,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   const deshacer = (i: Incidencia): void => { if (soloLecturaRef.current) return; setEdiciones((n) => n + 1); setReconocidas((r) => Object.fromEntries(Object.entries(r).filter(([id]) => id !== i.id))); };
   const revision: 'vigente' | 'revisando' | 'no-disponible' = !form?.family || currentAssessment ? 'vigente' : fallo === assessmentKey ? 'no-disponible' : 'revisando';
   const revelar = (id: string): void => setReveladas((r) => (r.has(id) ? r : new Set(r).add(id)));
-  // Datos obligatorios pendientes para finalizar. Coincide con el servidor: el cliente es obligatorio (texto libre válido en TEST); el catálogo solo lo verifica. Ver `motivosNoLista`.
+  // Datos obligatorios pendientes para finalizar. Coincide con el servidor: el cliente es obligatorio (el texto libre es válido en TEST y en PROD, queda marcado como no verificado); el catálogo solo lo verifica. Ver `motivosNoLista`.
   const faltantesFinal = todas.filter((i) => i.nivel === 'ERROR' || i.codigo === 'FALTANTE' || (i.codigo === 'CLIENTE_SIN_IDENTIFICAR' && valores('cliente').trim() === ''));
   const pendientes = documentos ? new Set(faltantesFinal.map((i) => i.id)) : undefined;
   const ctx = { pendientes, lista: todas, visible: (key: FieldKey): boolean => (config ? config.campos.includes(key) : true), valores, reconocidas, reconocer, deshacer, validado: intentoFinal || validation !== null, reveladas, revelar, revision, sugeridos: form ? sugeridosPorRevisar(form, config).length : 0 };
