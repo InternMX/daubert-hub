@@ -42,6 +42,14 @@ services:
       PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED: "${PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED:-false}"
       PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY: "${PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY:-false}"
       PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN: "${PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN:-}"
+      # Manufactura (hojas de manufactura). Habilitacion EXPLICITA por entorno (apps/api/src/config/environment.ts, resolveManufacturing): con la base de PRODUCCION queda APAGADA salvo
+      # MANUFACTURING_ENABLED=true Y MANUFACTURING_EMISSION_ENV=PRODUCCION; con la base de TEST se habilita sola. Vacias = no declaradas. BIND: claves opcionales (sin ellas la consulta informa
+      # NOT_CONFIGURED); BIND_API_BASE_URL se deja vacia salvo necesidad. Chromium y fuentes vienen en la imagen (docker/api.Dockerfile): MANUFACTURING_PDF_CHROME_PATH no se configura aqui.
+      MANUFACTURING_ENABLED: "${MANUFACTURING_ENABLED:-}"
+      MANUFACTURING_EMISSION_ENV: "${MANUFACTURING_EMISSION_ENV:-}"
+      BIND_API_KEY: "${BIND_API_KEY:-}"
+      BIND_SUBSCRIPTION_KEY: "${BIND_SUBSCRIPTION_KEY:-}"
+      BIND_API_BASE_URL: "${BIND_API_BASE_URL:-}"
     expose:
       - "3000"
     extra_hosts:
@@ -53,6 +61,10 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      # Interfaz de Manufactura: APAGADA por omision (variables de COMPILACION de Vite). Para habilitarla: VITE_MANUFACTURING_UI=true y VITE_MANUFACTURING_DOCUMENTS=true al construir.
+      args:
+        VITE_MANUFACTURING_UI: "${VITE_MANUFACTURING_UI:-false}"
+        VITE_MANUFACTURING_DOCUMENTS: "${VITE_MANUFACTURING_DOCUMENTS:-false}"
     restart: unless-stopped
     depends_on:
       api:
