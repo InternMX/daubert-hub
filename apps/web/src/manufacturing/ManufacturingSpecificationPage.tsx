@@ -9,6 +9,7 @@ import { PageHeader } from '../components/PageHeader';
 import { BIND_CODE_PATTERN, BindProductApiError, lookupBindProductByCode, type BindProductErrorKind, type BindProductLookup, type FuenteDato } from '../services/bindProducts';
 import { listClients } from '../services/clients';
 import { listManufacturingFamilies, type FamilyConfig } from '../services/manufacturingFamilies';
+import { fijarEntornoEmision, useEntornoEmision } from './entornoEmision';
 import { capacidadesDocumentales, DocumentApiError, documentErrorText, historialPorCodigo, obtenerDocumento, type DocumentoVista, type ResumenDocumento } from '../services/manufacturingDocuments';
 import { useSearchParams } from 'react-router-dom';
 import type { SheetPreviewResponse } from '../services/sheetPreview';
@@ -309,6 +310,7 @@ const CANTIDAD_UNIDADES: Array<[string, string]> = [['BOLSAS', 'Bolsas'], ['HOJA
 export const DOCUMENTOS_ACTIVOS = import.meta.env.VITE_MANUFACTURING_DOCUMENTS === 'true';
 
 export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS, retardoAutoguardado = 1500 }: { documentos?: boolean; retardoAutoguardado?: number } = {}) {
+  const entorno = useEntornoEmision();
   const [configs, setConfigs] = useState<FamilyConfig[]>([]);
   const [configStatus, setConfigStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [code, setCode] = useState('');
@@ -353,7 +355,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
   useEffect(() => {
     if (!documentos) return undefined;
     const c = new AbortController();
-    capacidadesDocumentales(c.signal).then((r) => setPuedeFirmas(r.firmas)).catch(() => setPuedeFirmas(false));
+    capacidadesDocumentales(c.signal).then((r) => { fijarEntornoEmision(r.entorno); setPuedeFirmas(r.firmas); }).catch(() => setPuedeFirmas(false));
     return () => c.abort();
   }, [documentos]);
   useEffect(() => {
@@ -610,7 +612,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
     <Box sx={{ maxWidth: 1500, minWidth: 0 }}>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Automatizaciones', to: '/automations' }, { label: 'Hojas de manufactura' }]} />
       <PageHeader title="Especificación de manufactura" description={documentos
-        ? 'Escribe el código DCMX del producto: verás sus hojas guardadas y podrás continuar una, ver su historial y PDF, crear una nueva revisión o preparar una hoja nueva. Todo documento es de PRUEBA y no es válido para producción.'
+        ? 'Escribe el código DCMX del producto: verás sus hojas guardadas y podrás continuar una, ver su historial y PDF, crear una nueva revisión o preparar una hoja nueva. '+(entorno.esPrueba ? 'Todo documento es de PRUEBA y no es válido para producción.' : 'Los documentos finalizados son de PRODUCCIÓN.')
         : 'Busca un producto en BIND por su código DCMX, revisa y corrige los datos interpretados y selecciona la familia. Los datos solo existen en memoria: no se guardan ni se emite ninguna hoja.'}>
         <EnlaceConfiguracion />
       </PageHeader>
@@ -914,7 +916,7 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
         {documentos && docActual?.estado === 'FINALIZADA' && (
           <Box sx={{ minWidth: 0, order: { xs: 1, lg: 2 }, position: { lg: 'sticky' }, top: { lg: 16 }, mt: 2 }}>
             <Paper variant="outlined" sx={{ p: 2 }} data-testid="hoja-finalizada-panel">
-              <Chip size="small" color="success" label={`FINALIZADA · ${etiquetaRevision(docActual)} · PRUEBA`} />
+              <Chip size="small" color="success" label={`FINALIZADA · ${etiquetaRevision(docActual)} · ${entorno.texto}`} />
               <Typography sx={{ mt: 1 }}>Esta hoja ya no es un borrador. El documento definitivo es el PDF almacenado ({docActual.pdf?.nombre ?? 'REV'}); descárgalo o ábrelo desde «Hoja finalizada».</Typography>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>Los cambios requieren crear una nueva revisión.</Typography>
             </Paper>

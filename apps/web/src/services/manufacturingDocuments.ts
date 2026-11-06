@@ -27,7 +27,7 @@ export interface ResumenDocumento {
   revision: number | null; revisionPrevista: number | null; version: number;
   cliente: { empresaId: string | null; nombre: string; verificado: boolean } | null;
   creadoPor: string; actualizadoEn: string; finalizadoEn: string | null; finalizadoPor: string | null;
-  entorno: 'PRUEBA'; propio: boolean; asignadoComoRevisor: boolean; pdf: PdfDocumento | null;
+  entorno: 'PRUEBA' | 'PRODUCCION'; propio: boolean; asignadoComoRevisor: boolean; pdf: PdfDocumento | null;
   /** Propietario (quien creó el borrador); ausente en respuestas anteriores a la consulta compartida. */
   propietario?: { nombre: string; email: string };
 }
@@ -187,7 +187,7 @@ export const documentErrorText: Record<DocumentErrorKind, string> = {
 };
 
 // ---------------------------------------------------------------- catálogo de firmas
-export const capacidadesDocumentales = (signal?: AbortSignal): Promise<{ firmas: boolean }> => call('GET', '/capabilities', undefined, signal);
+export const capacidadesDocumentales = (signal?: AbortSignal): Promise<{ firmas: boolean; entorno?: 'PRUEBA' | 'PRODUCCION' }> => call('GET', '/capabilities', undefined, signal);
 export const listarFirmas = (signal?: AbortSignal): Promise<{ data: FirmaVista[] }> => call('GET', '/signatures', undefined, signal);
 export interface FirmaNueva { archivo: File; propietarioUsuarioId?: string; propietarioNombre?: string }
 

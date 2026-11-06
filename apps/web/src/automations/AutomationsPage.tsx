@@ -5,7 +5,7 @@ import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
-import { AUTOMATION_ROUTE_BY_CODE, MANUFACTURING_SHEETS_ROUTE } from './automationRoutes';
+import { AUTOMATION_ROUTE_BY_CODE, MANUFACTURING_SHEETS_ROUTE, MANUFACTURING_UI_VISIBLE } from './automationRoutes';
 import { automationHealthAccent, automationHealthTexts, formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel } from './automationOverviewPresentation';
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -82,6 +82,7 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
 // «Hojas de manufactura» es un PROCESO ASISTIDO (lo opera una persona desde el gestor), no un workflow de n8n: no tiene horario, ejecuciones ni estado de procesamiento, así que esta tarjeta no los
 // inventa. Es estática a propósito (no sale del catálogo de automatizaciones) y reutiliza el patrón visual de las demás tarjetas. Su actividad (hojas creadas y finalizadas) vive en «Actividad reciente».
 function AssistedProcessCard() {
+  if (!MANUFACTURING_UI_VISIBLE) return null;
   return (
     <Paper variant="outlined" data-testid="assisted-process-card" sx={{ p: { xs: 2.5, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'flex-start' }} spacing={1}>

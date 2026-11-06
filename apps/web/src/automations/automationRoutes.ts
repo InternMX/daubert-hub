@@ -21,6 +21,12 @@ export const AUTOMATION_ROUTE_BY_CODE: Record<string, string> = {
 
 // «Hojas de manufactura» (búsqueda en BIND, formulario editable y vista previa) vive dentro de Automatizaciones, pero NO es una automatización del catálogo
 // (GET /automations/overview): por eso su ruta no va en AUTOMATION_ROUTE_BY_CODE, que está indexado por código de automatización y alimenta las tarjetas de /automations.
+/**
+ * Visibilidad de las pantallas de Manufactura (menú, tarjeta, rutas, abreviaturas de cliente y firmas). Visible por omisión (desarrollo y TEST); la imagen web de PRODUCCIÓN se compila con
+ * VITE_MANUFACTURING_UI=false, de modo que mientras Manufactura no esté habilitada en el servidor no aparece ninguna pantalla cuyo backend respondería 404.
+ */
+export const MANUFACTURING_UI_VISIBLE = import.meta.env.VITE_MANUFACTURING_UI !== 'false';
+
 export const MANUFACTURING_SHEETS_ROUTE = '/automations/manufacturing-sheets';
 /** Configuración de Hojas de manufactura (solo ADMIN): identificación de clientes por abreviatura. */
 export const MANUFACTURING_SHEETS_SETTINGS_ROUTE = `${MANUFACTURING_SHEETS_ROUTE}/settings`;

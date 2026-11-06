@@ -15,9 +15,11 @@ const ESTADO: Record<ResumenDocumento['estado'], { texto: string; color: 'defaul
 const finalizadas = (lista: ResumenDocumento[]): ResumenDocumento[] => lista.filter((r) => r.estado === 'FINALIZADA');
 const fecha = (iso: string | null): string => (iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
+import { useEntornoEmision } from './entornoEmision';
 interface Props { abierto: boolean; codigoInicial: string; onClose: () => void; onAbrir: (id: string) => void }
 
 export function DocumentHistoryDialog({ abierto, codigoInicial, onClose, onAbrir }: Props) {
+  const entorno = useEntornoEmision();
   const [abiertos, setAbiertos] = useState<ResumenDocumento[]>([]);
   const [equipo, setEquipo] = useState<ResumenDocumento[]>([]);
   const [codigo, setCodigo] = useState(codigoInicial);
@@ -72,7 +74,7 @@ export function DocumentHistoryDialog({ abierto, codigoInicial, onClose, onAbrir
     <Dialog open={abierto} onClose={onClose} fullWidth maxWidth="md" aria-labelledby="historial-titulo">
       <DialogTitle id="historial-titulo">Mis hojas</DialogTitle>
       <DialogContent>
-        <Alert severity="info" role="note" sx={{ mb: 2 }}>Documentos de PRUEBA (TEST): no válidos para producción. Los borradores del equipo se consultan en solo lectura: solo su propietario (o un administrador) puede modificarlos, descartarlos o finalizarlos.</Alert>
+        <Alert severity="info" role="note" sx={{ mb: 2 }}>{entorno.esPrueba ? 'Documentos de PRUEBA (TEST): no válidos para producción. ' : ''}Los borradores del equipo se consultan en solo lectura: solo su propietario (o un administrador) puede modificarlos, descartarlos o finalizarlos.</Alert>
         {error && <Alert severity="error" sx={{ mb: 2 }} role="alert">{error}</Alert>}
         <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 700 }}>Mis borradores</Typography>
         {abiertos.length === 0 ? <Typography color="text.secondary" sx={{ my: 1 }}>No tienes borradores ni finalizaciones en curso.</Typography> : <List dense disablePadding aria-label="Mis borradores">{abiertos.map(fila)}</List>}

@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { roleLabels, userStatusLabels } from '../services/userLabels';
 import { deactivateUser, describeUsersApiError, getUser, reactivateUser, UsersApiError, type ManagedUser } from '../services/users';
+import { MANUFACTURING_UI_VISIBLE } from '../automations/automationRoutes';
 import { FirmasAdministrativas } from '../firmas/FirmasAdministrativas';
 import { ResetPasswordDialog } from './ResetPasswordDialog';
 
@@ -112,9 +113,11 @@ export function UserDetailPage() {
             <DetailField label="Última actualización" value={formatTimestamp(user.updatedAt)} />
           </Stack>
         </Paper>
-        <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
-          <FirmasAdministrativas consulta={{ propietarioUsuarioId: user.id }} propietarioNuevo={isActive ? { tipo: 'usuario', id: user.id, nombre: user.displayName } : null} titulo="Firmas" />
-        </Paper>
+        {MANUFACTURING_UI_VISIBLE && (
+          <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
+            <FirmasAdministrativas consulta={{ propietarioUsuarioId: user.id }} propietarioNuevo={isActive ? { tipo: 'usuario', id: user.id, nombre: user.displayName } : null} titulo="Firmas" />
+          </Paper>
+        )}
       </Stack>
       <Dialog open={confirming} onClose={() => !changingStatus && setConfirming(false)}>
         <DialogTitle>{isActive ? 'Desactivar usuario' : 'Reactivar usuario'}</DialogTitle>

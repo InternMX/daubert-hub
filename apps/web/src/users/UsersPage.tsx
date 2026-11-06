@@ -5,6 +5,7 @@ import { formatActivityTimestamp } from '../components/activityTimestamp';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
+import { MANUFACTURING_UI_VISIBLE } from '../automations/automationRoutes';
 import { listUsers, type ManagedUser } from '../services/users';
 import { roleLabels, userStatusLabels } from '../services/userLabels';
 
@@ -43,7 +44,7 @@ export function UsersPage() {
     <>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Usuarios' }]} />
       <PageHeader title="Usuarios" description="Administra las cuentas con acceso a Daubert Hub.">
-        <Button component={Link} to="/users/signatures" variant="outlined">Firmas de personas sin cuenta</Button>
+        {MANUFACTURING_UI_VISIBLE && <Button component={Link} to="/users/signatures" variant="outlined">Firmas de personas sin cuenta</Button>}
         <Button component={Link} to="/users/new" variant="contained">Nuevo usuario</Button>
       </PageHeader>
       {loading && <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress aria-label="Cargando usuarios" /></Box>}

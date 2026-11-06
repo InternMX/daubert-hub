@@ -2,6 +2,7 @@ import { Box, Paper, Stack, Typography } from '@mui/material';
 import { useAuth } from '../auth/authContext.core';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { PageHeader } from '../components/PageHeader';
+import { MANUFACTURING_UI_VISIBLE } from '../automations/automationRoutes';
 import { MisFirmas } from '../firmas/MisFirmas';
 import { roleLabels, userStatusLabels } from '../services/userLabels';
 
@@ -27,7 +28,7 @@ export function ProfilePage() {
             <Dato etiqueta="Estado" valor={userStatusLabels[user.status]} />
           </Stack>
         </Paper>
-        <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}><MisFirmas /></Paper>
+        {MANUFACTURING_UI_VISIBLE && <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}><MisFirmas /></Paper>}
       </Stack>
     </>
   );

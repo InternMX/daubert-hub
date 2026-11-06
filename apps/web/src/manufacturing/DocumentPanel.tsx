@@ -15,6 +15,7 @@ import { DocumentHistoryDialog } from './DocumentHistoryDialog';
 import { ResponsablesFirmas } from './ResponsablesFirmas';
 import type { ResponsableLocal } from './responsablesModelo';
 import { guardarArchivo } from './downloadFile';
+import { useEntornoEmision } from './entornoEmision';
 
 // Gestor documental (TEST) integrado en la hoja de manufactura. NO edita la hoja: guarda lo que el usuario ya ve (la carga que arma el formulario) y administra el ciclo del documento.
 // Toda identidad (quién elaboró, modificó, revisó, finalizó) la pone el servidor desde la sesión: estos componentes nunca la envían.
@@ -45,6 +46,7 @@ interface ProviderProps {
 }
 
 export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumentoCambio, onDescartado, autoguardar = false, puedeCrear = false, ediciones = 0, retardoMs = 1500, children }: ProviderProps) {
+  const entorno = useEntornoEmision();
   const [docServidor, setDoc] = useState<DocumentoVista | null>(null);
   // Consulta compartida: un borrador AJENO se abre siempre en solo lectura (aunque el servidor permita editarlo a un ADMIN). La edición de un ADMIN exige la acción explícita «Editar como administrador»
   // y vale solo para ESE documento; abrirlo no guarda nada (sin permiso de edición no hay autoguardado).
@@ -360,7 +362,7 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
       <Dialog open={confirmando === 'finalizar'} onClose={() => setConfirmando(null)} aria-labelledby="fin-titulo">
         <DialogTitle id="fin-titulo">Finalizar la hoja</DialogTitle>
         <DialogContent>
-          <Typography>Se generará el PDF de PRUEBA desde la copia guardada (versión {doc?.version}) y se registrará como revisión definitiva. Después no podrá modificarse; los cambios requerirán una nueva revisión.</Typography>
+          <Typography>Se generará el PDF de {entorno.texto} desde la copia guardada (versión {doc?.version}) y se registrará como revisión definitiva. Después no podrá modificarse; los cambios requerirán una nueva revisión.</Typography>
           {autoguardar && <Typography sx={{ mt: 1 }}>Al finalizar confirmas el nombre de «Generó»: <b>{carga?.responsables?.[0]?.nombre ?? doc?.elaboro.nombre ?? ''}</b>.</Typography>}
           {autoguardar && (
             <Box sx={{ mt: 1.5 }} data-testid="fin-responsables">
@@ -410,6 +412,7 @@ function IndicadorGuardado() {
  * PERSISTIDO en PostgreSQL (TEST), y ofrece solo las acciones que corresponden a ese estado.
  */
 export function BarraDocumento() {
+  const entorno = useEntornoEmision();
   const d = useDocumento();
   const { doc } = d;
   const nombre = doc ? `${doc.codigo}${doc.variante ? ` · ${doc.variante}` : ''} · ${etiquetaRevision(doc)} · v${doc.version}` : '';
@@ -424,7 +427,7 @@ export function BarraDocumento() {
         {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (manual de TEST)" />}
         {!d.autoguardar && d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
         {d.autoguardar && !d.soloConsulta && <IndicadorGuardado />}
-        <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" />
+        {entorno.esPrueba ? <Chip size="small" variant="outlined" color="warning" label="PRUEBA · NO VÁLIDO PARA PRODUCCIÓN" /> : <Chip size="small" variant="outlined" color="success" label="PRODUCCIÓN" />}
         <Box sx={{ flex: 1 }} />
         <Button size="small" startIcon={<HistoryRoundedIcon />} onClick={() => d.abrirHistorial(true)}>Historial de este código</Button>
       </Stack>
@@ -631,6 +634,7 @@ export interface BloqueoFinal { clave: string; texto: string; irA?: () => void }
  * «Descartar borrador» es secundario y pide confirmación.
  */
 export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicciones, onIntentar }: { datos: EstadoDatos; bloqueos: BloqueoFinal[]; faltantes: number; contradicciones: number; onIntentar?: () => void }) {
+  const entorno = useEntornoEmision();
   const d = useDocumento();
   const { doc } = d;
   const [mostrar, setMostrar] = useState(false);
@@ -657,7 +661,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
           <Button variant="text" onClick={() => void d.nuevaRevisionDe(doc.documentoId)} disabled={d.ocupado || !doc.permisos.crearRevisionNueva}>Crear nueva revisión</Button>
         </Stack>
         {d.errorDescarga && <Alert severity="error" sx={{ mt: 1 }} role="alert" data-testid="final-error-descarga">{d.errorDescarga}</Alert>}
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>Este es el documento definitivo de PRUEBA (entorno TEST). La vista previa de la hoja es de trabajo y no lo sustituye.</Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>{entorno.esPrueba ? 'Este es el documento definitivo de PRUEBA (entorno TEST).' : 'Este es el documento definitivo de PRODUCCIÓN.'} La vista previa de la hoja es de trabajo y no lo sustituye.</Typography>
       </Paper>
     );
   }
@@ -730,7 +734,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
       </Stack>
       <Typography id="finalizar-ayuda" variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
         {!doc.permisos.editar ? 'Solo el creador o un administrador pueden modificar este borrador. ' : ''}
-        Al finalizar se guardan los cambios pendientes, se confirma el nombre de «Generó» tal como aparece arriba y el servidor vuelve a comprobar la hoja (datos obligatorios y contradicciones reconocidas) antes de generar el PDF de PRUEBA.
+        Al finalizar se guardan los cambios pendientes, se confirma el nombre de «Generó» tal como aparece arriba y el servidor vuelve a comprobar la hoja (datos obligatorios y contradicciones reconocidas) antes de generar el PDF de {entorno.texto}.
       </Typography>
     </Paper>
   );
