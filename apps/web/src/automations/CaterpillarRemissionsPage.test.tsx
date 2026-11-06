@@ -908,4 +908,110 @@ describe('CaterpillarRemissionsPage', () => {
       await waitFor(() => expect(executionsMock.mock.calls.length).toBeGreaterThan(before));
     });
   });
+
+  describe('long errors in recent executions (visual only)', () => {
+    const WINDOWS_PATH = 'C:\\Users\\06\\Documents\\Dropbox\\HERRAMIENTAS AUTOMATIZACION\\REMISIONES CAT\\02_SALIDAS\\CATERPILLAR_P2\\REM 0113 89-S003183.pdf';
+    const LONG_ERROR = `Command failed: powershell -File "${WINDOWS_PATH}"\n${'[27504:1106/131137.319:ERROR:chrome\\updater] Acceso denegado. (0x5)\n'.repeat(120)}+ FullyQualifiedErrorId : No se generó el PDF`;
+
+    it('keeps the eight columns in order', async () => {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ latestErrorMessage: LONG_ERROR })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent);
+      expect(headers).toEqual(['Fecha', 'Archivo', 'Proceso', 'Estado', 'Intentos', 'Remisiones', 'Folio(s)', 'Último error']);
+    });
+
+    it('shows an em dash and no "Ver error" for an execution without error', async () => {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary()]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      const cells = within(within(table).getAllByRole('row')[1]!).getAllByRole('cell');
+      expect(cells).toHaveLength(8);
+      expect(cells[7]).toHaveTextContent('—');
+      expect(within(table).queryByRole('button', { name: /Ver error/ })).not.toBeInTheDocument();
+    });
+
+    it('keeps the full >5,000-character message untouched in the cell (CSS-only truncation) and offers "Ver error"', async () => {
+      expect(LONG_ERROR.length).toBeGreaterThan(5000);
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome: 'FAILED', latestErrorMessage: LONG_ERROR })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      const cell = within(within(table).getAllByRole('row')[1]!).getAllByRole('cell')[7]!;
+      expect(cell.textContent).toBe(`${LONG_ERROR}Ver error`);
+      expect(within(cell).getByRole('button', { name: 'Ver error de la ejecución 9007199254740993' })).toBeInTheDocument();
+    });
+
+    it('opens the full error dialog without opening the row detail, then closes it', async () => {
+      const user = userEvent.setup();
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome: 'FAILED', latestErrorNode: 'Convertir PDF CAT', latestErrorMessage: LONG_ERROR })]));
+      renderPage();
+      await user.click(await screen.findByRole('button', { name: 'Ver error de la ejecución 9007199254740993' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Detalle del error — Ejecución #9007199254740993' });
+      expect(detailMock).not.toHaveBeenCalled();
+      expect(within(dialog).getByText('remision_p2.pdf')).toBeInTheDocument();
+      expect(within(dialog).getByText('Convertir PDF CAT')).toBeInTheDocument();
+      expect(within(dialog).getByRole('region', { name: 'Mensaje de error completo' }).textContent).toBe(LONG_ERROR);
+      await user.click(within(dialog).getAllByRole('button', { name: 'Cerrar' })[1]!);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('copies the complete error of the selected execution', async () => {
+      const user = userEvent.setup();
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome: 'FAILED', latestErrorMessage: LONG_ERROR })]));
+      renderPage();
+      await user.click(await screen.findByRole('button', { name: /Ver error de la ejecución/ }));
+      await user.click(await screen.findByRole('button', { name: 'Copiar error' }));
+      expect(writeText).toHaveBeenCalledWith(LONG_ERROR);
+    });
+
+    it('maps each error to its own execution: PROCESANDO and a reprocess child never show the parent error', async () => {
+      const user = userEvent.setup();
+      executionsMock.mockResolvedValue(executionsResponse([
+        executionSummary({ executionId: '29', outcome: 'PROCESSING', latestErrorMessage: null, sourceFilename: 'hija_en_proceso.xlsx' }),
+        executionSummary({ executionId: '28', outcome: 'COMPLETED', latestErrorMessage: null, sourceFilename: 'hija_completada.xlsx' }),
+        executionSummary({ executionId: '27', outcome: 'FAILED', latestErrorNode: 'Convertir PDF CAT', latestErrorMessage: 'Error original de la ejecución 27', sourceFilename: 'original.xlsx' }),
+        executionSummary({ executionId: '26', outcome: 'FAILED', latestErrorNode: 'Normalizar datos CAT', latestErrorMessage: 'Error distinto de la 26', sourceFilename: 'otra.xlsx' })
+      ]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      const rows = within(table).getAllByRole('row').slice(1);
+      expect(within(rows[0]!).getAllByRole('cell')[7]!).toHaveTextContent('—');
+      expect(within(rows[1]!).getAllByRole('cell')[7]!).toHaveTextContent('—');
+      expect(within(table).getAllByRole('button', { name: /Ver error/ })).toHaveLength(2);
+
+      await user.click(within(rows[2]!).getByRole('button', { name: 'Ver error de la ejecución 27' }));
+      let dialog = await screen.findByRole('dialog', { name: 'Detalle del error — Ejecución #27' });
+      expect(within(dialog).getByRole('region', { name: 'Mensaje de error completo' })).toHaveTextContent('Error original de la ejecución 27');
+      expect(within(dialog).getByText('original.xlsx')).toBeInTheDocument();
+      expect(within(dialog).getByText('Convertir PDF CAT')).toBeInTheDocument();
+      await user.click(within(dialog).getAllByRole('button', { name: 'Cerrar' })[1]!);
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+      await user.click(within(rows[3]!).getByRole('button', { name: 'Ver error de la ejecución 26' }));
+      dialog = await screen.findByRole('dialog', { name: 'Detalle del error — Ejecución #26' });
+      expect(within(dialog).getByRole('region', { name: 'Mensaje de error completo' })).toHaveTextContent('Error distinto de la 26');
+      expect(within(dialog).queryByText(/Error original de la ejecución 27/)).not.toBeInTheDocument();
+    });
+
+    it('does not alter other columns: attempts and remissions render as before', async () => {
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome: 'FAILED', failedAttempts: 2, maxAttempts: 2, generatedRemissionCount: 0, minimumFolio: null, maximumFolio: null, latestErrorMessage: 'x' })]));
+      renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Caterpillar' });
+      const cells = within(within(table).getAllByRole('row')[1]!).getAllByRole('cell');
+      expect(cells[4]).toHaveTextContent('2/2');
+      expect(cells[5]).toHaveTextContent('0');
+    });
+
+    it('renders the full error in the existing execution detail preserving line breaks', async () => {
+      const user = userEvent.setup();
+      executionsMock.mockResolvedValue(executionsResponse([executionSummary({ outcome: 'FAILED', latestErrorMessage: 'a\nb' })]));
+      detailMock.mockResolvedValue(executionDetail({ outcome: 'FAILED', latestErrorNode: 'Convertir PDF CAT', latestErrorMessage: 'a\nb', reprocessOfExecutionId: '20' }));
+      renderPage();
+      await user.click(await screen.findByRole('button', { name: 'Ver detalle de ejecución Caterpillar 9007199254740993' }));
+      const region = await screen.findByRole('region', { name: 'Mensaje de error completo' });
+      expect(region.textContent).toBe('a\nb');
+      expect(screen.getByText('Reproceso de')).toBeInTheDocument();
+    });
+  });
 });
