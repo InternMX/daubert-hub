@@ -14,6 +14,7 @@ Documentado en la Fase D2 **a partir de los exports reales** ([PROD](../../../n8
 | Credencial PostgreSQL | `Postgres produccion` (PROD) / `Postgres pruebas` (TEST) |
 | Hub | Historial (`GET /api/automations/remissions/audi/executions`), ajuste de folio (`ADMIN`), acuses de revisión, actividad reciente |
 | Reproceso manual desde el Hub | **No existe** (no hay webhook en el workflow) |
+| Limitaciones confirmadas (2026-10-28) | Máximo 6 artículos por archivo (filas 8-13); idempotencia por **ruta** del archivo, no por contenido; si falla tras reservar quedan folios consumidos sin remisión; el Error Workflow solo escribe un log; sin reproceso desde el Hub. Ver [workflow](workflow.md) y [pendientes](../../00-overview/pending-and-roadmap.md#5-limitaciones-funcionales-conocidas). No se ha modificado el workflow |
 
 ## Propósito
 

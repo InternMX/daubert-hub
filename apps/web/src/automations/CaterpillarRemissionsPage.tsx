@@ -39,6 +39,8 @@ import {
 import { lifecycleStatusLabel } from './automationOverviewPresentation';
 import { executionOpenButtonSx, executionRowSx } from './executionPresentation';
 import { DetailSectionHeading, ExecutionMetaRow as MetaRow } from './ExecutionDetailPresentation';
+import { ExecutionErrorDetailDialog, ExecutionErrorMessage, ExecutionErrorPreview } from './ExecutionErrorDetailDialog';
+import { executionErrorCellSx } from './executionErrorPresentation';
 
 const automationCode = 'REMISIONES_CATERPILLAR';
 const EXECUTIONS_PAGE_SIZE = 25;
@@ -251,6 +253,9 @@ function ExecutionsSection({ page, onPageChange, onSelect, refreshKey }: Executi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
+  // Snapshot of the clicked row: the dialog always shows the error of the execution it was opened
+  // from, even if the list refreshes underneath (a reprocess child never inherits its parent's error).
+  const [errorExecution, setErrorExecution] = useState<CaterpillarExecutionSummary | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -317,7 +322,9 @@ function ExecutionsSection({ page, onPageChange, onSelect, refreshKey }: Executi
                 <TableCell align="right">{execution.failedAttempts}/{execution.maxAttempts}</TableCell>
                 <TableCell align="right">{execution.generatedRemissionCount}</TableCell>
                 <TableCell>{caterpillarFolioRangeLabel(execution.minimumFolio, execution.maximumFolio)}</TableCell>
-                <TableCell sx={{ overflowWrap: 'anywhere' }}>{execution.latestErrorMessage ?? '—'}</TableCell>
+                <TableCell sx={executionErrorCellSx}>
+                  <ExecutionErrorPreview executionId={execution.executionId} message={execution.latestErrorMessage} onOpen={() => setErrorExecution(execution)} />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -330,6 +337,19 @@ function ExecutionsSection({ page, onPageChange, onSelect, refreshKey }: Executi
           <Button disabled={end >= result.meta.total} onClick={() => onPageChange(page + 1)}>Siguiente</Button>
         </Stack>
       </Stack>
+      {errorExecution?.latestErrorMessage && (
+        <ExecutionErrorDetailDialog
+          open
+          onClose={() => setErrorExecution(null)}
+          executionId={errorExecution.executionId}
+          startedAt={formatCaterpillarTimestamp(errorExecution.startedAt)}
+          filename={errorExecution.sourceFilename}
+          processLabel={caterpillarProcessLabelOrUndetermined(errorExecution.processLabel)}
+          status={<OutcomeChip outcome={errorExecution.outcome} />}
+          errorNode={errorExecution.latestErrorNode}
+          message={errorExecution.latestErrorMessage}
+        />
+      )}
     </Paper>
   );
 }
@@ -464,7 +484,7 @@ function ExecutionDetailDialog({ executionId, onClose, onReprocessed, onCancelle
             )}
             {detail.reprocessOfExecutionId && <MetaRow label="Reproceso de" value={<Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{detail.reprocessOfExecutionId}</Typography>} />}
             {detail.latestErrorNode && <MetaRow label="Nodo con error" value={<Typography variant="body2">{detail.latestErrorNode}</Typography>} />}
-            {detail.latestErrorMessage && <MetaRow label="Mensaje de error" value={<Typography variant="body2" color="error.main">{detail.latestErrorMessage}</Typography>} />}
+            {detail.latestErrorMessage && <MetaRow label="Mensaje de error" value={<ExecutionErrorMessage message={detail.latestErrorMessage} />} />}
 
             <DetailSectionHeading>Documento origen</DetailSectionHeading>
             <MetaRow label="Archivo" value={<Typography variant="body2">{detail.sourceDocument.filename}</Typography>} />

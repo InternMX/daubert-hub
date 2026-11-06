@@ -1,5 +1,7 @@
 # Plan de despliegue conjunto — Daubert Hub (Pagos #17 + Caterpillar) — documento único y definitivo
 
+> **Histórico: este plan ya se ejecutó el 2026-10-27** ([nota de despliegue](../../deployments/2026-10-27-hub-pagos-caterpillar-joint-prod.md)) y el release `1.1.0` el 2026-10-28 ([nota](../../deployments/2026-10-28-hub-v1.1.0-prod.md)). Los worktrees y rutas locales que cita (p. ej. `daubert-hub-caterpillar-remission-controls`) fueron retirados tras el cierre. Para una ventana nueva, usar [deployment-checklist](../../operations/deployment-checklist.md) y `scripts/deploy/` (`Set-EntryClosure.ps1`, `Deploy-DaubertHub.ps1 -RequireClosedWindow`).
+
 Estado al **2026-10-26**. Sin secretos. Este documento **sustituye** a `hub-deployment-b2.md` (opción B, superada) y concentra integración, cierre de entradas, procedimiento de la ventana y Fase F. **No autoriza ejecutar nada en PROD**: cada acción productiva de §6 requiere la autorización de la ventana.
 
 ## 1. Qué se despliega

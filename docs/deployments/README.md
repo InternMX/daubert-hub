@@ -4,6 +4,7 @@ Registro puntual de promociones a PROD (qué se promovió, verificación, pendie
 
 | Fecha | Nota | Tema |
 | --- | --- | --- |
+| 2026-10-28 | [hub-v1.1.0-prod](2026-10-28-hub-v1.1.0-prod.md) | Daubert Hub **v1.1.0** (commit `6909dc8`, tag `v1.1.0`; PR #19 y #20): formaliza la versión, añade el CI de pull requests y corrige las vulnerabilidades npm de producción de la API; solo la API se recreó; sin migraciones ni cambios en n8n; cierre de Nginx de ~2 min 11 s; siete verificaciones visuales aprobadas; validación de negocio de n8n sigue pendiente |
 | 2026-10-27 | [hub-pagos-caterpillar-joint-prod](2026-10-27-hub-pagos-caterpillar-joint-prod.md) | Despliegue conjunto Hub + Pagos + Caterpillar (commit `f099e31`, tag `release-2026-10-27-hub-pagos-cat`): migraciones 019/013/rol/016, workflows `pagosProdAsignaciones01` (111), `pagosProdRecuperacion01` (106) y `catProd016Remisiones01` (62), respaldos, ejecuciones CAT protegidas y pendientes; el Hub mostró `1.0.6` porque no se subió la versión; `1.1.0` preparado |
 | 2026-10-27 | [post-release-cleanup-plan](2026-10-27-post-release-cleanup-plan.md) | Auditoría de limpieza posdespliegue (solo inventario, nada eliminado) y plan de aplicación de `1.1.0` |
 | 2026-10-27 | [npm-prod-vulnerabilities-proposal](2026-10-27-npm-prod-vulnerabilities-proposal.md) | Propuesta (no aplicada) para las 4 vulnerabilidades npm de producción de la API: `body-parser`, `qs`, `multer` y `@nestjs/platform-express`; opciones, exposición real y evidencia de una copia desechable |

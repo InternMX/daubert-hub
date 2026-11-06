@@ -1,13 +1,13 @@
 # Estado del proyecto y guía de mantenimiento
 
-Actualizado el **2026-10-27** (cierre del despliegue conjunto; el resto del documento conserva el detalle del 2026-10-22 y puede estar desactualizado en lo que difiera de esta tabla). Describe lo que existe **hoy en el código y en PRODUCCIÓN**; lo pendiente se marca como tal. Sin secretos.
+Actualizado el **2026-10-28** (Hub `1.1.0` desplegado; las secciones 3 a 7 conservan detalle del 2026-10-22 y pueden estar desactualizadas en lo que difiera de esta tabla; la lista vigente de pendientes y riesgos es [pending-and-roadmap](pending-and-roadmap.md)). Describe lo que existe **hoy en el código y en PRODUCCIÓN**; lo pendiente se marca como tal. Sin secretos.
 
 | | |
 | --- | --- |
-| Hub en PRODUCCIÓN | `f099e31` (tag `release-2026-10-27-hub-pagos-cat`; muestra `1.0.6` por no haberse subido la versión; `1.1.0` preparado en `chore/release-1.1.0-versioning-closeout`, pendiente de despliegue). Nota: [despliegue conjunto](../deployments/2026-10-27-hub-pagos-caterpillar-joint-prod.md) |
-| Migraciones aplicadas en `daubert_global` | hasta la `20261024_016` (Caterpillar, junto con 019 de Pagos y 013; ver la nota del 2026-10-27); antes: hasta la `20261022_017` (Notificaciones de pago); las `012`–`014` son TEST-only |
-| Workflows n8n PROD | Pagos `pagosProdAsignaciones01` (111 nodos) + hijo `pagosProdRecuperacion01` (106); Caterpillar `catProd016Remisiones01` (62); el CAT anterior `9Ngnrpi16b6GtOAX` y `3Dh72JJYROHtaw1X` (Pagos antiguo) están inactivos |
-| **Pendiente destacado** | **Primer ZIP real de Notificaciones de pago procesado en PRODUCCIÓN por el workflow de 108 nodos** — hasta validarlo no se usa la asignación puntual ni su reproceso con datos reales ([checklist](../automations/payment-notifications/production-rollout.md#e-validación-y-pendientes)) |
+| Hub en PRODUCCIÓN | **`1.1.0`**, commit `6909dc883e840bd64b6e9ee0b7bd23a3def9376d`, tag `v1.1.0` (desplegado el 2026-10-28; nota: [hub-v1.1.0-prod](../deployments/2026-10-28-hub-v1.1.0-prod.md)). El contenido funcional de Pagos y Caterpillar se desplegó el 2026-10-27 en `f099e31` (tag `release-2026-10-27-hub-pagos-cat`, que mostraba `1.0.6`; [despliegue conjunto](../deployments/2026-10-27-hub-pagos-caterpillar-joint-prod.md)). Rollback a `1.0.6` disponible (`rollback-f099e31`) |
+| Migraciones aplicadas en `daubert_global` | hasta la `20261024_016` (Caterpillar, junto con 019 de Pagos y 013; ver la nota del 2026-10-27); antes: hasta la `20261022_017` (Notificaciones de pago); las `012`–`014` son TEST-only. El release 1.1.0 no aplicó migraciones |
+| Workflows n8n PROD | Pagos `pagosProdAsignaciones01` (111 nodos) + hijo `pagosProdRecuperacion01` (106); Caterpillar `catProd016Remisiones01` (62); Audi `iHN2zXtam9u1Qsn3` (39); el CAT anterior `9Ngnrpi16b6GtOAX` y `3Dh72JJYROHtaw1X` (Pagos antiguo) están inactivos y no deben activarse. Schedules activos con ciclos «success» |
+| **Pendiente destacado** | **Validación de negocio en PRODUCCIÓN, aún sin hacer:** primer ZIP real de Pagos con el workflow de 111 nodos, primera recuperación de Pagos (el hijo tiene 0 ejecuciones) y primera emisión real de Caterpillar 016. Además: Error Workflow de Caterpillar, restore drill con la llave age en otra estación y continuidad de n8n sin sesión de Windows. Detalle y prioridades: [pending-and-roadmap](pending-and-roadmap.md) |
 
 ## 1. Arquitectura en una página
 
@@ -21,11 +21,11 @@ Criterio: existe código en `apps/api` y `apps/web` **con pruebas** en el reposi
 | --- | --- | --- | --- |
 | Autenticación, usuarios y roles (`ADMIN`/`GENERAL`) | **Implementado, en PROD** | Sesiones en servidor, cookie, rate limit; gestión de usuarios y auditoría solo `ADMIN` | [hub/authentication](../hub/authentication.md) · [authorization](../hub/authorization.md) |
 | Proveedores | **Implementado, en PROD** | Listado, alta, edición, detalle | [hub/api](../hub/api.md) (el comportamiento detallado está PENDIENTE de documentar) |
-| Clientes | **Implementado** (rutas, páginas y API con pruebas) | Mismo modelo común de empresas que proveedores | ídem |
+| Clientes | **Implementado, en PROD** (rutas, páginas y API con pruebas) | Mismo modelo común de empresas que proveedores | ídem |
 | Contactos y medios de contacto, directorio | **Implementado, en PROD** | | ídem |
 | Alias comerciales y direcciones | **Implementado, en PROD** | Alias permanentes: base del catálogo de Pagos | [hub/api](../hub/api.md) |
 | Centro de automatizaciones (overview, series/folios, acuses de revisión) | **Implementado, en PROD** | Ajuste de folio solo `ADMIN` | [hub/automations](../hub/automations.md) · [document-series](../database/document-series.md) |
-| Remisiones Caterpillar | **Implementado, en PROD** | Monitoreo, reproceso manual (`ADMIN`) y ajuste de folio. Trabajo adicional (admisión atómica) **en desarrollo fuera de `main`** | [automations/caterpillar](../automations/caterpillar/README.md) |
+| Remisiones Caterpillar | **Implementado, en PROD** (workflow 016 desde 2026-10-27; **primera emisión real pendiente de validar**) | Monitoreo, reproceso manual, regeneración comercial y cancelación individual (`ADMIN`), ajuste de folio y admisión atómica (ya en `main` y PROD). Validados en TEST; sin Error Workflow en PROD | [automations/caterpillar](../automations/caterpillar/README.md) |
 | Remisiones Audi | **Implementado, en PROD** | Historial y ajuste de folio; detalle de ejecuciones sin exponer diagnósticos crudos | [automations/audi](../automations/audi/README.md) |
 | Notificaciones de pago | **Implementado, en PROD** | Dashboard, detalle, errores por archivo, alias permanente, configuración por empresa (2026-09-25), reproceso (sin restricción de rol) y **asignación puntual por archivo** (2026-10-22). **Primer ZIP real pendiente** | [automations/payment-notifications](../automations/payment-notifications/README.md) · [production-rollout](../automations/payment-notifications/production-rollout.md) |
 | Actividad reciente y Auditoría | **Implementado, en PROD** | Actividad reciente integra Audi, **Caterpillar**, Notificaciones de pago y ajustes de series (API, web y pruebas en `main`); Auditoría solo `ADMIN` | [hub/automations](../hub/automations.md) |
@@ -34,13 +34,13 @@ Criterio: existe código en `apps/api` y `apps/web` **con pruebas** en el reposi
 
 ## 3. Funcionalidades parciales y pendientes conocidos
 
-- **Notificaciones de pago — primer ZIP real** en PRODUCCIÓN con el workflow de 108 nodos (ingesta con registro de archivos, asignación y reproceso puntual con datos reales): **PENDIENTE**.
+- **Notificaciones de pago — primer ZIP real** en PRODUCCIÓN con el workflow de 111 nodos (ingesta con registro de archivos, asignación y reproceso puntual con datos reales): **PENDIENTE**. Tampoco hay ejecuciones de la recuperación (`pagosProdRecuperacion01`) ni una emisión real de Caterpillar 016 ([pending-and-roadmap](pending-and-roadmap.md)).
 - Documentación del comportamiento de Proveedores/Clientes/Contactos/Alias/Direcciones: solo catalogada ([hub/README](../hub/README.md)).
 - Snapshots `pg_dump` de esquema y datos de configuración de la D3: [schema-snapshots](../database/schema-snapshots.md) (PENDIENTE).
 - Restore drill con la clave privada de age en otra estación (DR completo): PENDIENTE ([postgresql-backup-automation](../operations/postgresql-backup-automation.md)).
 - Verificar desde un cliente de la LAN el bloqueo de 3000/5432/5678 y la recuperación tras un reinicio completo ([architecture](../architecture/README.md)).
 - Objetivos V1 no hechos: reserva DHCP, DNS interno, HTTPS (ver README raíz). Sin acceso desde Internet.
-- Error Workflow de Pagos: el workflow `ERROR - NOTIFICACIONES DE PAGO` está activo, pero su export no está versionado ([n8n/security-notes](../../n8n/security-notes.md)).
+- Error Workflow de Pagos: el workflow `ERROR - NOTIFICACIONES DE PAGO` está activo, pero su export no está versionado ([n8n/security-notes](../../n8n/security-notes.md)). El workflow Caterpillar de PROD **no tiene** Error Workflow (auditoría 2026-10-28).
 
 ## 4. Riesgos técnicos abiertos
 
@@ -54,7 +54,7 @@ Criterio: existe código en `apps/api` y `apps/web` **con pruebas** en el reposi
 | Correo `PENDIENTE` 38 (Pagos) | Atascado desde 2026-09-14, sin ejecución activa; el flujo solo procesa correos `NUEVO` | No tocar; excluir de las comprobaciones de ventana |
 | `compose.prod-temp.yaml` solo en el host de despliegue | Excluido de Git; pasa `AUTH_COOKIE_SECURE` (y, redundante, variables de Pagos) | [deployment-checklist](../operations/deployment-checklist.md#configuración-específica-de-la-máquina-no-se-versiona); respaldado en `_hub_rollback` |
 | Reproceso de Pagos sin restricción de rol | Cualquier usuario autenticado puede reprocesar y asignar | [reprocessing](../automations/payment-notifications/reprocessing.md#seguridad) |
-| `Deploy-DaubertHub.ps1 -Deploy` bloquea releases con migraciones | Esos releases se despliegan con los comandos manuales del checklist (como el 2026-10-21) | [deployment-checklist](../operations/deployment-checklist.md) |
+| `Deploy-DaubertHub.ps1 -Deploy` y las migraciones | Los releases con migraciones se despliegan con los comandos manuales del checklist o con `Invoke-JointMigrations.ps1` (como el 2026-10-27); el script admite reconocer migraciones ya aplicadas. En el release 1.1.0 se usó con `-RequireClosedWindow` y confirmación interactiva (frase `DEPLOY DAUBERT HUB`) | [deployment-checklist](../operations/deployment-checklist.md) |
 
 ## 5. Desarrollo, pruebas y migraciones (dónde está cada cosa)
 
@@ -91,7 +91,7 @@ Resultado de revisar `apps/`, `database/`, `deploy/`, `scripts/`, `docs/` y la c
 - **Verificado sin hallazgos:** ningún archivo generado, `.env`, log, volcado ni respaldo versionado; ningún archivo fuente de `apps/api` o `apps/web` sin importadores (salvo los puntos de entrada); `tsc --noUnusedLocals --noUnusedParameters` sin avisos en ambos workspaces; ninguna dependencia declarada sin uso real (las que parecen no referenciadas son pares de ejecución: `rxjs`, `@nestjs/platform-express`, `@emotion/*`, tipos y cobertura); unas 60 rutas HTTP en 21 controladores, sin rutas duplicadas; ningún `TODO`/`FIXME` pendiente.
 - **Conservado a propósito:** los reportes de validación de los diagramas (`docs/architecture/*.json`) que cita su README y consume `export-svg.mjs`; el export histórico `n8n/workflows/remisiones-caterpillar/historical/`; todas las migraciones (incluidas las ya aplicadas y las TEST-only, necesarias para reconstruir); `compose.yaml` (desarrollo).
 - **Corregido en esta revisión (documentación):** estado de los respaldos (`backup-restore.md` decía PENDIENTE aunque están automatizados), estado de `Deploy-DaubertHub.ps1` en el checklist, inconsistencias #9 y #13 de `environments.md`, pendientes desactualizados de `docs/README.md`, rutas de la asignación puntual en `hub/api.md` y `system-map.md`, variables de la asignación puntual en `apps/api/.env.example`; se añadió este documento.
-- **Propuestas, sin ejecutar (REVISAR):**
+- **Propuestas de la revisión del 2026-10-22 (estado al 2026-10-28: la 1 ya se hizo (`DEFAULT_APP_VERSION` es `1.1.0`); la 4 se hizo a medias (el script de despliegue admite migraciones ya aplicadas, pero no tiene modo `-Rollback`); la 7 sigue abierta como P-09):**
   1. Actualizar `DEFAULT_APP_VERSION` (`0.8.0-pilot.1`) o derivarla de `package.json`.
   2. Corregir los encabezados «DO NOT APPLY TO daubert_global YET» de las migraciones ya aplicadas (requiere una decisión sobre editar migraciones aplicadas; hoy solo está documentado en [environments](environments.md)).
   3. Añadir los runners de integración de Caterpillar y folios a `npm run validate` (hoy tienen script propio).
