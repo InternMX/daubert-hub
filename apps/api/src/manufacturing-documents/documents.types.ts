@@ -61,7 +61,7 @@ export interface RevisionRow {
   cliente_empresa_id: string | null;
   cliente_nombre: string | null;
   cliente_verificado: boolean;
-  entorno_emision: 'PRUEBA';
+  entorno_emision: 'PRUEBA' | 'PRODUCCION';
   basada_en_revision_id: string | null;
   basada_en_revision: number | null;
   creado_por_usuario_id: string;

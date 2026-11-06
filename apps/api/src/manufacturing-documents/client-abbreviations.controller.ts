@@ -3,12 +3,12 @@ import type { AuthenticatedRequest } from '../common/authenticated-request';
 import { CreateAbbreviationDto, ListAbbreviationsQueryDto, ResolveAbbreviationDto, SuggestionsQueryDto } from './client-abbreviations.dto';
 import { ClientAbbreviationsService } from './client-abbreviations.service';
 import { actorDeSolicitud } from './documents.controller';
-import { TestOnlyGuard } from './test-only.guard';
+import { ManufacturingEnabledGuard } from './manufacturing-enabled.guard';
 import { DetalleValidacionFilter } from './validation-detail.filter';
 
 // Abreviaturas de cliente (TEST). Rutas: /api/manufacturing-sheets/client-abbreviations/…  La identidad sale SOLO de la sesión. Las sugerencias nunca asignan un cliente.
 @Controller('manufacturing-sheets/client-abbreviations')
-@UseGuards(TestOnlyGuard)
+@UseGuards(ManufacturingEnabledGuard)
 @UseFilters(DetalleValidacionFilter)
 export class ClientAbbreviationsController {
   constructor(private readonly servicio: ClientAbbreviationsService) {}

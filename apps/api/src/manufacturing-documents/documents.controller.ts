@@ -5,7 +5,9 @@ import type { AuthenticatedRequest } from '../common/authenticated-request';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminSignaturesQueryDto, AssignReviewerDto, CreateDraftDto, SignatureUseDto, UpdateDraftDto, UploadSignatureDto, VersionDto } from './documents.dto';
 import { DocumentsService } from './documents.service';
-import { TestOnlyGuard } from './test-only.guard';
+import { ConfigService } from '@nestjs/config';
+import type { EnvironmentConfig } from '../config/environment';
+import { ManufacturingEnabledGuard } from './manufacturing-enabled.guard';
 import { DetalleValidacionFilter } from './validation-detail.filter';
 import type { ActorDocumental } from './documents.types';
 
@@ -30,15 +32,16 @@ export function actorDeSolicitud(request: AuthenticatedRequest): ActorDocumental
 // Gestor documental de Hojas de Instrucción de Manufactura (TEST). Autenticado por los guards globales (sin @Public) y con CSRF de origen en las escrituras.
 // Rutas finales: /api/manufacturing-sheets/documents/…  Los identificadores públicos son UUID (nunca ids internos).
 @Controller('manufacturing-sheets/documents')
-@UseGuards(TestOnlyGuard)
+@UseGuards(ManufacturingEnabledGuard)
 @UseFilters(DetalleValidacionFilter)
 export class DocumentsController {
-  constructor(private readonly documents: DocumentsService) {}
+  constructor(private readonly documents: DocumentsService, private readonly config: ConfigService<EnvironmentConfig, true>) {}
 
-  /** Capacidades del entorno (p. ej. si el catálogo de firmas está disponible). */
+  /** Capacidades del entorno: firmas disponibles y entorno de emisión (PRUEBA en TEST, PRODUCCION en PROD) para que la interfaz no rotule como PRUEBA un documento de producción. */
   @Get('capabilities')
-  capabilities(@Req() request: AuthenticatedRequest): ReturnType<DocumentsService['capacidades']> {
-    return this.documents.capacidades(actorDeSolicitud(request));
+  async capabilities(@Req() request: AuthenticatedRequest): Promise<Awaited<ReturnType<DocumentsService['capacidades']>> & { entorno: 'PRUEBA' | 'PRODUCCION' }> {
+    const capacidades = await this.documents.capacidades(actorDeSolicitud(request));
+    return { ...capacidades, entorno: this.config.get('manufacturing', { infer: true })?.emission ?? 'PRUEBA' };
   }
 
   /** Firmas que esta cuenta puede USAR (propias o con autorización de uso). Nunca el catálogo completo. */

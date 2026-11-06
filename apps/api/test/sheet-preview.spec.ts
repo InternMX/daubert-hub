@@ -17,6 +17,11 @@ import { mapSheetData } from '../src/manufacturing-sheets/preview/sheet-data.map
 import { SheetPreviewController } from '../src/manufacturing-sheets/preview/sheet-preview.controller';
 import { SheetPreviewRequestDto } from '../src/manufacturing-sheets/preview/sheet-preview.dto';
 import { escapeHtml, SheetPreviewService, SIN_FIRMA_MARKER } from '../src/manufacturing-sheets/preview/sheet-preview.service';
+import { ConfigService } from '@nestjs/config';
+import { ManufacturingSheetsEnabledGuard } from '../src/manufacturing-documents/manufacturing-enabled.guard';
+// El guard de habilitación de Manufactura se inyecta con ConfigService (esbuild no emite metadata de decoradores).
+Reflect.defineMetadata('design:paramtypes', [ConfigService], ManufacturingSheetsEnabledGuard);
+const CONFIG_MANUFACTURA = { provide: ConfigService, useValue: { get: () => ({ enabled: true, emission: 'PRUEBA' }) } };
 
 const ROOT = resolve(__dirname, '../src/manufacturing-sheets');
 
@@ -161,7 +166,7 @@ describe('POST /api/manufacturing-sheets/previews', { timeout: 20_000 }, () => {
   beforeEach(async () => {
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewService], SheetPreviewController);
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewRequestDto], SheetPreviewController.prototype, 'create');
-    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [SheetPreviewService] }).compile();
+    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [CONFIG_MANUFACTURA, SheetPreviewService] }).compile();
     app = modulo.createNestApplication();
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));

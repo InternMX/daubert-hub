@@ -16,6 +16,11 @@ import { mapSheetData } from '../src/manufacturing-sheets/preview/sheet-data.map
 import { SheetPreviewController } from '../src/manufacturing-sheets/preview/sheet-preview.controller';
 import { SheetPreviewRequestDto } from '../src/manufacturing-sheets/preview/sheet-preview.dto';
 import { SheetPreviewService } from '../src/manufacturing-sheets/preview/sheet-preview.service';
+import { ConfigService } from '@nestjs/config';
+import { ManufacturingSheetsEnabledGuard } from '../src/manufacturing-documents/manufacturing-enabled.guard';
+// El guard de habilitación de Manufactura se inyecta con ConfigService (esbuild no emite metadata de decoradores).
+Reflect.defineMetadata('design:paramtypes', [ConfigService], ManufacturingSheetsEnabledGuard);
+const CONFIG_MANUFACTURA = { provide: ConfigService, useValue: { get: () => ({ enabled: true, emission: 'PRUEBA' }) } };
 
 // Datos de una bolsa con fuelles tomados del ejemplo aprobado del machote (61 × 70.9, fuelles de 24).
 const FUELLE = {
@@ -126,7 +131,7 @@ describe('GET /api/manufacturing-sheets/families y POST /previews con las nuevas
   beforeEach(async () => {
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewService], SheetPreviewController);
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewRequestDto], SheetPreviewController.prototype, 'create');
-    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController, FamiliesController], providers: [SheetPreviewService] }).compile();
+    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController, FamiliesController], providers: [CONFIG_MANUFACTURA, SheetPreviewService] }).compile();
     app = modulo.createNestApplication();
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
@@ -287,7 +292,7 @@ describe('COEX · una familia, dos variantes aprobadas, una sola plantilla', () 
 
   it('una variante personalizada no existe: el DTO la rechaza y el texto de color distinto solo genera una advertencia', async () => {
     expect(mapSheetData('COEX', { ...COEX, colorNombre: 'ROJO' }).advertencias.join(' ')).toMatch(/la geometría usa los colores aprobados de COEX Azul/);
-    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [SheetPreviewService] }).compile();
+    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [CONFIG_MANUFACTURA, SheetPreviewService] }).compile();
     Reflect.defineMetadata('design:paramtypes', [SheetPreviewRequestDto], SheetPreviewController.prototype, 'create');
     const app = modulo.createNestApplication();
     app.setGlobalPrefix('api');

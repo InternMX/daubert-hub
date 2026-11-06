@@ -24,6 +24,8 @@ export interface PdfRendererOptions {
   chromePath: string | null;
   /** Argumentos que preceden a los de Chrome (solo para pruebas con un ejecutable simulado). */
   argsPrefix?: string[];
+  /** Solo dentro del contenedor de la API (usuario sin privilegios, sin espacios de nombres para el sandbox de Chromium): añade --no-sandbox y --disable-dev-shm-usage. Lo activa MANUFACTURING_PDF_CHROME_NO_SANDBOX=true, que la imagen define; el HTML es generado por el propio sistema, sin red ni extensiones. */
+  sinSandbox?: boolean;
   timeoutMs: number;
   maxConcurrent: number;
   /** Solicitudes en espera además de las que se ejecutan; más allá de este límite se responde OCUPADO. */
@@ -39,6 +41,8 @@ export const DEFAULT_PDF_RENDERER_OPTIONS: Omit<PdfRendererOptions, 'chromePath'
 
 // Mismos parámetros de impresión que las regresiones documentales (comparar_regresion.py) más el aislamiento: sin perfil compartido, sin extensiones ni red.
 const CHROME_FLAGS = ['--headless', '--disable-gpu', '--no-pdf-header-footer', '--no-first-run', '--disable-extensions', '--disable-background-networking', '--host-resolver-rules=MAP * ~NOTFOUND'];
+
+const CHROME_FLAGS_CONTENEDOR = ['--no-sandbox', '--disable-dev-shm-usage'];
 
 const CANDIDATAS_NO_PRODUCCION = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -97,7 +101,7 @@ export class SheetPdfRenderer {
       const entrada = join(carpeta, 'hoja.html');
       const salida = join(carpeta, 'hoja.pdf');
       await writeFile(entrada, html, 'utf8');
-      const args = [...(this.options.argsPrefix ?? []), ...CHROME_FLAGS, `--user-data-dir=${join(carpeta, 'perfil')}`, `--print-to-pdf=${salida}`, pathToFileURL(entrada).href];
+      const args = [...(this.options.argsPrefix ?? []), ...CHROME_FLAGS, ...(this.options.sinSandbox ? CHROME_FLAGS_CONTENEDOR : []), `--user-data-dir=${join(carpeta, 'perfil')}`, `--print-to-pdf=${salida}`, pathToFileURL(entrada).href];
       const resultado = await new Promise<'OK' | 'TIMEOUT' | 'ERROR'>((resolve) => {
         let hijo;
         try {

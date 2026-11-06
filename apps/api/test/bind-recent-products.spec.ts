@@ -8,6 +8,11 @@ import { BindErpClient } from '../src/manufacturing-sheets/bind/bind-erp.client'
 import { BindProductsController } from '../src/manufacturing-sheets/bind/bind-products.controller';
 import { BindProductsService, RECENT_CACHE_MAX_ENTRIES, RECENT_CACHE_TTL_MS, RECENT_MIN_REFRESH_MS } from '../src/manufacturing-sheets/bind/bind-products.service';
 import { clasificarNovedad, fechaDeAlta } from '../src/manufacturing-sheets/bind/recent-products';
+import { ConfigService } from '@nestjs/config';
+import { ManufacturingSheetsEnabledGuard } from '../src/manufacturing-documents/manufacturing-enabled.guard';
+// El guard de habilitación de Manufactura se inyecta con ConfigService (esbuild no emite metadata de decoradores).
+Reflect.defineMetadata('design:paramtypes', [ConfigService], ManufacturingSheetsEnabledGuard);
+const CONFIG_MANUFACTURA = { provide: ConfigService, useValue: { get: () => ({ enabled: true, emission: 'PRUEBA' }) } };
 
 const API_KEY = 'clave-api-de-prueba-0000';
 const SUB_KEY = 'clave-suscripcion-de-prueba-1111';
@@ -182,7 +187,7 @@ describe('GET /api/manufacturing-sheets/bind-products/recent', () => {
   const client = { listRecent: vi.fn(), findByCode: vi.fn(), findById: vi.fn() };
   beforeEach(async () => {
     client.listRecent.mockReset().mockResolvedValue({ kind: 'RECENT', products: [raw()] });
-    const modulo = await Test.createTestingModule({ controllers: [BindProductsController], providers: [BindProductsService, { provide: BindErpClient, useValue: client }] }).compile();
+    const modulo = await Test.createTestingModule({ controllers: [BindProductsController], providers: [CONFIG_MANUFACTURA, BindProductsService, { provide: BindErpClient, useValue: client }] }).compile();
     app = modulo.createNestApplication(); app.setGlobalPrefix('api'); app.useGlobalFilters(new SafeExceptionFilter()); await app.init();
   });
   afterEach(async () => { await app.close(); });

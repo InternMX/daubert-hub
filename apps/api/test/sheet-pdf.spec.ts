@@ -16,6 +16,11 @@ import { codigoDcmxSeguro, NOMBRE_GENERICO, nombreArchivoBorrador, SheetPdfServi
 import { SheetPreviewRequestDto } from '../src/manufacturing-sheets/preview/sheet-preview.dto';
 import { SheetPreviewController } from '../src/manufacturing-sheets/preview/sheet-preview.controller';
 import { SheetPreviewService } from '../src/manufacturing-sheets/preview/sheet-preview.service';
+import { ConfigService } from '@nestjs/config';
+import { ManufacturingSheetsEnabledGuard } from '../src/manufacturing-documents/manufacturing-enabled.guard';
+// El guard de habilitación de Manufactura se inyecta con ConfigService (esbuild no emite metadata de decoradores).
+Reflect.defineMetadata('design:paramtypes', [ConfigService], ManufacturingSheetsEnabledGuard);
+const CONFIG_MANUFACTURA = { provide: ConfigService, useValue: { get: () => ({ enabled: true, emission: 'PRUEBA' }) } };
 
 const SECRETO_DE_LA_HOJA = 'CODIGO-CONFIDENCIAL-9X';
 const FUELLE = { codigo: SECRETO_DE_LA_HOJA, descripcion: 'BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7', producto: 'Bolsa con Fuelle', cliente: '', fechaEmision: '2026-10-16', resinaVci: 'PMG AL 3%', colorNombre: 'DAUBERT AZUL AL 2%', colorHex: '#538DD5', composicion: 'PMG', presentacion: 'ROLLO', cantidad: '100', cantidadUnidad: 'BOLSAS', ancho: '61', fuelleDerecho: '24', fuelleIzquierdo: '24', largo: '70.9', unidadDimensiones: 'IN', calibre: '2.7', pesoLb: '1.285', etiqueta: 'BOLSA VCI PMG 61 X 48 X 70.9 CAL. 2.7' };
@@ -237,7 +242,7 @@ describe('POST /api/manufacturing-sheets/previews/pdf', () => {
   Reflect.defineMetadata('design:paramtypes', [SheetPreviewService, Object], SheetPdfService);
   Reflect.defineMetadata('design:paramtypes', [SheetPreviewRequestDto, Object], SheetPreviewController.prototype, 'downloadPdf');
   const montar = async (opts: PdfRendererOptions) => {
-    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [SheetPreviewService, SheetPdfService, { provide: PDF_RENDERER_OPTIONS, useValue: opts }] }).compile();
+    const modulo = await Test.createTestingModule({ controllers: [SheetPreviewController], providers: [CONFIG_MANUFACTURA, SheetPreviewService, SheetPdfService, { provide: PDF_RENDERER_OPTIONS, useValue: opts }] }).compile();
     app = modulo.createNestApplication(); app.setGlobalPrefix('api'); app.useGlobalFilters(new SafeExceptionFilter());
     const { ValidationPipe } = await import('@nestjs/common'); app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
     await app.init();

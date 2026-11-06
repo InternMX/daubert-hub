@@ -1,4 +1,5 @@
-import { Body, Controller, Header, HttpCode, Post, Res, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Header, HttpCode, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { ManufacturingSheetsEnabledGuard } from '../../manufacturing-documents/manufacturing-enabled.guard';
 import type { Response } from 'express';
 import { SheetPreviewRequestDto } from './sheet-preview.dto';
 import { SheetPdfService } from './sheet-pdf.service';
@@ -8,6 +9,7 @@ import { SheetPreviewService, type SheetPreviewResult } from './sheet-preview.se
 // envía el contenido del formulario; no crea ni guarda nada (200, no 201). La respuesta siempre es un borrador sin aprobar con firmas SIN FIRMA.
 // Ruta final: POST /api/manufacturing-sheets/previews
 @Controller('manufacturing-sheets/previews')
+@UseGuards(ManufacturingSheetsEnabledGuard)
 export class SheetPreviewController {
   constructor(private readonly preview: SheetPreviewService, private readonly pdf: SheetPdfService) {}
 

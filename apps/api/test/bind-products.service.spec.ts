@@ -22,6 +22,11 @@ vi.mock('../src/manufacturing-sheets/bind-product-interpreter', async (importOri
 import { BindErpClient } from '../src/manufacturing-sheets/bind/bind-erp.client';
 import { BindProductsController } from '../src/manufacturing-sheets/bind/bind-products.controller';
 import { BindProductsService } from '../src/manufacturing-sheets/bind/bind-products.service';
+import { ConfigService } from '@nestjs/config';
+import { ManufacturingSheetsEnabledGuard } from '../src/manufacturing-documents/manufacturing-enabled.guard';
+// El guard de habilitación de Manufactura se inyecta con ConfigService (esbuild no emite metadata de decoradores).
+Reflect.defineMetadata('design:paramtypes', [ConfigService], ManufacturingSheetsEnabledGuard);
+const CONFIG_MANUFACTURA = { provide: ConfigService, useValue: { get: () => ({ enabled: true, emission: 'PRUEBA' }) } };
 
 const GUID = 'bbe2cc0c-3498-47cb-a556-d435eba5c0b4';
 const SCHF = { ID: GUID, Code: 'SCHFPMG001', Title: 'BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS', Description: null, Weight: 0.0428, CreationDate: '2025-03-10T15:20:00Z' };
@@ -147,7 +152,7 @@ describe('BindProductsController (HTTP)', () => {
   beforeEach(async () => {
     client.findByCode.mockReset();
     client.findById.mockReset();
-    const modulo = await Test.createTestingModule({ controllers: [BindProductsController], providers: [BindProductsService, { provide: BindErpClient, useValue: client }] }).compile();
+    const modulo = await Test.createTestingModule({ controllers: [BindProductsController], providers: [CONFIG_MANUFACTURA, BindProductsService, { provide: BindErpClient, useValue: client }] }).compile();
     app = modulo.createNestApplication();
     app.setGlobalPrefix('api');
     app.useGlobalFilters(new SafeExceptionFilter());
