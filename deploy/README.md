@@ -34,7 +34,7 @@ The real files are explicitly ignored by Git. Do not put secrets in the example 
 Render the configuration before deployment. TEST example:
 
 ```bash
-docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml config
+docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env --env-file deploy/pilot.test.manufacturing.env -f compose.pilot.yaml config
 ```
 
 For PROD, use the preflight and the deploy runner described in [`docs/operations/deployment-checklist.md`](../docs/operations/deployment-checklist.md) instead of rendering the PROD configuration by hand.
@@ -44,7 +44,7 @@ Review rendered output carefully because `docker compose config` includes interp
 ## Deploy TEST
 
 ```bash
-docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml up -d --build
+docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env --env-file deploy/pilot.test.manufacturing.env -f compose.pilot.yaml up -d --build
 ```
 
 TEST is available on the host at `http://localhost:8081` with the example port.
@@ -60,8 +60,8 @@ PROD is **not** deployed with a hand-typed `docker compose` command. Real PROD u
 Inspect status and logs without exposing internal services (TEST example):
 
 ```bash
-docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml ps
-docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env -f compose.pilot.yaml logs
+docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env --env-file deploy/pilot.test.manufacturing.env -f compose.pilot.yaml ps
+docker compose --project-name daubert-hub-test --env-file deploy/pilot.test.env --env-file deploy/pilot.test.manufacturing.env -f compose.pilot.yaml logs
 ```
 
 Stopping a TEST stack is a TEST-only operation (use the TEST project name and env file). `docker compose down` is **not** an operation for PROD: see the PROD prohibited operations in [`docs/operations/deployment-checklist.md`](../docs/operations/deployment-checklist.md#operaciones-prohibidas).
