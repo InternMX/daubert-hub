@@ -1,4 +1,5 @@
 import { apiBaseUrl as baseUrl } from './api';
+import type { PaymentAliasResolution } from './companyAliases';
 
 export type PaymentNotificationProcessingStatus = 'PENDIENTE' | 'PROCESADO' | 'ERROR';
 export type PaymentNotificationOutcomeStatus = 'COMPLETED' | 'PARTIAL' | 'FAILED' | null;
@@ -43,11 +44,24 @@ export type PaymentNotificationFileError = {
   errorCode: string;
   detail: string | null;
   fileHash: string;
+  // Current PostgreSQL catalog state; separate from the error originally recorded by n8n.
+  aliasResolution?: PaymentAliasResolution | null;
+  fileAssignment?: PaymentFileAssignmentState;
 };
+
+export interface PointAssignment {
+  companyId: string; companyName: string; status: 'ACTIVA' | 'REVOCADA'; version: number; updatedAt: string;
+}
+
+export interface PaymentFileAssignmentState {
+  fileId: string | null; enabled: boolean; canManage: boolean; blockedReason: string | null;
+  identityState: string | null; operationalState: string | null; assignment: PointAssignment | null; n8nReady: boolean;
+}
 
 export interface PaymentNotificationExecutionDetail extends PaymentNotificationExecutionSummary {
   results: PaymentNotificationProviderResult[];
   fileErrorDetails: PaymentNotificationFileError[];
+  fileAttentionSummary?: { total: number; assignedPending: number; unassigned: number; pointPending: number };
 }
 
 export interface ListPaymentNotificationExecutions {
@@ -58,6 +72,23 @@ export interface ListPaymentNotificationExecutions {
 export class PaymentNotificationApiError extends Error {
   constructor(public readonly status: number) {
     super('Payment Notification API request failed');
+  }
+}
+
+export class PaymentFileAssignmentApiError extends PaymentNotificationApiError {
+  constructor(status: number, public readonly code?: string) { super(status); }
+}
+
+export async function assignPaymentFile(executionId: string, fileId: string, action: 'ASSIGN' | 'CHANGE' | 'REVOKE', expectedVersion: number, companyId?: string): Promise<void> {
+  let response: Response;
+  try { response = await fetch(`${baseUrl}/automations/payment-notifications/${encodeURIComponent(executionId)}/files/${encodeURIComponent(fileId)}/assignment`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, expectedVersion, confirmed: true, ...(companyId ? { companyId } : {}) })
+  }); } catch { throw new PaymentFileAssignmentApiError(0); }
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const code = typeof body === 'object' && body !== null && 'code' in body && typeof body.code === 'string' ? body.code : undefined;
+    throw new PaymentFileAssignmentApiError(response.status, code);
   }
 }
 
@@ -129,14 +160,53 @@ function isFileError(value: unknown): value is PaymentNotificationFileError {
   return typeof item.fileName === 'string' && item.fileName.length > 0
     && typeof item.errorCode === 'string' && item.errorCode.length > 0
     && isNullableString(item.detail)
-    && typeof item.fileHash === 'string';
+    && typeof item.fileHash === 'string'
+    && (item.aliasResolution === undefined || item.aliasResolution === null || isAliasResolution(item.aliasResolution))
+    && (item.fileAssignment === undefined || isFileAssignment(item.fileAssignment));
+}
+
+function isFileAssignment(value: unknown): value is PaymentFileAssignmentState {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  if (!isNullableString(item.fileId) || typeof item.enabled !== 'boolean' || typeof item.canManage !== 'boolean'
+    || !isNullableString(item.blockedReason) || !isNullableString(item.identityState) || !isNullableString(item.operationalState) || typeof item.n8nReady !== 'boolean') return false;
+  if (item.assignment === null) return true;
+  if (typeof item.assignment !== 'object') return false;
+  const assignment = item.assignment as Record<string, unknown>;
+  return typeof assignment.companyId === 'string' && typeof assignment.companyName === 'string'
+    && ['ACTIVA', 'REVOCADA'].includes(String(assignment.status)) && Number.isInteger(assignment.version) && Number(assignment.version) > 0 && typeof assignment.updatedAt === 'string';
+}
+
+function isAliasResolution(value: unknown): value is PaymentAliasResolution {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  if (typeof item.alias !== 'string' || typeof item.normalizedAlias !== 'string'
+    || !['UNASSIGNED', 'ACTIVE', 'INACTIVE', 'CONFLICT', 'NAME_ONLY'].includes(String(item.state))) return false;
+  const company = item.company as Record<string, unknown> | null;
+  if (company !== null && (typeof company !== 'object' || typeof company.id !== 'string' || typeof company.name !== 'string')) return false;
+  const assignment = item.assignment as Record<string, unknown> | null;
+  if (assignment !== null && (typeof assignment !== 'object'
+    || !['aliasId', 'companyId', 'companyName', 'alias', 'normalizedAlias', 'type', 'updatedAt'].every((key) => typeof assignment[key] === 'string')
+    || !['ACTIVO', 'INACTIVO'].includes(String(assignment.status)))) return false;
+  if (item.state === 'ACTIVE') return assignment?.status === 'ACTIVO' && company?.id === assignment.companyId;
+  if (item.state === 'INACTIVE') return assignment?.status === 'INACTIVO' && company === null;
+  if (item.state === 'NAME_ONLY') return assignment === null && company !== null;
+  return assignment === null && company === null;
 }
 
 function isExecutionDetail(value: unknown): value is PaymentNotificationExecutionDetail {
   if (!isExecutionSummary(value)) return false;
   const record = value as unknown as Record<string, unknown>;
   return Array.isArray(record.results) && record.results.every(isProviderResult)
-    && Array.isArray(record.fileErrorDetails) && record.fileErrorDetails.every(isFileError);
+    && Array.isArray(record.fileErrorDetails) && record.fileErrorDetails.every(isFileError)
+    && (record.fileAttentionSummary === undefined || isAttentionSummary(record.fileAttentionSummary, value.fileErrors));
+}
+
+function isAttentionSummary(value: unknown, total: number): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const summary = value as Record<string, number>;
+  return ['total', 'assignedPending', 'unassigned', 'pointPending'].every((key) => Number.isInteger(summary[key]) && summary[key]! >= 0)
+    && summary.total === total && summary.assignedPending! + summary.unassigned! === total && summary.pointPending! <= summary.assignedPending!;
 }
 
 function isMeta(value: unknown): value is ListPaymentNotificationExecutions['meta'] {
@@ -168,7 +238,7 @@ export async function listPaymentNotificationExecutions(page: number, pageSize: 
 // beyond Number.MAX_SAFE_INTEGER is never silently truncated on its way to the API or back.
 export async function getPaymentNotificationExecution(executionId: string): Promise<PaymentNotificationExecutionDetail> {
   let response: Response;
-  try { response = await fetch(`${baseUrl}/automations/payment-notifications/${encodeURIComponent(executionId)}`); }
+  try { response = await fetch(`${baseUrl}/automations/payment-notifications/${encodeURIComponent(executionId)}`, { cache: 'no-store' }); }
   catch { throw new PaymentNotificationApiError(0); }
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok || typeof body !== 'object' || body === null || !('data' in body) || !isExecutionDetail(body.data)) {

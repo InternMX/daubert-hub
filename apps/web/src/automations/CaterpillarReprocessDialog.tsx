@@ -22,7 +22,13 @@ interface CaterpillarReprocessDialogProps {
 // Deliberately never says folios will be reused — the backend always reserves fresh folios for the
 // new execution (see caterpillar-reprocess-webhook.client.ts / the n8n workflow), and the original
 // execution is never mutated or reopened.
-export function CaterpillarReprocessDialog({ open, executionId, outcome, sourceFilename, onClose, onReprocessed }: CaterpillarReprocessDialogProps) {
+export function CaterpillarReprocessDialog(props: CaterpillarReprocessDialogProps) {
+  // The caller keeps this component mounted after success. Give each opening (and each
+  // execution) a fresh form instead of depending on the Cancelar handler to clear its state.
+  return props.open ? <CaterpillarReprocessForm key={props.executionId} {...props} /> : null;
+}
+
+function CaterpillarReprocessForm({ open, executionId, outcome, sourceFilename, onClose, onReprocessed }: CaterpillarReprocessDialogProps) {
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,8 +54,7 @@ export function CaterpillarReprocessDialog({ open, executionId, outcome, sourceF
     try {
       const result = await reprocessCaterpillarExecution(executionId, trimmedReason);
       onReprocessed(result);
-      // No local reset here — onReprocessed() closes this dialog, and a fresh open (a new
-      // executionId, or the same one clicked again) always starts from an empty form.
+      // Closing unmounts this form; reopening starts with fresh state, including after success.
     } catch (err) {
       // The backend already sanitizes this message — displayed as-is, never a raw upstream body,
       // stack trace, URL, or token (CaterpillarReprocessApiError never carries any of those).

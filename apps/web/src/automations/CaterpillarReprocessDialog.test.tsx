@@ -129,6 +129,38 @@ describe('CaterpillarReprocessDialog', () => {
     await waitFor(() => expect(onReprocessed).toHaveBeenCalledWith(result));
   });
 
+  it('starts empty after a successful request and a parent-controlled close/reopen of the same execution', async () => {
+    reprocessMock.mockResolvedValue({ originalExecutionId: '161', executionId: '162', status: 'REPROCESS_CREATED' });
+    const props = { executionId: '161', outcome: 'FAILED' as const, sourceFilename: 'programacion.xlsx', onClose: vi.fn(), onReprocessed: vi.fn() };
+    const { rerender } = render(<CaterpillarReprocessDialog open {...props} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo anterior');
+    await user.click(screen.getByRole('button', { name: 'Reprocesar' }));
+    await waitFor(() => expect(props.onReprocessed).toHaveBeenCalledTimes(1));
+    rerender(<CaterpillarReprocessDialog open={false} {...props} />);
+    rerender(<CaterpillarReprocessDialog open {...props} />);
+    expect(screen.getByRole('textbox', { name: 'Motivo del reproceso' })).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Reprocesar' })).toBeDisabled();
+    expect(reprocessMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the reason and server error after an external close/reopen or an execution change', async () => {
+    reprocessMock.mockRejectedValue(new CaterpillarReprocessApiError(504));
+    const props = { executionId: '161', outcome: 'FAILED' as const, sourceFilename: 'programacion.xlsx', onClose: vi.fn(), onReprocessed: vi.fn() };
+    const { rerender } = render(<CaterpillarReprocessDialog open {...props} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo anterior');
+    await user.click(screen.getByRole('button', { name: 'Reprocesar' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    rerender(<CaterpillarReprocessDialog open={false} {...props} />);
+    rerender(<CaterpillarReprocessDialog open {...props} />);
+    expect(screen.getByRole('textbox', { name: 'Motivo del reproceso' })).toHaveValue('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Motivo del reproceso' }), 'Otro motivo');
+    rerender(<CaterpillarReprocessDialog open {...props} executionId="163" />);
+    expect(screen.getByRole('textbox', { name: 'Motivo del reproceso' })).toHaveValue('');
+  });
+
   it.each([
     [404, undefined, 'La ejecución ya no existe o no está disponible.'],
     [409, 'No fue posible encontrar el archivo origen necesario para reprocesar esta ejecución.', 'No fue posible encontrar el archivo origen necesario para reprocesar esta ejecución.'],
@@ -163,6 +195,7 @@ describe('CaterpillarReprocessDialog', () => {
     await user.type(screen.getByRole('textbox', { name: 'Motivo del reproceso' }), 'Motivo');
     await user.click(screen.getByRole('button', { name: 'Reprocesar' }));
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    await user.keyboard('{Escape}');
     expect(onClose).not.toHaveBeenCalled();
     resolveRequest({ originalExecutionId: '161', executionId: '162', status: 'REPROCESS_CREATED' });
   });

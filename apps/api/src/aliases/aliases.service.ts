@@ -1,12 +1,46 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { normalizeAliasList } from '../companies/company-aliases.repository';
 import { AliasesRepository, type AuditIdentity, type CompanyAliases } from './aliases.repository';
+import { normalizePaymentAlias, requiresPermanentAliasConfirmation } from './payment-alias';
+import type { CreatePaymentAliasDto } from './dto/create-payment-alias.dto';
+import type { ManagePaymentAliasDto } from './dto/manage-payment-alias.dto';
 
 interface PostgreSqlError { code?: string; constraint?: string }
 
 @Injectable()
 export class AliasesService {
   constructor(private readonly repository: AliasesRepository) {}
+
+  async resolvePaymentAliases(aliases: string[]) {
+    return { data: await this.repository.resolvePaymentAliases(aliases) };
+  }
+
+  async managePaymentAlias(aliasId: string, input: ManagePaymentAliasDto, requestId: string, identity: AuditIdentity) {
+    try {
+      const result = await this.repository.managePaymentAlias(aliasId, input, requestId, identity);
+      if (!result) throw new NotFoundException('Alias no encontrado.');
+      return { data: result };
+    } catch (error) {
+      this.throwKnown(error);
+      throw error;
+    }
+  }
+
+  async createPaymentAlias(companyId: string, input: CreatePaymentAliasDto, requestId: string, identity: AuditIdentity) {
+    const normalizedAlias = normalizePaymentAlias(input.alias);
+    if (!normalizedAlias) throw new BadRequestException('El alias debe contener letras o números.');
+    if (requiresPermanentAliasConfirmation(normalizedAlias) && input.confirmPermanent !== true) {
+      throw new BadRequestException({ code: 'PERMANENT_ALIAS_CONFIRMATION_REQUIRED', message: 'Confirma que este identificador debe reconocer permanentemente a la empresa.' });
+    }
+    try {
+      const result = await this.repository.createPaymentAlias(companyId, input.alias.trim(), normalizedAlias, requestId, identity);
+      if (!result) throw new NotFoundException('Empresa no encontrada.');
+      return { data: result };
+    } catch (error) {
+      this.throwKnown(error);
+      throw error;
+    }
+  }
 
   async list(companyId: string): Promise<{ data: CompanyAliases }> {
     const result = await this.repository.list(companyId);
@@ -40,6 +74,9 @@ export class AliasesService {
   private throwKnown(error: unknown): void {
     const code = (error as { code?: string }).code;
     const constraint = (error as PostgreSqlError).constraint;
+    if (code === 'ALIAS_STATE_CHANGED') throw new ConflictException({ code, message: 'El alias cambió desde que lo consultaste. Actualiza su estado antes de continuar.' });
+    if (code === 'COMPANY_NOT_FOUND') throw new NotFoundException('Empresa no encontrada.');
+    if (code === 'ALIAS_COMPANY_UNCHANGED') throw new BadRequestException({ code, message: 'Selecciona una empresa diferente.' });
     if (code === 'ALIAS_ALREADY_ASSOCIATED') throw new ConflictException({ code, message: 'Este alias ya está asociado a otra empresa.' });
     if (code === '23505' && constraint === 'uq_alias_empresa_activo') throw new ConflictException({ code: 'ALIAS_ALREADY_ASSOCIATED', message: 'Este alias ya está asociado a otra empresa.' });
   }

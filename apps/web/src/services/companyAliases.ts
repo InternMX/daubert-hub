@@ -32,6 +32,46 @@ export async function getCompanyAliases(companyId: string): Promise<CompanyAlias
   return (await request<CompanyAliasesData>(`/companies/${encodeURIComponent(companyId)}/aliases`)).data;
 }
 
+export interface PermanentAliasAssignment {
+  companyId: string;
+  companyName: string;
+  alias: string;
+  normalizedAlias: string;
+  alreadyAssigned: boolean;
+}
+
+export interface PaymentAliasRecord {
+  aliasId: string;
+  companyId: string;
+  companyName: string;
+  alias: string;
+  normalizedAlias: string;
+  status: 'ACTIVO' | 'INACTIVO';
+  type: string;
+  updatedAt: string;
+}
+
+export interface PaymentAliasResolution {
+  alias: string;
+  normalizedAlias: string;
+  state: 'UNASSIGNED' | 'ACTIVE' | 'INACTIVE' | 'CONFLICT' | 'NAME_ONLY';
+  assignment: PaymentAliasRecord | null;
+  company: { id: string; name: string } | null;
+}
+
+export async function managePaymentAlias(record: PaymentAliasRecord, action: 'REASSIGN' | 'DEACTIVATE', companyId?: string): Promise<PaymentAliasRecord> {
+  return (await request<PaymentAliasRecord>(`/aliases/${encodeURIComponent(record.aliasId)}/payment-notifications`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, expectedCompanyId: record.companyId, expectedUpdatedAt: record.updatedAt, confirmed: true, ...(companyId ? { companyId } : {}) })
+  })).data;
+}
+
+export async function assignPaymentAlias(companyId: string, alias: string, confirmPermanent: boolean): Promise<PermanentAliasAssignment> {
+  return (await request<PermanentAliasAssignment>(`/companies/${encodeURIComponent(companyId)}/aliases/payment-notifications`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alias, confirmPermanent })
+  })).data;
+}
+
 export async function updateCompanyAliases(companyId: string, aliases: string[]): Promise<{ aliases: CompanyAliasesData; requestId: string | null }> {
   const result = await request<CompanyAliasesData>(`/companies/${encodeURIComponent(companyId)}/aliases`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ aliases }) });
   return { aliases: result.data, requestId: result.requestId };

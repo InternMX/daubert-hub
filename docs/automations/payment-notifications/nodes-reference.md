@@ -118,3 +118,7 @@ Workflow PROD `Produccion Notificacion de pagos a Proveedores` (100 nodos; TEST 
 ## Notas adhesivas
 
 `Sticky Note` (contiene el dominio del remitente esperado) y `Sticky Note1` ("En caso de algún error, corregir los problemas y modificar este nodo con el correo_id a reprocesar").
+
+## 10. Nodos de la versión v2 (asignación puntual)
+
+Workflow `pagosProdAsignaciones01` (108 nodos) = el anterior de 100 + 8 nodos nuevos (los de PostgreSQL usan `Postgres produccion`; los «Aplicar…» son Code que interpretan el resultado estructurado): `Registrar archivo (identidad)`, `Aplicar registro de archivo`, `Resolver asignacion puntual`, `Aplicar asignacion puntual`, `Registrar archivo (incidencia)`, `Aplicar registro de incidencia`, `Tomar archivo (inicio de procesamiento)`, `Aplicar toma de archivo`. Modificados: `Preparar metadatos ZIP`, `Separar archivos descomprimidos`, `Calcular identidad PDF`, `Clasificar con catalogo`, `Verificar duplicados`, `¿Procesar en esta ejecución?`, `Registrar correo pendiente`, `Preparar correo para reproceso`, `Configurar entorno` (política de zona). Ver [production-rollout §B](production-rollout.md#b-implementación-técnica).

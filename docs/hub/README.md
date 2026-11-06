@@ -12,6 +12,8 @@ Monorepo npm workspaces: `apps/api` (NestJS) y `apps/web` (React/Vite). Comandos
 
 ## Estado de los módulos
 
+Vista consolidada del proyecto (módulos, pendientes, riesgos): [project-status](../00-overview/project-status.md).
+
 | Módulo | Estado | Profundidad de esta documentación |
 | --- | --- | --- |
 | Autenticación, usuarios, roles | Implementado | Completa |

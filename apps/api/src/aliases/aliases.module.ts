@@ -7,6 +7,7 @@ import { AliasesService } from './aliases.service';
 @Module({
   imports: [DatabaseModule],
   controllers: [AliasesController],
-  providers: [AliasesRepository, AliasesService]
+  providers: [AliasesRepository, AliasesService],
+  exports: [AliasesService]
 })
 export class AliasesModule {}

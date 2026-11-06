@@ -1,0 +1,69 @@
+name: CI
+
+# Pull Request validation only. No secrets, no deployment, no database, no migrations, no integration tests.
+# The API unit tests need DB_* variables to exist (config validation) but never connect: fictional values below.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: daubert_hub_test
+      DB_USER: test
+      DB_PASSWORD: ci-not-a-secret
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Reproducible install from package-lock.json; lifecycle scripts are not needed for validation.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck 2>&1 | tee typecheck.log
+        shell: bash
+      - name: Lint
+        run: npm run lint 2>&1 | tee lint.log
+        shell: bash
+      - name: Build
+        run: npm run build 2>&1 | tee build.log
+        shell: bash
+      - name: Dev guard tests
+        run: npm run test:dev-guard 2>&1 | tee dev-guard.log
+        shell: bash
+
+      # Suites run one after the other (never in parallel) to avoid resource contention; no automatic retries.
+      - name: API tests
+        run: npm run test:api 2>&1 | tee test-api.log
+        shell: bash
+      - name: Web tests
+        run: npm run test:web 2>&1 | tee test-web.log
+        shell: bash
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: '*.log'
+          if-no-files-found: ignore
+          retention-days: 14

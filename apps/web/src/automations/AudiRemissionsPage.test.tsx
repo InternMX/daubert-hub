@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { adjustDocumentSeries, AutomationApiError, getDocumentSeries, type AutomationSeriesConfiguration } from '../services/automations';
-import { listAudiExecutions, type AudiProcessingSummary, type ListAudiExecutions } from '../services/audiExecutions';
+import { getAudiExecution, listAudiExecutions, type AudiExecutionDetail, type AudiProcessingSummary, type ListAudiExecutions } from '../services/audiExecutions';
 import { acknowledgeAutomationReview, listAutomationsOverview, type AutomationOverview } from '../services/automationsOverview';
 import { testAdminUser, testGeneralUser, TestAuthProvider } from '../test/authTestUtils';
 import { AudiRemissionsPage } from './AudiRemissionsPage';
@@ -20,7 +20,8 @@ vi.mock('../services/automationsOverview', async (importOriginal) => ({
 }));
 vi.mock('../services/audiExecutions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/audiExecutions')>()),
-  listAudiExecutions: vi.fn()
+  listAudiExecutions: vi.fn(),
+  getAudiExecution: vi.fn()
 }));
 
 const getMock = vi.mocked(getDocumentSeries);
@@ -28,6 +29,12 @@ const adjustMock = vi.mocked(adjustDocumentSeries);
 const overviewMock = vi.mocked(listAutomationsOverview);
 const executionsMock = vi.mocked(listAudiExecutions);
 const acknowledgeMock = vi.mocked(acknowledgeAutomationReview);
+
+const detail: AudiExecutionDetail = {
+  executionId: '8', outcome: 'COMPLETED', startedAt: '2026-08-27T22:39:53.204Z', finishedAt: '2026-08-27T22:40:01.933Z',
+  generatedCount: 1, latestErrorMessage: null, sourceDocument: { documentId: '103', filename: 'entrada.xlsx' },
+  remittances: [{ remissionId: '11', seriesCode: 'REMISION_AUDI', folio: '9000', documentDate: '2026-08-27', status: 'GENERADA' }]
+};
 
 const configuration: AutomationSeriesConfiguration = {
   automation: { code: 'REMISIONES_AUDI', name: 'Remisiones Audi', status: 'ACTIVO' },
@@ -47,7 +54,7 @@ function audiOverview(overrides: Partial<AutomationOverview> = {}): AutomationOv
     lastCheckAt: null,
     lastProcessing: { occurredAt: '2026-08-27T22:40:01.933Z', outcome: 'COMPLETED' },
     nextCheckAt: null,
-    capabilities: { hasDashboard: true, hasHistory: true, hasDetail: false },
+    capabilities: { hasDashboard: true, hasHistory: true, hasDetail: true },
     review: { required: false, problemOccurredAt: null, problemOutcome: null },
     ...overrides
   };
@@ -55,6 +62,7 @@ function audiOverview(overrides: Partial<AutomationOverview> = {}): AutomationOv
 
 function execution(overrides: Partial<AudiProcessingSummary> = {}): AudiProcessingSummary {
   return {
+    executionId: '8',
     occurredAt: '2026-08-27T22:40:01.933Z',
     outcome: 'COMPLETED',
     generatedCount: 5,
@@ -79,6 +87,7 @@ function displayedFolio() { return screen.getByText('Próxima remisión').previo
 describe('AudiRemissionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getAudiExecution).mockReset().mockResolvedValue(detail);
     getMock.mockResolvedValue(configuration);
     overviewMock.mockResolvedValue([audiOverview()]);
     executionsMock.mockResolvedValue(executionsResponse([execution()]));
@@ -93,6 +102,55 @@ describe('AudiRemissionsPage', () => {
       const breadcrumb = screen.getByRole('navigation', { name: 'Migas de pan' });
       expect(within(breadcrumb).getByRole('link', { name: 'Inicio' })).toHaveAttribute('href', '/');
       expect(within(breadcrumb).getByRole('link', { name: 'Automatizaciones' })).toHaveAttribute('href', '/automations');
+    });
+  });
+
+  describe('detalle de ejecución', () => {
+    it('opens from a row click, preserves columns, closes and refetches when reopened', async () => {
+      const user = userEvent.setup(); renderPage(testGeneralUser);
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
+      expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Fecha', 'Estado', 'Remisiones', 'Folios', 'Revisión']);
+      const row = within(table).getAllByRole('row')[1]!;
+      await user.click(within(row).getByText('Completado'));
+      const dialog = await screen.findByRole('dialog', { name: 'Detalle de ejecución Audi' });
+      expect(await within(dialog).findByText('entrada.xlsx')).toBeInTheDocument();
+      expect(within(dialog).getByRole('article', { name: 'Remisión Audi 9000 — REMISION_AUDI' })).toBeInTheDocument();
+      expect(within(dialog).queryByRole('button', { name: /Reprocesar|Ajustar|Editar/ })).not.toBeInTheDocument();
+      expect(getAudiExecution).toHaveBeenCalledWith('8');
+      await user.click(within(dialog).getByRole('button', { name: 'Cerrar' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Ver detalle de ejecución Audi 8' }));
+      expect(await screen.findByText('entrada.xlsx')).toBeInTheDocument();
+      expect(getAudiExecution).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['{Enter}', ' '])('opens through the tab-reachable date button using %s', async (key) => {
+      const user = userEvent.setup(); renderPage(testGeneralUser);
+      const open = await screen.findByRole('button', { name: 'Ver detalle de ejecución Audi 8' });
+      for (let index = 0; index < 12 && document.activeElement !== open; index += 1) await user.tab();
+      expect(open).toHaveFocus();
+      expect(open).toHaveTextContent('2026');
+      await user.keyboard(key);
+      const dialog = await screen.findByRole('dialog', { name: 'Detalle de ejecución Audi' });
+      expect(await within(dialog).findByText('entrada.xlsx')).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(open).toHaveFocus();
+      expect(getAudiExecution).toHaveBeenCalledTimes(1);
+    });
+
+    it('keyboard activation of review does not open or fetch execution detail', async () => {
+      executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]));
+      const user = userEvent.setup(); renderPage();
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
+      const review = within(table).getByRole('button', { name: 'Marcar como revisado' });
+      review.focus(); await user.keyboard('{Enter}');
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Detalle de ejecución Audi' })).not.toBeInTheDocument();
+      expect(getAudiExecution).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+      expect(getAudiExecution).not.toHaveBeenCalled();
+      expect(acknowledgeMock).not.toHaveBeenCalled();
     });
   });
 
@@ -240,7 +298,7 @@ describe('AudiRemissionsPage', () => {
     });
   });
 
-  describe('Procesamientos recientes', () => {
+  describe('Ejecuciones recientes', () => {
     it.each([
       ['COMPLETED', 'Completado'],
       ['FAILED', 'Fallido'],
@@ -249,21 +307,21 @@ describe('AudiRemissionsPage', () => {
     ] as const)('translates outcome %s to %s', async (outcome, label) => {
       executionsMock.mockResolvedValue(executionsResponse([execution({ outcome })]));
       renderPage();
-      const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
       expect(within(table).getByText(label)).toBeInTheDocument();
     });
 
     it('renders the generated remissions count', async () => {
       executionsMock.mockResolvedValue(executionsResponse([execution({ generatedCount: 5 })]));
       renderPage();
-      const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
       expect(within(table).getByText('5')).toBeInTheDocument();
     });
 
     it('renders a single generated folio as one value, not a range', async () => {
       executionsMock.mockResolvedValue(executionsResponse([execution({ generatedCount: 1, firstFolio: '9005', lastFolio: '9005' })]));
       renderPage();
-      const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
       expect(within(table).getByText('9005')).toBeInTheDocument();
       expect(within(table).queryByText('9005–9005')).not.toBeInTheDocument();
     });
@@ -271,14 +329,14 @@ describe('AudiRemissionsPage', () => {
     it('renders a folio range with an en dash', async () => {
       executionsMock.mockResolvedValue(executionsResponse([execution({ generatedCount: 5, firstFolio: '9000', lastFolio: '9004' })]));
       renderPage();
-      const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
       expect(within(table).getByText('9000–9004')).toBeInTheDocument();
     });
 
     it('renders a dash when no folio was generated, never a fabricated range', async () => {
       executionsMock.mockResolvedValue(executionsResponse([execution({ generatedCount: 0, firstFolio: null, lastFolio: null, reviewStatus: null })]));
       renderPage();
-      const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+      const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
       const row = within(table).getAllByRole('row')[1]!;
       // The Folios cell renders "—" for a folio-less row; the (unrelated) Revisión cell also
       // renders "—" for a non-current row — both dashes are expected and distinct.
@@ -288,7 +346,7 @@ describe('AudiRemissionsPage', () => {
     it('shows the empty state when there is no processing history, without hiding the rest of the page', async () => {
       executionsMock.mockResolvedValue(executionsResponse([], { total: 0, totalPages: 0 }));
       renderPage();
-      expect(await screen.findByText('Aún no hay procesamientos registrados.')).toBeInTheDocument();
+      expect(await screen.findByText('Aún no hay ejecuciones registradas.')).toBeInTheDocument();
       expect(displayedFolio()).toHaveTextContent('994');
       expect(screen.getByRole('table', { name: 'Historial de ajustes' })).toBeInTheDocument();
     });
@@ -296,7 +354,7 @@ describe('AudiRemissionsPage', () => {
     it('shows a section-scoped error with retry on failure, without destroying the rest of the page', async () => {
       executionsMock.mockRejectedValue(new Error('boom'));
       renderPage();
-      expect(await screen.findByText('No fue posible cargar los procesamientos recientes.')).toBeInTheDocument();
+      expect(await screen.findByText('No fue posible cargar las ejecuciones recientes.')).toBeInTheDocument();
       expect(displayedFolio()).toHaveTextContent('994');
       expect(await screen.findByText('Activa')).toBeInTheDocument();
       expect(screen.getByRole('table', { name: 'Historial de ajustes' })).toBeInTheDocument();
@@ -306,7 +364,7 @@ describe('AudiRemissionsPage', () => {
       executionsMock.mockResolvedValue(executionsResponse([execution()], { page: 1, pageSize: 25, total: 60, totalPages: 3 }));
       const user = userEvent.setup();
       renderPage();
-      await screen.findByRole('table', { name: 'Procesamientos recientes' });
+      await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
       await user.click(screen.getByRole('button', { name: 'Siguiente' }));
       await waitFor(() => expect(executionsMock).toHaveBeenCalledWith(2, 25));
     });
@@ -315,14 +373,14 @@ describe('AudiRemissionsPage', () => {
       it('shows a "Marcar como revisado" action for the row with reviewStatus REQUIRED', async () => {
         executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]));
         renderPage();
-        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
         expect(within(table).getByRole('button', { name: 'Marcar como revisado' })).toBeInTheDocument();
       });
 
       it('shows "Revisado" (not the action) for the row with reviewStatus REVIEWED', async () => {
         executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REVIEWED' })]));
         renderPage();
-        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
         expect(await within(table).findByText('Revisado')).toBeInTheDocument();
         expect(within(table).queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
       });
@@ -330,10 +388,10 @@ describe('AudiRemissionsPage', () => {
       it('shows a plain dash for a non-current row (reviewStatus null), even a historical FAILED one — never a fabricated action or state', async () => {
         executionsMock.mockResolvedValue(executionsResponse([
           execution({ outcome: 'COMPLETED', reviewStatus: null }),
-          execution({ outcome: 'FAILED', reviewStatus: null })
+          execution({ executionId: '7', outcome: 'FAILED', reviewStatus: null })
         ]));
         renderPage();
-        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
         expect(within(table).queryByRole('button', { name: 'Marcar como revisado' })).not.toBeInTheDocument();
         expect(within(table).queryByText('Revisado')).not.toBeInTheDocument();
       });
@@ -342,9 +400,10 @@ describe('AudiRemissionsPage', () => {
         executionsMock.mockResolvedValue(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REQUIRED' })]));
         const user = userEvent.setup();
         renderPage();
-        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
         await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
         expect(await screen.findByRole('dialog')).toBeInTheDocument();
+        expect(getAudiExecution).not.toHaveBeenCalled();
         await user.click(screen.getByRole('button', { name: 'Cancelar' }));
         expect(acknowledgeMock).not.toHaveBeenCalled();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -356,7 +415,7 @@ describe('AudiRemissionsPage', () => {
           .mockResolvedValueOnce(executionsResponse([execution({ outcome: 'FAILED', reviewStatus: 'REVIEWED' })]));
         const user = userEvent.setup();
         renderPage();
-        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
         await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
         const dialog = await screen.findByRole('dialog');
         await user.click(within(dialog).getByRole('button', { name: 'Marcar como revisado' }));
@@ -365,7 +424,7 @@ describe('AudiRemissionsPage', () => {
         expect(acknowledgeMock.mock.calls[0]).toEqual(['REMISIONES_AUDI']);
         expect(await screen.findByText('Marcado como revisado.')).toBeInTheDocument();
         expect(executionsMock.mock.calls.length).toBeGreaterThan(1);
-        await waitFor(() => expect(within(screen.getByRole('table', { name: 'Procesamientos recientes' })).getByText('Revisado')).toBeInTheDocument());
+        await waitFor(() => expect(within(screen.getByRole('table', { name: 'Ejecuciones recientes de Audi' })).getByText('Revisado')).toBeInTheDocument());
       });
 
       it('keeps the action available and shows a safe Spanish error on failure, without a raw API error', async () => {
@@ -373,7 +432,7 @@ describe('AudiRemissionsPage', () => {
         acknowledgeMock.mockRejectedValueOnce(new Error('boom'));
         const user = userEvent.setup();
         renderPage();
-        const table = await screen.findByRole('table', { name: 'Procesamientos recientes' });
+        const table = await screen.findByRole('table', { name: 'Ejecuciones recientes de Audi' });
         await user.click(within(table).getByRole('button', { name: 'Marcar como revisado' }));
         const dialog = await screen.findByRole('dialog');
         await user.click(within(dialog).getByRole('button', { name: 'Marcar como revisado' }));

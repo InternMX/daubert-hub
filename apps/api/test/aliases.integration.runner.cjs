@@ -30,6 +30,7 @@ if (!process.env.TEST_DATABASE_URL) {
 const port = 3109;
 const marker = `HUB_TEST_ALIAS_${randomUUID().replace(/-/g, '').toUpperCase()}`;
 const companyIds = new Set();
+const paymentFixtureIds = new Set();
 const requestIds = new Set();
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
@@ -133,6 +134,10 @@ async function run() {
     api.stdout.on('data', (chunk) => { startup += chunk; });
     api.stderr.on('data', (chunk) => { startup += chunk; });
     await waitForApi();
+    const unauthenticated = await request('/companies/1/aliases/payment-notifications', 'POST', { alias: marker });
+    assert(unauthenticated.response.status === 401, 'Permanent alias mutation must require authentication.');
+    assert((await request('/automations/payment-notifications/1')).response.status === 401, 'Enriched notification detail must require authentication.');
+    assert((await request('/aliases/1/payment-notifications', 'PATCH', { action: 'DEACTIVATE', expectedCompanyId: '1', expectedUpdatedAt: 'old', confirmed: true })).response.status === 401, 'Alias management must require authentication.');
     authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
     sessionCookie = authSession.cookie;
 
@@ -164,6 +169,127 @@ async function run() {
     assert(conflict.response.status === 409 && conflict.body.code === 'ALIAS_ALREADY_ASSOCIATED', `Cross-company alias conflict was not rejected: ${JSON.stringify(conflict.body)}`);
     const conflictState = await getAliases(conflictTarget.id);
     assert(conflictState.body.data.aliases.length === 0, 'A rejected alias conflict left a partial mutation.');
+
+    // Permanent assignment reuses the aliases domain, without replacing the existing list.
+    // The real GENERAL session exercises the same permissions as the current alias CRUD.
+    const permanentPath = `/companies/${providerCompany.id}/aliases/payment-notifications`;
+    const blockedOrigin = await fetch(`http://127.0.0.1:${port}/api${permanentPath}`, {
+      method: 'POST', headers: { cookie: sessionCookie, origin: 'https://untrusted.example.test', 'content-type': 'application/json' },
+      body: JSON.stringify({ alias: `${marker} FORGED`, confirmPermanent: true })
+    });
+    assert(blockedOrigin.status === 403, 'Permanent assignment must enforce the global CSRF origin protection.');
+    const permanent = `${marker} ÁLIAS--PDF`;
+    const canonical = `${marker.replace(/[^A-Z0-9]+/g, ' ')} ALIAS PDF`;
+    const assigned = await request(permanentPath, 'POST', { alias: permanent, confirmPermanent: true });
+    assert(assigned.response.status === 201 && assigned.body.data.normalizedAlias === canonical, `Permanent assignment failed: ${JSON.stringify(assigned.body)}`);
+    const stored = (await pool.query('SELECT alias, alias_normalizado, tipo_alias, estatus FROM core.alias_empresa WHERE empresa_id = $1 AND alias = $2', [providerCompany.id, permanent])).rows;
+    assert(stored.length === 1 && stored[0].alias_normalizado === canonical && stored[0].tipo_alias === 'NOMBRE_ARCHIVO' && stored[0].estatus === 'ACTIVO', 'Permanent alias was not persisted with the required model.');
+    assert((await getAliases(providerCompany.id)).body.data.aliases.includes(`${marker}_PROVIDER_ALT`), 'Assignment replaced another alias.');
+    const duplicatePermanent = await request(permanentPath, 'POST', { alias: canonical, confirmPermanent: true });
+    assert(duplicatePermanent.response.status === 201 && duplicatePermanent.body.data.alreadyAssigned, 'Equivalent alias on the same company should be idempotent.');
+    const canonicalConflict = await request(`/companies/${conflictTarget.id}/aliases/payment-notifications`, 'POST', { alias: canonical, confirmPermanent: true });
+    assert(canonicalConflict.response.status === 409, 'Canonical cross-company conflict accepted.');
+    const nameConflict = await request(permanentPath, 'POST', { alias: conflictTarget.name, confirmPermanent: true });
+    assert(nameConflict.response.status === 409, 'Commercial-name collision accepted.');
+    const unconfirmed = await request(permanentPath, 'POST', { alias: '1800006184145' });
+    assert(unconfirmed.response.status === 400 && unconfirmed.body.code === 'PERMANENT_ALIAS_CONFIRMATION_REQUIRED', 'Numeric identifier did not require confirmation.');
+    const confirmed = await request(permanentPath, 'POST', { alias: `${marker} DOCUMENTO 1800006184145`, confirmPermanent: true });
+    assert(confirmed.response.status === 201, 'Explicitly confirmed permanent identifier failed.');
+    const raceAlias = `${marker} RACE`;
+    const racing = await Promise.all([
+      request(permanentPath, 'POST', { alias: raceAlias, confirmPermanent: true }),
+      request(`/companies/${conflictTarget.id}/aliases/payment-notifications`, 'POST', { alias: raceAlias.replace(/ /g, '-'), confirmPermanent: true })
+    ]);
+    assert(racing.map((item) => item.response.status).sort().join(',') === '201,409', 'Concurrent canonical assignments must have exactly one winner.');
+
+    // Catalog visibility must follow existing configuration, never enable it as a side effect.
+    assert((await pool.query('SELECT 1 FROM core.empresas_notificacion_pago WHERE empresa_id = $1', [providerCompany.id])).rows.length === 0, 'Saving an alias changed payment configuration.');
+    await audited(pool, `alias-catalog-${randomUUID()}`, `INSERT INTO core.empresas_notificacion_pago (empresa_id, procesa_comprobantes_pago, notificaciones_activas) VALUES ($1, TRUE, FALSE)`, [providerCompany.id]);
+    const catalogAliases = (await pool.query('SELECT alias_pdf FROM core.vw_catalogo_notificacion_pago_n8n WHERE empresa_id = $1', [providerCompany.id])).rows;
+    assert(catalogAliases.some((row) => row.alias_pdf === permanent), 'The permanent alias is missing from the existing n8n catalog after enabling receipt processing.');
+
+    // Current assignment is read independently of historical file errors and survives a reload.
+    const detailFixtures = new Map();
+    const resolve = async (aliases = [canonical]) => {
+      const key = JSON.stringify(aliases);
+      if (!detailFixtures.has(key)) {
+        const error = aliases.map((alias, index) => `test-${index}.pdf: ALIAS_NO_CATALOGADO - ${alias} | HASH=${String(index + 1).padStart(64, 'a')}`).join(' | ');
+        const inserted = await audited(pool, `alias-detail-fixture-${randomUUID()}`, `INSERT INTO core.correos_notificacion_pago (outlook_message_id, estado, detalle_error) VALUES ($1, 'ERROR', $2) RETURNING correo_id::text AS id`, [`${marker}_${randomUUID()}`, error]);
+        const id = inserted.rows[0].id;
+        paymentFixtureIds.add(id); detailFixtures.set(key, id);
+      }
+      const result = await request(`/automations/payment-notifications/${detailFixtures.get(key)}`);
+      assert(result.response.status === 200, `Notification detail lookup failed: ${JSON.stringify(result.body)}`);
+      assert(result.body.data.processingStatus === 'ERROR' && result.body.data.fileErrors === aliases.length, 'Alias management changed the historical payment state/counts.');
+      assert(result.body.data.fileErrorDetails.every((file) => file.errorCode === 'ALIAS_NO_CATALOGADO'), 'Historical error was lost.');
+      return { ...result, body: { data: result.body.data.fileErrorDetails.map((file) => file.aliasResolution) } };
+    };
+    const initialResolution = await resolve();
+    assert(initialResolution.response.status === 200 && initialResolution.body.data[0].state === 'ACTIVE', 'Active alias was not resolved in the existing notification detail.');
+    const originalAlias = initialResolution.body.data[0].assignment;
+    assert(originalAlias.companyId === providerCompany.id && originalAlias.aliasId, 'Resolution did not expose the exact manageable alias record.');
+    const managePath = `/aliases/${originalAlias.aliasId}/payment-notifications`;
+    const reassignBody = { action: 'REASSIGN', companyId: conflictTarget.id, expectedCompanyId: originalAlias.companyId, expectedUpdatedAt: originalAlias.updatedAt, confirmed: true };
+    const csrfManagement = await fetch(`http://127.0.0.1:${port}/api${managePath}`, {
+      method: 'PATCH', headers: { cookie: sessionCookie, origin: 'https://untrusted.example.test', 'content-type': 'application/json' }, body: JSON.stringify(reassignBody)
+    });
+    assert(csrfManagement.status === 403, 'Alias management bypassed CSRF protection.');
+    assert((await request(managePath, 'PATCH', { ...reassignBody, confirmed: false })).response.status === 400, 'Unconfirmed reassignment was accepted.');
+    assert((await request(managePath, 'PATCH', { ...reassignBody, expectedCompanyId: clientOnly.id })).response.status === 409, 'Stale company snapshot was accepted.');
+
+    // A commercial name on a third synthetic company blocks ambiguous reassignment.
+    await audited(pool, `alias-name-conflict-${randomUUID()}`, 'UPDATE core.empresas SET nombre_comercial = $2 WHERE empresa_id = $1', [clientOnly.id, canonical]);
+    const managementConflict = await request(managePath, 'PATCH', reassignBody);
+    assert(managementConflict.response.status === 409 && managementConflict.body.code === 'ALIAS_ALREADY_ASSOCIATED', 'Reassignment ignored a canonical commercial-name conflict.');
+    assert((await resolve()).body.data[0].state === 'CONFLICT', 'Resolution falsely reported a unique assignment for an ambiguous catalog.');
+    await audited(pool, `alias-name-restore-${randomUUID()}`, 'UPDATE core.empresas SET nombre_comercial = $2 WHERE empresa_id = $1', [clientOnly.id, clientOnly.name]);
+
+    await audited(pool, `alias-target-catalog-${randomUUID()}`, 'INSERT INTO core.empresas_notificacion_pago (empresa_id, procesa_comprobantes_pago, notificaciones_activas) VALUES ($1, TRUE, FALSE)', [conflictTarget.id]);
+    const reassigned = await request(managePath, 'PATCH', reassignBody);
+    assert(reassigned.response.status === 200 && reassigned.body.data.companyId === conflictTarget.id && reassigned.body.data.aliasId === originalAlias.aliasId, `Reassignment failed or replaced the row: ${JSON.stringify(reassigned.body)}`);
+    const currentResolution = (await resolve()).body.data[0];
+    assert(currentResolution.state === 'ACTIVE' && currentResolution.company.id === conflictTarget.id, 'Reassignment was not persisted for a new resolution request.');
+    const aliasCatalog = async () => (await pool.query('SELECT empresa_id::text AS company_id FROM core.vw_catalogo_notificacion_pago_n8n WHERE alias_pdf = $1', [permanent])).rows;
+    assert((await aliasCatalog()).length === 1 && (await aliasCatalog())[0].company_id === conflictTarget.id, 'n8n catalog did not move the alias to the target company.');
+    const staleMutation = await request(managePath, 'PATCH', { ...reassignBody, action: 'DEACTIVATE' });
+    assert(staleMutation.response.status === 409 && staleMutation.body.code === 'ALIAS_STATE_CHANGED', 'A stale screen could deactivate a reassigned alias.');
+
+    const deactivated = await request(managePath, 'PATCH', { action: 'DEACTIVATE', expectedCompanyId: conflictTarget.id, expectedUpdatedAt: reassigned.body.data.updatedAt, confirmed: true });
+    assert(deactivated.response.status === 200 && deactivated.body.data.status === 'INACTIVO', 'Deactivation failed.');
+    assert((await aliasCatalog()).length === 0, 'Inactive alias remains in the active n8n catalog.');
+    assert((await resolve()).body.data[0].state === 'INACTIVE', 'Inactive alias history was not resolved after reload.');
+    const inactiveRow = (await pool.query('SELECT alias_id::text, empresa_id::text, estatus FROM core.alias_empresa WHERE alias_id = $1', [originalAlias.aliasId])).rows;
+    assert(inactiveRow.length === 1 && inactiveRow[0].estatus === 'INACTIVO' && inactiveRow[0].empresa_id === conflictTarget.id, 'Deactivation physically deleted the record or lost the relation.');
+    const reassignAudit = (await pool.query(`SELECT datos_anteriores, datos_nuevos, usuario_id, origen, operacion FROM audit.cambios WHERE request_id = $1 AND tabla = 'alias_empresa'`, [reassigned.requestId])).rows;
+    assert(reassignAudit.length === 1 && reassignAudit[0].operacion === 'UPDATE' && String(reassignAudit[0].datos_anteriores.empresa_id) === providerCompany.id && String(reassignAudit[0].datos_nuevos.empresa_id) === conflictTarget.id && reassignAudit[0].usuario_id === authSession.userId && reassignAudit[0].origen === 'DAUBERT_HUB', 'Reassignment audit lost the before/after relation or actor.');
+    const deactivateAudit = (await pool.query(`SELECT datos_anteriores, datos_nuevos, usuario_id, operacion FROM audit.cambios WHERE request_id = $1 AND tabla = 'alias_empresa'`, [deactivated.requestId])).rows;
+    assert(deactivateAudit.length === 1 && deactivateAudit[0].operacion === 'UPDATE' && deactivateAudit[0].datos_anteriores.estatus === 'ACTIVO' && deactivateAudit[0].datos_nuevos.estatus === 'INACTIVO' && deactivateAudit[0].usuario_id === authSession.userId, 'Deactivation audit lost status history or actor.');
+
+    // Reassignment and deactivation of one snapshot cannot both succeed concurrently.
+    const raceManageAlias = `${marker} MANAGE CONCURRENCY`;
+    assert((await request(permanentPath, 'POST', { alias: raceManageAlias, confirmPermanent: true })).response.status === 201, 'Management race fixture failed.');
+    const raceRecord = (await resolve([raceManageAlias])).body.data[0].assignment;
+    const common = { expectedCompanyId: raceRecord.companyId, expectedUpdatedAt: raceRecord.updatedAt, confirmed: true };
+    const concurrentManagement = await Promise.all([
+      request(`/aliases/${raceRecord.aliasId}/payment-notifications`, 'PATCH', { ...common, action: 'REASSIGN', companyId: conflictTarget.id }),
+      request(`/aliases/${raceRecord.aliasId}/payment-notifications`, 'PATCH', { ...common, action: 'DEACTIVATE' })
+    ]);
+    assert(concurrentManagement.map((item) => item.response.status).sort().join(',') === '200,409', 'Concurrent management did not reject the stale writer.');
+
+    // Reproduce the reported mappings exclusively with marker-prefixed TEST companies/aliases.
+    // The production names are references, never queried or modified in production.
+    for (const [detected, destination] of [['MINERVA ALVAREZ', 'MINERVA'], ['MINTT SOLUTIONS', 'Bind ERP'], ['CTRO DE ABSTECIMEINT', 'CADIS']]) {
+      const target = await fixtureCompany(pool, destination, { type: 'PROVEEDOR', roles: ['PROVEEDOR'] });
+      const testAlias = `${marker} ${detected}`;
+      await audited(pool, `alias-case-config-${randomUUID()}`, 'INSERT INTO core.empresas_notificacion_pago (empresa_id, procesa_comprobantes_pago, notificaciones_activas) VALUES ($1, TRUE, FALSE)', [target.id]);
+      assert((await resolve([testAlias])).body.data[0].state === 'UNASSIGNED', 'Fresh synthetic case already assigned.');
+      assert((await request(`/companies/${target.id}/aliases/payment-notifications`, 'POST', { alias: testAlias, confirmPermanent: true })).response.status === 201, 'Synthetic case assignment failed.');
+      const reopened = (await resolve([testAlias])).body.data[0];
+      assert(reopened.state === 'ACTIVE' && reopened.company.id === target.id, 'Reopening a historical-error notification lost its current assignment.');
+      assert((await resolve([testAlias])).body.data[0].company.id === target.id, 'Another detail request lost the persisted assignment.');
+      const viewRows = (await pool.query('SELECT empresa_id::text AS id FROM core.vw_catalogo_notificacion_pago_n8n WHERE alias_pdf = $1', [testAlias])).rows;
+      assert(viewRows.length === 1 && viewRows[0].id === target.id, 'Current detail state disagrees with the active n8n catalog.');
+    }
 
     // Validation: blank entries and case-insensitive duplicates are rejected before any write.
     const blank = await patchAliases(clientOnly.id, ['', 'Valid']);
@@ -223,6 +349,8 @@ async function run() {
       await assertLiveDatabase(pool, 'Cleanup companies');
       await audited(pool, cleanupRequestId, 'DELETE FROM core.empresas WHERE empresa_id = ANY($1::bigint[])', [[...companyIds]]);
       await assertLiveDatabase(pool, 'Cleanup audit');
+      await pool.query('DELETE FROM core.correos_notificacion_pago WHERE correo_id = ANY($1::bigint[])', [[...paymentFixtureIds]]);
+      assert((await pool.query('SELECT 1 FROM core.correos_notificacion_pago WHERE correo_id = ANY($1::bigint[])', [[...paymentFixtureIds]])).rows.length === 0, 'Synthetic notification fixtures remain.');
       await pool.query('DELETE FROM audit.cambios WHERE request_id = ANY($1::text[])', [[...requestIds]]);
       const leftovers = await pool.query('SELECT count(*)::int AS count FROM core.empresas WHERE nombre_comercial LIKE $1 OR empresa_id = ANY($2::bigint[])', ['HUB_TEST_ALIAS_%', [...companyIds]]);
       assert(leftovers.rows[0].count === 0, 'Aliases cleanup left company fixtures.');

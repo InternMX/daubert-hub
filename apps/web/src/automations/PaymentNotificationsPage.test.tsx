@@ -705,17 +705,37 @@ describe('PaymentNotificationsPage', () => {
       expect(card.getByText('2 errores de archivo')).toBeInTheDocument();
     });
 
-    it('lists the file errors under "Archivos que requieren atención" for the latest execution and never claims it needs no attention', async () => {
+    it('keeps the latest file-errors summary compact and links to management in the existing detail', async () => {
       listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
       detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails }));
       renderPage();
-      const heading = await screen.findByRole('heading', { level: 2, name: 'Archivos que requieren atención' });
-      const section = within(heading.closest('section') as HTMLElement);
-      expect(section.getByText('13.-KARINA MEZA.pdf')).toBeInTheDocument();
-      expect(section.getByText('2.-CTO DE ABASTECIMIENT.pdf')).toBeInTheDocument();
-      expect(section.getAllByText('ALIAS_NO_CATALOGADO')).toHaveLength(2);
-      expect(section.getByText('KARINA MEZA')).toBeInTheDocument();
+      expect(await screen.findByRole('link', { name: 'Ver archivos' })).toHaveAttribute('href', `/automations/payment-notifications/${elevenReadyWithFileErrors.executionId}`);
+      expect(screen.queryByText('13.-KARINA MEZA.pdf')).not.toBeInTheDocument();
+      expect(screen.queryByText('ALIAS_NO_CATALOGADO')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Asignar alias' })).not.toBeInTheDocument();
       expect(screen.queryByText('La última ejecución no requiere atención.')).not.toBeInTheDocument();
+    });
+
+    it('uses the persisted detail summary to distinguish assigned-pending and unassigned files', async () => {
+      listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
+      detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails,
+        fileAttentionSummary: { total: 2, assignedPending: 1, unassigned: 1, pointPending: 1 } }));
+      renderPage();
+      expect(await screen.findByText('2 archivos con incidencias')).toBeInTheDocument();
+      expect(screen.getByText('1 asignados · pendientes de reproceso')).toBeInTheDocument();
+      expect(screen.getByText('1 sin asignación')).toBeInTheDocument();
+      expect(screen.getByText('Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.')).toBeInTheDocument();
+    });
+
+    it('drops the "n8n pending" summary text only when the persisted file states report n8n ready', async () => {
+      listMock.mockResolvedValue(listResponse([elevenReadyWithFileErrors]));
+      const ready = { fileId: '501', enabled: true, canManage: false, blockedReason: null, identityState: 'VERIFICADA', operationalState: 'REPROCESO_SOLICITADO', n8nReady: true,
+        assignment: { companyId: '121', companyName: 'Empresa A', status: 'ACTIVA' as const, version: 1, updatedAt: 'v1' } };
+      detailMock.mockResolvedValue(detail({ ...elevenReadyWithFileErrors, fileErrorDetails: fileErrorDetails.map((file, index) => (index === 0 ? { ...file, fileAssignment: ready } : file)),
+        fileAttentionSummary: { total: 2, assignedPending: 1, unassigned: 1, pointPending: 1 } }));
+      renderPage();
+      expect(await screen.findByText('Asignaciones puntuales activas; se aplican al reprocesar cuando es seguro.')).toBeInTheDocument();
+      expect(screen.queryByText('Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.')).not.toBeInTheDocument();
     });
 
     it('renders no file-errors section, and keeps the healthy message, when fileErrors = 0 (also for a historical row without details)', async () => {

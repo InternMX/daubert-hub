@@ -11,6 +11,8 @@ import { AdjustNextFolioDialog } from './AdjustNextFolioDialog';
 import { folioRangeLabel } from './audiProcessingPresentation';
 import { formatCardTimestamp, lifecycleStatusLabel, processingOutcomeLabel, processingOutcomeSeverity } from './automationOverviewPresentation';
 import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
+import { AudiExecutionDetailDialog } from './AudiExecutionDetailDialog';
+import { executionOpenButtonSx, executionRowSx, formatExecutionTimestamp } from './executionPresentation';
 
 const automationCode = 'REMISIONES_AUDI';
 const automationName = 'Remisiones Audi';
@@ -82,7 +84,7 @@ function OperationalStatusSection({ refreshToken }: { refreshToken: number }) {
           <MetaRow label="Último procesamiento" value={<Typography variant="body2">{formatCardTimestamp(audi.lastProcessing.occurredAt)}</Typography>} />
         )}
         {audi.lastProcessing && (
-          <MetaRow label="Resultado" value={<ProcessingOutcomeChip outcome={audi.lastProcessing.outcome} />} />
+          <MetaRow label="Estado" value={<ProcessingOutcomeChip outcome={audi.lastProcessing.outcome} />} />
         )}
       </Stack>
     </Paper>
@@ -92,7 +94,7 @@ function OperationalStatusSection({ refreshToken }: { refreshToken: number }) {
 // Independently loadable (Phase 10F §9/§18): its own failure never hides the operational header,
 // series configuration, or adjustment history. A dedicated query (not RemisionesAudiActivityRepository's
 // bounded/mixed Recent Activity feed) so every genuine execution shows here, including PROCESANDO.
-function RecentProcessingsSection({ refreshToken, onAcknowledged }: { refreshToken: number; onAcknowledged: () => void }) {
+function RecentProcessingsSection({ refreshToken, onAcknowledged, onSelect }: { refreshToken: number; onAcknowledged: () => void; onSelect: (executionId: string) => void }) {
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<ListAudiExecutions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,16 +112,16 @@ function RecentProcessingsSection({ refreshToken, onAcknowledged }: { refreshTok
     return () => { active = false; };
   }, [page, retry, refreshToken]);
 
-  if (loading) return <SectionSpinner label="Cargando procesamientos recientes" />;
+  if (loading) return <SectionSpinner label="Cargando ejecuciones recientes" />;
   if (error) {
     return (
       <Alert severity="error" sx={{ mt: 2 }} action={<Button color="inherit" size="small" onClick={() => setRetry((value) => value + 1)}>Reintentar</Button>}>
-        No fue posible cargar los procesamientos recientes.
+        No fue posible cargar las ejecuciones recientes.
       </Alert>
     );
   }
   if (!result || result.meta.total === 0) {
-    return <Paper variant="outlined" sx={{ mt: 2, p: 3 }}><Typography color="text.secondary">Aún no hay procesamientos registrados.</Typography></Paper>;
+    return <Paper variant="outlined" sx={{ mt: 2, p: 3 }}><Typography color="text.secondary">Aún no hay ejecuciones registradas.</Typography></Paper>;
   }
 
   const start = (result.meta.page - 1) * result.meta.pageSize + 1;
@@ -128,16 +130,16 @@ function RecentProcessingsSection({ refreshToken, onAcknowledged }: { refreshTok
   return (
     <Paper variant="outlined" sx={{ mt: 2, overflow: 'hidden' }}>
       <Box sx={{ overflowX: 'auto' }}>
-        <Table aria-label="Procesamientos recientes">
-          <TableHead><TableRow><TableCell>Fecha</TableCell><TableCell>Resultado</TableCell><TableCell align="right">Remisiones</TableCell><TableCell>Folios</TableCell><TableCell>Revisión</TableCell></TableRow></TableHead>
+        <Table aria-label="Ejecuciones recientes de Audi">
+          <TableHead><TableRow><TableCell>Fecha</TableCell><TableCell>Estado</TableCell><TableCell align="right">Remisiones</TableCell><TableCell>Folios</TableCell><TableCell>Revisión</TableCell></TableRow></TableHead>
           <TableBody>
-            {result.data.map((execution, index) => (
-              <TableRow key={`${execution.occurredAt}-${index}`}>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatCardTimestamp(execution.occurredAt)}</TableCell>
+            {result.data.map((execution) => (
+              <TableRow key={execution.executionId} hover onClick={() => onSelect(execution.executionId)} sx={executionRowSx}>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}><Button color="inherit" sx={executionOpenButtonSx} aria-label={`Ver detalle de ejecución Audi ${execution.executionId}`} onClick={(event) => { event.stopPropagation(); onSelect(execution.executionId); }}>{formatExecutionTimestamp(execution.occurredAt)}</Button></TableCell>
                 <TableCell><ProcessingOutcomeChip outcome={execution.outcome} /></TableCell>
                 <TableCell align="right">{execution.generatedCount}</TableCell>
                 <TableCell>{folioRangeLabel(execution.firstFolio, execution.lastFolio)}</TableCell>
-                <TableCell>
+                <TableCell onClick={(event) => event.stopPropagation()}>
                   <ReviewAcknowledgementCell
                     automationCode={automationCode}
                     automationName={automationName}
@@ -172,6 +174,7 @@ export function AudiRemissionsPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [reviewRefreshToken, setReviewRefreshToken] = useState(0);
   const [reviewFeedback, setReviewFeedback] = useState<string | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
 
   function handleAcknowledged() {
     setReviewRefreshToken((value) => value + 1);
@@ -225,8 +228,8 @@ export function AudiRemissionsPage() {
         </Box>
 
         <Box component="section" aria-labelledby="audi-recent-title">
-          <Typography id="audi-recent-title" variant="h2">Procesamientos recientes</Typography>
-          <RecentProcessingsSection refreshToken={reviewRefreshToken} onAcknowledged={handleAcknowledged} />
+          <Typography id="audi-recent-title" variant="h2">Ejecuciones recientes</Typography>
+          <RecentProcessingsSection refreshToken={reviewRefreshToken} onAcknowledged={handleAcknowledged} onSelect={setSelectedExecutionId} />
         </Box>
 
         <Box component="section" aria-labelledby="audi-adjustments-title">
@@ -254,6 +257,7 @@ export function AudiRemissionsPage() {
           onAdjusted={handleAdjusted}
         />
       )}
+      {selectedExecutionId && <AudiExecutionDetailDialog key={selectedExecutionId} executionId={selectedExecutionId} onClose={() => setSelectedExecutionId(null)} />}
       <Snackbar open={Boolean(reviewFeedback)} autoHideDuration={4000} onClose={() => setReviewFeedback(null)} message={reviewFeedback} />
     </>
   );

@@ -2,11 +2,13 @@
 
 Complementa a [deployment](deployment.md) (orden, trampas) y a [`deploy/README.md`](../../deploy/README.md) (comandos genéricos). Este documento fija el **procedimiento de PROD tal como corre hoy** (proyecto `daubert-hub`, `compose.pilot.yaml` + `compose.prod-temp.yaml`, puerto `8082`; ver [nota 2026-10-01](../deployments/2026-10-01-hub-v1-prod.md)). **Sin secretos.**
 
-> **Estado: preparado, no ejecutado.** Solo el preflight y `Deploy-DaubertHub.ps1 -Preflight` / `-WhatIf` (modos de solo lectura) se han ejecutado contra PROD. **`-Deploy` no se ha ejecutado nunca**, ni el ancla de rollback, ni el rollback: el script de deploy se probó únicamente con pruebas automatizadas que simulan Docker (no ejecutan ningún deploy), y los comandos de rollback solo se revisaron estáticamente.
+> **Estado (actualizado 2026-10-22): en uso.** `Deploy-DaubertHub.ps1 -Deploy` (con su ancla de rollback) se usó en los releases de 2026-10-07 (v1.0.1), 2026-10-09 (v1.0.5) y 2026-10-12 (v1.0.6); ver [deployments](../deployments/README.md). El release de 2026-10-21 (`6370753`, asignación puntual de Pagos) incluía migraciones ya aplicadas a mano y el script **bloquea siempre** los releases con migraciones, por lo que se desplegó con los **comandos manuales** de este documento ([nota](../deployments/2026-10-22-payment-file-assignments-prod.md)). El **rollback por imagen no se ha ejecutado nunca en PROD**: está preparado (anclas y `docker save`) y sus comandos solo se revisaron estáticamente.
 >
-> **Existe `scripts/deploy/Deploy-DaubertHub.ps1`** (modos `-Preflight`, `-WhatIf`, `-Deploy`; ver [abajo](#script-de-deployment-deploy-dauberthubps1)). **No existe un modo `-Rollback`**: el rollback sigue siendo manual (comandos de la sección ROLLBACK). Todavía **no hay una versión nueva del Hub para desplegar**: este mecanismo está listo pero sin usar.
+> **Existe `scripts/deploy/Deploy-DaubertHub.ps1`** (modos `-Preflight`, `-WhatIf`, `-Deploy`; ver [abajo](#script-de-deployment-deploy-dauberthubps1)). **No existe un modo `-Rollback`**: el rollback sigue siendo manual (comandos de la sección ROLLBACK). Los cambios solo de configuración del Hub (p. ej. banderas) se aplican editando `deploy/pilot.prod.env` (con copia previa) y recreando solo el `api`: `docker compose … up -d --no-build api`.
 
-## Referencia (2026-10-02)
+## Referencia (2026-10-02, histórica)
+
+> Instantánea de un preflight anterior, conservada como ejemplo del formato. **Estado vigente (2026-10-22):** Hub en PROD `6370753` (`1.0.6`); `main` solo difiere por documentación; migraciones aplicadas hasta la `20261022_017`; workflow de Pagos `pagosProdAsignaciones01`.
 
 | Elemento | Valor |
 | --- | --- |
@@ -28,6 +30,7 @@ Este release no requiere migraciones (0 cambios en `database/`) ni cambios en n8
 | --- | --- | --- |
 | `deploy/pilot.prod.env` | `.gitignore` | Credenciales de BD y tokens de webhooks |
 | `compose.prod-temp.yaml` | `.git/info/exclude` (solo en el host de deployment) | Pasa `AUTH_COOKIE_SECURE` y las variables `PAYMENT_NOTIFICATIONS_*`, que `compose.pilot.yaml` no pasa |
+| `deploy/closure/entry-closure-override.yaml` | Repositorio | Monta de solo lectura el directorio externo de `conf.d` (cierre de entradas). **Obligatorio en toda recreación de Web**, incluido el rollback; ver [joint-deployment-plan](../automations/caterpillar/joint-deployment-plan.md) §2 |
 | `%ProgramData%\DaubertHub\Backup\config.json`, `pgpass`, `age-recipients.txt` | Fuera del repositorio | Configuración externa del backup |
 | Proyecto Compose `daubert-hub`, puerto `8082` | Nombres reales de PROD | Difieren del ejemplo genérico (`daubert-hub-prod`, `8080`) |
 
@@ -77,7 +80,7 @@ Comprueba, entre otros:
 | --- | --- | --- |
 | `-Preflight` | Ejecuta `Test-DaubertDeployPreflight.ps1` y **propaga su exit code**: `0` apto, `1` bloqueado, `2` sin cambios de Hub/Docker | No |
 | `-WhatIf` | Ejecuta el preflight y **las mismas validaciones que `-Deploy`**; si todo pasa imprime el plan: commit actual de PROD, commit a desplegar (== `HEAD`), `APP_VERSION`, cambios de Hub/Docker que se desplegarían, servicios afectados (`api`, `web`), las anclas de rollback que se crearían, el comando Compose exacto, los checks post-deploy y el procedimiento de rollback. Con preflight `1` → "bloqueado"; con `2` o sin cambios de Hub/Docker → "SIN CAMBIOS DE HUB/DOCKER — NO HAY NADA QUE DESPLEGAR" y no imprime plan | **No**: nunca llega a la función mutante (bloqueada fuera de `-Deploy`) |
-| `-Deploy` | 1) preflight (aborta con `1`; con `2` informa que no hay nada que desplegar); 2) vuelve a comprobar `HEAD == candidato`, árbol limpio, commit anterior (SHA hexadecimal válido), `/api/health` de PROD sano, `APP_VERSION`, imágenes de Compose, que la imagen en ejecución de `api` y `web` sea la etiquetada (digest de manifiesto) y que las etiquetas `rollback-<commit anterior>` **no existan**; 3) imprime el plan y pide escribir **exactamente** `DEPLOY DAUBERT HUB` (cualquier otra entrada, incluidas variantes en minúscula o con espacios, cancela sin tocar nada); 4) crea las anclas por nombre y comprueba que cada una existe y apunta al digest esperado; 5) fija `APP_VERSION` (del `package.json` raíz) y `GIT_COMMIT` (`git rev-parse --short HEAD`) y ejecuta `docker compose … up -d --build api web`; 6) espera a `api` *healthy* y a `web`, verifica `/api/health` (`status=ok`, `database=connected`, `environment=PRODUCTION`, `commit` = candidato, `version` = `APP_VERSION`), `docker compose ps` (solo lectura) y que ambos servicios estén en ejecución | **Sí**, y solo `api` y `web` |
+| `-Deploy` | 1) preflight (aborta con `1`; con `2` informa que no hay nada que desplegar); 2) vuelve a comprobar `HEAD == candidato`, árbol limpio, commit anterior (SHA hexadecimal válido), `/api/health` de PROD sano, `APP_VERSION`, imágenes de Compose, que la imagen en ejecución de `api` y `web` sea la etiquetada (digest de manifiesto) y que las etiquetas `rollback-<commit anterior>` **no existan**; 3) imprime el plan y pide escribir **exactamente** `DEPLOY DAUBERT HUB` (cualquier otra entrada, incluidas variantes en minúscula o con espacios, cancela sin tocar nada); 4) crea las anclas por nombre y comprueba que cada una existe y apunta al digest esperado; 5) fija `APP_VERSION` (del `package.json` raíz) y `GIT_COMMIT` (`git rev-parse --short=7 HEAD`) y ejecuta `docker compose … up -d --build api web`; 6) espera a `api` *healthy* y a `web`, verifica `/api/health` (`status=ok`, `database=connected`, `environment=PRODUCTION`, `commit` = candidato, `version` = `APP_VERSION`), `docker compose ps` (solo lectura) y que ambos servicios estén en ejecución | **Sí**, y solo `api` y `web` |
 
 Códigos de salida: `0` correcto · `1` bloqueado o abortado (PROD no cambió) · `2` nada que desplegar · `3` error de uso · `5` **DEPLOYMENT FALLIDO**.
 
@@ -170,7 +173,7 @@ Leyenda: **A** = automatizado por el preflight o por `Deploy-DaubertHub.ps1`; **
 
 ```powershell
 # Constantes de PROD (compose.yaml NO se carga a propósito)
-$cf = @('--project-name','daubert-hub','--env-file','deploy/pilot.prod.env','-f','compose.pilot.yaml','-f','compose.prod-temp.yaml')
+$cf = @('--project-name','daubert-hub','--env-file','deploy/pilot.prod.env','-f','compose.pilot.yaml','-f','compose.prod-temp.yaml','-f','deploy/closure/entry-closure-override.yaml')
 
 # PRE-DEPLOY: preflight (solo lectura). Exit 0 = apto; 1 = no apto; 2 = nada que desplegar
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\Test-DaubertDeployPreflight.ps1
@@ -206,8 +209,8 @@ docker save "daubert-hub-api:rollback-$prev" "daubert-hub-web:rollback-$prev" -o
 **Deploy:**
 
 ```powershell
-$env:APP_VERSION = (node -p "require('./package.json').version")   # = package.json raiz (hoy 1.0.6)
-$env:GIT_COMMIT  = (git rev-parse --short HEAD)                     # = el candidato (el preflight exige candidato == HEAD)
+$env:APP_VERSION = (node -p "require('./package.json').version")   # = package.json raiz. SUBIRLA ANTES (chore(release)): el Hub muestra lo que valga aqui
+$env:GIT_COMMIT  = (git rev-parse --short=7 HEAD)                     # = el candidato (el preflight exige candidato == HEAD)
 docker compose @cf up -d --build api web                            # solo api y web; nunca down
 ```
 

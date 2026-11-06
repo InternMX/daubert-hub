@@ -1,6 +1,6 @@
 {
   "name": "@daubert/api",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "nest start --watch",
@@ -43,6 +43,8 @@
     "test:integration:security-phase8a": "npm run build && node test/security-phase8a-login-rate-limit.integration.runner.cjs",
     "test:integration:security-phase8b": "npm run build && node test/security-phase8b-csrf-origin.integration.runner.cjs",
     "test:integration:payment-notifications": "npm run build && node test/payment-notifications.integration.runner.cjs",
+    "test:integration:payment-file-assignments": "npm run build && node test/payment-file-assignments.integration.runner.cjs",
+    "test:integration:payment-file-recovery": "npm run build && node test/payment-file-recovery.integration.runner.cjs",
     "test:integration:payment-notification-reprocess": "npm run build && node test/payment-notifications-reprocess-eligibility.integration.runner.cjs",
     "test:integration:production-database-guard": "npm run build && node test/production-database-guard.integration.runner.cjs",
     "test:integration:payment-notification-settings": "npm run build && node test/payment-notification-settings.integration.runner.cjs",
@@ -69,6 +71,7 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@nestjs/cli": "^11.0.10",
     "@nestjs/testing": "^11.1.6",
     "@types/express": "^5.0.3",

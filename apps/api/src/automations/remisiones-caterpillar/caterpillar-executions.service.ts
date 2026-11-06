@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { AuditIdentity } from '../../common/authenticated-request';
 import { mapAudiExecutionState, type AudiProcessingOutcome } from '../audi-processing-status';
 import { AutomationTriggerRequestsRepository } from '../trigger-requests/automation-trigger-requests.repository';
@@ -6,13 +6,18 @@ import { CaterpillarReprocessWebhookClient } from './caterpillar-reprocess-webho
 import type { ListCaterpillarExecutionsDto } from './dto/list-caterpillar-executions.dto';
 import {
   CaterpillarExecutionsRepository,
+  type CaterpillarCancellationRow,
   type CaterpillarExecutionDetailRow,
   type CaterpillarExecutionRow,
   type CaterpillarRemissionDetailRow,
+  type CaterpillarRegenerationAuthorizationRow,
+  type CaterpillarRegenerationContextRow,
   type CaterpillarRemissionRow,
   type CaterpillarReservationRow
 } from './caterpillar-executions.repository';
+import type { CancelCaterpillarRemissionDto } from './dto/cancel-caterpillar-remission.dto';
 import { CaterpillarRoutingService, resolveCaterpillarProcessLabel, type CaterpillarProcessRoute } from './caterpillar-routing.service';
+import { createCaterpillarAdmissionCandidate, decideCaterpillarAutomaticAdmission, type CaterpillarAdmissionInput } from './caterpillar-automatic-admission';
 
 const AUTOMATION_CODE = 'REMISIONES_CATERPILLAR';
 
@@ -26,12 +31,45 @@ export type CaterpillarReprocessOutcome =
   | 'ALREADY_REPROCESSED'
   | 'NOT_FOUND'
   | 'NOT_ELIGIBLE_STATE'
+  | 'SOURCE_DOCUMENT_MISSING'
+  | 'SOURCE_FILE_UNCLASSIFIABLE_OR_MISSING'
   | 'SOURCE_FILE_MISSING'
   | 'OUTSIDE_TEST_SCOPE'
   | 'OUTSIDE_ALLOWED_SCOPE'
+  | 'ADMISSION_REJECTED'
   | 'UPSTREAM_TIMEOUT'
   | 'UPSTREAM_UNAVAILABLE'
   | 'UPSTREAM_INVALID_RESPONSE';
+
+// Commercial regeneration has its own vocabulary: the Hub translates the n8n statuses so the UI never confuses it with a technical reprocess.
+export type CaterpillarRegenerationOutcome = 'REGENERATION_STARTED' | 'ALREADY_PROCESSING' | 'ALREADY_REGENERATED';
+
+export interface CaterpillarRegenerationAuthorization {
+  authorizationId: string;
+  reason: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  authorizedAt: string;
+  requestId: string | null;
+  regeneratedExecutionId: string | null;
+}
+
+// Why the UI may or may not offer "Regenerar". Advisory only: PostgreSQL re-checks every condition when the ADMIN confirms.
+export type CaterpillarRegenerationBlock = 'UNAVAILABLE' | 'NOT_COMPLETED' | 'NO_SNAPSHOT' | 'LIVE_REMISSIONS' | 'CANCELLATION_NOT_FORMAL' | 'ALREADY_REGENERATED';
+
+export interface CaterpillarRegenerationState {
+  eligible: boolean;
+  blockedBy: CaterpillarRegenerationBlock | null;
+  authorization: CaterpillarRegenerationAuthorization | null;
+}
+
+export interface CaterpillarRegenerationResult {
+  outcome: CaterpillarReprocessOutcome | CaterpillarRegenerationOutcome;
+  originalExecutionId: string;
+  executionId: string | null;
+  authorization: CaterpillarRegenerationAuthorization | null;
+}
 
 export interface CaterpillarReprocessResult {
   outcome: CaterpillarReprocessOutcome;
@@ -102,7 +140,20 @@ export interface CaterpillarRemittance {
   // Plain text only — never resolved to a file/URL, no filesystem or Dropbox access (Phase 12A.3 §D).
   pdfPath: string | null;
   status: string;
+  revision: string | null;
+  processLabel: string | null;
+  cancellationReason: string | null;
+  cancellation: CaterpillarCancellation | null;
   details: CaterpillarRemittanceDetail[];
+}
+
+export interface CaterpillarCancellation {
+  cancellationId: string;
+  userId: string | null;
+  userEmail: string;
+  userDisplayName: string;
+  cancelledAt: string;
+  requestId: string | null;
 }
 
 export interface CaterpillarExecutionDetail {
@@ -116,6 +167,7 @@ export interface CaterpillarExecutionDetail {
   latestErrorMessage: string | null;
   n8nExecutionId: string | null;
   reprocessOfExecutionId: string | null;
+  regeneration: CaterpillarRegenerationState;
   sourceDocument: CaterpillarSourceDocument;
   reservations: CaterpillarFolioReservation[];
   remittances: CaterpillarRemittance[];
@@ -135,6 +187,18 @@ export class CaterpillarExecutionsService {
     private readonly webhookClient: CaterpillarReprocessWebhookClient,
     private readonly triggerRequests: AutomationTriggerRequestsRepository
   ) {}
+
+  // Internal advisory entry point only. Not exposed as HTTP or connected to a workflow/reserver.
+  async assessAutomaticAdmission(input: CaterpillarAdmissionInput) {
+    let candidate;
+    try { candidate = createCaterpillarAdmissionCandidate(input); }
+    catch { throw new BadRequestException('La programación normalizada no es válida para admisión.'); }
+    const history = await this.repository.findAutomaticAdmissionHistory(candidate.sourceCompanyId);
+    return decideCaterpillarAutomaticAdmission(candidate, {
+      complete: history?.database_name === 'daubert_hub_test' && history.snapshot_storage_ready,
+      entries: history?.entries ?? []
+    });
+  }
 
   // Zero Caterpillar executions in production today is a normal, valid state (Phase 12A.3 §C) —
   // this returns an ordinary empty data array with a correct meta block, never an error.
@@ -156,9 +220,12 @@ export class CaterpillarExecutionsService {
     const execution = await this.repository.findById(executionId);
     if (!execution) throw new NotFoundException('Ejecución de Caterpillar no encontrada.');
 
-    const [reservations, remissions] = await Promise.all([
+    const [reservations, remissions, audits, routes, regenerationContext] = await Promise.all([
       this.repository.findReservationsByExecutionId(executionId),
-      this.repository.findRemissionsByExecutionId(executionId)
+      this.repository.findRemissionsByExecutionId(executionId),
+      this.repository.findCancellationAuditsByExecutionId(executionId),
+      this.routing.listRoutes(),
+      this.repository.findRegenerationContext(executionId)
     ]);
     const details = remissions.length > 0
       ? await this.repository.findDetailsByRemisionIds(remissions.map((remission) => remission.remision_id))
@@ -176,11 +243,62 @@ export class CaterpillarExecutionsService {
         latestErrorMessage: execution.error_message,
         n8nExecutionId: execution.n8n_execution_id,
         reprocessOfExecutionId: execution.reproceso_de_id,
+        regeneration: this.mapRegeneration(execution.execution_state, remissions, audits, regenerationContext),
         sourceDocument: this.mapSourceDocument(execution),
         reservations: reservations.map((reservation) => this.mapReservation(reservation)),
-        remittances: remissions.map((remission) => this.mapRemittance(remission, details))
+        remittances: remissions.map((remission) => ({
+          ...this.mapRemittance(remission, details),
+          processLabel: resolveCaterpillarProcessLabel(routes, [remission.serie_id]),
+          cancellation: this.mapCancellation(audits.find((audit) => audit.remision_id === remission.remision_id))
+        }))
       }
     };
+  }
+
+  async cancelRemission(executionId: string, remissionId: string, input: CancelCaterpillarRemissionDto, requestId: string, identity: AuditIdentity) {
+    if (!identity.userId || !identity.userEmail) throw new BadRequestException('No se pudo determinar el usuario autenticado.');
+    try {
+      const row = await this.repository.cancelRemission(executionId, remissionId, input, identity.userId, requestId);
+      return { data: { status: row.resultado, remissionId: row.remision_id, cancellationReason: row.motivo, cancellation: this.mapCancellation(row) } };
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'PCA01') throw new NotFoundException('Remisión de Caterpillar no encontrada en esta ejecución.');
+      if (code === 'PCA05') throw new ForbiddenException('No tienes permisos para cancelar esta remisión.');
+      const messages: Record<string, string> = {
+        PCA02: 'No se pueden cancelar remisiones mientras la ejecución está procesando.',
+        PCA03: 'La remisión no está en un estado elegible para cancelación.',
+        PCA04: 'La remisión cambió. Actualiza el detalle antes de confirmar.'
+      };
+      if (code && messages[code]) throw new ConflictException({ code: code === 'PCA04' ? 'CATERPILLAR_REMISSION_STALE' : 'CATERPILLAR_CANCEL_NOT_ELIGIBLE', message: messages[code] });
+      if (code === '22023') throw new BadRequestException('Solicitud de cancelación no válida.');
+      if (code === '42883' || code === '42P01') throw new ServiceUnavailableException('Cancelación no disponible.');
+      // Do not return raw SQL, function names, paths or upstream details, including outside HTTP.
+      throw new ServiceUnavailableException('No fue posible confirmar la cancelación. Actualiza el detalle antes de reintentar.');
+    }
+  }
+
+  private mapAuthorization(row: CaterpillarRegenerationAuthorizationRow | null | undefined): CaterpillarRegenerationAuthorization | null {
+    if (!row) return null;
+    return { authorizationId: row.autorizacion_id, reason: row.motivo, userId: row.usuario_id, userEmail: row.usuario_email, userDisplayName: row.usuario_nombre,
+      authorizedAt: row.autorizada_en, requestId: row.request_id, regeneratedExecutionId: row.ejecucion_nueva_id };
+  }
+
+  // Mirrors, for display only, the conditions fn_autorizar_regeneracion_caterpillar enforces. The frontend never rebuilds these rules.
+  private mapRegeneration(state: string, remissions: Array<{ remision_id: string; estatus: string }>, audits: CaterpillarCancellationRow[], context: CaterpillarRegenerationContextRow): CaterpillarRegenerationState {
+    const authorization = this.mapAuthorization(context.authorization);
+    const blocked = (blockedBy: CaterpillarRegenerationBlock): CaterpillarRegenerationState => ({ eligible: false, blockedBy, authorization });
+    if (!context.available) return blocked('UNAVAILABLE');
+    if (state !== 'COMPLETADA') return blocked('NOT_COMPLETED');
+    if (context.has_child || authorization?.regeneratedExecutionId) return blocked('ALREADY_REGENERATED');
+    if (!context.has_snapshot) return blocked('NO_SNAPSHOT');
+    if (remissions.length === 0 || remissions.some((remission) => remission.estatus !== 'CANCELADA')) return blocked('LIVE_REMISSIONS');
+    if (remissions.some((remission) => !audits.some((audit) => audit.remision_id === remission.remision_id))) return blocked('CANCELLATION_NOT_FORMAL');
+    return { eligible: true, blockedBy: null, authorization };
+  }
+
+  private mapCancellation(row?: CaterpillarCancellationRow): CaterpillarCancellation | null {
+    if (!row?.cancelacion_id) return null;
+    return { cancellationId: row.cancelacion_id, userId: row.usuario_id, userEmail: row.usuario_email!, userDisplayName: row.usuario_nombre!, cancelledAt: row.cancelada_en!, requestId: row.request_id };
   }
 
   // Phase 12C: React never calls n8n directly — this is the one path from an authenticated ADMIN
@@ -204,7 +322,7 @@ export class CaterpillarExecutionsService {
     }
 
     if (webhookResult.kind === 'REJECTED') {
-      // webhookResult.reason is exactly one of the four known domain rejections here — the
+      // webhookResult.reason is exactly one of the known domain rejections here — the
       // webhook client itself refuses to construct a REJECTED with anything else (an
       // unrecognized error code is INVALID_RESPONSE, handled below, never a fabricated domain
       // rejection). No further mapping/fallback needed.
@@ -223,6 +341,42 @@ export class CaterpillarExecutionsService {
         ? 'UPSTREAM_INVALID_RESPONSE'
         : 'UPSTREAM_UNAVAILABLE';
     return { outcome, originalExecutionId: executionId, executionId: null };
+  }
+
+  // Commercial regeneration (separate from reprocess): 1) the ADMIN authorization is recorded in PostgreSQL, which also validates every condition;
+  // 2) n8n is asked to run it with kind=REGENERATION. Retrying after a timeout is safe: the authorization is single-use and the webhook idempotent.
+  async regenerate(executionId: string, reason: string, requestId: string, identity: AuditIdentity): Promise<CaterpillarRegenerationResult> {
+    if (!identity.userId || !identity.userEmail) throw new BadRequestException('No se pudo determinar el usuario autenticado.');
+    let row: CaterpillarRegenerationAuthorizationRow;
+    try {
+      row = await this.repository.authorizeRegeneration(executionId, reason, identity.userId, requestId);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'PCR01') throw new NotFoundException('Ejecución de Caterpillar no encontrada.');
+      if (code === 'PCR05') throw new ForbiddenException('No tienes permisos para autorizar esta regeneración.');
+      const messages: Record<string, string> = {
+        PCR02: 'Solo se puede regenerar una ejecución completada.',
+        PCR03: 'Esta programación es anterior al control de snapshots: no se puede regenerar automáticamente. Requiere una decisión manual.',
+        PCR04: 'Todas las remisiones de la ejecución deben estar canceladas formalmente antes de regenerar.',
+        PCR06: 'Esta ejecución ya tiene una ejecución derivada.'
+      };
+      if (code && messages[code]) throw new ConflictException({ code: 'CATERPILLAR_REGENERATION_NOT_ELIGIBLE', message: messages[code] });
+      if (code === '22023') throw new BadRequestException('Solicitud de regeneración no válida.');
+      if (code === '42883' || code === '42P01') throw new ServiceUnavailableException('Regeneración no disponible.');
+      this.logger.error('Failed to record the regeneration authorization', error instanceof Error ? error.stack : error);
+      throw new ServiceUnavailableException('No fue posible registrar la autorización. Actualiza el detalle antes de reintentar.');
+    }
+    const authorization = this.mapAuthorization(row);
+    const webhookResult = await this.webhookClient.triggerReprocess(executionId, reason, 'REGENERATION');
+    if (webhookResult.kind === 'ACCEPTED') {
+      const outcome: CaterpillarRegenerationOutcome = webhookResult.status === 'REPROCESS_CREATED' ? 'REGENERATION_STARTED'
+        : webhookResult.status === 'ALREADY_REPROCESSED' ? 'ALREADY_REGENERATED' : 'ALREADY_PROCESSING';
+      return { outcome, originalExecutionId: webhookResult.originalExecutionId, executionId: webhookResult.executionId, authorization };
+    }
+    if (webhookResult.kind === 'REJECTED') return { outcome: webhookResult.reason, originalExecutionId: executionId, executionId: null, authorization };
+    const outcome: CaterpillarReprocessOutcome = webhookResult.kind === 'TIMEOUT' ? 'UPSTREAM_TIMEOUT'
+      : webhookResult.kind === 'INVALID_RESPONSE' ? 'UPSTREAM_INVALID_RESPONSE' : 'UPSTREAM_UNAVAILABLE';
+    return { outcome, originalExecutionId: executionId, executionId: null, authorization };
   }
 
   private assertIdentity(identity: AuditIdentity): void {
@@ -308,6 +462,10 @@ export class CaterpillarExecutionsService {
       documentDate: this.formatDate(remission.fecha_documento),
       pdfPath: remission.pdf_path,
       status: remission.estatus,
+      revision: remission.revision ?? null,
+      processLabel: null,
+      cancellationReason: remission.motivo_cancelacion ?? null,
+      cancellation: null,
       details: allDetails
         .filter((detail) => detail.remision_id === remission.remision_id)
         .map((detail) => ({

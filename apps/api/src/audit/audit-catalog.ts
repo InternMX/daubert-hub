@@ -3,8 +3,8 @@
 // audit.cambios stores full row copies as JSONB. Nothing is exposed unless its
 // (schema, table) is declared here AND the column is on that entity's field
 // allowlist, so a table or column added to the audit triggers later stays
-// invisible until someone deliberately lists it. The 10 entries mirror the 10
-// triggers that write to audit.cambios (docs/database/triggers.md).
+// invisible until someone deliberately lists it. Entries mirror the audited
+// sources, including the new TEST-only payment file registry/assignment tables.
 //
 // Extension point for specialized sources: operacion.ajustes_series is NOT here
 // on purpose — it is its own canonical ledger (no audit.cambios trigger). When
@@ -83,6 +83,14 @@ export const AUDIT_ENTITIES: readonly AuditEntityDefinition[] = [
     // deliberately NOT allowlisted here either (defense in depth).
     key: 'USER', schema: 'security', table: 'users', label: 'Usuario', module: 'USERS', recordLabelField: 'email',
     fields: [f('display_name', 'Nombre'), f('email', 'Correo'), f('role', 'Rol'), f('status', 'Estado'), f('must_change_password', 'Debe cambiar contraseña'), f('password_changed', 'Contraseña modificada')]
+  },
+  {
+    key: 'PAYMENT_FILE', schema: 'core', table: 'archivos_notificacion_pago', label: 'Archivo de notificación de pago', module: 'AUTOMATIONS', recordLabelField: 'nombre_archivo',
+    fields: [f('correo_id', 'Correo'), f('nombre_archivo', 'Archivo'), f('estado_identidad', 'Identidad'), f('estado_operativo', 'Estado operativo'), f('created_by', 'Registrado por'), f('updated_by', 'Actualizado por')]
+  },
+  {
+    key: 'PAYMENT_FILE_ASSIGNMENT', schema: 'core', table: 'asignaciones_archivo_notificacion_pago', label: 'Asignación puntual de archivo', module: 'AUTOMATIONS', recordLabelField: null,
+    fields: [f('archivo_id', 'Archivo'), f('empresa_id', 'Empresa'), f('estatus', 'Estatus'), f('version', 'Versión'), f('created_by', 'Creado por'), f('updated_by', 'Actualizado por')]
   },
   {
     key: 'AUTOMATION_TRIGGER_REQUEST', schema: 'ops', table: 'automation_trigger_requests', label: 'Disparo manual de automatización', module: 'AUTOMATIONS', recordLabelField: 'automation_code',

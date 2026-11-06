@@ -14,7 +14,6 @@ import {
   type PaymentNotificationExecutionSummary
 } from '../services/paymentNotifications';
 import { OutcomeStatusChip, ResultStatusChip } from './PaymentNotificationStatusChips';
-import { PaymentNotificationFileErrors } from './PaymentNotificationFileErrors';
 import { executionTimestamp, fileErrorsSummary, processingStatusLabels, resultCountsSummary } from './paymentNotificationPresentation';
 import { ReprocessCell } from './ReprocessCell';
 import { ReviewAcknowledgementCell } from './ReviewAcknowledgementCell';
@@ -45,7 +44,7 @@ function LatestExecutionCard({ execution }: { execution: PaymentNotificationExec
         </Stack>
         <Typography sx={{ mt: 2.5 }}>{execution.totalResults} {execution.totalResults === 1 ? 'resultado' : 'resultados'}</Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>{resultCountsSummary(execution)}</Typography>
-        {execution.fileErrors > 0 && <Typography color="warning.main" sx={{ mt: 0.5 }}>{fileErrorsSummary(execution.fileErrors)}</Typography>}
+        {execution.fileErrors > 0 && <Typography color="text.secondary" sx={{ mt: 0.5 }}>{fileErrorsSummary(execution.fileErrors)}</Typography>}
         <Typography sx={{ mt: 2 }} color={execution.summarySent ? 'success.main' : 'text.secondary'}>
           {execution.summarySent ? 'Resumen enviado ✓' : 'Resumen no enviado'}
         </Typography>
@@ -120,7 +119,24 @@ function AttentionSection({ executionId }: { executionId: string }) {
       )}
       {!loading && !error && detail && hasFileErrors && (
         <Box sx={{ mt: attentionItems.length > 0 ? 3 : 2 }}>
-          <PaymentNotificationFileErrors fileErrors={detail.fileErrorDetails} titleId="payment-notifications-latest-file-errors-title" />
+          <Paper variant="outlined" sx={{ p: 2, borderLeft: 4, borderLeftColor: 'warning.main' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} justifyContent="space-between">
+              <Box>
+                <Typography variant="h3" sx={{ fontSize: '1rem', fontWeight: 700 }}>Archivos que requieren atención</Typography>
+                {detail.fileAttentionSummary ? <>
+                  <Typography sx={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.2 }}>
+                    {detail.fileAttentionSummary.total} {detail.fileAttentionSummary.total === 1 ? 'archivo con incidencia' : 'archivos con incidencias'}
+                  </Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.25, sm: 3 }} sx={{ mt: 0.5 }}>
+                    <Typography variant="body2">{detail.fileAttentionSummary.assignedPending} asignados · pendientes de reproceso</Typography>
+                    <Typography variant="body2">{detail.fileAttentionSummary.unassigned} sin asignación</Typography>
+                  </Stack>
+                </> : <Typography variant="body2" color="text.secondary">{fileErrorsSummary(detail.fileErrors)}</Typography>}
+                {(detail.fileAttentionSummary?.pointPending ?? 0) > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{detail.fileErrorDetails?.some((file) => file.fileAssignment?.n8nReady) ? 'Asignaciones puntuales activas; se aplican al reprocesar cuando es seguro.' : 'Asignaciones puntuales pendientes de integración n8n; reproceso bloqueado.'}</Typography>}
+              </Box>
+              <Button variant="outlined" component={Link} to={`/automations/payment-notifications/${executionId}`} sx={{ flexShrink: 0 }}>Ver archivos</Button>
+            </Stack>
+          </Paper>
         </Box>
       )}
     </Box>

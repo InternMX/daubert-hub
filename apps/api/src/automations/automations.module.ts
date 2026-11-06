@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { HealthModule } from '../health/health.module';
+import { AliasesModule } from '../aliases/aliases.module';
 import { AutomationsController } from './automations.controller';
 import { AutomationsService } from './automations.service';
 import { DocumentSeriesRepository } from './document-series.repository';
@@ -11,6 +12,8 @@ import { PaymentNotificationsController } from './payment-notifications/payment-
 import { PaymentNotificationsRepository } from './payment-notifications/payment-notifications.repository';
 import { PaymentNotificationsService } from './payment-notifications/payment-notifications.service';
 import { PaymentNotificationsWebhookClient } from './payment-notifications/payment-notifications-webhook.client';
+import { PaymentFileAssignmentsRepository } from './payment-notifications/payment-file-assignments.repository';
+import { PaymentFileAssignmentsService } from './payment-notifications/payment-file-assignments.service';
 import { AudiExecutionsController } from './remisiones-audi/audi-executions.controller';
 import { AudiExecutionsRepository } from './remisiones-audi/audi-executions.repository';
 import { AudiExecutionsService } from './remisiones-audi/audi-executions.service';
@@ -26,11 +29,12 @@ import { ReviewAcknowledgementsService } from './review/review-acknowledgements.
 import { AutomationTriggerRequestsRepository } from './trigger-requests/automation-trigger-requests.repository';
 
 @Module({
-  imports: [DatabaseModule, HealthModule],
+  imports: [DatabaseModule, HealthModule, AliasesModule],
   controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, CaterpillarController, ReviewAcknowledgementsController],
   providers: [
     AutomationsService, DocumentSeriesRepository,
     PaymentNotificationsService, PaymentNotificationsRepository, PaymentNotificationsWebhookClient,
+    PaymentFileAssignmentsRepository, PaymentFileAssignmentsService,
     AutomationsOverviewService, AutomationsOverviewRepository,
     AudiExecutionsService, AudiExecutionsRepository,
     CaterpillarExecutionsService, CaterpillarExecutionsRepository, CaterpillarReprocessWebhookClient,

@@ -1,0 +1,25 @@
+{
+  "description": "Synthetic golden values from separately compiled ORIGINAL V1/adaptor sources; SHA-256 via Node crypto. No delivery identity claim.",
+  "sourceSha256": {
+    "caterpillar-operational-manifest.ts": "d417b7f4723276fd4bb82ec4cfa1813d343848521e1b56c8adb8315a02ed3c49",
+    "caterpillar-operational-manifest.adapter.ts": "4c3a7fe68b6cdadff6efdc69c26dadc6ba04d943d25b73a158e23c8b671fb9b8"
+  },
+  "cases": [
+    {
+      "caseId": "STANDARD_SYNTHETIC",
+      "manifestVersion": "CAT_OPERATIONAL_CONTENT_V1",
+      "lineCount": 3,
+      "manifestDocumentCount": 3,
+      "canonicalJson": "{\"version\":\"CAT_OPERATIONAL_CONTENT_V1\",\"scope\":[\"CAT_P3_P4_P5_P6\",\"P5\",\"\",\"Cliente sintetico TEST\",\"RFC-TEST\"],\"deliveryDate\":\"2026-10-21\",\"grouping\":\"POR_ARTICULO\",\"documents\":[{\"purchaseOrder\":\"000042\",\"lines\":[[\"SYN-A\",\"0007-A\",\"000042\",1.25,\"PIEZAS\"]]},{\"purchaseOrder\":\"000042\",\"lines\":[[\"SYN-A\",\"0007-A\",\"000042\",1.25,\"PIEZAS\"]]},{\"purchaseOrder\":\"000042\",\"lines\":[[\"SYN-B\",\"0008\",\"000042\",2.5,\"ROLLOS\"]]}]}",
+      "sha256": "98986ddb9b6ff21325d8bae621d5a440571d364075e15fba73839e6c7238ac06"
+    },
+    {
+      "caseId": "TORREON_SYNTHETIC",
+      "manifestVersion": "CAT_OPERATIONAL_CONTENT_V1",
+      "lineCount": 3,
+      "manifestDocumentCount": 1,
+      "canonicalJson": "{\"version\":\"CAT_OPERATIONAL_CONTENT_V1\",\"scope\":[\"CAT_TORREON\",\"TORREON\",\"PLANTA_2\",\"Cliente Torreon sintetico TEST\",\"\"],\"deliveryDate\":\"2026-10-21\",\"grouping\":\"POR_OC\",\"documents\":[{\"purchaseOrder\":\"000042\",\"lines\":[[\"TOR-SYN-A\",\"0001-A\",\"000042\",1.234567,\"PIEZAS\"],[\"TOR-SYN-A\",\"0001-A\",\"000042\",1.234567,\"PIEZAS\"],[\"TOR-SYN-B\",\"0002-B\",\"000042\",2.5,\"PAQUETES\"]]}]}",
+      "sha256": "51bf858c5918c04ee3d3a60dd163a61a4807150f01b793b79afd9d9c8c5bba3e"
+    }
+  ]
+}

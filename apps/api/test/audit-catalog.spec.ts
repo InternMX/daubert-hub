@@ -3,10 +3,10 @@ import { AUDIT_ENTITIES, findEntityByTable, isSensitiveFieldName } from '../src/
 import { buildChanges } from '../src/audit/audit-presenter';
 
 describe('audit catalog', () => {
-  it('covers exactly the 10 audited tables, each once', () => {
+  it('covers the existing audited tables and the two payment file tables, each once', () => {
     const tables = AUDIT_ENTITIES.map((entity) => `${entity.schema}.${entity.table}`).sort();
     expect(tables).toEqual([
-      'core.alias_empresa', 'core.contactos', 'core.direcciones', 'core.empresa_roles', 'core.empresas', 'core.empresas_fiscales',
+      'core.alias_empresa', 'core.archivos_notificacion_pago', 'core.asignaciones_archivo_notificacion_pago', 'core.contactos', 'core.direcciones', 'core.empresa_roles', 'core.empresas', 'core.empresas_fiscales',
       'core.medios_contacto', 'ops.automation_review_acknowledgements', 'ops.automation_trigger_requests', 'security.users'
     ]);
     expect(new Set(AUDIT_ENTITIES.map((entity) => entity.key)).size).toBe(AUDIT_ENTITIES.length);

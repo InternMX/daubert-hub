@@ -1,4 +1,14 @@
 export interface EnvironmentConfig {
+  paymentFileAssignmentsTestEnabled?: boolean;
+  // TEST only: the isolated n8n TEST already consumes point assignments. Effective only together with the TEST database,
+  // the assignment feature and an n8n reprocess webhook whose origin equals paymentFileAssignmentsN8nTestOrigin (never PROD n8n).
+  paymentFileAssignmentsN8nReady?: boolean;
+  paymentFileAssignmentsN8nTestOrigin?: string | null;
+  // PRODUCTION: independent of every TEST flag above. Effective only on the production database (daubert_global); a TEST flag never
+  // enables it and these never enable TEST. READY additionally requires an exact production webhook target (see payment-file-n8n-target.ts).
+  paymentFileAssignmentsProdEnabled?: boolean;
+  paymentFileAssignmentsProdN8nReady?: boolean;
+  paymentFileAssignmentsProdN8nOrigin?: string | null;
   apiPort: number;
   database: {
     host: string;
@@ -108,14 +118,20 @@ function booleanFlag(value: string | undefined, name: string, fallback: boolean)
 // reads the root package.json directly) both supply it explicitly — this
 // constant only matters for a direct workspace dev command or an ad-hoc process
 // launch that skips both. Keep it in sync with the root package.json
-// "version" field when bumping releases; this is intentionally the one
+// "version" field when bumping releases (environment.spec.ts fails on drift); this is intentionally the one
 // place that small duplication is accepted, in exchange for the app version
 // never failing to resolve to *something* meaningful.
-const DEFAULT_APP_VERSION = '0.8.0-pilot.1';
+const DEFAULT_APP_VERSION = '1.1.0';
 const UNKNOWN_BUILD_METADATA = 'unknown';
 
 export function validateEnvironment(env: Record<string, string | undefined>): EnvironmentConfig {
   return {
+    paymentFileAssignmentsTestEnabled: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED, 'PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED', false),
+    paymentFileAssignmentsN8nReady: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_N8N_READY, 'PAYMENT_FILE_ASSIGNMENTS_N8N_READY', false),
+    paymentFileAssignmentsN8nTestOrigin: env.PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN?.trim() || null,
+    paymentFileAssignmentsProdEnabled: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED, 'PAYMENT_FILE_ASSIGNMENTS_PROD_ENABLED', false),
+    paymentFileAssignmentsProdN8nReady: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY, 'PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_READY', false),
+    paymentFileAssignmentsProdN8nOrigin: env.PAYMENT_FILE_ASSIGNMENTS_PROD_N8N_ORIGIN?.trim() || null,
     apiPort: port(env.API_PORT, 'API_PORT', 3000),
     database: {
       host: required(env.DB_HOST, 'DB_HOST'),
