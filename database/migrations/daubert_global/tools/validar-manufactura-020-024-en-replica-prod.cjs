@@ -16,6 +16,9 @@ const PUERTO = 55447;
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
 const DUMP = arg('--dump');
 const ESTRUCTURA_PROD = arg('--estructura-prod');
+// --con-datos: el respaldo se restaura COMPLETO (con los datos reales) y NO se siembran datos sintéticos ni se ejecutan los smoke con escrituras (usan los usuarios sintéticos 1-5, que aquí serían reales).
+// Solo para la réplica DESECHABLE del ensayo de liberación. Sin la bandera el comportamiento es el de siempre (estructura + datos sintéticos).
+const CON_DATOS = process.argv.includes('--con-datos');
 if (!DUMP || !fs.existsSync(DUMP)) { console.error('Uso: --dump <respaldo pg_dump -F c de daubert_global> [--estructura-prod estructura_PROD.txt]'); process.exit(2); }
 
 const MIGRACIONES = [
@@ -68,7 +71,7 @@ CREATE DATABASE otra_base OWNER postgres;`;
   fs.writeFileSync(path.join(tmp, 'roles.sql'), roles);
   cp(path.join(tmp, 'roles.sql'), 'roles.sql'); cp(DUMP, 'prod.dump');
   registrar(psql({ archivo: 'roles.sql', base: 'postgres' }).codigo === 0, 'roles reales del clúster creados (daubert_hub_app, n8n_app, n8n_cat_prod, daubert_docs_ro, daubert_hub_test_user, …)');
-  const rs = docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'pg_restore', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'daubert_global', '--schema-only', '--exit-on-error', '/tmp/prod.dump']);
+  const rs = docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'pg_restore', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'daubert_global', ...(CON_DATOS ? [] : ['--schema-only']), '--exit-on-error', '/tmp/prod.dump']);
   registrar(rs.status === 0, 'estructura REAL de PROD restaurada (pg_restore --schema-only del respaldo): esquemas, tablas, funciones, triggers y ACL', rs.stderr);
   // Marca de réplica + datos SINTÉTICOS (solo para los smoke con escritura; nunca existen en PROD).
   const seed = `
@@ -78,6 +81,7 @@ INSERT INTO security.users (user_id, display_name, email, password_hash, role, s
   (4, 'Inactivo Cuatro', 'g4@example.invalid', 'x', 'GENERAL', 'INACTIVE'), (5, 'Admin Cinco', 'admin5@example.invalid', 'x', 'ADMIN', 'ACTIVE');
 INSERT INTO core.empresas (empresa_id, tipo_empresa, nombre_comercial) OVERRIDING SYSTEM VALUE VALUES (1, 'CLIENTE', 'Cliente sintético 1'), (2, 'CLIENTE', 'Cliente sintético 2'), (3, 'PROVEEDOR', 'Proveedor sintético');
 INSERT INTO core.empresa_roles (empresa_id, rol) VALUES (1, 'CLIENTE'), (2, 'CLIENTE'), (3, 'PROVEEDOR');`;
+  if (CON_DATOS) return;                                                   // réplica con datos reales: sin siembra sintética
   fs.writeFileSync(path.join(tmp, 'seed.sql'), seed); cp(path.join(tmp, 'seed.sql'), 'seed.sql');
   const sd = psql({ archivo: 'seed.sql' });
   registrar(sd.codigo === 0, 'datos SINTÉTICOS de réplica (5 usuarios, 3 empresas) y marca replica_desechable', sd.salida.slice(-200));
@@ -155,6 +159,7 @@ function main() {
       baseline[m.n] = vars;
       verificar(base, m.n, `tras la ${m.n}`);
       // Pruebas de seguridad CON ESCRITURAS como daubert_hub_app (solo réplica; cada script termina en ROLLBACK y comprueba que no dejó residuos). Cada smoke valida la semántica de SU nivel.
+      if (CON_DATOS) continue;                                               // los smoke con escrituras usan usuarios sintéticos: no se ejecutan con datos reales
       const sm = psql({ archivo: `${m.n}.smoke.sql`, usuario: 'daubert_hub_app', tuplas: true });
       const ls = sm.out.split('\n').filter((x) => /^\d+\|/.test(x));
       const fallos = ls.filter((x) => x.endsWith('|f'));
@@ -201,6 +206,13 @@ function main() {
     verificar(base, 24, 'tras reaplicar 020–024');
 
     // ---- DOWN con datos: exige confirmaciones explícitas (no borra por accidente)
+    if (CON_DATOS) {                                                         // usa usuarios sintéticos: no aplica a una réplica con datos reales
+      console.log('INFO  --con-datos: se omite el DOWN con documentos sintéticos');
+      docker(['rm', '-f', C]);
+      const fallosCD = RES.filter((x) => !x).length;
+      console.log(`\nRESULTADO: ${RES.length - fallosCD} PASS / ${fallosCD} FAIL`);
+      process.exit(fallosCD ? 1 : 0);
+    }
     psql({ sql: "SELECT set_config('app.user_id', '1', false), set_config('app.user_email', 'admin1@example.invalid', false); INSERT INTO manufactura.documentos (codigo_dcmx) VALUES ('X1')" });
     const dd = psql({ archivo: '24.down.sql' });
     const d16 = dd.codigo === 0;
