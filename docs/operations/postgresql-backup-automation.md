@@ -111,6 +111,8 @@ Lectura completa de `daubert_global`, sin escritura ni superusuario. **La contra
 CREATE ROLE daubert_backup LOGIN;
 GRANT pg_read_all_data TO daubert_backup;  -- PostgreSQL 14+
 ```
+> **Manufactura (esquema `manufactura`, migraciones 020–024):** este rol lee las tablas de Manufactura por pertenencia a `pg_read_all_data` (incluye documentos, PDF e imágenes de firmas: proteger sus credenciales y los archivos de respaldo). Sin `BYPASSRLS`, `pg_dump` como `daubert_backup` falla en cuanto exista `manufactura` (RLS); ver `docs/hub/manufactura-ensayo-6b-resultados.md` antes de aplicar la 020 en producción.
+
 ```
 \password daubert_backup
 ```
