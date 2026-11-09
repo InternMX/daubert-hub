@@ -52,7 +52,7 @@ try {
     $entries = @()
     foreach ($svc in 'api', 'web') {
         $tag = $ImagePrefix + '-' + $svc + ':release-' + $short
-        $args_ = @('build', '-f', ('docker/' + $svc + '.Dockerfile'), '-t', $tag, '--label', ('org.opencontainers.image.revision=' + $full), '--label', ('org.opencontainers.image.version=' + $version))
+        $args_ = @('build', '-f', (Join-Path $src ('docker/' + $svc + '.Dockerfile')), '-t', $tag, '--label', ('org.opencontainers.image.revision=' + $full), '--label', ('org.opencontainers.image.version=' + $version))
         if ($svc -eq 'api') { $args_ += @('--build-arg', ('APP_VERSION=' + $version), '--build-arg', ('GIT_COMMIT=' + $short)) }
         else { $args_ += @('--build-arg', ('VITE_MANUFACTURING_UI=' + $ui.ToString().ToLower()), '--build-arg', ('VITE_MANUFACTURING_DOCUMENTS=' + $ui.ToString().ToLower())) }
         $args_ += $src
