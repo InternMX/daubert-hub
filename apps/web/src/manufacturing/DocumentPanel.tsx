@@ -423,7 +423,7 @@ export function BarraDocumento() {
         {doc && <Chip size="small" color={doc.estado === 'FINALIZADA' ? 'success' : 'default'} label={nombre} data-testid="estado-guardado" />}
         {doc && d.soloConsulta && <Chip size="small" color="info" label="Solo lectura" data-testid="solo-lectura" />}
         {doc && !doc.propio && doc.estado !== 'FINALIZADA' && <Chip size="small" variant="outlined" label={`De ${doc.propietario?.nombre ?? doc.creadoPor}`} data-testid="propietario" />}
-        {doc && doc.estado !== 'DESCARTADA' && !d.soloConsulta && <Chip size="small" color="success" variant="outlined" label="Guardada en PostgreSQL (TEST)" />}
+        {doc && doc.estado !== 'DESCARTADA' && !d.soloConsulta && <Chip size="small" color="success" variant="outlined" label={entorno.esPrueba ? "Guardada en PostgreSQL (TEST)" : "Guardada en PostgreSQL"} />}
         {doc?.cliente && !doc.cliente.verificado && <Chip size="small" color="warning" variant="outlined" label="Cliente sin verificar (captura manual)" />}
         {!d.autoguardar && d.sucio && doc?.estado === 'BORRADOR' && <Chip size="small" color="info" label="Cambios sin guardar" />}
         {d.autoguardar && !d.soloConsulta && <IndicadorGuardado />}
@@ -504,7 +504,7 @@ export function BarraDocumento() {
       {doc?.estado === 'FINALIZADA' && !d.autoguardar && (
         <Stack spacing={1} sx={{ mt: 1 }}>
           <Alert severity="success">
-            Finalizada en TEST como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
+            Finalizada en {entorno.esPrueba ? 'TEST' : 'PRODUCCIÓN'} como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
           </Alert>
           {doc.pdf && <Typography variant="caption" color="text.secondary">Archivo: {doc.pdf.nombre} · SHA-256 {doc.pdf.sha256.slice(0, 16)}…</Typography>}
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -652,7 +652,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
       <Paper component="section" variant="outlined" aria-label="Finalizar hoja" sx={{ p: 2, mt: 2 }} ref={resultado} data-testid="final-resultado">
         <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Hoja finalizada</Typography>
         <Alert severity="success">
-          Finalizada en TEST como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
+          Finalizada en {entorno.esPrueba ? 'TEST' : 'PRODUCCIÓN'} como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
         </Alert>
         {doc.pdf && <Typography variant="body2" sx={{ mt: 1 }}>Archivo: <b>{doc.pdf.nombre}</b> <Typography component="span" variant="caption" color="text.secondary">· SHA-256 {doc.pdf.sha256.slice(0, 16)}…</Typography></Typography>}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
