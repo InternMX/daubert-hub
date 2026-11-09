@@ -18,6 +18,8 @@ import { AudiExecutionsController } from './remisiones-audi/audi-executions.cont
 import { AudiExecutionsRepository } from './remisiones-audi/audi-executions.repository';
 import { AudiExecutionsService } from './remisiones-audi/audi-executions.service';
 import { CaterpillarController } from './remisiones-caterpillar/caterpillar.controller';
+import { CaterpillarFolioRecoveryController } from './remisiones-caterpillar/caterpillar-folio-recovery.controller';
+import { CaterpillarFolioRecoveryService } from './remisiones-caterpillar/caterpillar-folio-recovery.service';
 import { CaterpillarExecutionsRepository } from './remisiones-caterpillar/caterpillar-executions.repository';
 import { CaterpillarExecutionsService } from './remisiones-caterpillar/caterpillar-executions.service';
 import { CaterpillarReprocessWebhookClient } from './remisiones-caterpillar/caterpillar-reprocess-webhook.client';
@@ -30,14 +32,14 @@ import { AutomationTriggerRequestsRepository } from './trigger-requests/automati
 
 @Module({
   imports: [DatabaseModule, HealthModule, AliasesModule],
-  controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, CaterpillarController, ReviewAcknowledgementsController],
+  controllers: [AutomationsController, PaymentNotificationsController, AutomationsOverviewController, AudiExecutionsController, CaterpillarController, CaterpillarFolioRecoveryController, ReviewAcknowledgementsController],
   providers: [
     AutomationsService, DocumentSeriesRepository,
     PaymentNotificationsService, PaymentNotificationsRepository, PaymentNotificationsWebhookClient,
     PaymentFileAssignmentsRepository, PaymentFileAssignmentsService,
     AutomationsOverviewService, AutomationsOverviewRepository,
     AudiExecutionsService, AudiExecutionsRepository,
-    CaterpillarExecutionsService, CaterpillarExecutionsRepository, CaterpillarReprocessWebhookClient,
+    CaterpillarExecutionsService, CaterpillarExecutionsRepository, CaterpillarReprocessWebhookClient, CaterpillarFolioRecoveryService,
     CaterpillarRoutingService, CaterpillarRoutingRepository,
     ReviewAcknowledgementsService, ReviewAcknowledgementsRepository,
     AutomationTriggerRequestsRepository

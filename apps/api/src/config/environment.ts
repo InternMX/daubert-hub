@@ -1,4 +1,5 @@
 export interface EnvironmentConfig {
+  caterpillarFolioRecoveryTestEnabled?: boolean;
   paymentFileAssignmentsTestEnabled?: boolean;
   // TEST only: the isolated n8n TEST already consumes point assignments. Effective only together with the TEST database,
   // the assignment feature and an n8n reprocess webhook whose origin equals paymentFileAssignmentsN8nTestOrigin (never PROD n8n).
@@ -101,6 +102,7 @@ const UNKNOWN_BUILD_METADATA = 'unknown';
 
 export function validateEnvironment(env: Record<string, string | undefined>): EnvironmentConfig {
   return {
+    caterpillarFolioRecoveryTestEnabled: booleanFlag(env.CATERPILLAR_FOLIO_RECOVERY_TEST_ENABLED, 'CATERPILLAR_FOLIO_RECOVERY_TEST_ENABLED', false),
     paymentFileAssignmentsTestEnabled: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED, 'PAYMENT_FILE_ASSIGNMENTS_TEST_ENABLED', false),
     paymentFileAssignmentsN8nReady: booleanFlag(env.PAYMENT_FILE_ASSIGNMENTS_N8N_READY, 'PAYMENT_FILE_ASSIGNMENTS_N8N_READY', false),
     paymentFileAssignmentsN8nTestOrigin: env.PAYMENT_FILE_ASSIGNMENTS_N8N_TEST_ORIGIN?.trim() || null,
