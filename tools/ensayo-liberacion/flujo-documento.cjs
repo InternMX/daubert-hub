@@ -12,7 +12,7 @@ const png = (n) => { /* PNG sintético de ~n bytes (ruido) */ const zlib = requi
   let id = d.body?.id ?? d.body?.data?.id; let ver = d.body?.version ?? d.body?.data?.version;
   if (!id) { const o = await call(admin, 'GET', '/manufacturing-sheets/documents/open'); const f = (o.body?.data ?? o.body ?? []).find?.((x) => x.codigo === 'SCHFPMG001'); id = f?.id; ver = f?.version; }
   ok(Boolean(id), 'id de borrador', d.body);
-  const pa = await call(admin, 'PATCH', `/manufacturing-sheets/documents/revisions/${id}`, { version: ver, cliente: { empresaId: '1' }, elaboroNombre: 'Admin Uno', elaboroConfirmado: true });
+  const pa = await call(admin, 'PATCH', `/manufacturing-sheets/documents/revisions/${id}`, { version: ver, cliente: { empresaId: process.env.ENSAYO_EMPRESA ?? '1' }, elaboroNombre: 'Admin Uno', elaboroConfirmado: true });
   ok(pa.status === 200, `completar cliente del catálogo y Generó (${pa.status})`, pa.body); ver = (pa.body?.version ?? pa.body?.data?.version ?? ver);
   const fin = await call(admin, 'POST', `/manufacturing-sheets/documents/revisions/${id}/finalize`, { version: ver });
   ok(fin.status === 200, `finalizar → 200 (fue ${fin.status})`, fin.body);

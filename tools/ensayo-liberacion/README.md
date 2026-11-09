@@ -23,3 +23,4 @@ Solo para instancias **desechables** (réplica de producción, contenedores loca
 | `comprobar-bind-real.cjs` | Comprobación de solo lectura contra BIND REAL vía la API del Hub (NO ejecutada; para una etapa posterior) |
 | `ensayo-compuerta-real.ps1` | Ensayo de la compuerta de database/ con git real y el manifiesto real, sobre un CLON aislado (13 escenarios positivos y negativos, incluida la 025 de Caterpillar) |
 | `ensayo-migraciones-manufactura.ps1` | Ensayo de `scripts/deploy/Invoke-ManufacturaMigrations.ps1` contra PostgreSQL desechable y un clon (negativos, etapas, fallo seguro, aplicación completa y repetición) |
+| `ensayo-despliegue/` | Ensayo 6C.2: override de Compose, variables sinteticas y `probar-pgdump-modulo.ps1` para ensayar despliegue/reversion en un entorno aislado (ver `docs/hub/manufactura-ensayo-6c2-despliegue.md`) |
