@@ -26,7 +26,7 @@ $mine = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 if ($cloneFull.TrimEnd('\') -ieq $mine.TrimEnd('\')) { throw 'Refusing to run on the working repository: pass an isolated clone.' }
 if (-not (Test-Path -LiteralPath (Join-Path $cloneFull '.git'))) { throw 'The clone is not a git repository.' }
 function G { param([string[]]$A) $o = & git -C $cloneFull @A 2>&1; if ($LASTEXITCODE -ne 0) { throw ('git ' + ($A -join ' ') + ' failed: ' + ($o | Out-String)) }; return $o }
-$null = G @('config', 'user.email', 'ensayo@example.invalid'); $null = G @('config', 'user.name', 'ensayo'); $null = G @('config', 'core.autocrlf', 'false')
+$null = G @('config', 'user.email', 'ensayo@example.invalid'); $null = G @('config', 'user.name', 'ensayo')
 
 . (Join-Path $cloneFull 'scripts\deploy\Deploy-DaubertHub.ps1')    # only defines functions (dot-sourced)
 Set-Location $cloneFull
@@ -38,7 +38,9 @@ function Get-Reasons {
     $manifestLeido = Read-DeployManifest $Manifest
     $todos = @($files)
     if ($manifestLeido.Json) { foreach ($a in @($manifestLeido.Json.archivos)) { if ([string]$a.categoria -like 'produccion_*') { $todos += [string]$a.ruta } } }
+    $previo = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     foreach ($f in @($todos | Select-Object -Unique)) { $o = & git -C $cloneFull rev-parse ('HEAD:' + $f) 2>$null; $blobs[$f] = $(if ($LASTEXITCODE -eq 0) { [string]$o } else { '' }) }
+    $ErrorActionPreference = $previo
     $script:Options = @{ DatabaseManifest = $Manifest; DatabaseManifestSha256 = $ManifestSha256 }
     $ctx = [pscustomobject]@{ MigrationFiles = $files; MigrationBlobs = $blobs; Manifest = (Read-DeployManifest $Manifest) }
     return @(Test-DatabaseManifest $ctx $script:Options $Expected $prefix)
