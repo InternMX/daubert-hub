@@ -108,7 +108,10 @@ if ($Scenario -ne 'sin-parche') {
 Write-Host '5. Migraciones de Manufactura'
 $until = $(if ($Scenario -eq 'bandera-sin-026') { '024' } else { '026' })
 $ev = Join-Path $Evidence ("$Scenario-migraciones.txt")
-$mg = Run { & powershell -NoProfile -File (Join-Path $op 'scripts\deploy\Invoke-ManufacturaMigrations.ps1') -DatabaseManifestSha256 $ManifestSha256 -Apply -UntilStep $until -EvidenceFile $ev -Psql $psql }
+# Sin -UntilStep el procedimiento termina con el humo de solo lectura y MANUFACTURA_SQL_COMPLETE (una parada por etapas NO los escribe y readiness la rechaza).
+$mArgs = @('-NoProfile', '-File', (Join-Path $op 'scripts\deploy\Invoke-ManufacturaMigrations.ps1'), '-DatabaseManifestSha256', $ManifestSha256, '-Apply', '-EvidenceFile', $ev, '-Psql', $psql)
+if ($until -ne '026') { $mArgs += @('-UntilStep', $until) }
+$mg = Run { & powershell @mArgs }
 Write-Host ("   Invoke-ManufacturaMigrations hasta la $until : exit $($mg.Code)")
 if ($mg.Code -ne 0) { Stop-Sequence '5' 'una migracion fallo' 'El procedimiento ya se detuvo sin DOWN. Mantener Manufactura apagada y las tareas en pausa hasta decidir (ver plan de reversion: migraciones parciales).' }
 

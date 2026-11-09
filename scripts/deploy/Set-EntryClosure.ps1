@@ -118,10 +118,22 @@ switch ($Action) {
         $sha = Get-Sha $tmp
         if ($sha -ne $ExpectedOpenSha256 -and -not $AcceptNewBaseline) { throw "The Nginx file of $WebImage has SHA-256 $sha, not the expected baseline $ExpectedOpenSha256 (review; -AcceptNewBaseline to continue)" }
         $bytes = [System.IO.File]::ReadAllBytes($tmp)
-        Write-InPlace $openCopy $bytes; Write-InPlace $active $bytes
-        Write-InPlace $policyCopy ([System.IO.File]::ReadAllBytes($policyPath))
-        if ((Get-Sha $active) -ne $sha) { throw 'default.conf does not reproduce the original byte for byte' }
-        Write-Host "Prepared $ClosureDir : default.conf = ORIGINAL (open) sha256=$sha ; copies in $parent. Nothing was recreated."
+        # Refreshing the baseline DURING a closed window must not reopen it: if default.conf currently is a closure policy (the versioned one or the installed copy),
+        # only the OPEN copy is refreshed and default.conf stays closed (run -Action Close afterwards to install the current policy; -Action Open applies the new open file).
+        $activeSha = Get-Sha $active
+        $closedNow = ($activeSha -ne '' -and ($activeSha -eq (Get-Sha $policyPath) -or $activeSha -eq (Get-Sha $policyCopy)))
+        Write-InPlace $openCopy $bytes
+        if ((Get-Sha $openCopy) -ne $sha) { throw 'default.conf.open does not reproduce the original byte for byte' }
+        if ($closedNow) {
+            Write-InPlace $policyCopy ([System.IO.File]::ReadAllBytes($policyPath))
+            Write-Host "Prepared $parent : the closure is ACTIVE, default.conf was KEPT CLOSED; default.conf.open = ORIGINAL sha256=$sha. Run -Action Close now (installs the current policy), -Action Open at the end of the window."
+        }
+        else {
+            Write-InPlace $active $bytes
+            Write-InPlace $policyCopy ([System.IO.File]::ReadAllBytes($policyPath))
+            if ((Get-Sha $active) -ne $sha) { throw 'default.conf does not reproduce the original byte for byte' }
+            Write-Host "Prepared $ClosureDir : default.conf = ORIGINAL (open) sha256=$sha ; copies in $parent. Nothing was recreated. If web is running, run -Action Open (or Reload) to apply it."
+        }
     }
     'Close' { Install-File $policyPath; Assert-Probes 'closed'; Write-Host 'CLOSURE ACTIVE (verified)' }
     'Open' { Install-File $openCopy; Assert-Probes 'open'; Write-Host 'CLOSURE OFF (verified)' }

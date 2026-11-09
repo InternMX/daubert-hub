@@ -45,8 +45,8 @@ if (flag('--restaurar')) {
     }
     if (arg('--filas-origen')) {
       const esperado = new Map(fs.readFileSync(arg('--filas-origen'), 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean).map((l) => l.split('|')));
-      const real = new Map(psql("SELECT table_schema || '.' || table_name, (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema','pg_toast','manufactura')").out.split('\n').map((l) => l.split('|')));
-      const menos = [...esperado].filter(([k, v]) => Number(real.get(k) ?? -1) < Number(v)); ok(menos.length === 0, 'ninguna tabla ajena a Manufactura tiene MENOS filas que las del archivo de conteos de referencia (el respaldo es posterior: puede tener más)', menos.map(([k, v]) => `${k}: ${real.get(k)} < ${v}`).join('; '));
+      const real = new Map(psql("SELECT table_schema || '.' || table_name, (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema','pg_toast')").out.split('\n').map((l) => l.split('|')));
+      const menos = [...esperado].filter(([k, v]) => Number(real.get(k) ?? -1) < Number(v)); ok(menos.length === 0, 'ninguna tabla (incluidas las de Manufactura) tiene MENOS filas que las del archivo de conteos de referencia (el respaldo es posterior: puede tener más)', menos.map(([k, v]) => `${k}: ${real.get(k)} < ${v}`).join('; '));
     }
   } finally { dk(['rm', '-f', C]); }
 }
