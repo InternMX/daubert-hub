@@ -26,10 +26,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $Repo) { $Repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')) }
-function Git { param([string[]]$A) $o = & git -C $Repo @A 2>$null; if ($LASTEXITCODE -ne 0) { throw ('git ' + ($A -join ' ') + ' failed') }; return $o }
-$full = [string](Git @('rev-parse', '--verify', ($Commit + '^{commit}')) | Select-Object -First 1)
+function Invoke-RepoGit { param([string[]]$A) $o = & git -C $Repo @A 2>$null; if ($LASTEXITCODE -ne 0) { throw ('git ' + ($A -join ' ') + ' failed') }; return $o }
+$full = [string](Invoke-RepoGit @('rev-parse', '--verify', ($Commit + '^{commit}')) | Select-Object -First 1)
 $short = $full.Substring(0, 7)
-$pkg = (Git @('show', ($full + ':package.json')) | Out-String) | ConvertFrom-Json
+$pkg = (Invoke-RepoGit @('show', ($full + ':package.json')) | Out-String) | ConvertFrom-Json
 $version = [string]$pkg.version
 $ui = [bool]$ManufacturingUi
 Write-Host ('Commit      : ' + $full)
