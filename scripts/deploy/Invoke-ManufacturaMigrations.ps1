@@ -128,7 +128,7 @@ function Invoke-SqlText([string]$Sql) {
 }
 function Get-BoolRows([string]$Out) { return @($Out -split "`r?`n" | Where-Object { $_ -match '^[tf](\|[tf])+$' }) }
 function Test-AllTrue([string]$Out) {
-    $rows = Get-BoolRows $Out
+    $rows = @(Get-BoolRows $Out)
     if ($rows.Count -eq 0) { return $false }
     foreach ($row in $rows) { if (($row -split '\|') -contains 'f') { return $false } }
     return $true
@@ -157,7 +157,7 @@ foreach ($s in $steps) {
     $pre = Invoke-Sql $s.Files['precheck'] @()
     Add-Evidence ("--- {0} precheck exit={1}`n{2}" -f $s.Id, $pre.Code, $pre.Out.Trim())
     if ($pre.Code -ne 0) { Stop-Step "$($s.Paso): precheck failed (exit $($pre.Code))." }
-    $rows = Get-BoolRows $pre.Out
+    $rows = @(Get-BoolRows $pre.Out)
     if ($rows.Count -eq 0) { Stop-Step "$($s.Paso): the precheck printed no checks." }
     foreach ($row in $rows) { if (($row -split '\|') -contains 'f') { Stop-Step "$($s.Paso): the precheck has a false check." } }
     # variables the postcheck needs
@@ -166,7 +166,7 @@ foreach ($s in $steps) {
     switch ($stepVars[$s.Paso]) {
         'baseline' {
             $row = @($lines | Where-Object { $_.Contains('|') -and $_ -notmatch '^[tf](\|[tf])+$' }) | Select-Object -Last 1
-            $vals = if ($row) { $row -split '\|' } else { @() }
+            $vals = @(if ($row) { $row -split '\|' })
             if ($vals.Count -ne $baselineNames.Count -or @($vals | Where-Object { $_ -eq '' }).Count -gt 0) { Stop-Step '020: the precheck did not print the 11 baseline values.' }
             for ($i = 0; $i -lt $baselineNames.Count; $i++) { $vars += @('-v', ($baselineNames[$i] + '=' + $vals[$i])) }
         }
