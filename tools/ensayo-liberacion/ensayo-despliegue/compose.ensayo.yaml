@@ -4,20 +4,20 @@
 services:
   api:
     build: !reset null
-    image: "ens62-api:latest"
+    image: "${ENS_API_IMAGE:-ens62-api:latest}"
     networks: !override
       - ensayo
     environment:
       AUTH_COOKIE_SECURE: "false"
   web:
     build: !reset null
-    image: "ens62-web:latest"
+    image: "${ENS_WEB_IMAGE:-ens62-web:latest}"
     # web tambien en la red con salida solo para poder publicar el puerto de loopback; no necesita (ni usa) salida a Internet.
     networks: !override
       - ensayo
       - anfitrion
     ports: !override
-      - "127.0.0.1:18082:80"
+      - "127.0.0.1:${ENS_PORT:-18082}:80"
     volumes:
       - type: bind
         source: ${ENS_CONFD:?ENS_CONFD}
@@ -27,9 +27,9 @@ services:
           create_host_path: false
 networks:
   ensayo:
-    name: ens62-net
+    name: ${ENS_NET:-ens62-net}
     external: true
   anfitrion:
-    name: ens62-host
+    name: ${ENS_HOSTNET:-ens62-host}
     external: true
   pilot: !reset null
