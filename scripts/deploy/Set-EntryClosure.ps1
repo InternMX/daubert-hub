@@ -48,9 +48,12 @@ $blocked = @('/api/automations/payment-notifications/0/reprocess', '/api/automat
     '/api/automations/remissions/caterpillar/executions/0/reprocess', '/api/automations/remissions/caterpillar/executions/0/regenerate',
     '/api/automations/remissions/caterpillar/executions/0/remittances/0/cancel', '/api/automations/REMISIONES_CATERPILLAR/document-series/REMISION_CAT_P2',
     '/api/automations/PAYMENT_NOTIFICATIONS/review-acknowledgements', '/api/companies/0/payment-notification-settings', '/api/companies/0/aliases',
-    '/api/companies/0/aliases/payment-notifications', '/api/aliases/0/payment-notifications', '/API/Automations/Payment-Notifications/0/Reprocess')
+    '/api/companies/0/aliases/payment-notifications', '/api/aliases/0/payment-notifications', '/API/Automations/Payment-Notifications/0/Reprocess',
+    '/api/manufacturing-sheets/documents/drafts', '/api/manufacturing-sheets/documents/signatures', '/api/manufacturing-sheets/documents/revisions/0/finalize',
+    '/api/manufacturing-sheets/documents/signatures/0/authorize', '/api/manufacturing-sheets/client-abbreviations', '/api/manufacturing-sheets/previews/pdf')
 $realWrites = @(@('POST', '/api/automations/payment-notifications/0/reprocess'), @('PATCH', '/api/automations/payment-notifications/0/files/0/assignment'),
-    @('POST', '/api/automations/remissions/caterpillar/executions/0/reprocess'), @('PATCH', '/api/companies/0/aliases'), @('DELETE', '/api/aliases/0/payment-notifications'))
+    @('POST', '/api/automations/remissions/caterpillar/executions/0/reprocess'), @('PATCH', '/api/companies/0/aliases'), @('DELETE', '/api/aliases/0/payment-notifications'),
+    @('POST', '/api/manufacturing-sheets/documents/drafts'), @('POST', '/api/manufacturing-sheets/documents/signatures'), @('PATCH', '/api/manufacturing-sheets/documents/revisions/0'))
 $allowedReads = @('/api/automations/remissions/audi/executions', '/api/automations/REMISIONES_AUDI/document-series/REMISION_AUDI', '/api/auth/login', '/api/providers', '/api/health')
 
 function Get-Code([string]$method, [string]$path, [string]$probe) {

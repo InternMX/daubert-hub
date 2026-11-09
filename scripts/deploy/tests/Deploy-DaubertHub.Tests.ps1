@@ -101,7 +101,8 @@ function Set-StandardMocks {
     Mock Get-ClosureState { if ($script:Fake.ContainsKey('Closure')) { $script:Fake.Closure } else { @{ ConfExists = $true; ConfSha = 'aa'; PolicySha = 'aa' } } }
     Mock Start-DeploySleep { }
     Mock Read-DeployConfirmation { $script:Fake.Confirmation }
-    Mock Read-DeployEvidence { $script:Fake.Evidence }
+    Mock Read-DeployEvidence { if ($Path -like '*readiness*') { if ($script:Fake.ContainsKey('Readiness')) { $script:Fake.Readiness } else { [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' } } } else { $script:Fake.Evidence } }
+    Mock Read-ManufacturingFlags { if ($script:Fake.ContainsKey('Manufacturing')) { [pscustomobject]$script:Fake.Manufacturing } else { [pscustomobject]@{ Enabled = ''; Emission = '' } } }
     Mock Read-DeployManifest { $script:Fake.Manifest }
     Mock Write-Host { $script:Printed += [string]$Object }
     Mock Invoke-DeployMutation {
@@ -879,5 +880,54 @@ Describe 'Imagenes validadas (-UseValidatedImages): se despliegan exactamente la
         (Test-AllowedMutation 'docker' (@('compose') + $cf + @('up', '-d', '--no-build', 'api', 'web'))) | Should BeNullOrEmpty
         (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-web:latest')) | Should Not BeNullOrEmpty
         (Test-AllowedMutation 'docker' @('tag', 'evil:release-a1b2c3d', 'daubert-hub-api:latest')) | Should Not BeNullOrEmpty
+    }
+}
+
+Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readiness y rechaza configuraciones contradictorias' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable controles=24 fallos=0' }
+        $script:RdOpt = @{ ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt' }
+    }
+
+    It 'Manufactura sin habilitar (vacia o false): nada cambia y no se exige evidencia' {
+        $script:Fake.Manufacturing = @{ Enabled = ''; Emission = '' }; $script:Fake.Remove('Readiness')
+        (Invoke-Main -D $true) | Should Be 0
+        $script:Fake = New-Fake; Set-StandardMocks; $script:Fake.Manufacturing = @{ Enabled = 'false'; Emission = 'PRODUCCION' }
+        (Invoke-Main -D $true) | Should Be 0
+    }
+
+    It 'habilitada con evidencia PASS reciente de la fase PreEnable: se acepta' {
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 0
+    }
+
+    It 'habilitada sin -ManufacturingReadinessEvidence o sin el archivo: bloquea sin mutar nada' {
+        (Invoke-Main -D $true) | Should Be 1
+        (Get-PrintedText) | Should Match 'falta la evidencia de Test-ManufacturaReleaseReadiness'
+        $script:Mutations.Count | Should Be 0
+        $script:Fake.Remove('Readiness')
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'habilitada con evidencia FAIL, de otra fase o vieja: bloquea' {
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_FAIL phase=PreEnable controles=24 fallos=1' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no dice MANUFACTURA_READINESS_PASS phase=PreEnable'
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreDeploy controles=24 fallos=0' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no dice MANUFACTURA_READINESS_PASS phase=PreEnable'
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 30; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'evidencia de readiness de Manufactura tiene'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'configuracion contradictoria bloquea aunque exista evidencia PASS' {
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = '' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'exige MANUFACTURING_EMISSION_ENV=PRODUCCION'
+        $script:Fake.Manufacturing = @{ Enabled = ''; Emission = 'PRUEBA' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'solo puede ser vacia o PRODUCCION'
+        $script:Fake.Manufacturing = @{ Enabled = 'True'; Emission = 'PRODUCCION' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'debe ser vacia, true o false'
+        $script:Mutations.Count | Should Be 0
     }
 }

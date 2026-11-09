@@ -68,6 +68,12 @@
 .PARAMETER ImagesManifestSha256
     SHA-256 of the images manifest text (LF line endings), delivered outside the repository with the authorisation record.
 
+.PARAMETER ManufacturingReadinessEvidence
+    Evidence file written by scripts/deploy/Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable -EvidenceFile <file outside the repository>. REQUIRED whenever the production
+    configuration enables Manufactura (MANUFACTURING_ENABLED=true in deploy/pilot.prod.env or in the shell): the gate blocks unless the file is recent (-EvidenceMaxAgeHours)
+    and says MANUFACTURA_READINESS_PASS phase=PreEnable. A contradictory configuration (ENABLED=true without EMISSION_ENV=PRODUCCION, EMISSION_ENV=PRUEBA, any value other than
+    true/false) blocks always. With Manufactura not enabled nothing changes.
+
 .PARAMETER ExpectedN8nPaths
     Optional. With -AcknowledgeN8nAlreadyApplied, every changed n8n/ file must start with one of these path prefixes; anything else still blocks.
 
@@ -98,6 +104,7 @@ param(
     [switch]$UseValidatedImages,
     [string]$ImagesManifest = '',
     [string]$ImagesManifestSha256 = '',
+    [string]$ManufacturingReadinessEvidence = '',
     [string]$MigrationsEvidence = '',
     [string[]]$EvidenceMarkers = @(),
     [int]$EvidenceMaxAgeHours = 6,
@@ -288,6 +295,21 @@ function Read-HubPort {
     return '8082'
 }
 
+function Read-ManufacturingFlags {
+    # Only MANUFACTURING_ENABLED and MANUFACTURING_EMISSION_ENV are read (not secrets). Compose gives the shell environment precedence over --env-file, so does this. Mocked in the tests.
+    $flags = @{ Enabled = ''; Emission = '' }
+    $path = Join-Path $script:RepoRoot $script:EnvFile
+    if (Test-Path -LiteralPath $path) {
+        foreach ($line in (Get-Content -LiteralPath $path)) {
+            if ($line -match '^\s*MANUFACTURING_ENABLED\s*=\s*(.*?)\s*$') { $flags.Enabled = $Matches[1].Trim('"').Trim("'") }
+            if ($line -match '^\s*MANUFACTURING_EMISSION_ENV\s*=\s*(.*?)\s*$') { $flags.Emission = $Matches[1].Trim('"').Trim("'") }
+        }
+    }
+    if ($env:MANUFACTURING_ENABLED) { $flags.Enabled = [string]$env:MANUFACTURING_ENABLED }
+    if ($env:MANUFACTURING_EMISSION_ENV) { $flags.Emission = [string]$env:MANUFACTURING_EMISSION_ENV }
+    return [pscustomobject]$flags
+}
+
 # ================================================================== Facts
 function Get-RunningDigest {
     param([string]$Service)
@@ -401,8 +423,13 @@ function Get-DeployContext {
         }
     }
 
+    $readiness = $null
+    if ($script:Options.Contains('ManufacturingReadinessEvidence') -and $script:Options['ManufacturingReadinessEvidence']) { $readiness = Read-DeployEvidence ([string]$script:Options['ManufacturingReadinessEvidence']) }
+
     return [pscustomobject]@{
         CandidateInput = $Candidate
+        Manufacturing  = (Read-ManufacturingFlags)
+        ReadinessEvidence = $readiness
         CandidateFull  = $(if ($cand.Code -eq 0 -and $cand.Out.Count -gt 0) { $cand.Out[0] } else { '' })
         HeadFull       = $(if ($head.Code -eq 0 -and $head.Out.Count -gt 0) { $head.Out[0] } else { '' })
         HeadShort      = $(if ($headShort.Code -eq 0 -and $headShort.Out.Count -gt 0) { $headShort.Out[0] } else { '' })
@@ -518,6 +545,21 @@ function Test-DeployGate {
                 elseif (-not $local) { $reasons += ('No existe la imagen local ' + $script:Project + '-' + $svc + ':release-' + $Context.HeadShort + ' (construirla y validarla con New-ReleaseImages.ps1).') }
                 elseif ($local -ne [string]$entry.imageId) { $reasons += ('La imagen local de ' + $svc + ' (' + $local + ') no es la validada (' + [string]$entry.imageId + ').') }
             }
+        }
+    }
+    # Manufactura: enabling it is gated by the read-only readiness check; a contradictory configuration never deploys.
+    $mf = $(if ($Context.PSObject.Properties.Name -contains 'Manufacturing') { $Context.Manufacturing } else { $null })
+    if ($mf) {
+        $mEnabled = [string]$mf.Enabled; $mEmission = [string]$mf.Emission
+        if (-not ($mEnabled -ceq '' -or $mEnabled -ceq 'true' -or $mEnabled -ceq 'false')) { $reasons += 'Configuracion de Manufactura invalida: MANUFACTURING_ENABLED debe ser vacia, true o false (la API no arrancaria).' }
+        if (-not ($mEmission -ceq '' -or $mEmission -ceq 'PRODUCCION')) { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_EMISSION_ENV solo puede ser vacia o PRODUCCION con la base de produccion.' }
+        if ($mEnabled -ceq 'true') {
+            if ($mEmission -cne 'PRODUCCION') { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_ENABLED=true exige MANUFACTURING_EMISSION_ENV=PRODUCCION.' }
+            $re = $(if ($Context.PSObject.Properties.Name -contains 'ReadinessEvidence') { $Context.ReadinessEvidence } else { $null })
+            $reMaxAge = if ($Options.Contains('EvidenceMaxAgeHours')) { [double]$Options['EvidenceMaxAgeHours'] } else { 6 }
+            if (-not $re -or -not $re.Exists) { $reasons += 'La configuracion HABILITA Manufactura: falta la evidencia de Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable (-ManufacturingReadinessEvidence).' }
+            elseif ($re.AgeHours -gt $reMaxAge) { $reasons += ('La evidencia de readiness de Manufactura tiene ' + [math]::Round($re.AgeHours, 1) + ' h (maximo ' + $reMaxAge + ' h).') }
+            elseif (-not ([string]$re.Text).Contains('MANUFACTURA_READINESS_PASS phase=PreEnable') -or ([string]$re.Text).Contains('MANUFACTURA_READINESS_FAIL')) { $reasons += 'La evidencia de readiness de Manufactura no dice MANUFACTURA_READINESS_PASS phase=PreEnable: NO habilitar.' }
         }
     }
     if (@($Context.MigrationFiles).Count -gt 0) {
@@ -860,6 +902,6 @@ function Invoke-DeployMain {
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
     $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
-        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ManufacturingReadinessEvidence = $ManufacturingReadinessEvidence; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
     exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }
