@@ -67,6 +67,11 @@ try {
             $e.fuentes = [string]((& docker run --rm --entrypoint sh $tag -c 'fc-list | grep -ci carlito') | Select-Object -First 1)
             $ErrorActionPreference = $prev
         }
+        else {
+            # SHA-256 of the nginx file INSIDE the image: the value to pass as -ExpectedOpenSha256 to Set-EntryClosure.ps1 -Action Prepare when the external default.conf is refreshed.
+            # (It is NOT the hash of docker/nginx.conf in git: the build context may carry CRLF line endings.)
+            $e.nginxConfSha256 = [string](((& docker run --rm --entrypoint sha256sum $tag /etc/nginx/conf.d/default.conf) | Select-Object -First 1) -split '\s+')[0]
+        }
         if ($SaveDir) {
             New-Item -ItemType Directory -Force -Path $SaveDir | Out-Null
             $tarOut = Join-Path $SaveDir ($ImagePrefix + '-' + $svc + '-release-' + $short + '.tar')
