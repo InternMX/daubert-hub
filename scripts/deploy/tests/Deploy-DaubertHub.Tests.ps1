@@ -51,6 +51,7 @@ function Get-FakeRead {
     $f = $script:Fake
     $line = $Exe + ' ' + ($CmdArgs -join ' ')
     if ($Exe -eq 'powershell') { return @{ Code = $f.PreflightCode; Out = @('(salida simulada del preflight)') } }
+    if ($line -match 'rev-parse HEAD:(\S+)$') { $p = $Matches[1]; if ($f.ContainsKey('Blobs') -and $f.Blobs.ContainsKey($p) -and $f.Blobs[$p]) { return @{ Code = 0; Out = @($f.Blobs[$p]) } }; return @{ Code = 1; Out = @() } }
     if ($line -match 'rev-parse --short=7 HEAD') { return @{ Code = 0; Out = @($f.HeadShort) } }
     if ($line -match 'rev-parse (\S+)$') {
         if ($Matches[1] -eq 'HEAD') { return @{ Code = 0; Out = @($f.HeadFull) } }
@@ -101,6 +102,7 @@ function Set-StandardMocks {
     Mock Start-DeploySleep { }
     Mock Read-DeployConfirmation { $script:Fake.Confirmation }
     Mock Read-DeployEvidence { $script:Fake.Evidence }
+    Mock Read-DeployManifest { $script:Fake.Manifest }
     Mock Write-Host { $script:Printed += [string]$Object }
     Mock Invoke-DeployMutation {
         $f = $script:Fake
@@ -697,5 +699,108 @@ Describe 'Cierre externo obligatorio' {
         $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'aa'; PolicySha = 'aa' }
         $ctx2 = Get-DeployContext 'HEAD'
         (@(Test-DeployGate $ctx2 $false @{ RequireClosedWindow = $true }) -join ' ') | Should Not Match 'cierre ACTIVO'
+    }
+}
+
+
+Describe 'Compuerta con manifiesto de database/ (-DatabaseManifest): autoriza exactamente el conjunto de archivos de la liberacion y sigue detectando desviaciones' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $g = 'database/migrations/daubert_global/'
+        $script:ProdFiles = @(($g + '20261108_020_manufactura_gestor_documental_prod.precheck.sql'), ($g + '20261108_020_manufactura_gestor_documental_prod.up.sql'), ($g + '20261108_020_manufactura_gestor_documental_prod.postcheck.sql'),
+            ($g + '20261109_026_manufactura_respaldo_rls_prod.up.sql'), ($g + '20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql'))
+        $script:InertFiles = @('database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.up.sql', 'database/maintenance/daubert_hub_test/limpieza_manufactura_documentos.delete.sql', ($g + 'tools/generar-manufactura-prod.cjs'))
+        $all = $script:ProdFiles + $script:InertFiles
+        $script:Fake.Files = @('apps/api/src/x.ts') + $all
+        $script:Fake.Blobs = @{}
+        foreach ($p in $all) { $script:Fake.Blobs[$p] = 'blob-' + [string]$p.GetHashCode() }
+        $entries = @()
+        foreach ($p in $all) { $cat = if ($script:ProdFiles -contains $p) { if ($p -like '*readonly*') { 'produccion_lectura' } else { 'produccion_aplicar' } } else { 'inerte_nunca_en_prod' }; $entries += [pscustomobject]@{ ruta = $p; categoria = $cat; blob = $script:Fake.Blobs[$p]; sha256 = ('0' * 64) } }
+        $script:ManifestSha = ('a1' * 32)
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $true; Sha256 = $script:ManifestSha; Json = [pscustomobject]@{ formato = 1; prohibidos = @('_025_', 'caterpillar_folio_recovery'); archivos = $entries } }
+        $script:ManOpt = @{ AckMigrations = $true; ExpectedMigrations = @('20261108_0', '20261109_026'); MigrationsEvidence = 'evidence.txt'; EvidenceMarkers = @('POSTCHECK_019_PASS')
+            EvidenceMaxAgeHours = 6; ExpectedN8nPaths = @(); DatabaseManifest = 'deploy/release-manifests/m.json'; DatabaseManifestSha256 = $script:ManifestSha }
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'POSTCHECK_019_PASS' }
+    }
+
+    It 'el conjunto legitimo (migraciones de produccion + TEST + mantenimiento + herramientas, todos listados y sin cambios) se acepta' {
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 0
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+    }
+
+    It 'un archivo de database/ que NO esta en el manifiesto bloquea (migracion inesperada)' {
+        $script:Fake.Files = $script:Fake.Files + 'database/migrations/daubert_global/20261199_099_sorpresa_prod.up.sql'
+        $script:Fake.Blobs['database/migrations/daubert_global/20261199_099_sorpresa_prod.up.sql'] = 'blob-x'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no autorizado por el manifiesto'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un archivo TEST o de mantenimiento nuevo (no listado) tambien bloquea' {
+        $x = 'database/migrations/daubert_hub_test/20261110_106_otra_cosa_test.up.sql'
+        $script:Fake.Files = $script:Fake.Files + $x; $script:Fake.Blobs[$x] = 'blob-t'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no autorizado por el manifiesto'
+    }
+
+    It 'una migracion conocida MODIFICADA (otro contenido) bloquea aunque su nombre este autorizado' {
+        $p = $script:ProdFiles[1]; $script:Fake.Blobs[$p] = 'blob-distinto'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'MODIFICADO respecto del manifiesto'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un archivo inerte (TEST) modificado tambien bloquea' {
+        $p = $script:InertFiles[0]; $script:Fake.Blobs[$p] = 'blob-distinto'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'MODIFICADO respecto del manifiesto'
+    }
+
+    It 'la migracion 025 de Caterpillar bloquea aunque alguien la agregara al manifiesto' {
+        $x = 'database/migrations/daubert_global/20261106_025_caterpillar_folio_recovery_test.up.sql'
+        $script:Fake.Files = $script:Fake.Files + $x; $script:Fake.Blobs[$x] = 'blob-cat'
+        $script:Fake.Manifest.Json.archivos = @($script:Fake.Manifest.Json.archivos) + [pscustomobject]@{ ruta = $x; categoria = 'inerte_nunca_en_prod'; blob = 'blob-cat'; sha256 = ('0' * 64) }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'Archivo prohibido en el release'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un archivo eliminado o ilegible en HEAD bloquea' {
+        $script:Fake.Blobs[$script:ProdFiles[0]] = ''
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'eliminado o ilegible'
+    }
+
+    It 'un archivo de produccion cuyo nombre no cubre -ExpectedMigrations bloquea aunque este en el manifiesto' {
+        $opt = $script:ManOpt.Clone(); $opt.ExpectedMigrations = @('20261108_020')
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'fuera de -ExpectedMigrations'
+    }
+
+    It 'sin -ExpectedMigrations, sin -DatabaseManifestSha256, con otro SHA-256 o sin el archivo del manifiesto, bloquea' {
+        $opt = $script:ManOpt.Clone(); $opt.ExpectedMigrations = @()
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'exige -ExpectedMigrations'
+        $opt = $script:ManOpt.Clone(); $opt.DatabaseManifestSha256 = ''
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'exige -DatabaseManifestSha256'
+        $opt = $script:ManOpt.Clone(); $opt.DatabaseManifestSha256 = ('b2' * 32)
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'no coincide con -DatabaseManifestSha256'
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $false; Sha256 = ''; Json = $null }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Falta el manifiesto'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'la evidencia sigue siendo obligatoria con el manifiesto (ausente, vieja o sin marcadores)' {
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Falta el archivo de evidencia'
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 9; Text = 'POSTCHECK_019_PASS' }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'tiene 9 h'
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'otra cosa' }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no contiene'
+    }
+
+    It 'sin -DatabaseManifest el comportamiento anterior no cambia: los archivos fuera de daubert_global siguen bloqueando' {
+        $opt = $script:ManOpt.Clone(); $opt.DatabaseManifest = ''; $opt.DatabaseManifestSha256 = ''
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no esperados'
     }
 }

@@ -1,0 +1,623 @@
+{
+  "formato": 1,
+  "descripcion": "Archivos de database/ autorizados para la liberación de Manufactura (migraciones 020-024 y 026). Generado por scripts/deploy/generar-manifiesto-database.cjs; verificar con -DatabaseManifestSha256 entregado fuera del repositorio.",
+  "base": "16153a8a7dda7c5845eae32be5a696f92c71c631",
+  "ordenMigraciones": [
+    {
+      "paso": "020",
+      "id": "20261108_020_manufactura_gestor_documental_prod",
+      "fases": [
+        "precheck",
+        "up",
+        "postcheck"
+      ],
+      "reversion": "down"
+    },
+    {
+      "paso": "021",
+      "id": "20261108_021_manufactura_responsables_firmas_prod",
+      "fases": [
+        "precheck",
+        "up",
+        "postcheck"
+      ],
+      "reversion": "down"
+    },
+    {
+      "paso": "022",
+      "id": "20261108_022_manufactura_inventario_firmas_admin_prod",
+      "fases": [
+        "precheck",
+        "up",
+        "postcheck"
+      ],
+      "reversion": "down"
+    },
+    {
+      "paso": "023",
+      "id": "20261108_023_manufactura_cliente_abreviaturas_prod",
+      "fases": [
+        "precheck",
+        "up",
+        "postcheck"
+      ],
+      "reversion": "down"
+    },
+    {
+      "paso": "024",
+      "id": "20261108_024_manufactura_consulta_compartida_borradores_prod",
+      "fases": [
+        "precheck",
+        "up",
+        "postcheck"
+      ],
+      "reversion": "down"
+    },
+    {
+      "paso": "026",
+      "id": "20261109_026_manufactura_respaldo_rls_prod",
+      "fases": [
+        "precheck",
+        "up",
+        "postcheck"
+      ],
+      "reversion": "down"
+    }
+  ],
+  "lecturaProduccion": [
+    "20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql",
+    "20261108_000_manufactura_prod_smoke_solo_lectura.readonly.sql"
+  ],
+  "prohibidos": [
+    "_025_",
+    "caterpillar_folio_recovery",
+    "cat_recovery"
+  ],
+  "resumen": {
+    "inerte_nunca_en_prod": 51,
+    "produccion_lectura": 2,
+    "produccion_reversion": 6,
+    "produccion_aplicar": 18
+  },
+  "archivos": [
+    {
+      "ruta": "database/maintenance/daubert_global/estructura_items.readonly.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "444a0f648bacb78de935e8443220223909ed3288",
+      "sha256": "32fa4646a9c607fc56d310bcb80e045badb413da5e89781ba23423defa304709",
+      "bytes": 3921
+    },
+    {
+      "ruta": "database/maintenance/daubert_global/inventario_manufactura.readonly.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "f281fe685fc0ecd5f6333656a9fb12d7e2309d69",
+      "sha256": "cab20eb31dd4e30e70ea2e05f81f9178f8edb265d2a30359a2496bf2b2f2dfec",
+      "bytes": 12182
+    },
+    {
+      "ruta": "database/maintenance/daubert_hub_test/README-limpieza-manufactura.md",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "5d824c015867e93e29c3666285c21abb45ddf723",
+      "sha256": "74ac0917861d4249aa48d7f7330687a7f7992ec438104dcf666d50e4f2f39707",
+      "bytes": 6375
+    },
+    {
+      "ruta": "database/maintenance/daubert_hub_test/limpieza_manufactura_documentos.delete.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "fc2463c100fff3ee2a73778b8bfbbb8928d075fb",
+      "sha256": "b00bf6430b54dd345859b41de51afbc5067c8ed1d8de26b57bf789b549263f4b",
+      "bytes": 14572
+    },
+    {
+      "ruta": "database/maintenance/daubert_hub_test/limpieza_manufactura_documentos.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "b0bfec5abcee9556c8b93db50ee97d7f8fa4f288",
+      "sha256": "1f8dae0929276c4cfef03b0204f405b29fdbdd73613d3c2ab2391588f78d2e04",
+      "bytes": 4851
+    },
+    {
+      "ruta": "database/maintenance/daubert_hub_test/limpieza_manufactura_documentos.preview.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "6bcd273474652c2e44d4521415da9f4211473c3c",
+      "sha256": "b97afab13a33010e4af49b6cb748af80861a74be1407b9274b4cda8a313f21c1",
+      "bytes": 8997
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_000_manufactura_prod_smoke_solo_lectura.readonly.sql",
+      "categoria": "produccion_lectura",
+      "blob": "a2647f6adb08f9b30fafbaa8ce0fa36d6930ba27",
+      "sha256": "3f97ad8e868c75cd5d4b0fc19073fc1b1f2c3e715fc1e860b6e9b7fb093ef6ff",
+      "bytes": 5630
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql",
+      "categoria": "produccion_lectura",
+      "blob": "0375e0225441c7dc990fb5a07abcb052766050db",
+      "sha256": "17d5bea143e2464316a532c9f99e4c2e59969e63ef24e6163a9a8f27ef71bef1",
+      "bytes": 22345
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_020_manufactura_gestor_documental_prod.down.sql",
+      "categoria": "produccion_reversion",
+      "blob": "b5460b6b1a90974f708bf1ffd893c79dfd2e9c05",
+      "sha256": "ae9aeb0f778148b7b643812d643179fa4f364a4c78c9ff0f0818af64e57441e1",
+      "bytes": 6852
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_020_manufactura_gestor_documental_prod.postcheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "52b17835893cdab7493496c457c221a22fdeb387",
+      "sha256": "e99f28210ad4070b6f004287265a4aef04e663d5867d25456931228ad8837bd8",
+      "bytes": 14170
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_020_manufactura_gestor_documental_prod.precheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "98e7ba1c3f095324a82fb45a5f3ee240c93f9ca3",
+      "sha256": "49ddf21a5b21bf99c6abbf288891426fd6ecce77a40fbc94d93f701cf97d379f",
+      "bytes": 10130
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_020_manufactura_gestor_documental_prod.up.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "bac3b01333bad17d6b4bb8a4a08817e9fe7c25cd",
+      "sha256": "ba37551d036b6c406c21c721e6f236d8bf215453e76d0d052d0d95e81ae4eebd",
+      "bytes": 46867
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_021_manufactura_responsables_firmas_prod.down.sql",
+      "categoria": "produccion_reversion",
+      "blob": "edc77a85f623d7f32e6cd747f0447b902b75dc28",
+      "sha256": "8bf0ae50ec878ba1ccb86c0c448a7732f7a083505abdfb8a17073025f8ff3e31",
+      "bytes": 3516
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_021_manufactura_responsables_firmas_prod.postcheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "e8e97235f39912827c11f47a3000715043cea4d0",
+      "sha256": "0440dfb1a3fb31f306c35016f8cde4b928589f47117e6c8a2662848b0358f6c5",
+      "bytes": 7232
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_021_manufactura_responsables_firmas_prod.precheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "dc56c60daccae482e93dd15432d56cd0f2afe35a",
+      "sha256": "9318d023eba7d33011900fdfdd4e844bff05725fa9b9d6d680b4dd0551f641cf",
+      "bytes": 3768
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_021_manufactura_responsables_firmas_prod.up.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "ccd1c5eab1b3d835165ead76d8017d580369dc36",
+      "sha256": "fa2efdcdc27644dbf99c58bc0ebd8fecf654b77404782109ddcb9576e6a2d607",
+      "bytes": 27678
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_022_manufactura_inventario_firmas_admin_prod.down.sql",
+      "categoria": "produccion_reversion",
+      "blob": "be5da3e098bd36682df99a69f0c842826ea20ffb",
+      "sha256": "c92787eb22c8a6cf6320ae80db0a52349ad501eab8fe209db6c96d43d11aa95a",
+      "bytes": 1622
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_022_manufactura_inventario_firmas_admin_prod.postcheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "f9f681a8ceb8f4598611fe5ae493f383101384d7",
+      "sha256": "df34b6293794d1877c69b035d17b41cbd4bcf2c39a9938360d902a7496ddbef1",
+      "bytes": 4328
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_022_manufactura_inventario_firmas_admin_prod.precheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "3eea18bb8e0065f67cab952a345f634584b1ffd2",
+      "sha256": "0e33596940b76c312a9436e11610aefc4f5a3975fa3ffe0c0f8921f28fac9598",
+      "bytes": 3625
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_022_manufactura_inventario_firmas_admin_prod.up.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "9b53475e79af4b5524fc0e30025b08a28ff374ba",
+      "sha256": "84a07ab6eaa7b98e2a59d10372432b499bfef548e5045bec735218432b4fe883",
+      "bytes": 6285
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_023_manufactura_cliente_abreviaturas_prod.down.sql",
+      "categoria": "produccion_reversion",
+      "blob": "19303748f140e9e25895bd3f9ad1bb18158e6641",
+      "sha256": "da8a0df5f8cea02a2e5814bfc712a40e9e4fc3f70530d6517ff0f03fa1c3fe68",
+      "bytes": 2608
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_023_manufactura_cliente_abreviaturas_prod.postcheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "411818eb5486715ed3ecd57368a53bc1c03282af",
+      "sha256": "e6cd1367cf119847de452337d6a29fa5a4683d739295288fbcb8dcc6a1a3b31a",
+      "bytes": 5933
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_023_manufactura_cliente_abreviaturas_prod.precheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "ef2070c7088266ca93801794693d4f1103846b5d",
+      "sha256": "2a0e7ee4484215d9637c430eda03cb25daa6a1b5d277a7e870f55f94e7a34978",
+      "bytes": 4619
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_023_manufactura_cliente_abreviaturas_prod.up.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "7f5dc0285bc7afed377625c3f4b2180a72cbfaee",
+      "sha256": "6a7bc4b3630aff07ece282f6e3a690010c334c15d08ce02447de3aaea53ddf20",
+      "bytes": 22958
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_024_manufactura_consulta_compartida_borradores_prod.down.sql",
+      "categoria": "produccion_reversion",
+      "blob": "67245bd9c0f23bd741a5c3a3c2ef3027c3292237",
+      "sha256": "ee8a9e49f4d970c1d5f95525c1924133b1d65e6b1a421273b331adbc561c7085",
+      "bytes": 2047
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_024_manufactura_consulta_compartida_borradores_prod.postcheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "40049757b6a6c1b87aac6483d7e9f6f82d8ce9e4",
+      "sha256": "3117f676dca012c72b15f4284d153b2faff4f92f0362b675978216cc1864ff04",
+      "bytes": 4269
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_024_manufactura_consulta_compartida_borradores_prod.precheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "9bda4eff587a4ef63766d2951d16c12f8682230c",
+      "sha256": "27e282ff24b622f5eb6986dbcb6290c449c8241ccde461eed9a1be39142c6b9c",
+      "bytes": 4101
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261108_024_manufactura_consulta_compartida_borradores_prod.up.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "83ca5d9f412b8886255a3e54ca94566de0fd3a3a",
+      "sha256": "074a39286453c7447414ae1dda5308b462b0a121507b644a0ddc0fbf275a58b7",
+      "bytes": 7142
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261109_026_manufactura_respaldo_rls_prod.down.sql",
+      "categoria": "produccion_reversion",
+      "blob": "7dee9c43206ed5386d93f9164e8a226a3ffd10a9",
+      "sha256": "a497d7252dcb83b44a43758badb29dc0995472caa4f9b1a12bdb58f4d4405ecf",
+      "bytes": 1670
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261109_026_manufactura_respaldo_rls_prod.postcheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "4d1c30a8ffe8b6a7419b06391d6931068497645a",
+      "sha256": "6fd50779718f8f52a43adc3b0242b905219253442bcb56c7a25e46bbdf48d630",
+      "bytes": 5855
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261109_026_manufactura_respaldo_rls_prod.precheck.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "eab37bf575a1127777b460ede91954e62882ecbe",
+      "sha256": "549d9dc07802e1185404c12e45367946f177e09877778409e5519d3c2f8b0e2a",
+      "bytes": 4754
+    },
+    {
+      "ruta": "database/migrations/daubert_global/20261109_026_manufactura_respaldo_rls_prod.up.sql",
+      "categoria": "produccion_aplicar",
+      "blob": "116b1f50522d37d47a9cf9ada1423568b3bc8361",
+      "sha256": "51e2cfa060e935072e21b7ed8ef3d59ef25d86387e4e72efa21f6c1c9b4ff21b",
+      "bytes": 6036
+    },
+    {
+      "ruta": "database/migrations/daubert_global/README-manufactura-020-024.md",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "69ac6d308fec45cc9a5efcbb4fe553a5e26bd80a",
+      "sha256": "172cdced1ed9b8371eeee546243b63f4cad1ee23e970e685375ce919d43aaa57",
+      "bytes": 21698
+    },
+    {
+      "ruta": "database/migrations/daubert_global/replica_only/20261108_020_manufactura_gestor_documental_prod.smoke_replica.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "fc0e498e67165a9e0aa5e13e2708faf248d48f3c",
+      "sha256": "211014e2f8eb7d7e969b4cca08cfc649ed70e766933cd7a65b68c95dc419f873",
+      "bytes": 29913
+    },
+    {
+      "ruta": "database/migrations/daubert_global/replica_only/20261108_021_manufactura_responsables_firmas_prod.smoke_replica.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7b42fffb81329002ae808fdcc8b2b7c9326c5b4e",
+      "sha256": "5c846a17bb72897545020fb41582331cb482e027a04b03a6e84b7ff9178f10bc",
+      "bytes": 9106
+    },
+    {
+      "ruta": "database/migrations/daubert_global/replica_only/20261108_022_manufactura_inventario_firmas_admin_prod.smoke_replica.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "674c2c5ead24719e6b66a51d69d6a8330cd85518",
+      "sha256": "35a9f4606b2c5a12c134c37d8bd583db50b16f187b5040b4134d9a7409194ba0",
+      "bytes": 7267
+    },
+    {
+      "ruta": "database/migrations/daubert_global/replica_only/20261108_023_manufactura_cliente_abreviaturas_prod.smoke_replica.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "25b3a4e899395973867824cc4e8c07bbecc203e2",
+      "sha256": "01b76a52812e15888b0b8943c0dc89851b54466c6e12b983986e58db2c758cde",
+      "bytes": 10780
+    },
+    {
+      "ruta": "database/migrations/daubert_global/replica_only/20261108_024_manufactura_consulta_compartida_borradores_prod.smoke_replica.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "ef0a52e3e73a485c7300dbc18d4702c624cffd2a",
+      "sha256": "80828d9926fae95db2e77ad34adae98bf870add22d990bdef1c9da15cdacd7fe",
+      "bytes": 9354
+    },
+    {
+      "ruta": "database/migrations/daubert_global/tools/generar-manufactura-026.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "619243e117540912076561b6d31c5449b037fe8b",
+      "sha256": "a8b8191448e3fd3bd2cd4c51b4df333ea11d519c9e27a890d2196ee1dd943d8e",
+      "bytes": 14842
+    },
+    {
+      "ruta": "database/migrations/daubert_global/tools/generar-manufactura-prod.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "88dcd016ad9abb11800844ac7a181f92bc13b240",
+      "sha256": "b5b158db3aca0f721bf4dd9795ef7019b12639c90c73cfa12cdb74950edad691",
+      "bytes": 14402
+    },
+    {
+      "ruta": "database/migrations/daubert_global/tools/validar-manufactura-020-024-en-replica-prod.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "ed950146e710a6fb7d1954cea601c8830ea85beb",
+      "sha256": "12f40f4c8a95e2862ccd81188d9688182cf5d7229aebc834778e9d0dd2c8ed2c",
+      "bytes": 30666
+    },
+    {
+      "ruta": "database/migrations/daubert_global/validacion-020-024-resultado.txt",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "0494b983125cbef598feb9c8e5e0858e03b37bcc",
+      "sha256": "11b521ebad3fde269d484f952c91842d73956d550a1659bba000ef76eb34b28f",
+      "bytes": 6107
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "1f0a2dc412303f9f4dee3fdceffcf689c88766f7",
+      "sha256": "4400b3248a08362da969db98640d2c8800635e6bc03d277a9a9234b5b4cf435f",
+      "bytes": 6489
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "b5313327781b9bfea0ee6a08a5c32affe7f697b1",
+      "sha256": "2b9f86e4a0c6247992e513055ec148c0a7b4beb7a163d660546ca0ac1fc8bcf8",
+      "bytes": 12448
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "3943662f21067fc3cbdea512fdaaf6ed2ca66d0d",
+      "sha256": "d8335a2db930058930d64309e575988fafd73d67a29e851d4780985883e84387",
+      "bytes": 9983
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.smoke.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "9765ffb7f83627da8f2d08bc3f70d92d1dea8de9",
+      "sha256": "1078c985f6c5d4e55d15e9cb95df5b52196d97a782e64974bf58d0dc8c8af3fa",
+      "bytes": 29478
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "e2021c9f494707b297c746d7bfaa66c3d4baa081",
+      "sha256": "de2a55e60b31a62549b6be0a743cb2699db3adc116349bb0ce7474c3729f4d63",
+      "bytes": 46875
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261103_102_manufactura_responsables_firmas_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "cc8bcf2e5304384e236bc4f3f874ba1360af4e07",
+      "sha256": "82434b163693084228d89a1eaa56d13162ffa7cc9f6ea81e4aa8606e09be63d9",
+      "bytes": 3277
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261103_102_manufactura_responsables_firmas_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "ebec08e20caf3cba068f66214a5d9b10bfef193c",
+      "sha256": "a359b7b1e4b08d688354fb9bc099d77c180850e993a213c8956a5357016ec8db",
+      "bytes": 5399
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261103_102_manufactura_responsables_firmas_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "a1c71d5e8aa4a750f1d5893ff4d31368dab44730",
+      "sha256": "6007289544aba172861f2856aa53a25a3833ad1d93f5040796f1aa5745d530ae",
+      "bytes": 3587
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261103_102_manufactura_responsables_firmas_test.smoke.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "5540cf7d127ba0177cb9e4fab6b0ec2cfc480d6d",
+      "sha256": "bb547951de97d2236eafdc1b2eb3066bc9919f55a44597110eb34c90a0cbdcf6",
+      "bytes": 8669
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261103_102_manufactura_responsables_firmas_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "df21edf45ed5bd36650e7033b2163931726da586",
+      "sha256": "f40a8a23ff65ceaf80722f8c487faab71c1e50a2ca766fc70ba8e28ba0c4c8bd",
+      "bytes": 27611
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261105_103_manufactura_inventario_firmas_admin_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "95d9fd545ad9e8dadc1bf047cdd93aa09d82a99f",
+      "sha256": "27e36ccf585cd63ac68853f246e97ad85a372dd25a3852f7acfa4b50aaf4023f",
+      "bytes": 1419
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261105_103_manufactura_inventario_firmas_admin_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "81e040e7d00b3e92163893e17c5b2391e23a2144",
+      "sha256": "7786637dd78727f468240db36604bed0dbf84db832321eece411ec345ec48374",
+      "bytes": 4143
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261105_103_manufactura_inventario_firmas_admin_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "322c3918ac63427129535c388fdd17edbb8a727b",
+      "sha256": "122a12490e910726397a08dde6b5159f3851a0686d80aa5f95d520ff9b6e4348",
+      "bytes": 3434
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261105_103_manufactura_inventario_firmas_admin_test.smoke.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "2764f8a3ba4b1333b35151c53e1c4941c5f1d7b6",
+      "sha256": "700b83035f85ef1ec6476f38d70cfc2e7b1d83e3df7b10fa044fec2a61573b51",
+      "bytes": 6830
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261105_103_manufactura_inventario_firmas_admin_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "31e64f58d30d997bee5f010c08252f167ad07bc1",
+      "sha256": "0361c3f2a5532c3c4f8f49db2ec551ad28175260dd0b8819edd0a16a42d609e5",
+      "bytes": 6100
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261106_104_manufactura_cliente_abreviaturas_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7ba4a4ece323976ed4b2954e3a260e3911d3591e",
+      "sha256": "201aa4bde0dab56e7fb2fa209504ef625979eae7c28b2a6bbbb77e3c292cd5eb",
+      "bytes": 2366
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261106_104_manufactura_cliente_abreviaturas_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "edda1c5a91d375f21654e0807782be07b00450f6",
+      "sha256": "854ffaf6da5a6204970657c51eaaac4b5ddfdddd8d8e87e4bc43a264b24a10d4",
+      "bytes": 5775
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261106_104_manufactura_cliente_abreviaturas_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "0d74f2f8e8c6e363af3992f6a6d8ad4190082eee",
+      "sha256": "b6dff033b21bc563fb1b5d6e5f0f41a72920db8595d88c54de69f171cd392545",
+      "bytes": 4443
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261106_104_manufactura_cliente_abreviaturas_test.smoke.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "1ac8219623769208cb93f9c2a3dff495057f72e1",
+      "sha256": "44cb939557766d998574bbc7b485dd0de89564a124362884745014770d4759e2",
+      "bytes": 10346
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261106_104_manufactura_cliente_abreviaturas_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "01cd26aef422e8bbe634e00e03c83e48488d03cb",
+      "sha256": "6a31f8d4251800eb243f1f0f08fe357788b5ca300ea0b62c92c835b5ac8e5230",
+      "bytes": 22835
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261107_105_manufactura_consulta_compartida_borradores_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7037ff282b35afd878ab253e5e728dc3ee17ede3",
+      "sha256": "00cd8af8edf4758478b94e936d65482b3414706c89ac8920c01eb1af95eafae6",
+      "bytes": 1837
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261107_105_manufactura_consulta_compartida_borradores_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "3a4738f6c400274921b77122722f9548c93c8223",
+      "sha256": "e9dfb409ed13c553339caecdd9dd52c8813ad715b3032f7e5a37d33065a09635",
+      "bytes": 4077
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261107_105_manufactura_consulta_compartida_borradores_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "ddabf7c23f682bb8e4b812187ca949f6972daa39",
+      "sha256": "3f855ce4da2aa2bd225919850cbb01c7020e2a2578e0853de822746142b948e2",
+      "bytes": 3903
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261107_105_manufactura_consulta_compartida_borradores_test.smoke.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7d45ddf6f8fde8496cd7597fe83a0602b71bee54",
+      "sha256": "897109800be151522f59591223f95d8ad9dddce18f69b201daa19c1ccca39049",
+      "bytes": 8898
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261107_105_manufactura_consulta_compartida_borradores_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "9d7a44233348ba55ac0033fbadb331c0c80ab3b4",
+      "sha256": "1b0c62216a44850c190ffa665e5b11d62147dc4d02535cba38ebd10e9ea773b1",
+      "bytes": 6938
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/README-104.md",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "710c07f3e98db69b6e11806599b12fbe2346e9e4",
+      "sha256": "5433eecace18813b79b963d1f36d0ab32e9bec842ccab408b6549e70e4f8cdef",
+      "bytes": 5798
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/README-105.md",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "57978a44b632ff05263133a9669662091f4846d7",
+      "sha256": "e7241c324a511a938802cc8ccf80270746dfe62b8c97c60964a518678f269ac2",
+      "bytes": 4795
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/README.md",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "3b065b73d703eb6a2939a493d4a23868572cbf4a",
+      "sha256": "0a450b9fc87327f60249a19f934b510a819eb33dde2aa7009e2bf4dbd55573cd",
+      "bytes": 11935
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/inventario_connect.readonly.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "f2872a5b62b43851e932af9263861857d7533d4e",
+      "sha256": "435a3c550521deceb46a8ae70391640889b6f85d2ec75fa8f379c836943732e2",
+      "bytes": 3392
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/tools/instancia-desechable.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7da096d33181b2fb9f1a56b42ca1dd23fafa7777",
+      "sha256": "7c8981ceb03d49aaa9df80512bc0f5d6c85429dd624876115d8e3d003fe1048b",
+      "bytes": 4034
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/tools/validar-102-en-instancia-desechable.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "d321cf5350e20a94067c1f53be0c486d8f348d24",
+      "sha256": "03be7b73c04944bc590e68fd0ac29efc8c30f2d8e5ec91dc85446978d3a3de05",
+      "bytes": 3843
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/tools/validar-103-en-instancia-desechable.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "32b7974300c54d9a02c99cac9dc0ac2d17e8f497",
+      "sha256": "1a178e2e87e939427edb7a86498b9c8120b1d8594040c4a9683f8d5ad1f7c740",
+      "bytes": 4078
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/tools/validar-104-en-instancia-desechable.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7208def994d28a19692cdf7b882fa100306f731b",
+      "sha256": "16b4b749b72bce24ed4253fdef4dc23e051f0537a72f6eec2ae733a29a4225ca",
+      "bytes": 5415
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/tools/validar-105-en-instancia-desechable.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "3acb4279b575210f3bc9c687176ae722353fea3a",
+      "sha256": "9a2dd7b04f4356573741daab0a7be6aa4bd19f6dbcf78d8d6df927aa3ce18c79",
+      "bytes": 4623
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/tools/validar-en-instancia-desechable.cjs",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "35646f3096da0a6002afba4eb5b220feb9a9ed22",
+      "sha256": "3d39424c31f441f5a976426644950b9e8b0ea88e41d14cc9ee2ecb241eec4c7b",
+      "bytes": 31466
+    }
+  ]
+}

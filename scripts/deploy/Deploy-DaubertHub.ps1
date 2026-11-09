@@ -45,6 +45,18 @@
     any other database/ file still blocks), -MigrationsEvidence (a file written within -EvidenceMaxAgeHours that contains every -EvidenceMarkers text, e.g. the saved output of the
     postchecks) and -EvidenceMarkers. The script still runs no SQL and applies nothing.
 
+.PARAMETER DatabaseManifest
+    Optional. Path (relative to the repository) of a RELEASE MANIFEST of database/ files (scripts/deploy/generar-manifiesto-database.cjs). Only honoured together with
+    -AcknowledgeMigrationsAlreadyApplied, -ExpectedMigrations, -MigrationsEvidence, -EvidenceMarkers and -DatabaseManifestSha256. With it, EVERY database/ file of the release
+    (the delta against the commit running in PROD) must be listed in the manifest with exactly the same git blob id, and nothing else is allowed: a new, deleted or modified file
+    still blocks. Files categorised produccion_* must ALSO satisfy -ExpectedMigrations (under database/migrations/daubert_global/); inerte_nunca_en_prod files (TEST migrations,
+    maintenance, tools, documentation) are accepted only because they are listed, and are never applied. Files matching the manifest's "prohibidos" (e.g. the Caterpillar 025
+    migration of another branch) block even if listed. Without this parameter the previous behaviour is unchanged.
+
+.PARAMETER DatabaseManifestSha256
+    SHA-256 of the manifest text (LF line endings), delivered OUTSIDE the repository (the authorization record). The gate recomputes it and blocks on any difference, so changing a
+    migration AND the manifest in the same commit is detected.
+
 .PARAMETER ExpectedN8nPaths
     Optional. With -AcknowledgeN8nAlreadyApplied, every changed n8n/ file must start with one of these path prefixes; anything else still blocks.
 
@@ -70,6 +82,8 @@ param(
     [switch]$AcknowledgeN8nAlreadyApplied,
     [switch]$AcknowledgeMigrationsAlreadyApplied,
     [string[]]$ExpectedMigrations = @(),
+    [string]$DatabaseManifest = '',
+    [string]$DatabaseManifestSha256 = '',
     [string]$MigrationsEvidence = '',
     [string[]]$EvidenceMarkers = @(),
     [int]$EvidenceMaxAgeHours = 6,
@@ -221,6 +235,19 @@ function Read-DeployEvidence {
     return [pscustomobject]@{ Exists = $true; AgeHours = ((Get-Date) - $item.LastWriteTime).TotalHours; Text = (Get-Content -LiteralPath $Path -Raw) }
 }
 
+function Read-DeployManifest {
+    # Reads (never writes) the release manifest: existence, SHA-256 of its text with LF line endings, and the parsed JSON. Mocked in the tests.
+    param([string]$Path)
+    $full = $Path
+    if (-not [System.IO.Path]::IsPathRooted($full)) { $full = Join-Path $script:RepoRoot $Path }
+    if (-not (Test-Path -LiteralPath $full)) { return [pscustomobject]@{ Exists = $false; Sha256 = ''; Json = $null } }
+    $text = (Get-Content -LiteralPath $full -Raw -Encoding UTF8) -replace "`r`n", "`n"
+    $sha = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($text))).Replace('-', '').ToLower()
+    $json = $null
+    try { $json = $text | ConvertFrom-Json } catch { $json = $null }
+    return [pscustomobject]@{ Exists = $true; Sha256 = $sha; Json = $json }
+}
+
 function Start-DeploySleep {
     param([int]$Seconds)
     Start-Sleep -Seconds $Seconds
@@ -323,6 +350,17 @@ function Get-DeployContext {
     $evidence = [pscustomobject]@{ Required = $false; Exists = $false; AgeHours = 0; Text = '' }
     if ($script:Options.Contains('MigrationsEvidence') -and $script:Options['MigrationsEvidence']) { $evidence = Read-DeployEvidence ([string]$script:Options['MigrationsEvidence']) }
 
+    # Release manifest of database/ files (optional): blob id of every changed database/ file at HEAD, read-only (git rev-parse).
+    $manifest = $null
+    $blobs = @{}
+    if ($script:Options.Contains('DatabaseManifest') -and $script:Options['DatabaseManifest']) {
+        $manifest = Read-DeployManifest ([string]$script:Options['DatabaseManifest'])
+        foreach ($mf in $migrations) {
+            $b = Invoke-DeployRead 'git' ($git + @('rev-parse', ('HEAD:' + $mf)))
+            $blobs[$mf] = $(if ($b.Code -eq 0 -and $b.Out.Count -gt 0) { [string]$b.Out[0] } else { '' })
+        }
+    }
+
     return [pscustomobject]@{
         CandidateInput = $Candidate
         CandidateFull  = $(if ($cand.Code -eq 0 -and $cand.Out.Count -gt 0) { $cand.Out[0] } else { '' })
@@ -336,6 +374,8 @@ function Get-DeployContext {
         DeltaKnown     = $deltaKnown
         HubDockerFiles = $hubDocker
         MigrationFiles = $migrations
+        MigrationBlobs = $blobs
+        Manifest       = $manifest
         N8nFiles       = $n8n
         Evidence       = $evidence
         Closure        = (Get-ClosureState)
@@ -345,6 +385,34 @@ function Get-DeployContext {
 }
 
 # ================================================================== Validation
+function Test-DatabaseManifest {
+    # Pure: turns the context + the release manifest into blocking reasons for the database/ files of the release. Empty list = every file is authorised with identical content.
+    param($Context, $Options, [string[]]$Expected, [string]$MigrationPrefix)
+    $m = $Context.Manifest
+    if (-not $m -or -not $m.Exists) { return @('Falta el manifiesto de database/ (-DatabaseManifest).') }
+    $want = [string]$Options['DatabaseManifestSha256']
+    if (-not $want) { return @('-DatabaseManifest exige -DatabaseManifestSha256 (SHA-256 del manifiesto, entregado fuera del repositorio).') }
+    if ($m.Sha256 -ne $want.ToLower()) { return @('El SHA-256 del manifiesto (' + $m.Sha256 + ') no coincide con -DatabaseManifestSha256.') }
+    if (-not $m.Json -or [string]$m.Json.formato -ne '1' -or -not $m.Json.archivos) { return @('El manifiesto de database/ no es valido.') }
+    $reasons = @()
+    $byPath = @{}
+    foreach ($a in @($m.Json.archivos)) { $byPath[[string]$a.ruta] = $a }
+    $forbidden = @($m.Json.prohibidos | Where-Object { $_ })
+    foreach ($file in @($Context.MigrationFiles)) {
+        $hit = @($forbidden | Where-Object { $file.Contains($_) })
+        if ($hit.Count -gt 0) { $reasons += ('Archivo prohibido en el release (' + $file + ' contiene "' + $hit[0] + '").'); continue }
+        if (-not $byPath.ContainsKey($file)) { $reasons += ('Archivo de database/ no autorizado por el manifiesto: ' + $file); continue }
+        $entry = $byPath[$file]
+        $blob = [string]$Context.MigrationBlobs[$file]
+        if (-not $blob) { $reasons += ('Archivo de database/ eliminado o ilegible en HEAD (no autorizado): ' + $file); continue }
+        if ($blob -ne [string]$entry.blob) { $reasons += ('Archivo de database/ MODIFICADO respecto del manifiesto: ' + $file); continue }
+        if ([string]$entry.categoria -like 'produccion_*') {
+            if (-not ($file.StartsWith($MigrationPrefix) -and @($Expected | Where-Object { $file.Substring($MigrationPrefix.Length).StartsWith($_) }).Count -gt 0)) { $reasons += ('Archivo de produccion fuera de -ExpectedMigrations: ' + $file) }
+        }
+    }
+    return $reasons
+}
+
 function Test-DeployGate {
     # Pure: turns facts into a list of blocking reasons. Empty list = may proceed.
     # $AcknowledgeN8n lifts ONLY the n8n/ reason; migrations and every other check are unaffected.
@@ -392,6 +460,7 @@ function Test-DeployGate {
             $expected = @($Options['ExpectedMigrations'] | Where-Object { $_ })
             $markers = @($Options['EvidenceMarkers'] | Where-Object { $_ })
             if ($expected.Count -eq 0) { $reasons += '-AcknowledgeMigrationsAlreadyApplied exige -ExpectedMigrations (prefijos de nombre permitidos).' }
+            elseif ($Options.Contains('DatabaseManifest') -and $Options['DatabaseManifest']) { $reasons += @(Test-DatabaseManifest $Context $Options $expected $migrationPrefix) }
             else {
                 $unexpected = @($Context.MigrationFiles | Where-Object { $file = $_; -not ($file.StartsWith($migrationPrefix) -and @($expected | Where-Object { $file.Substring($migrationPrefix.Length).StartsWith($_) }).Count -gt 0) })
                 if ($unexpected.Count -gt 0) { $reasons += ('Archivos de database/ no esperados en el release (' + $unexpected.Count + '): ' + (($unexpected | Select-Object -First 3) -join ', ')) }
@@ -707,6 +776,6 @@ function Invoke-DeployMain {
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
     $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
-        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
     exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }
