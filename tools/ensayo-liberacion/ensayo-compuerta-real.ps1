@@ -35,7 +35,10 @@ $prefix = 'database/migrations/daubert_global/'
 function Get-Reasons {
     $files = @(& git -C $cloneFull diff --name-only $Base HEAD -- database)
     $blobs = @{}
-    foreach ($f in $files) { $o = & git -C $cloneFull rev-parse ('HEAD:' + $f) 2>$null; $blobs[$f] = $(if ($LASTEXITCODE -eq 0) { [string]$o } else { '' }) }
+    $manifestLeido = Read-DeployManifest $Manifest
+    $todos = @($files)
+    if ($manifestLeido.Json) { foreach ($a in @($manifestLeido.Json.archivos)) { if ([string]$a.categoria -like 'produccion_*') { $todos += [string]$a.ruta } } }
+    foreach ($f in @($todos | Select-Object -Unique)) { $o = & git -C $cloneFull rev-parse ('HEAD:' + $f) 2>$null; $blobs[$f] = $(if ($LASTEXITCODE -eq 0) { [string]$o } else { '' }) }
     $script:Options = @{ DatabaseManifest = $Manifest; DatabaseManifestSha256 = $ManifestSha256 }
     $ctx = [pscustomobject]@{ MigrationFiles = $files; MigrationBlobs = $blobs; Manifest = (Read-DeployManifest $Manifest) }
     return @(Test-DatabaseManifest $ctx $script:Options $Expected $prefix)
@@ -80,7 +83,7 @@ if ($Cat025Repo) {
 }
 
 Remove-Item -LiteralPath (Join-Path $cloneFull ($prefix + '20261108_021_manufactura_responsables_firmas_prod.up.sql')); Commit 'elimina 021 UP'
-Expect '9. archivo autorizado eliminado: BLOQUEADO' 'eliminado o ilegible'; Reset-Clone
+Expect '9. archivo autorizado eliminado: BLOQUEADO' 'ausente o distinto en HEAD'; Reset-Clone
 
 # El manifiesto alterado (por ejemplo para listar un archivo nuevo) cambia su SHA-256 y ya no coincide con el registro de autorizacion.
 $m = Join-Path $cloneFull $Manifest; $texto = Get-Content -LiteralPath $m -Raw; Set-Content -LiteralPath $m -Value ($texto.TrimEnd() + "`n ") -NoNewline; Commit 'manifiesto alterado'

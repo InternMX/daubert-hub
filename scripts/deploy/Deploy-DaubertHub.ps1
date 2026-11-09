@@ -355,7 +355,10 @@ function Get-DeployContext {
     $blobs = @{}
     if ($script:Options.Contains('DatabaseManifest') -and $script:Options['DatabaseManifest']) {
         $manifest = Read-DeployManifest ([string]$script:Options['DatabaseManifest'])
-        foreach ($mf in $migrations) {
+        # The changed database/ files AND every production file the manifest authorises (a required migration that disappeared from HEAD must block even though it is not in the delta).
+        $wantBlobs = @($migrations)
+        if ($manifest -and $manifest.Json -and $manifest.Json.archivos) { foreach ($ma in @($manifest.Json.archivos)) { if ([string]$ma.categoria -like 'produccion_*') { $wantBlobs += [string]$ma.ruta } } }
+        foreach ($mf in @($wantBlobs | Select-Object -Unique)) {
             $b = Invoke-DeployRead 'git' ($git + @('rev-parse', ('HEAD:' + $mf)))
             $blobs[$mf] = $(if ($b.Code -eq 0 -and $b.Out.Count -gt 0) { [string]$b.Out[0] } else { '' })
         }
@@ -410,6 +413,13 @@ function Test-DatabaseManifest {
         if ([string]$entry.categoria -like 'produccion_*') {
             if (-not ($file.StartsWith($MigrationPrefix) -and @($Expected | Where-Object { $file.Substring($MigrationPrefix.Length).StartsWith($_) }).Count -gt 0)) { $reasons += ('Archivo de produccion fuera de -ExpectedMigrations: ' + $file) }
         }
+    }
+    foreach ($entry in @($m.Json.archivos | Where-Object { [string]$_.categoria -like 'produccion_*' })) {
+        $ruta = [string]$entry.ruta
+        if (@($Context.MigrationFiles) -contains $ruta) { continue }
+        $blob = ''
+        if ($Context.MigrationBlobs.ContainsKey($ruta)) { $blob = [string]$Context.MigrationBlobs[$ruta] }
+        if ($blob -ne [string]$entry.blob) { $reasons += ('Archivo autorizado de produccion ausente o distinto en HEAD: ' + $ruta) }
     }
     return $reasons
 }

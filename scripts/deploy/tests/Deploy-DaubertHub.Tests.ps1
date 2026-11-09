@@ -774,6 +774,14 @@ Describe 'Compuerta con manifiesto de database/ (-DatabaseManifest): autoriza ex
         (Get-PrintedText) | Should Match 'Archivo prohibido en el release'
     }
 
+    It 'un archivo de produccion autorizado que ya no existe en HEAD bloquea aunque no figure en el delta' {
+        $p = $script:ProdFiles[1]
+        $script:Fake.Files = @($script:Fake.Files | Where-Object { $_ -ne $p }); $script:Fake.Blobs[$p] = ''
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'ausente o distinto en HEAD'
+        $script:Mutations.Count | Should Be 0
+    }
+
     It 'un archivo eliminado o ilegible en HEAD bloquea' {
         $script:Fake.Blobs[$script:ProdFiles[0]] = ''
         (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
