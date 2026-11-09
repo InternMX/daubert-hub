@@ -9,7 +9,7 @@ async function login(email) {
 }
 const call = async (who, method, path, body) => { const r = await fetch(base + '/api' + path, { method, headers: { cookie: who.cookie, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined }); let j = null; try { j = await r.json(); } catch {} return { status: r.status, body: j }; };
 (async () => {
-  const admin = await login('admin1@example.invalid'); const gen = await login('g2@example.invalid');
+  const admin = await login(process.env.ENSAYO_ADMIN || 'admin1@example.invalid'); const gen = await login(process.env.ENSAYO_GENERAL || 'g2@example.invalid');
   ok(admin.status === 200 && gen.status === 200, 'login ADMIN y GENERAL');
   for (const [n, w] of [['ADMIN', admin], ['GENERAL', gen]]) {
     ok((await call(w, 'GET', '/clients')).status === 200, `${n}: GET /clients (módulo existente) 200`);

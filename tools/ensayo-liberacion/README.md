@@ -15,3 +15,9 @@ Solo para instancias **desechables** (réplica de producción, contenedores loca
 | `huellas-datos.readonly.sql` | MD5 por tabla de todo lo que no es `manufactura` (solo lectura) |
 | `respaldar-daubert-global.ps1` | Respaldo completo de solo lectura de `daubert_global` (lo ejecuta una persona con su contraseña) |
 | `respaldo-rls/enable-row-security.patch` | Parche (NO aplicado) de `scripts/backup`: `pg_dump --enable-row-security` + prueba Pester |
+| `simulador-bind.cjs` | Simulador HTTPS controlado de BIND (producto, inexistente, incompleto, ambiguo, duplicado, 401/429/500/lento/inválido) para réplicas desechables |
+| `validacion-funcional-manufactura.cjs` | Recorrido funcional completo por la pila (borradores, autoguardado, permisos ADMIN/GENERAL, firmas, finalización, PDF, inmutabilidad, revisiones, clientes y abreviaturas, cliente manual, auditoría, integridad, BIND) |
+| `validacion-ocho-formatos.cjs` + `analizar_formatos.py` | Genera y analiza el PDF finalizado de los ocho formatos (páginas, tamaño, texto, firmas, leyendas, registro en la base) |
+| `cdp.cjs` + `validacion-navegador.cjs` | Chrome real por DevTools Protocol (sin dependencias nuevas): recorrido ADMIN y GENERAL con capturas |
+| `verificar-respaldo-manufactura.cjs` | Controles de integridad de un respaldo posterior a la liberación (catálogo y restauración de prueba sin red) |
+| `comprobar-bind-real.cjs` | Comprobación de solo lectura contra BIND REAL vía la API del Hub (NO ejecutada; para una etapa posterior) |
