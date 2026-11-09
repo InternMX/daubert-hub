@@ -80,13 +80,13 @@ Interrumpa y no continúe si: (a) algún precheck tiene un `f`; (b) un UP falla 
 ## 6. SHA-256 de los archivos (contenido en git)
 ```
 3f97ad8e868c75cd5d4b0fc19073fc1b1f2c3e715fc1e860b6e9b7fb093ef6ff  20261108_000_manufactura_prod_smoke_solo_lectura.readonly.sql
-c5b93a9931f7ebc095fc52e58c88b155fcf196d3c46ab8cfb1b54d647c8b82ef  20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql
+bf30eed3a5bb818edd4915a5f34ef848c77cb2cb937771d7b9d5f9bb5b34cdcd  20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql
 ae9aeb0f778148b7b643812d643179fa4f364a4c78c9ff0f0818af64e57441e1  20261108_020_manufactura_gestor_documental_prod.down.sql
-50e0e81a414942d77d19952c6965fdec0590acb3059976ff6d76b9d4cdb57fd1  20261108_020_manufactura_gestor_documental_prod.postcheck.sql
+e99f28210ad4070b6f004287265a4aef04e663d5867d25456931228ad8837bd8  20261108_020_manufactura_gestor_documental_prod.postcheck.sql
 49ddf21a5b21bf99c6abbf288891426fd6ecce77a40fbc94d93f701cf97d379f  20261108_020_manufactura_gestor_documental_prod.precheck.sql
 ba37551d036b6c406c21c721e6f236d8bf215453e76d0d052d0d95e81ae4eebd  20261108_020_manufactura_gestor_documental_prod.up.sql
 8bf0ae50ec878ba1ccb86c0c448a7732f7a083505abdfb8a17073025f8ff3e31  20261108_021_manufactura_responsables_firmas_prod.down.sql
-43ead40407ba9e77fa8d0b73fbee06bb5cf65e3207ac9411b29742a5c6b0bf46  20261108_021_manufactura_responsables_firmas_prod.postcheck.sql
+0440dfb1a3fb31f306c35016f8cde4b928589f47117e6c8a2662848b0358f6c5  20261108_021_manufactura_responsables_firmas_prod.postcheck.sql
 9318d023eba7d33011900fdfdd4e844bff05725fa9b9d6d680b4dd0551f641cf  20261108_021_manufactura_responsables_firmas_prod.precheck.sql
 fa2efdcdc27644dbf99c58bc0ebd8fecf654b77404782109ddcb9576e6a2d607  20261108_021_manufactura_responsables_firmas_prod.up.sql
 c92787eb22c8a6cf6320ae80db0a52349ad501eab8fe209db6c96d43d11aa95a  20261108_022_manufactura_inventario_firmas_admin_prod.down.sql
@@ -107,3 +107,16 @@ ee8a9e49f4d970c1d5f95525c1924133b1d65e6b1a421273b331adbc561c7085  20261108_024_m
 01b76a52812e15888b0b8943c0dc89851b54466c6e12b983986e58db2c758cde  replica_only/20261108_023_manufactura_cliente_abreviaturas_prod.smoke_replica.sql
 80828d9926fae95db2e77ad34adae98bf870add22d990bdef1c9da15cdacd7fe  replica_only/20261108_024_manufactura_consulta_compartida_borradores_prod.smoke_replica.sql
 ```
+
+## 7. Rol de respaldos `daubert_backup`: lector autorizado (decisión del 2026-11-09, opción A)
+- **Qué se descubrió:** en el clúster real, `daubert_backup` pertenece a `pg_read_all_data` (membresía creada para los respaldos automáticos, `docs/operations/postgresql-backup-automation.md`). Por pertenencia **lee todas las tablas y esquemas, incluido `manufactura`**, sin entradas en las ACL. Los controles originales lo incluían entre los roles «sin acceso» y medían privilegios efectivos, por lo que fallaban (11 FAIL en el ensayo con los 8 roles reales).
+- **Decisión:** se conserva la membresía; se acepta **solo** la lectura. No se modificó ningún rol ni membresía, ni se eliminó o debilitó ninguna política RLS; los demás roles siguen sin ningún privilegio.
+- **Archivos cambiados (y por qué)** — los UP, DOWN, precheck y smoke de 020–024 **no cambiaron** (sus hashes de §6 siguen idénticos):
+  - `20261108_020_…postcheck.sql`: `daubert_backup` sale de `otros_roles_sin_acceso`; nueva comprobación `backup_solo_lectura` (incluida en `all_postchecks_pass`).
+  - `20261108_021_…postcheck.sql`: `daubert_backup` sale de `ningun_otro_rol_con_acceso`; nueva `backup_solo_lectura`.
+  - `20261108_000_…verificar_fuera_de_manufactura.readonly.sql`: `daubert_backup` sale de `roles_nombrados_sin_acceso`; nueva `backup_solo_lectura_efectivo` (en `all_checks_pass`).
+  - Ambos postchecks son **generados**: el cambio vive en `tools/generar-manufactura-prod.cjs` (sustituciones contadas); los postchecks de TEST (101–105) no se tocan. `tools/validar-manufactura-020-024-en-replica-prod.cjs` añade `--roles`, `--con-datos`, `--mantener`, `--evidencia` y las detecciones de `daubert_backup`.
+  - Hashes (§6) actualizados: los tres archivos de arriba.
+- **Qué verifica `backup_solo_lectura` (privilegios EFECTIVOS, mismo criterio que el postcheck 013 de Caterpillar):** login sin SUPERUSER/CREATEROLE/CREATEDB/REPLICATION/**BYPASSRLS**; única membresía heredada `pg_read_all_data` (ni `pg_write_all_data` ni otro rol: MEMBER/USAGE/SET); USAGE sin CREATE en el esquema; SELECT en todas las tablas y **ningún** INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN (tabla ni columna); sin USAGE/UPDATE en secuencias; sin EXECUTE en funciones invocables (las de TRIGGER conservan el EXECUTE por omisión de PUBLIC y no se pueden invocar); **sin ninguna entrada ACL explícita** en tablas o esquema (el acceso es solo por la membresía). Si el rol no existe, no hay nada que evaluar.
+- **Datos sensibles:** el rol de respaldos puede leer documentos, PDF y las **imágenes de firmas** de Manufactura. Sus credenciales (`pgpass`, gestor de secretos) y los archivos de respaldo (cifrados con age en los respaldos automáticos) deben protegerse igual que `daubert_global`.
+- **Limitación conocida (RLS):** `pg_read_all_data` **no** salta RLS y `daubert_backup` no tiene BYPASSRLS (la política del proyecto lo trata como desviación, ver postcheck 013). Las políticas de `manufactura` son `TO daubert_hub_app`, así que `pg_dump` como `daubert_backup` **falla** con «query would be affected by row-level security policy» en cuanto existe `manufactura`. Ver `docs/hub/manufactura-ensayo-6b-resultados.md`: es un bloqueante previo a producción para los respaldos automáticos.

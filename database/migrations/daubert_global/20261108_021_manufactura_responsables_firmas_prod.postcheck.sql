@@ -35,11 +35,24 @@ WITH base AS (
       AND NOT has_column_privilege('daubert_hub_app', 'manufactura.firma_autorizaciones', 'usuario_id', 'UPDATE'))                                                          AS privilegios_autorizaciones,
     (has_table_privilege('daubert_hub_app', 'manufactura.revision_responsables', 'DELETE') AND NOT has_table_privilege('daubert_hub_app', 'manufactura.revision_responsables', 'TRUNCATE')) AS privilegios_responsables,
     NOT has_schema_privilege('daubert_hub_app', 'manufactura', 'CREATE')                                                       AS app_sin_ddl,
+    COALESCE((SELECT bool_and(
+        b.rolcanlogin AND b.rolinherit AND NOT b.rolsuper AND NOT b.rolcreaterole AND NOT b.rolcreatedb AND NOT b.rolreplication AND NOT b.rolbypassrls
+        AND pg_has_role(b.oid, 'pg_read_all_data', 'USAGE')
+        AND NOT EXISTS (SELECT 1 FROM pg_roles o WHERE o.oid <> b.oid AND o.rolname <> 'pg_read_all_data' AND (pg_has_role(b.oid, o.oid, 'MEMBER') OR pg_has_role(b.oid, o.oid, 'USAGE') OR pg_has_role(b.oid, o.oid, 'SET')))
+        AND has_schema_privilege(b.oid, 'manufactura', 'USAGE') AND NOT has_schema_privilege(b.oid, 'manufactura', 'CREATE')
+        AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'manufactura'::regnamespace AND (
+              (c.relkind IN ('r', 'p') AND (NOT has_table_privilege(b.oid, c.oid, 'SELECT') OR has_table_privilege(b.oid, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+                                           OR has_any_column_privilege(b.oid, c.oid, 'INSERT,UPDATE,REFERENCES')))
+           OR (c.relkind = 'S' AND has_sequence_privilege(b.oid, c.oid, 'USAGE,UPDATE'))))
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'manufactura'::regnamespace AND p.prorettype <> 'trigger'::regtype AND has_function_privilege(b.oid, p.oid, 'EXECUTE'))
+        AND NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE c.relnamespace = 'manufactura'::regnamespace AND a.grantee = b.oid)
+        AND NOT EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'manufactura' AND a.grantee = b.oid)
+      ) FROM pg_roles b WHERE b.rolname = 'daubert_backup'), true) AS backup_solo_lectura,
     NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON true
-                 WHERE n.nspname = 'manufactura' AND c.relname IN ('firmas','firma_autorizaciones','revision_responsables') AND NOT r.rolsuper AND r.rolname <> 'daubert_hub_app' AND r.rolname !~ '^pg_'
+                 WHERE n.nspname = 'manufactura' AND c.relname IN ('firmas','firma_autorizaciones','revision_responsables') AND NOT r.rolsuper AND r.rolname <> 'daubert_hub_app' AND r.rolname <> 'daubert_backup' AND r.rolname !~ '^pg_'
                    AND has_table_privilege(r.oid, c.oid, 'SELECT'))                                                                  AS ningun_otro_rol_con_acceso,
     ((SELECT h FROM base) = :'huella_101')                                                                                           AS tablas_de_la_101_sin_cambios
 )
 SELECT r.*, (ocho_tablas AND rls_en_las_8 AND diez_politicas_nuevas AND once_triggers_nuevos AND duenos_administrativos AND privilegios_firmas AND privilegios_autorizaciones AND privilegios_responsables
-             AND app_sin_ddl AND ningun_otro_rol_con_acceso AND tablas_de_la_101_sin_cambios) AS all_postchecks_pass FROM r;
+             AND app_sin_ddl AND ningun_otro_rol_con_acceso AND backup_solo_lectura AND tablas_de_la_101_sin_cambios) AS all_postchecks_pass FROM r;
 ROLLBACK;

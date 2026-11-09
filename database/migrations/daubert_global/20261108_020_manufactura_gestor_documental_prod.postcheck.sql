@@ -74,7 +74,20 @@ permisos AS (
        FROM unnest(ARRAY['pdfs', 'pdf_contenidos', 'confirmaciones_revision']) AS t)                                  AS permisos_pdfs_confirmaciones,
     -- nadie más accede: ni PUBLIC ni los roles de n8n / backup / lectura de documentos / producción
     (SELECT bool_and(NOT has_schema_privilege(r.rolname, 'manufactura', 'USAGE'))
-       FROM pg_roles r WHERE r.rolname IN ('daubert_hub_test_user', 'n8n_app', 'n8n_app_test', 'n8n_cat_prod', 'n8n_cat_test', 'daubert_docs_ro', 'daubert_backup')) AS otros_roles_sin_acceso,
+       FROM pg_roles r WHERE r.rolname IN ('daubert_hub_test_user', 'n8n_app', 'n8n_app_test', 'n8n_cat_prod', 'n8n_cat_test', 'daubert_docs_ro')) AS otros_roles_sin_acceso,
+    COALESCE((SELECT bool_and(
+        b.rolcanlogin AND b.rolinherit AND NOT b.rolsuper AND NOT b.rolcreaterole AND NOT b.rolcreatedb AND NOT b.rolreplication AND NOT b.rolbypassrls
+        AND pg_has_role(b.oid, 'pg_read_all_data', 'USAGE')
+        AND NOT EXISTS (SELECT 1 FROM pg_roles o WHERE o.oid <> b.oid AND o.rolname <> 'pg_read_all_data' AND (pg_has_role(b.oid, o.oid, 'MEMBER') OR pg_has_role(b.oid, o.oid, 'USAGE') OR pg_has_role(b.oid, o.oid, 'SET')))
+        AND has_schema_privilege(b.oid, 'manufactura', 'USAGE') AND NOT has_schema_privilege(b.oid, 'manufactura', 'CREATE')
+        AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'manufactura'::regnamespace AND (
+              (c.relkind IN ('r', 'p') AND (NOT has_table_privilege(b.oid, c.oid, 'SELECT') OR has_table_privilege(b.oid, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+                                           OR has_any_column_privilege(b.oid, c.oid, 'INSERT,UPDATE,REFERENCES')))
+           OR (c.relkind = 'S' AND has_sequence_privilege(b.oid, c.oid, 'USAGE,UPDATE'))))
+        AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'manufactura'::regnamespace AND p.prorettype <> 'trigger'::regtype AND has_function_privilege(b.oid, p.oid, 'EXECUTE'))
+        AND NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE c.relnamespace = 'manufactura'::regnamespace AND a.grantee = b.oid)
+        AND NOT EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'manufactura' AND a.grantee = b.oid)
+      ) FROM pg_roles b WHERE b.rolname = 'daubert_backup'), true) AS backup_solo_lectura,
     NOT has_schema_privilege('public', 'manufactura', 'USAGE')                                                         AS public_sin_acceso
 ),
 sin_cambios AS (
@@ -101,7 +114,7 @@ SELECT o.*, v.*, p.*, s.*,
    AND o.unico_codigo_variante AND o.unica_revision_por_documento AND o.coherencia_estado AND o.dueno_unico AND o.esquema_de_administrador
    AND v.tablas_vacias_esperadas
    AND p.app_usage AND p.app_sin_create_esquema AND p.app_sin_create_base AND p.permisos_documentos AND p.permisos_revisiones AND p.permisos_pdfs_confirmaciones
-   AND p.otros_roles_sin_acceso AND p.public_sin_acceso
+   AND p.otros_roles_sin_acceso AND p.backup_solo_lectura AND p.public_sin_acceso
    AND s.usuarios_igual AND s.empresas_igual AND s.audit_cambios_igual AND s.tablas_existentes_igual AND s.funciones_existentes_igual
    AND s.columnas_existentes_igual AND s.triggers_existentes_igual AND s.privilegios_y_duenos_existentes_igual AND s.roles_igual AND s.acl_de_bases_igual_sin_cambios_de_connect AND s.acl_de_esquemas_igual) AS all_checks_pass
 FROM objetos o, vacio v, permisos p, sin_cambios s;

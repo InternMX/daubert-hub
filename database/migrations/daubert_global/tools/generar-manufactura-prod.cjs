@@ -20,6 +20,25 @@ const MIGRACIONES = [
   { origen: '20261107_105_manufactura_consulta_compartida_borradores_test', destino: `${FECHA}_024_manufactura_consulta_compartida_borradores_prod`, n: '105', nueva: '024' }
 ];
 
+// ---- Lector de respaldos autorizado (decisión del 2026-11-09, opción A) -------------------------------------------------------------------------------------------------------------------------
+// El rol real daubert_backup pertenece a pg_read_all_data: LEE todas las tablas y esquemas (incluido manufactura) por pertenencia, sin entradas en las ACL. Se acepta SOLO ese acceso de lectura. El
+// predicado mide privilegios EFECTIVOS (no solo ACL) y sigue el mismo criterio que el postcheck 013 de Caterpillar: login sin atributos administrativos ni BYPASSRLS; única membresía heredada
+// pg_read_all_data; sin CREATE en el esquema; SELECT en todas las tablas; NINGÚN privilegio de escritura ni administración (INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN, a nivel de tabla
+// o de columna); ningún USAGE/UPDATE sobre secuencias; ningún EXECUTE sobre funciones invocables de manufactura (las funciones de TRIGGER no se pueden invocar directamente y conservan el EXECUTE por omisión de PUBLIC); y ninguna entrada ACL explícita (el acceso es solo por la membresía). Si el rol no existe, no hay nada que evaluar.
+const LECTOR_RESPALDOS = (ind) => ind + "COALESCE((SELECT bool_and(\n" +
+  ind + "    b.rolcanlogin AND b.rolinherit AND NOT b.rolsuper AND NOT b.rolcreaterole AND NOT b.rolcreatedb AND NOT b.rolreplication AND NOT b.rolbypassrls\n" +
+  ind + "    AND pg_has_role(b.oid, 'pg_read_all_data', 'USAGE')\n" +
+  ind + "    AND NOT EXISTS (SELECT 1 FROM pg_roles o WHERE o.oid <> b.oid AND o.rolname <> 'pg_read_all_data' AND (pg_has_role(b.oid, o.oid, 'MEMBER') OR pg_has_role(b.oid, o.oid, 'USAGE') OR pg_has_role(b.oid, o.oid, 'SET')))\n" +
+  ind + "    AND has_schema_privilege(b.oid, 'manufactura', 'USAGE') AND NOT has_schema_privilege(b.oid, 'manufactura', 'CREATE')\n" +
+  ind + "    AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'manufactura'::regnamespace AND (\n" +
+  ind + "          (c.relkind IN ('r', 'p') AND (NOT has_table_privilege(b.oid, c.oid, 'SELECT') OR has_table_privilege(b.oid, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')\n" +
+  ind + "                                       OR has_any_column_privilege(b.oid, c.oid, 'INSERT,UPDATE,REFERENCES')))\n" +
+  ind + "       OR (c.relkind = 'S' AND has_sequence_privilege(b.oid, c.oid, 'USAGE,UPDATE'))))\n" +
+  ind + "    AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'manufactura'::regnamespace AND p.prorettype <> 'trigger'::regtype AND has_function_privilege(b.oid, p.oid, 'EXECUTE'))\n" +
+  ind + "    AND NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE c.relnamespace = 'manufactura'::regnamespace AND a.grantee = b.oid)\n" +
+  ind + "    AND NOT EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'manufactura' AND a.grantee = b.oid)\n" +
+  ind + "  ) FROM pg_roles b WHERE b.rolname = 'daubert_backup'), true)";
+
 const errores = [];
 function sub(texto, desde, hacia, { min = 1, max = Infinity, etiqueta, archivo }) {
   let n = 0;
@@ -70,6 +89,16 @@ function transformar(texto, tipo, m) {
   if (m.n === '101' && tipo === 'postcheck') {
     // Con la aplicación en línea pueden aparecer filas nuevas (inicios de sesión, auditoría) entre el precheck y el postcheck; la migración no escribe ninguna: se exige que NO DISMINUYAN.
     for (const k of ['baseline_users', 'baseline_empresas', 'baseline_audit_cambios']) t = sub(t, `= :${k}`, `>= :${k}`, o(1, 1, `conteo ${k}`));
+  }
+  if (m.n === '101' && tipo === 'postcheck') {
+    t = sub(t, "'n8n_cat_test', 'daubert_docs_ro', 'daubert_backup')) AS otros_roles_sin_acceso,",
+      "'n8n_cat_test', 'daubert_docs_ro')) AS otros_roles_sin_acceso,\n" + LECTOR_RESPALDOS('    ') + " AS backup_solo_lectura,", o(1, 1, 'daubert_backup: lector autorizado (postcheck 020)'));
+    t = sub(t, "AND p.otros_roles_sin_acceso AND p.public_sin_acceso", "AND p.otros_roles_sin_acceso AND p.backup_solo_lectura AND p.public_sin_acceso", o(1, 1, 'backup_solo_lectura en el resultado (020)'));
+  }
+  if (m.n === '102' && tipo === 'postcheck') {
+    t = sub(t, "AND NOT r.rolsuper AND r.rolname <> 'daubert_hub_app' AND r.rolname !~ '^pg_'", "AND NOT r.rolsuper AND r.rolname <> 'daubert_hub_app' AND r.rolname <> 'daubert_backup' AND r.rolname !~ '^pg_'", o(1, 1, 'daubert_backup fuera de «ningún otro rol» (021)'));
+    t = sub(t, "    NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON true", LECTOR_RESPALDOS('    ') + " AS backup_solo_lectura,\n    NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON true", o(1, 1, 'backup_solo_lectura (021)'));
+    t = sub(t, "AND app_sin_ddl AND ningun_otro_rol_con_acceso AND tablas_de_la_101_sin_cambios)", "AND app_sin_ddl AND ningun_otro_rol_con_acceso AND backup_solo_lectura AND tablas_de_la_101_sin_cambios)", o(1, 1, 'backup_solo_lectura en el resultado (021)'));
   }
   if (m.n === '101' && tipo === 'postcheck') {
     t = sub(t, 'tablas_vacias_o_con_datos_de_prueba_esperados', 'tablas_vacias_esperadas', { min: 2, archivo: a, etiqueta: 'alias tablas vacías' });

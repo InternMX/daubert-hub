@@ -5,7 +5,8 @@
 --   1) CAPTURA (sin -v):  imprime la LÍNEA BASE del catálogo de TODO lo que NO es Manufactura: relaciones (dueño, ACL, RLS), columnas, ACL de columnas, restricciones, índices, funciones (cuerpo, dueño,
 --      SECURITY DEFINER, config, ACL), triggers, políticas RLS, esquemas (dueño y ACL), roles (atributos, membresías, configuración), ACL de bases, privilegios por defecto y extensiones.
 --   2) COMPARACIÓN (con -v f_*=…, -v nivel=NN): comprueba que esa línea base NO cambió y, si el esquema manufactura existe, la MATRIZ DE PRIVILEGIOS: los roles n8n_app, n8n_cat_prod, n8n_cat_test,
---      n8n_app_test, daubert_docs_ro, daubert_hub_test_user, daubert_backup y PUBLIC no tienen NINGÚN privilegio (esquema, tablas, columnas, secuencias, funciones) y daubert_hub_app tiene EXACTAMENTE
+--      n8n_app_test, daubert_docs_ro, daubert_hub_test_user y PUBLIC no tienen NINGÚN privilegio (esquema, tablas, columnas, secuencias, funciones); daubert_backup es el ÚNICO otro lector autorizado (decisión del 2026-11-09:
+--      pertenece a pg_read_all_data y lee por pertenencia) y se verifica por PRIVILEGIOS EFECTIVOS que sea solo lectura (backup_solo_lectura_efectivo); y daubert_hub_app tiene EXACTAMENTE
 --      los privilegios previstos para el nivel de migración aplicado (sin DELETE ni TRUNCATE salvo revision_responsables, sin DDL, sin privilegios sobre secuencias).
 --
 --   Captura:      psql -h localhost -p 5432 -d daubert_global -U postgres -W -X -v ON_ERROR_STOP=1 -f 20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql
@@ -84,13 +85,28 @@ SELECT rel.h AS f_rel, col.h AS f_col, acol.h AS f_acol, con.h AS f_con, idx.h A
    nombrados AS (
      SELECT NOT EXISTS (
        SELECT 1 FROM pg_roles r, pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace
-        WHERE s.nspname = 'manufactura' AND c.relkind IN ('r', 'S') AND r.rolname IN ('n8n_app', 'n8n_cat_prod', 'n8n_cat_test', 'n8n_app_test', 'daubert_docs_ro', 'daubert_hub_test_user', 'daubert_backup')
+        WHERE s.nspname = 'manufactura' AND c.relkind IN ('r', 'S') AND r.rolname IN ('n8n_app', 'n8n_cat_prod', 'n8n_cat_test', 'n8n_app_test', 'daubert_docs_ro', 'daubert_hub_test_user')
           AND (has_table_privilege(r.oid, c.oid, 'SELECT') OR has_table_privilege(r.oid, c.oid, 'INSERT') OR has_table_privilege(r.oid, c.oid, 'UPDATE') OR has_table_privilege(r.oid, c.oid, 'DELETE')
                OR has_table_privilege(r.oid, c.oid, 'TRUNCATE') OR has_table_privilege(r.oid, c.oid, 'REFERENCES') OR has_table_privilege(r.oid, c.oid, 'TRIGGER'))
      ) AND NOT EXISTS (
-       SELECT 1 FROM pg_roles r WHERE r.rolname IN ('n8n_app', 'n8n_cat_prod', 'n8n_cat_test', 'n8n_app_test', 'daubert_docs_ro', 'daubert_hub_test_user', 'daubert_backup')
+       SELECT 1 FROM pg_roles r WHERE r.rolname IN ('n8n_app', 'n8n_cat_prod', 'n8n_cat_test', 'n8n_app_test', 'daubert_docs_ro', 'daubert_hub_test_user')
           AND EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura') AND (has_schema_privilege(r.oid, 'manufactura', 'USAGE') OR has_schema_privilege(r.oid, 'manufactura', 'CREATE'))
      ) AS roles_nombrados_sin_acceso,
+     CASE WHEN EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura') THEN
+     COALESCE((SELECT bool_and(
+             b.rolcanlogin AND b.rolinherit AND NOT b.rolsuper AND NOT b.rolcreaterole AND NOT b.rolcreatedb AND NOT b.rolreplication AND NOT b.rolbypassrls
+             AND pg_has_role(b.oid, 'pg_read_all_data', 'USAGE')
+             AND NOT EXISTS (SELECT 1 FROM pg_roles o WHERE o.oid <> b.oid AND o.rolname <> 'pg_read_all_data' AND (pg_has_role(b.oid, o.oid, 'MEMBER') OR pg_has_role(b.oid, o.oid, 'USAGE') OR pg_has_role(b.oid, o.oid, 'SET')))
+             AND has_schema_privilege(b.oid, 'manufactura', 'USAGE') AND NOT has_schema_privilege(b.oid, 'manufactura', 'CREATE')
+             AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'manufactura') AND (
+                   (c.relkind IN ('r', 'p') AND (NOT has_table_privilege(b.oid, c.oid, 'SELECT') OR has_table_privilege(b.oid, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN')
+                                                OR has_any_column_privilege(b.oid, c.oid, 'INSERT,UPDATE,REFERENCES')))
+                OR (c.relkind = 'S' AND has_sequence_privilege(b.oid, c.oid, 'USAGE,UPDATE'))))
+             AND NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'manufactura') AND p.prorettype <> 'trigger'::regtype AND has_function_privilege(b.oid, p.oid, 'EXECUTE'))
+             AND NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'manufactura') AND a.grantee = b.oid)
+             AND NOT EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'manufactura' AND a.grantee = b.oid)
+           ) FROM pg_roles b WHERE b.rolname = 'daubert_backup'), true)
+     ELSE true END AS backup_solo_lectura_efectivo,
      NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura') OR (NOT has_schema_privilege('public', 'manufactura', 'USAGE') AND NOT has_schema_privilege('public', 'manufactura', 'CREATE')) AS public_sin_acceso_al_esquema),
    app AS (
      SELECT
@@ -123,7 +139,7 @@ SELECT rel.h AS f_rel, col.h AS f_col, acol.h AS f_acol, con.h AS f_con, idx.h A
                                    AND p.delete_solo_en_responsables AND p.execute_solo_en_funciones_previstas AND p.esquema_usage_sin_create AND p.app_sin_atributos_peligrosos AND p.app_no_es_duena AND p.toda_tabla_con_rls) ELSE true END AS matriz_de_daubert_hub_app_exacta,
          (i.relaciones_y_acl_igual AND i.columnas_igual AND i.acl_de_columnas_igual AND i.restricciones_igual AND i.indices_igual AND i.funciones_y_acl_igual AND i.triggers_igual AND i.politicas_rls_igual AND i.esquemas_y_acl_igual
           AND i.roles_igual AND i.config_de_roles_igual AND i.acl_de_bases_igual AND i.privilegios_por_defecto_igual AND i.extensiones_igual
-          AND CASE WHEN h.esquema THEN a.n = 0 AND n.roles_nombrados_sin_acceso AND n.public_sin_acceso_al_esquema AND p.tablas_esperadas_existen AND p.sin_tablas_de_mas AND p.privilegios_de_tabla_exactos AND p.update_solo_en_columnas_previstas
+          AND CASE WHEN h.esquema THEN a.n = 0 AND n.roles_nombrados_sin_acceso AND n.backup_solo_lectura_efectivo AND n.public_sin_acceso_al_esquema AND p.tablas_esperadas_existen AND p.sin_tablas_de_mas AND p.privilegios_de_tabla_exactos AND p.update_solo_en_columnas_previstas
                                        AND p.sin_privilegios_sobre_secuencias AND p.sin_truncate_references_trigger AND p.delete_solo_en_responsables AND p.execute_solo_en_funciones_previstas AND p.esquema_usage_sin_create
                                        AND p.app_sin_atributos_peligrosos AND p.app_no_es_duena AND p.toda_tabla_con_rls ELSE true END) AS all_checks_pass
     FROM igual i, hay h, ajenos a, nombrados n, app p;
