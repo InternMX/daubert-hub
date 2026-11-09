@@ -62,8 +62,10 @@ try {
         $id = [string]((& docker image inspect $tag --format '{{.Id}}') | Select-Object -First 1)
         $e = [ordered]@{ servicio = $svc; tag = $tag; imageId = $id }
         if ($svc -eq 'api') {
-            $e.chromium = [string]((& docker run --rm --entrypoint chromium $tag --version 2>$null) | Select-Object -First 1)
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            $e.chromium = [string]((& docker run --rm --entrypoint sh $tag -c 'chromium --version 2>/dev/null || echo SIN_CHROMIUM') | Select-Object -First 1)
             $e.fuentes = [string]((& docker run --rm --entrypoint sh $tag -c 'fc-list | grep -ci carlito') | Select-Object -First 1)
+            $ErrorActionPreference = $prev
         }
         if ($SaveDir) {
             New-Item -ItemType Directory -Force -Path $SaveDir | Out-Null
