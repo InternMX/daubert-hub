@@ -204,6 +204,33 @@ function main() {
     psql({ sql: 'GRANT SELECT ON core.empresas TO n8n_cat_prod' });
     registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si cambiara un privilegio FUERA de manufactura (core.empresas), la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON core.empresas FROM n8n_cat_prod' });
+    if (ROLES_FILE) {
+    // ---- daubert_backup: lector autorizado (decisión A, 2026-11-09). Debe LEER por pertenencia a pg_read_all_data y NO tener ningún privilegio de escritura/administración; cada desviación se provoca y se detecta.
+    const detecta = (sqlProvoca, sqlRevierte, etiqueta) => {
+      psql({ sql: sqlProvoca });
+      registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN (daubert_backup): ' + etiqueta);
+      psql({ sql: sqlRevierte });
+    };
+    detecta('GRANT INSERT ON manufactura.documentos TO daubert_backup', 'REVOKE INSERT ON manufactura.documentos FROM daubert_backup', 'si recibiera INSERT en manufactura, la verificación FALLA');
+    detecta('GRANT UPDATE (estado) ON manufactura.firmas TO daubert_backup', 'REVOKE UPDATE (estado) ON manufactura.firmas FROM daubert_backup', 'si recibiera UPDATE de columna en manufactura.firmas, la verificación FALLA');
+    detecta('GRANT TRUNCATE ON manufactura.revisiones TO daubert_backup', 'REVOKE TRUNCATE ON manufactura.revisiones FROM daubert_backup', 'si recibiera TRUNCATE, la verificación FALLA');
+    detecta('GRANT pg_write_all_data TO daubert_backup', 'REVOKE pg_write_all_data FROM daubert_backup', 'si heredara pg_write_all_data (escritura por membresía), la verificación FALLA');
+    detecta('GRANT n8n_app TO daubert_backup', 'REVOKE n8n_app FROM daubert_backup', 'si heredara otro rol (membresía extra), la verificación FALLA');
+    detecta('ALTER ROLE daubert_backup BYPASSRLS', 'ALTER ROLE daubert_backup NOBYPASSRLS', 'si tuviera BYPASSRLS, la verificación FALLA');
+    detecta('ALTER ROLE daubert_backup CREATEROLE', 'ALTER ROLE daubert_backup NOCREATEROLE', 'si tuviera CREATEROLE (administración), la verificación FALLA');
+    detecta('GRANT CREATE ON SCHEMA manufactura TO daubert_backup', 'REVOKE CREATE ON SCHEMA manufactura FROM daubert_backup', 'si pudiera crear objetos en manufactura, la verificación FALLA');
+    detecta('GRANT EXECUTE ON FUNCTION manufactura.fn_inmutable() TO daubert_backup', 'REVOKE EXECUTE ON FUNCTION manufactura.fn_inmutable() FROM daubert_backup', 'si pudiera ejecutar funciones de manufactura, la verificación FALLA');
+    detecta('GRANT SELECT ON manufactura.firmas TO daubert_backup', 'REVOKE SELECT ON manufactura.firmas FROM daubert_backup', 'si tuviera una ACL explícita (el acceso debe ser solo por la membresía), la verificación FALLA');
+    // Estado real del rol (premisa de la decisión) y efectividad: lee, no escribe.
+    const rolB = psql({ tuplas: true, sql: "SELECT (SELECT count(*) FROM pg_roles WHERE rolname = 'daubert_backup'), pg_has_role('daubert_backup', 'pg_read_all_data', 'USAGE'), has_table_privilege('daubert_backup', 'manufactura.firmas', 'SELECT'), has_schema_privilege('daubert_backup', 'manufactura', 'USAGE'), has_table_privilege('daubert_backup', 'manufactura.documentos', 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'), (SELECT rolbypassrls OR rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication FROM pg_roles WHERE rolname = 'daubert_backup')" }).out.trim();
+    if (ROLES_FILE) registrar(rolB === '1|t|t|t|f|f', 'daubert_backup (rol REAL): miembro de pg_read_all_data, LEE manufactura (firmas incluidas), sin privilegios de escritura/administración', rolB);
+    {
+      // El acceso por pertenencia NO salta RLS (el rol no tiene BYPASSRLS, por política del proyecto). Se mide y se informa; no es un FAIL de las migraciones.
+      const dumpB = docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', 'pg_dump -h 127.0.0.1 -U daubert_backup -d daubert_global -Fc -f /tmp/backup_rol.dump 2>&1 | head -1']);
+      const rlsBloquea = /row-level security/.test(dumpB.stdout);
+      console.log('ADVERTENCIA  pg_dump como daubert_backup (sin --enable-row-security) ' + (rlsBloquea ? 'FALLA con «query would be affected by row-level security policy»: el rol lee por pertenencia pero RLS sigue aplicando (sus políticas son TO daubert_hub_app). Ver docs/hub/manufactura-ensayo-6b-resultados.md' : 'termina sin error'));
+    }
+    }
     verificar(base, 24, 'tras revertir las violaciones provocadas');
 
     // ---- negativas de ejecución
