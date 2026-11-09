@@ -126,11 +126,20 @@ function Invoke-SqlText([string]$Sql) {
     try { $out = & $Psql -X -v ON_ERROR_STOP=1 -At -F '|' -c $Sql 2>&1 | Out-String; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $previous }
     return @{ Code = $code; Out = $out }
 }
-function Get-BoolRows([string]$Out) { return @($Out -split "`r?`n" | Where-Object { $_ -match '^[tf](\|[tf])+$' }) }
+function Get-OutLines([string]$Out) { return @($Out -split "`r?`n" | Where-Object { $_ -and -not $_.StartsWith('psql ') }) }
+# Same reading as the rehearsal validator: a precheck is good when some check is 't' and none is 'f' (a check is a whole line 't'/'f' or a '|' separated field).
+function Test-PrecheckPass([string]$Out) {
+    $lines = @(Get-OutLines $Out); $hayT = $false; $hayF = $false
+    foreach ($l in $lines) { $fields = @($l -split '\|'); if ($fields -contains 'f') { $hayF = $true }; if ($fields -contains 't') { $hayT = $true } }
+    return ($hayT -and -not $hayF)
+}
+# A postcheck / verification prints its result as the LAST '|' separated row: every field must be 't'.
 function Test-AllTrue([string]$Out) {
-    $rows = @(Get-BoolRows $Out)
+    $rows = @(Get-OutLines $Out | Where-Object { $_.Contains('|') })
     if ($rows.Count -eq 0) { return $false }
-    foreach ($row in $rows) { if (($row -split '\|') -contains 'f') { return $false } }
+    $fields = @($rows[$rows.Count - 1] -split '\|')
+    if ($fields.Count -lt 2) { return $false }
+    foreach ($x in $fields) { if ($x -ne 't') { return $false } }
     return $true
 }
 function Add-Evidence([string]$Text) { Add-Content -LiteralPath $evidenceFull -Encoding ASCII -Value $Text }
@@ -157,15 +166,13 @@ foreach ($s in $steps) {
     $pre = Invoke-Sql $s.Files['precheck'] @()
     Add-Evidence ("--- {0} precheck exit={1}`n{2}" -f $s.Id, $pre.Code, $pre.Out.Trim())
     if ($pre.Code -ne 0) { Stop-Step "$($s.Paso): precheck failed (exit $($pre.Code))." }
-    $rows = @(Get-BoolRows $pre.Out)
-    if ($rows.Count -eq 0) { Stop-Step "$($s.Paso): the precheck printed no checks." }
-    foreach ($row in $rows) { if (($row -split '\|') -contains 'f') { Stop-Step "$($s.Paso): the precheck has a false check." } }
+    if (-not (Test-PrecheckPass $pre.Out)) { Stop-Step "$($s.Paso): the precheck printed no passing check or has a false one." }
     # variables the postcheck needs
     $vars = @()
     $lines = @($pre.Out -split "`r?`n" | Where-Object { $_ })
     switch ($stepVars[$s.Paso]) {
         'baseline' {
-            $row = @($lines | Where-Object { $_.Contains('|') -and $_ -notmatch '^[tf](\|[tf])+$' }) | Select-Object -Last 1
+            $row = @($lines | Where-Object { $_.Contains('|') -and ($_ -split '\|').Count -eq $baselineNames.Count -and $_ -notmatch '^[tf](\|[tf])+$' }) | Select-Object -Last 1
             $vals = @(if ($row) { $row -split '\|' })
             if ($vals.Count -ne $baselineNames.Count -or @($vals | Where-Object { $_ -eq '' }).Count -gt 0) { Stop-Step '020: the precheck did not print the 11 baseline values.' }
             for ($i = 0; $i -lt $baselineNames.Count; $i++) { $vars += @('-v', ($baselineNames[$i] + '=' + $vals[$i])) }
