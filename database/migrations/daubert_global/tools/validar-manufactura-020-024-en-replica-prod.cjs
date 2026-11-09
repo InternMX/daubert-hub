@@ -19,6 +19,12 @@ const ESTRUCTURA_PROD = arg('--estructura-prod');
 // --con-datos: el respaldo se restaura COMPLETO (con los datos reales) y NO se siembran datos sintéticos ni se ejecutan los smoke con escrituras (usan los usuarios sintéticos 1-5, que aquí serían reales).
 // Solo para la réplica DESECHABLE del ensayo de liberación. Sin la bandera el comportamiento es el de siempre (estructura + datos sintéticos).
 const CON_DATOS = process.argv.includes('--con-datos');
+// Solo con --con-datos: --roles <roles.sql> usa la definición REAL de los roles del clúster (pg_dumpall --globals-only --no-role-passwords) en lugar de la lista incrustada;
+// --mantener deja la instancia desechable en pie al terminar (para inspeccionarla); --evidencia <carpeta> copia ahí las huellas y diferencias de antes/después.
+// En este modo la instancia NO tiene red ni puertos publicados: nada puede salir de ella ni conectarse a ella desde fuera del contenedor.
+const ROLES_FILE = arg('--roles'); const MANTENER = process.argv.includes('--mantener'); const EVIDENCIA = arg('--evidencia');
+const HUELLAS_DATOS = path.resolve(__dirname, '..', '..', '..', '..', 'tools', 'ensayo-liberacion', 'huellas-datos.readonly.sql');
+const DUMP_ESTRUCTURA = (destino, filtro) => "pg_dump -h 127.0.0.1 -U postgres -d daubert_global -s " + filtro + " | grep -vE '^.(un)?restrict' > " + destino;
 if (!DUMP || !fs.existsSync(DUMP)) { console.error('Uso: --dump <respaldo pg_dump -F c de daubert_global> [--estructura-prod estructura_PROD.txt]'); process.exit(2); }
 
 const MIGRACIONES = [
@@ -48,14 +54,15 @@ const TODO_OK = (salida) => { const f = salida.split('\n').filter((l) => l.inclu
 
 function levantar() {
   docker(['rm', '-f', C]);
-  const r = docker(['run', '-d', '--rm', '--name', C, '-e', 'POSTGRES_PASSWORD=scratch', '-p', `127.0.0.1:${PUERTO}:5432`, 'postgres:18-alpine']);
+  const r = docker(['run', '-d', '--rm', '--name', C, '-e', 'POSTGRES_PASSWORD=scratch', ...(CON_DATOS ? ['--network', 'none'] : ['-p', `127.0.0.1:${PUERTO}:5432`]), 'postgres:18-alpine']);
   if (r.status !== 0) { console.error(r.stderr); process.exit(2); }
   for (let i = 0; i < 80; i += 1) { if (docker(['exec', C, 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1']).status === 0) break; dormir(500); }
   dormir(1500);
 }
 
+let antesDatos = '';
 function construirReplica() {
-  const roles = `
+  let roles = `
 CREATE ROLE daubert_hub_app LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 CREATE ROLE daubert_hub_test_user LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 CREATE ROLE n8n_app LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
@@ -67,6 +74,13 @@ ALTER ROLE daubert_docs_ro SET default_transaction_read_only = on; ALTER ROLE da
 ALTER ROLE n8n_app_test SET statement_timeout = '60s';
 CREATE DATABASE daubert_global OWNER postgres;
 CREATE DATABASE otra_base OWNER postgres;`;
+  if (CON_DATOS && ROLES_FILE) {
+    const crudo = fs.readFileSync(ROLES_FILE, 'utf8');
+    const lineas = crudo.split(/\r?\n/).filter((l) => !/^(CREATE|ALTER) ROLE postgres\b/.test(l) && !/^\\(un)?restrict\b/.test(l));
+    const login = [...crudo.matchAll(/^CREATE ROLE (\w+);/gm)].map((m) => m[1]).filter((n) => n !== 'postgres');
+    roles = lineas.join('\n') + '\n' + login.map((n) => "ALTER ROLE " + n + " PASSWORD 'scratch';").join('\n') + '\nCREATE DATABASE daubert_global OWNER postgres;\nCREATE DATABASE otra_base OWNER postgres;';
+    console.log('INFO  roles REALES del clúster (' + login.length + ' roles de aplicación; contraseñas desechables; sin el rol postgres del contenedor)');
+  }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'replica-prod-'));
   fs.writeFileSync(path.join(tmp, 'roles.sql'), roles);
   cp(path.join(tmp, 'roles.sql'), 'roles.sql'); cp(DUMP, 'prod.dump');
@@ -81,7 +95,14 @@ INSERT INTO security.users (user_id, display_name, email, password_hash, role, s
   (4, 'Inactivo Cuatro', 'g4@example.invalid', 'x', 'GENERAL', 'INACTIVE'), (5, 'Admin Cinco', 'admin5@example.invalid', 'x', 'ADMIN', 'ACTIVE');
 INSERT INTO core.empresas (empresa_id, tipo_empresa, nombre_comercial) OVERRIDING SYSTEM VALUE VALUES (1, 'CLIENTE', 'Cliente sintético 1'), (2, 'CLIENTE', 'Cliente sintético 2'), (3, 'PROVEEDOR', 'Proveedor sintético');
 INSERT INTO core.empresa_roles (empresa_id, rol) VALUES (1, 'CLIENTE'), (2, 'CLIENTE'), (3, 'PROVEEDOR');`;
-  if (CON_DATOS) return;                                                   // réplica con datos reales: sin siembra sintética
+  if (CON_DATOS) {                                                         // réplica con datos reales: sin siembra sintética; se toman las huellas ANTES de migrar
+    cp(HUELLAS_DATOS, 'huellas.sql');
+    antesDatos = psql({ archivo: 'huellas.sql', tuplas: true }).out;
+    docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', DUMP_ESTRUCTURA('/tmp/estructura_antes.sql', '--exclude-schema=manufactura')]);
+    const n = antesDatos.split('\n').filter(Boolean).length;
+    registrar(n > 10, 'huellas de datos ANTES de migrar (' + n + ' tablas) y estructura completa guardadas');
+    return;
+  }
   fs.writeFileSync(path.join(tmp, 'seed.sql'), seed); cp(path.join(tmp, 'seed.sql'), 'seed.sql');
   const sd = psql({ archivo: 'seed.sql' });
   registrar(sd.codigo === 0, 'datos SINTÉTICOS de réplica (5 usuarios, 3 empresas) y marca replica_desechable', sd.salida.slice(-200));
@@ -208,7 +229,21 @@ function main() {
     // ---- DOWN con datos: exige confirmaciones explícitas (no borra por accidente)
     if (CON_DATOS) {                                                         // usa usuarios sintéticos: no aplica a una réplica con datos reales
       console.log('INFO  --con-datos: se omite el DOWN con documentos sintéticos');
-      docker(['rm', '-f', C]);
+      // ---- DESPUÉS de 020→024 (y tras DOWN/reaplicación y los controles de detección): nada preexistente cambió
+      const despuesDatos = psql({ archivo: 'huellas.sql', tuplas: true }).out;
+      const A = new Map(antesDatos.split('\n').filter(Boolean).map((l) => l.split('|'))); const D = new Map(despuesDatos.split('\n').filter(Boolean).map((l) => l.split('|')));
+      const distintas = [...A].filter(([k, v]) => D.get(k) !== v).map(([k]) => k);
+      registrar(A.size === D.size && distintas.length === 0, 'DATOS preexistentes idénticos antes y después de 020–024 (' + A.size + ' tablas, huella MD5 de todas sus filas)', distintas.length ? 'distintas: ' + distintas.join(', ') : '');
+      docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', DUMP_ESTRUCTURA('/tmp/estructura_despues.sql', '--exclude-schema=manufactura')]);
+      const dif = docker(['exec', C, 'sh', '-c', 'diff /tmp/estructura_antes.sql /tmp/estructura_despues.sql | head -40']);
+      registrar(dif.status === 0 && dif.stdout.trim() === '', 'ESTRUCTURA y permisos fuera de manufactura idénticos antes y después (pg_dump -s completo: ACL, políticas RLS, funciones, triggers)', dif.stdout.slice(0, 280));
+      if (EVIDENCIA) {
+        fs.mkdirSync(EVIDENCIA, { recursive: true });
+        fs.writeFileSync(path.join(EVIDENCIA, 'huellas_datos_antes.txt'), antesDatos); fs.writeFileSync(path.join(EVIDENCIA, 'huellas_datos_despues.txt'), despuesDatos);
+        docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', DUMP_ESTRUCTURA('/tmp/estructura_manufactura.sql', '-n manufactura')]);
+        for (const n of ['estructura_antes', 'estructura_despues', 'estructura_manufactura']) docker(['cp', C + ':/tmp/' + n + '.sql', path.join(EVIDENCIA, n + '.sql')]);
+      }
+      if (!MANTENER) docker(['rm', '-f', C]);
       const fallosCD = RES.filter((x) => !x).length;
       console.log(`\nRESULTADO: ${RES.length - fallosCD} PASS / ${fallosCD} FAIL`);
       process.exit(fallosCD ? 1 : 0);
