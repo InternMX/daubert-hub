@@ -80,7 +80,7 @@ Interrumpa y no continúe si: (a) algún precheck tiene un `f`; (b) un UP falla 
 ## 6. SHA-256 de los archivos (contenido en git)
 ```
 3f97ad8e868c75cd5d4b0fc19073fc1b1f2c3e715fc1e860b6e9b7fb093ef6ff  20261108_000_manufactura_prod_smoke_solo_lectura.readonly.sql
-bf30eed3a5bb818edd4915a5f34ef848c77cb2cb937771d7b9d5f9bb5b34cdcd  20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql
+17d5bea143e2464316a532c9f99e4c2e59969e63ef24e6163a9a8f27ef71bef1  20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql
 ae9aeb0f778148b7b643812d643179fa4f364a4c78c9ff0f0818af64e57441e1  20261108_020_manufactura_gestor_documental_prod.down.sql
 e99f28210ad4070b6f004287265a4aef04e663d5867d25456931228ad8837bd8  20261108_020_manufactura_gestor_documental_prod.postcheck.sql
 49ddf21a5b21bf99c6abbf288891426fd6ecce77a40fbc94d93f701cf97d379f  20261108_020_manufactura_gestor_documental_prod.precheck.sql
@@ -101,6 +101,10 @@ ee8a9e49f4d970c1d5f95525c1924133b1d65e6b1a421273b331adbc561c7085  20261108_024_m
 3117f676dca012c72b15f4284d153b2faff4f92f0362b675978216cc1864ff04  20261108_024_manufactura_consulta_compartida_borradores_prod.postcheck.sql
 27e282ff24b622f5eb6986dbcb6290c449c8241ccde461eed9a1be39142c6b9c  20261108_024_manufactura_consulta_compartida_borradores_prod.precheck.sql
 074a39286453c7447414ae1dda5308b462b0a121507b644a0ddc0fbf275a58b7  20261108_024_manufactura_consulta_compartida_borradores_prod.up.sql
+a497d7252dcb83b44a43758badb29dc0995472caa4f9b1a12bdb58f4d4405ecf  20261109_026_manufactura_respaldo_rls_prod.down.sql
+6fd50779718f8f52a43adc3b0242b905219253442bcb56c7a25e46bbdf48d630  20261109_026_manufactura_respaldo_rls_prod.postcheck.sql
+549d9dc07802e1185404c12e45367946f177e09877778409e5519d3c2f8b0e2a  20261109_026_manufactura_respaldo_rls_prod.precheck.sql
+51e2cfa060e935072e21b7ed8ef3d59ef25d86387e4e72efa21f6c1c9b4ff21b  20261109_026_manufactura_respaldo_rls_prod.up.sql
 211014e2f8eb7d7e969b4cca08cfc649ed70e766933cd7a65b68c95dc419f873  replica_only/20261108_020_manufactura_gestor_documental_prod.smoke_replica.sql
 5c846a17bb72897545020fb41582331cb482e027a04b03a6e84b7ff9178f10bc  replica_only/20261108_021_manufactura_responsables_firmas_prod.smoke_replica.sql
 35a9f4606b2c5a12c134c37d8bd583db50b16f187b5040b4134d9a7409194ba0  replica_only/20261108_022_manufactura_inventario_firmas_admin_prod.smoke_replica.sql
@@ -120,3 +124,11 @@ ee8a9e49f4d970c1d5f95525c1924133b1d65e6b1a421273b331adbc561c7085  20261108_024_m
 - **Qué verifica `backup_solo_lectura` (privilegios EFECTIVOS, mismo criterio que el postcheck 013 de Caterpillar):** login sin SUPERUSER/CREATEROLE/CREATEDB/REPLICATION/**BYPASSRLS**; única membresía heredada `pg_read_all_data` (ni `pg_write_all_data` ni otro rol: MEMBER/USAGE/SET); USAGE sin CREATE en el esquema; SELECT en todas las tablas y **ningún** INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN (tabla ni columna); sin USAGE/UPDATE en secuencias; sin EXECUTE en funciones invocables (las de TRIGGER conservan el EXECUTE por omisión de PUBLIC y no se pueden invocar); **sin ninguna entrada ACL explícita** en tablas o esquema (el acceso es solo por la membresía). Si el rol no existe, no hay nada que evaluar.
 - **Datos sensibles:** el rol de respaldos puede leer documentos, PDF y las **imágenes de firmas** de Manufactura. Sus credenciales (`pgpass`, gestor de secretos) y los archivos de respaldo (cifrados con age en los respaldos automáticos) deben protegerse igual que `daubert_global`.
 - **Limitación conocida (RLS):** `pg_read_all_data` **no** salta RLS y `daubert_backup` no tiene BYPASSRLS (la política del proyecto lo trata como desviación, ver postcheck 013). Las políticas de `manufactura` son `TO daubert_hub_app`, así que `pg_dump` como `daubert_backup` **falla** con «query would be affected by row-level security policy» en cuanto existe `manufactura`. Ver `docs/hub/manufactura-ensayo-6b-resultados.md`: es un bloqueante previo a producción para los respaldos automáticos.
+
+## 8. Migración 026 · políticas de lectura para el rol de respaldos (Fase 6B, parte 2A)
+- **Por qué:** `pg_read_all_data` no salta RLS y `daubert_backup` no tiene BYPASSRLS. Con `manufactura` instalada, `pg_dump` como `daubert_backup` **falla** («query would be affected by row-level security policy»); con `--enable-row-security` y sin política volcaría las tablas **vacías sin error**.
+- **Qué hace (una transacción):** crea `pol_respaldo_sel` (PERMISSIVE, FOR SELECT, TO `daubert_backup`, USING (true), sin WITH CHECK) en las 9 tablas con RLS. No concede privilegios, no cambia roles ni membresías, no toca las 24 políticas de `daubert_hub_app`, datos ni objetos fuera de `manufactura`. El respaldo debe usar `pg_dump --enable-row-security` (parche `tools/ensayo-liberacion/respaldo-rls/enable-row-security.patch`).
+- **Numeración:** se usa **026** porque la **025** pertenece a otra rama (`feat/cat-safe-folio-recovery`: `20261106_025_caterpillar_folio_recovery_test`, también en `database/migrations/daubert_global/`). Si esa rama se integra antes o después no hay colisión de nombres ni de orden; la 026 solo depende de 020–024. Se genera con `tools/generar-manufactura-026.cjs` (reutiliza el predicado de lector de respaldos de los postchecks 020/021). Es solo de producción (el respaldo automático solo cubre `daubert_global`; no hay 106 en TEST).
+- **Orden de uso:** precheck → UP → postcheck (con `-v huella_politicas_app=… -v huella_privilegios=…` del precheck). DOWN idempotente: elimina únicamente `pol_respaldo_sel`.
+- **Verificación transversal:** desde `nivel=26`, `respaldo_con_rls_completo` exige que **toda** tabla con RLS (de cualquier esquema) tenga una política PERMISSIVE de lectura con `USING (true)` para `daubert_backup` o PUBLIC. Una tabla nueva con RLS sin esa política hace fallar la verificación (evita respaldos incompletos silenciosos).
+- Hashes de §6: añadidas las 4 filas de la 026 y actualizado el del verificador (`…_000_…verificar…`).

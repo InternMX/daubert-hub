@@ -107,6 +107,12 @@ SELECT rel.h AS f_rel, col.h AS f_col, acol.h AS f_acol, con.h AS f_con, idx.h A
              AND NOT EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'manufactura' AND a.grantee = b.oid)
            ) FROM pg_roles b WHERE b.rolname = 'daubert_backup'), true)
      ELSE true END AS backup_solo_lectura_efectivo,
+     -- Desde la 026: TODA tabla con RLS (de cualquier esquema) debe tener una política PERMISSIVE de lectura con USING (true) que alcance a daubert_backup; si no, pg_dump --enable-row-security la volcaría VACÍA sin error.
+     CASE WHEN :nivel >= 26 THEN NOT EXISTS (
+        SELECT 1 FROM pg_class c WHERE c.relkind IN ('r', 'p') AND c.relrowsecurity
+           AND NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = (SELECT nspname FROM pg_namespace WHERE oid = c.relnamespace) AND p.tablename = c.relname
+                             AND p.cmd IN ('SELECT', 'ALL') AND p.permissive = 'PERMISSIVE' AND (p.roles @> ARRAY['daubert_backup']::name[] OR p.roles @> ARRAY['public']::name[]) AND p.qual = 'true'))
+     ELSE true END AS respaldo_con_rls_completo,
      NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura') OR (NOT has_schema_privilege('public', 'manufactura', 'USAGE') AND NOT has_schema_privilege('public', 'manufactura', 'CREATE')) AS public_sin_acceso_al_esquema),
    app AS (
      SELECT
@@ -139,7 +145,7 @@ SELECT rel.h AS f_rel, col.h AS f_col, acol.h AS f_acol, con.h AS f_con, idx.h A
                                    AND p.delete_solo_en_responsables AND p.execute_solo_en_funciones_previstas AND p.esquema_usage_sin_create AND p.app_sin_atributos_peligrosos AND p.app_no_es_duena AND p.toda_tabla_con_rls) ELSE true END AS matriz_de_daubert_hub_app_exacta,
          (i.relaciones_y_acl_igual AND i.columnas_igual AND i.acl_de_columnas_igual AND i.restricciones_igual AND i.indices_igual AND i.funciones_y_acl_igual AND i.triggers_igual AND i.politicas_rls_igual AND i.esquemas_y_acl_igual
           AND i.roles_igual AND i.config_de_roles_igual AND i.acl_de_bases_igual AND i.privilegios_por_defecto_igual AND i.extensiones_igual
-          AND CASE WHEN h.esquema THEN a.n = 0 AND n.roles_nombrados_sin_acceso AND n.backup_solo_lectura_efectivo AND n.public_sin_acceso_al_esquema AND p.tablas_esperadas_existen AND p.sin_tablas_de_mas AND p.privilegios_de_tabla_exactos AND p.update_solo_en_columnas_previstas
+          AND CASE WHEN h.esquema THEN a.n = 0 AND n.roles_nombrados_sin_acceso AND n.backup_solo_lectura_efectivo AND n.respaldo_con_rls_completo AND n.public_sin_acceso_al_esquema AND p.tablas_esperadas_existen AND p.sin_tablas_de_mas AND p.privilegios_de_tabla_exactos AND p.update_solo_en_columnas_previstas
                                        AND p.sin_privilegios_sobre_secuencias AND p.sin_truncate_references_trigger AND p.delete_solo_en_responsables AND p.execute_solo_en_funciones_previstas AND p.esquema_usage_sin_create
                                        AND p.app_sin_atributos_peligrosos AND p.app_no_es_duena AND p.toda_tabla_con_rls ELSE true END) AS all_checks_pass
     FROM igual i, hay h, ajenos a, nombrados n, app p;
