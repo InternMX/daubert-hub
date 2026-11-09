@@ -111,7 +111,7 @@ Expect 'G. NO llego a aplicar la 023 (abreviaturas)' ($txt -notmatch '20261108_0
 $null = Sql 'REVOKE SELECT ON manufactura.firmas FROM n8n_app'
 
 # H (instancia nueva)
-if ($ScriptMk) { $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; $unix = ($ScriptMk.Replace('\', '/')) -replace '^([A-Za-z]):', '/$1'; $unix = $unix.Substring(0, 1) + $unix.Substring(1, 1).ToLower() + $unix.Substring(2); $gb = 'C:Program FilesGitinash.exe'; if (-not (Test-Path $gb)) { $gb = (Get-Command bash).Source }; & $gb -c ('bash ' + $unix) 2>&1 | Out-Null; $ErrorActionPreference = $prev; Start-Sleep -Seconds 3 }
+if ($ScriptMk) { $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; $unix = ($ScriptMk.Replace('\', '/')) -replace '^([A-Za-z]):', '/$1'; $unix = $unix.Substring(0, 1) + $unix.Substring(1, 1).ToLower() + $unix.Substring(2); $gb = 'C:\Program Files\Git\bin\bash.exe'; if (-not (Test-Path $gb)) { $gb = (Get-Command bash).Source }; & $gb -c ('bash ' + $unix) 2>&1 | Out-Null; $ErrorActionPreference = $prev; Start-Sleep -Seconds 3 }
 $ev4 = Join-Path $Evidencia 'evidencia_completa.txt'
 $r = Run-Inv ($base + @('-Apply', '-EvidenceFile', $ev4))
 $txt = Get-Content $ev4 -Raw
