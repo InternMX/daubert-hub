@@ -21,3 +21,5 @@ Solo para instancias **desechables** (réplica de producción, contenedores loca
 | `cdp.cjs` + `validacion-navegador.cjs` | Chrome real por DevTools Protocol (sin dependencias nuevas): recorrido ADMIN y GENERAL con capturas |
 | `verificar-respaldo-manufactura.cjs` | Controles de integridad de un respaldo posterior a la liberación (catálogo y restauración de prueba sin red) |
 | `comprobar-bind-real.cjs` | Comprobación de solo lectura contra BIND REAL vía la API del Hub (NO ejecutada; para una etapa posterior) |
+| `ensayo-compuerta-real.ps1` | Ensayo de la compuerta de database/ con git real y el manifiesto real, sobre un CLON aislado (13 escenarios positivos y negativos, incluida la 025 de Caterpillar) |
+| `ensayo-migraciones-manufactura.ps1` | Ensayo de `scripts/deploy/Invoke-ManufacturaMigrations.ps1` contra PostgreSQL desechable y un clon (negativos, etapas, fallo seguro, aplicación completa y repetición) |
