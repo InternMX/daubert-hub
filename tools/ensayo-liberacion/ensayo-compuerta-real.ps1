@@ -25,7 +25,13 @@ $cloneFull = [System.IO.Path]::GetFullPath($Clone)
 $mine = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 if ($cloneFull.TrimEnd('\') -ieq $mine.TrimEnd('\')) { throw 'Refusing to run on the working repository: pass an isolated clone.' }
 if (-not (Test-Path -LiteralPath (Join-Path $cloneFull '.git'))) { throw 'The clone is not a git repository.' }
-function G { param([string[]]$A) $o = & git -C $cloneFull @A 2>&1; if ($LASTEXITCODE -ne 0) { throw ('git ' + ($A -join ' ') + ' failed: ' + ($o | Out-String)) }; return $o }
+function G {
+    param([string[]]$A)
+    $previo = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # git writes warnings (line endings) to stderr; only the exit code decides
+    try { $o = & git -C $cloneFull @A 2>&1; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $previo }
+    if ($code -ne 0) { throw ('git ' + ($A -join ' ') + ' failed: ' + ($o | Out-String)) }
+    return $o
+}
 $null = G @('config', 'user.email', 'ensayo@example.invalid'); $null = G @('config', 'user.name', 'ensayo')
 
 . (Join-Path $cloneFull 'scripts\deploy\Deploy-DaubertHub.ps1')    # only defines functions (dot-sourced)
