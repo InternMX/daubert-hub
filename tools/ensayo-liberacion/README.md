@@ -10,3 +10,8 @@ Solo para instancias **desechables** (réplica de producción, contenedores loca
 | `generar-ocho-formatos.cjs <dist/src> <chrome> <carpeta> [true]` | PDF finalizado de los ocho formatos con el código compilado y el Chrome indicado (el 4.º argumento `true` añade `--no-sandbox`, solo dentro del contenedor) |
 | `comparar_pdfs.py <carpeta_host> <carpeta_contenedor>` | Compara palabra por palabra (PyMuPDF): páginas, texto, desviación de posición y fuentes |
 | `formatos.datos.txt` | Datos de los ocho formatos (copia de `sheet-pdf-sin-leyendas.real.spec.ts`) |
+| `datos-sinteticos-manufactura.cjs` | Genera datos SINTÉTICOS en Manufactura con la API real (se ejecuta dentro del contenedor de la API de la réplica): borradores, revisiones, PDF, firmas, responsables, revisor, descartado, abreviatura. `SOLO_REVISION=1` añade la revisión registrada |
+| `probar-respaldo-rls.cjs` | Respaldo con `daubert_backup` (`--enable-row-security`) → restauración en otra instancia → comparación de filas, hashes, objetos y permisos; controles negativos (respaldo incompleto, escrituras, reversión de la 026) |
+| `huellas-datos.readonly.sql` | MD5 por tabla de todo lo que no es `manufactura` (solo lectura) |
+| `respaldar-daubert-global.ps1` | Respaldo completo de solo lectura de `daubert_global` (lo ejecuta una persona con su contraseña) |
+| `respaldo-rls/enable-row-security.patch` | Parche (NO aplicado) de `scripts/backup`: `pg_dump --enable-row-security` + prueba Pester |

@@ -11,7 +11,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const MIG = path.resolve(__dirname, '..');
-const C = 'daubert-scratch-pg-prod-replica';
+// --contenedor <nombre> y --red <red interna> (solo con --con-datos): permiten dejar la réplica en una red Docker INTERNA (sin salida a internet) para ensayos con la API; por omisión: sin red.
+const argv1 = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
+const C = argv1('--contenedor') ?? 'daubert-scratch-pg-prod-replica';
 const PUERTO = 55447;
 const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
 const DUMP = arg('--dump');
@@ -32,8 +34,10 @@ const MIGRACIONES = [
   { n: 21, base: '20261108_021_manufactura_responsables_firmas_prod', params: 'huella_101' },
   { n: 22, base: '20261108_022_manufactura_inventario_firmas_admin_prod', params: 'huella_manufactura' },
   { n: 23, base: '20261108_023_manufactura_cliente_abreviaturas_prod', params: 'huella_manufactura' },
-  { n: 24, base: '20261108_024_manufactura_consulta_compartida_borradores_prod', params: 'huella_resto' }
+  { n: 24, base: '20261108_024_manufactura_consulta_compartida_borradores_prod', params: 'huella_resto' },
+  { n: 26, base: '20261109_026_manufactura_respaldo_rls_prod', params: 'dos_huellas', sinSmoke: true }   // 025 reservada por otra rama (Caterpillar)
 ];
+const NIVEL_FINAL = 26;
 const VERIFICAR = '20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql';
 const SMOKE_RO = '20261108_000_manufactura_prod_smoke_solo_lectura.readonly.sql';
 const RES = [];
@@ -54,7 +58,7 @@ const TODO_OK = (salida) => { const f = salida.split('\n').filter((l) => l.inclu
 
 function levantar() {
   docker(['rm', '-f', C]);
-  const r = docker(['run', '-d', '--rm', '--name', C, '-e', 'POSTGRES_PASSWORD=scratch', ...(CON_DATOS ? ['--network', 'none'] : ['-p', `127.0.0.1:${PUERTO}:5432`]), 'postgres:18-alpine']);
+  const r = docker(['run', '-d', '--rm', '--name', C, '-e', 'POSTGRES_PASSWORD=scratch', ...(CON_DATOS ? ['--network', argv1('--red') ?? 'none'] : ['-p', `127.0.0.1:${PUERTO}:5432`]), 'postgres:18-alpine']);
   if (r.status !== 0) { console.error(r.stderr); process.exit(2); }
   for (let i = 0; i < 80; i += 1) { if (docker(['exec', C, 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1']).status === 0) break; dormir(500); }
   dormir(1500);
@@ -70,6 +74,8 @@ CREATE ROLE n8n_cat_prod LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREAT
 CREATE ROLE n8n_cat_test LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 5;
 CREATE ROLE n8n_app_test LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 CREATE ROLE daubert_docs_ro LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+CREATE ROLE daubert_backup LOGIN PASSWORD 'scratch' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 2;
+GRANT pg_read_all_data TO daubert_backup;
 ALTER ROLE daubert_docs_ro SET default_transaction_read_only = on; ALTER ROLE daubert_docs_ro SET statement_timeout = '30s'; ALTER ROLE daubert_docs_ro SET lock_timeout = '5s';
 ALTER ROLE n8n_app_test SET statement_timeout = '60s';
 CREATE DATABASE daubert_global OWNER postgres;
@@ -122,6 +128,10 @@ function aplicarMigracion(m, { verificar = true } = {}) {
     const NOMBRES = ['baseline_users', 'baseline_empresas', 'baseline_audit_cambios', 'baseline_tablas_fp', 'baseline_funciones_fp', 'baseline_columnas_fp', 'baseline_triggers_fp', 'baseline_privilegios_fp', 'baseline_roles_fp', 'baseline_acl_bases_fp', 'baseline_esquemas_acl_fp'];
     registrar(fila.length === NOMBRES.length && fila.every((v) => v !== ''), `${m.n}: el precheck imprime la línea base (${NOMBRES.length} valores)`);
     vars = Object.fromEntries(NOMBRES.map((k, i) => [k, fila[i]]));
+  } else if (m.params === 'dos_huellas') {
+    const fila = lineas.find((l) => /^[0-9a-f]{32}\|[0-9a-f]{32}$/.test(l));
+    registrar(Boolean(fila), `${m.n}: el precheck imprime las dos huellas (políticas de la aplicación y privilegios)`);
+    const [a, b] = (fila ?? '|').split('|'); vars = { huella_politicas_app: a, huella_privilegios: b };
   } else {
     const h = lineas.find((l) => /^[0-9a-f]{32}$/.test(l));
     registrar(Boolean(h), `${m.n}: el precheck imprime la huella (${m.params})`);
@@ -150,7 +160,7 @@ function main() {
   try {
     construirReplica();
     for (const a of [VERIFICAR, SMOKE_RO]) sube(a);
-    for (const m of MIGRACIONES) { sube(`replica_only/${m.base}.smoke_replica.sql`, `${m.n}.smoke.sql`); }
+    for (const m of MIGRACIONES) { if (!m.sinSmoke) sube(`replica_only/${m.base}.smoke_replica.sql`, `${m.n}.smoke.sql`); }
 
     // ---- fidelidad de la réplica frente al inventario real de PROD (informativo)
     if (ESTRUCTURA_PROD && fs.existsSync(ESTRUCTURA_PROD)) {
@@ -180,7 +190,7 @@ function main() {
       baseline[m.n] = vars;
       verificar(base, m.n, `tras la ${m.n}`);
       // Pruebas de seguridad CON ESCRITURAS como daubert_hub_app (solo réplica; cada script termina en ROLLBACK y comprueba que no dejó residuos). Cada smoke valida la semántica de SU nivel.
-      if (CON_DATOS) continue;                                               // los smoke con escrituras usan usuarios sintéticos: no se ejecutan con datos reales
+      if (CON_DATOS || m.sinSmoke) continue;                                 // los smoke con escrituras usan usuarios sintéticos: no se ejecutan con datos reales
       const sm = psql({ archivo: `${m.n}.smoke.sql`, usuario: 'daubert_hub_app', tuplas: true });
       const ls = sm.out.split('\n').filter((x) => /^\d+\|/.test(x));
       const fallos = ls.filter((x) => x.endsWith('|f'));
@@ -192,23 +202,23 @@ function main() {
 
     // ---- los controles DETECTAN violaciones (se provocan y se revierten)
     psql({ sql: 'GRANT SELECT ON manufactura.documentos TO n8n_app' });
-    const v1 = psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } });
+    const v1 = psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } });
     registrar(!TODO_OK(v1.out), 'DETECCIÓN: si n8n_app recibiera SELECT en manufactura, la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON manufactura.documentos FROM n8n_app' });
     psql({ sql: 'GRANT SELECT ON manufactura.firmas TO PUBLIC' });
-    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si PUBLIC recibiera SELECT en manufactura.firmas, la verificación FALLA');
+    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } }).out), 'DETECCIÓN: si PUBLIC recibiera SELECT en manufactura.firmas, la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON manufactura.firmas FROM PUBLIC' });
     psql({ sql: 'GRANT DELETE ON manufactura.documentos TO daubert_hub_app' });
-    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si daubert_hub_app recibiera DELETE en documentos, la verificación FALLA');
+    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } }).out), 'DETECCIÓN: si daubert_hub_app recibiera DELETE en documentos, la verificación FALLA');
     psql({ sql: 'REVOKE DELETE ON manufactura.documentos FROM daubert_hub_app' });
     psql({ sql: 'GRANT SELECT ON core.empresas TO n8n_cat_prod' });
-    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN: si cambiara un privilegio FUERA de manufactura (core.empresas), la verificación FALLA');
+    registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } }).out), 'DETECCIÓN: si cambiara un privilegio FUERA de manufactura (core.empresas), la verificación FALLA');
     psql({ sql: 'REVOKE SELECT ON core.empresas FROM n8n_cat_prod' });
-    if (ROLES_FILE) {
+    {
     // ---- daubert_backup: lector autorizado (decisión A, 2026-11-09). Debe LEER por pertenencia a pg_read_all_data y NO tener ningún privilegio de escritura/administración; cada desviación se provoca y se detecta.
     const detecta = (sqlProvoca, sqlRevierte, etiqueta) => {
       psql({ sql: sqlProvoca });
-      registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: '24' } }).out), 'DETECCIÓN (daubert_backup): ' + etiqueta);
+      registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } }).out), 'DETECCIÓN (daubert_backup): ' + etiqueta);
       psql({ sql: sqlRevierte });
     };
     detecta('GRANT INSERT ON manufactura.documentos TO daubert_backup', 'REVOKE INSERT ON manufactura.documentos FROM daubert_backup', 'si recibiera INSERT en manufactura, la verificación FALLA');
@@ -225,13 +235,29 @@ function main() {
     const rolB = psql({ tuplas: true, sql: "SELECT (SELECT count(*) FROM pg_roles WHERE rolname = 'daubert_backup'), pg_has_role('daubert_backup', 'pg_read_all_data', 'USAGE'), has_table_privilege('daubert_backup', 'manufactura.firmas', 'SELECT'), has_schema_privilege('daubert_backup', 'manufactura', 'USAGE'), has_table_privilege('daubert_backup', 'manufactura.documentos', 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'), (SELECT rolbypassrls OR rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication FROM pg_roles WHERE rolname = 'daubert_backup')" }).out.trim();
     if (ROLES_FILE) registrar(rolB === '1|t|t|t|f|f', 'daubert_backup (rol REAL): miembro de pg_read_all_data, LEE manufactura (firmas incluidas), sin privilegios de escritura/administración', rolB);
     {
-      // El acceso por pertenencia NO salta RLS (el rol no tiene BYPASSRLS, por política del proyecto). Se mide y se informa; no es un FAIL de las migraciones.
-      const dumpB = docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', 'pg_dump -h 127.0.0.1 -U daubert_backup -d daubert_global -Fc -f /tmp/backup_rol.dump 2>&1 | head -1']);
-      const rlsBloquea = /row-level security/.test(dumpB.stdout);
-      console.log('ADVERTENCIA  pg_dump como daubert_backup (sin --enable-row-security) ' + (rlsBloquea ? 'FALLA con «query would be affected by row-level security policy»: el rol lee por pertenencia pero RLS sigue aplicando (sus políticas son TO daubert_hub_app). Ver docs/hub/manufactura-ensayo-6b-resultados.md' : 'termina sin error'));
+      // Respaldo REAL con el rol daubert_backup (la 026 le da políticas de lectura; el acceso por pertenencia a pg_read_all_data no salta RLS).
+      const sinBandera = docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', 'pg_dump -h 127.0.0.1 -U daubert_backup -d daubert_global -Fc -f /tmp/backup_sin_bandera.dump 2>&1 | head -1']);
+      registrar(/row-level security/.test(sinBandera.stdout), 'pg_dump como daubert_backup SIN --enable-row-security sigue fallando por RLS (la bandera es obligatoria en el respaldo automático)', sinBandera.stdout.slice(0, 160));
+      const conBandera = docker(['exec', '-e', 'PGPASSWORD=scratch', C, 'sh', '-c', 'pg_dump -h 127.0.0.1 -U daubert_backup -d daubert_global -Fc --enable-row-security --no-password -f /tmp/backup_rol.dump 2>&1; echo rc=$?; pg_restore -l /tmp/backup_rol.dump >/dev/null 2>&1 && echo toc_ok']);
+      registrar(/rc=0/.test(conBandera.stdout) && /toc_ok/.test(conBandera.stdout), 'pg_dump como daubert_backup CON --enable-row-security termina bien y su catálogo se lee (pg_restore -l)', conBandera.stdout.slice(0, 200));
+      // Un respaldo incompleto debe DETECTARSE: con la política de una tabla eliminada la verificación debe FALLAR (pg_dump saldría con esa tabla vacía y sin error).
+      psql({ sql: 'DROP POLICY pol_respaldo_sel ON manufactura.firmas' });
+      registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } }).out), 'DETECCIÓN (respaldo): si a una tabla con RLS le falta la política de lectura de daubert_backup, la verificación FALLA (evita un respaldo con la tabla vacía)');
+      const postF = psql({ archivo: '26.postcheck.sql', tuplas: true, vars: baseline[26] });
+      registrar(!TODO_OK(postF.out), 'DETECCIÓN (respaldo): el postcheck 026 FALLA si falta una política de respaldo');
+      psql({ sql: "CREATE POLICY pol_respaldo_sel ON manufactura.firmas AS PERMISSIVE FOR SELECT TO daubert_backup USING (true)" });
+      psql({ sql: 'CREATE TABLE core.zz_rls_sin_politica_respaldo (x int); ALTER TABLE core.zz_rls_sin_politica_respaldo ENABLE ROW LEVEL SECURITY' });
+      registrar(!TODO_OK(psql({ archivo: VERIFICAR, tuplas: true, vars: { ...base, nivel: String(NIVEL_FINAL) } }).out), 'DETECCIÓN (respaldo): una tabla NUEVA con RLS fuera de manufactura y sin política de respaldo hace FALLAR la verificación');
+      psql({ sql: 'DROP TABLE core.zz_rls_sin_politica_respaldo' });
+      psql({ sql: 'DROP POLICY pol_respaldo_sel ON manufactura.firmas' });
+      psql({ sql: "CREATE POLICY pol_respaldo_sel ON manufactura.firmas AS PERMISSIVE FOR ALL TO daubert_backup USING (true) WITH CHECK (true)" });
+      registrar(!TODO_OK(psql({ archivo: '26.postcheck.sql', tuplas: true, vars: baseline[26] }).out), 'DETECCIÓN (respaldo): una política de respaldo que permitiera ESCRIBIR (FOR ALL) hace FALLAR el postcheck 026');
+      psql({ sql: 'DROP POLICY pol_respaldo_sel ON manufactura.firmas' });
+      psql({ sql: "CREATE POLICY pol_respaldo_sel ON manufactura.firmas AS PERMISSIVE FOR SELECT TO daubert_backup USING (true)" });
+      psql({ sql: "COMMENT ON POLICY pol_respaldo_sel ON manufactura.firmas IS '026: lectura completa para el rol de respaldos daubert_backup (pg_dump --enable-row-security). Solo SELECT; no concede escritura. Las políticas de daubert_hub_app no cambian.'" });
     }
     }
-    verificar(base, 24, 'tras revertir las violaciones provocadas');
+    verificar(base, NIVEL_FINAL, 'tras revertir las violaciones provocadas');
 
     // ---- negativas de ejecución
     for (const [t, usuario] of [['precheck', 'postgres'], ['up', 'postgres'], ['down', 'postgres']]) {
@@ -251,7 +277,7 @@ function main() {
     verificar(base, 24, 'tras revertir TODO (DOWN 024→020): el catálogo fuera de manufactura es idéntico a la línea base');
     // ---- y se puede volver a aplicar
     for (const m of MIGRACIONES) aplicarMigracion(m);
-    verificar(base, 24, 'tras reaplicar 020–024');
+    verificar(base, NIVEL_FINAL, 'tras reaplicar 020–026');
 
     // ---- DOWN con datos: exige confirmaciones explícitas (no borra por accidente)
     if (CON_DATOS) {                                                         // usa usuarios sintéticos: no aplica a una réplica con datos reales
