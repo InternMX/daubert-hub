@@ -821,3 +821,63 @@ Describe 'Compuerta con manifiesto de database/ (-DatabaseManifest): autoriza ex
         (Get-PrintedText) | Should Match 'no esperados'
     }
 }
+
+Describe 'Imagenes validadas (-UseValidatedImages): se despliegan exactamente las imagenes construidas y verificadas, sin reconstruir' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:IdApi = 'sha256:' + ('1' * 64); $script:IdWeb = 'sha256:' + ('2' * 64)
+        $script:Fake.Tags['daubert-hub-api:release-' + $script:HeadShort] = $script:IdApi
+        $script:Fake.Tags['daubert-hub-web:release-' + $script:HeadShort] = $script:IdWeb
+        $script:ImgSha = ('b2' * 32)
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $true; Sha256 = $script:ImgSha; Json = [pscustomobject]@{ formato = '1'; commit = $script:Head; imagenes = @(
+            [pscustomobject]@{ servicio = 'api'; imageId = $script:IdApi }, [pscustomobject]@{ servicio = 'web'; imageId = $script:IdWeb }) } }
+        $script:ImgOpt = @{ UseValidatedImages = $true; ImagesManifest = 'deploy/release-manifests/imagenes.json'; ImagesManifestSha256 = $script:ImgSha }
+    }
+
+    It 'con imagenes y manifiesto coincidentes: etiqueta release->latest y arranca con --no-build (nunca --build)' {
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 0
+        $m = ($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|'
+        $m | Should Match 'tag daubert-hub-api:release-a1b2c3d daubert-hub-api:latest'
+        $m | Should Match 'tag daubert-hub-web:release-a1b2c3d daubert-hub-web:latest'
+        $m | Should Match 'up -d --no-build api web'
+        $m | Should Not Match '--build api'
+    }
+
+    It 'sin el switch el comportamiento sigue siendo el de siempre (up --build)' {
+        (Invoke-Main -D $true) | Should Be 0
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+    }
+
+    It 'un SHA-256 de manifiesto distinto, ausente o un manifiesto inexistente bloquean sin mutar nada' {
+        $o = $script:ImgOpt.Clone(); $o.ImagesManifestSha256 = ('0' * 64)
+        (Invoke-Main -D $true -Opt $o) | Should Be 1; (Get-PrintedText) | Should Match 'no coincide con -ImagesManifestSha256'; $script:Mutations.Count | Should Be 0
+        $o = $script:ImgOpt.Clone(); $o.ImagesManifestSha256 = ''
+        (Invoke-Main -D $true -Opt $o) | Should Be 1; (Get-PrintedText) | Should Match 'exige -ImagesManifestSha256'
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $false; Sha256 = ''; Json = $null }
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Falta el manifiesto de imagenes'
+    }
+
+    It 'una imagen local distinta de la validada, o ausente, bloquea' {
+        $script:Fake.Tags['daubert-hub-web:release-' + $script:HeadShort] = 'sha256:' + ('9' * 64)
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no es la validada'; $script:Mutations.Count | Should Be 0
+        $script:Fake.Tags.Remove('daubert-hub-api:release-' + $script:HeadShort)
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'No existe la imagen local'
+    }
+
+    It 'un manifiesto de imagenes de otro commit bloquea' {
+        $script:Fake.Manifest.Json.commit = 'deadbeefdeadbeef'
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no del candidato'
+    }
+
+    It 'la lista de mutaciones solo acepta release->latest y --no-build con el switch' {
+        $cf = @('--project-name', 'daubert-hub', '--env-file', 'deploy/pilot.prod.env', '-f', 'compose.pilot.yaml', '-f', 'compose.prod-temp.yaml', '-f', 'deploy/closure/entry-closure-override.yaml')
+        $script:Options = @{ UseValidatedImages = $false }
+        (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-api:latest')) | Should Not BeNullOrEmpty
+        (Test-AllowedMutation 'docker' (@('compose') + $cf + @('up', '-d', '--no-build', 'api', 'web'))) | Should Not BeNullOrEmpty
+        $script:Options = @{ UseValidatedImages = $true }
+        (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-api:latest')) | Should BeNullOrEmpty
+        (Test-AllowedMutation 'docker' (@('compose') + $cf + @('up', '-d', '--no-build', 'api', 'web'))) | Should BeNullOrEmpty
+        (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-web:latest')) | Should Not BeNullOrEmpty
+        (Test-AllowedMutation 'docker' @('tag', 'evil:release-a1b2c3d', 'daubert-hub-api:latest')) | Should Not BeNullOrEmpty
+    }
+}

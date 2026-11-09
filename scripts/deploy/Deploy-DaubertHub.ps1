@@ -57,6 +57,17 @@
     SHA-256 of the manifest text (LF line endings), delivered OUTSIDE the repository (the authorization record). The gate recomputes it and blocks on any difference, so changing a
     migration AND the manifest in the same commit is detected.
 
+.PARAMETER UseValidatedImages
+    Optional. Deploy EXACTLY the images that were built and validated beforehand (scripts/deploy/New-ReleaseImages.ps1) instead of building at deployment time: nothing is rebuilt, no floating
+    tag is trusted. Requires -ImagesManifest and -ImagesManifestSha256. The gate blocks unless the local tags daubert-hub-<svc>:release-<commit> exist and their image IDs equal the manifest's.
+    The plan then tags release-<commit> as :latest (after the rollback anchors) and runs 'docker compose up -d --no-build api web'. Without this switch the behaviour is unchanged ('up -d --build').
+
+.PARAMETER ImagesManifest
+    Path (relative to the repository or absolute) of the images manifest written by New-ReleaseImages.ps1 (commit, version and image ID per service).
+
+.PARAMETER ImagesManifestSha256
+    SHA-256 of the images manifest text (LF line endings), delivered outside the repository with the authorisation record.
+
 .PARAMETER ExpectedN8nPaths
     Optional. With -AcknowledgeN8nAlreadyApplied, every changed n8n/ file must start with one of these path prefixes; anything else still blocks.
 
@@ -84,6 +95,9 @@ param(
     [string[]]$ExpectedMigrations = @(),
     [string]$DatabaseManifest = '',
     [string]$DatabaseManifestSha256 = '',
+    [switch]$UseValidatedImages,
+    [string]$ImagesManifest = '',
+    [string]$ImagesManifestSha256 = '',
     [string]$MigrationsEvidence = '',
     [string[]]$EvidenceMarkers = @(),
     [int]$EvidenceMaxAgeHours = 6,
@@ -190,6 +204,12 @@ function Test-AllowedMutation {
     # The complete list of mutations this script can ever perform. Returns $null when allowed.
     param([string]$Exe, [string[]]$CmdArgs)
     if ($Exe -ne 'docker') { return ('ejecutable no permitido: ' + $Exe) }
+    $validated = ($script:Options.Contains('UseValidatedImages') -and [bool]$script:Options['UseValidatedImages'])
+    if ($validated -and $CmdArgs.Count -eq 3 -and $CmdArgs[0] -eq 'tag') {
+        $p1 = [regex]::Match($CmdArgs[1], '^daubert-hub-(api|web):release-[0-9a-f]{7,40}$')
+        $p2 = [regex]::Match($CmdArgs[2], '^daubert-hub-(api|web):latest$')
+        if ($p1.Success -and $p2.Success -and $p1.Groups[1].Value -eq $p2.Groups[1].Value) { return $null }
+    }
     if ($CmdArgs.Count -eq 3 -and $CmdArgs[0] -eq 'tag') {
         $src = [regex]::Match($CmdArgs[1], '^daubert-hub-(api|web):latest$')
         $dst = [regex]::Match($CmdArgs[2], '^daubert-hub-(api|web):rollback-[0-9a-f]{7,40}$')
@@ -198,6 +218,10 @@ function Test-AllowedMutation {
     }
     $expected = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--build') + $script:Services
     if (($CmdArgs -join ' ') -ceq ($expected -join ' ')) { return $null }
+    if ($validated) {
+        $expectedNoBuild = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--no-build') + $script:Services
+        if (($CmdArgs -join ' ') -ceq ($expectedNoBuild -join ' ')) { return $null }
+    }
     return 'solo se permite el docker compose up -d --build api web definido para PROD'
 }
 
@@ -364,6 +388,19 @@ function Get-DeployContext {
         }
     }
 
+    # Validated images (optional): the images manifest and the IDs of the local release-<commit> tags (read-only).
+    $imgManifest = $null
+    $releaseIds = @{}
+    if ($script:Options.Contains('UseValidatedImages') -and [bool]$script:Options['UseValidatedImages']) {
+        if ($script:Options.Contains('ImagesManifest') -and $script:Options['ImagesManifest']) { $imgManifest = Read-DeployManifest ([string]$script:Options['ImagesManifest']) }
+        $shortHead = $(if ($headShort.Code -eq 0 -and $headShort.Out.Count -gt 0) { [string]$headShort.Out[0] } else { '' })
+        foreach ($svc in $script:Services) {
+            $ref = $script:Project + '-' + $svc + ':release-' + $shortHead
+            $q = Invoke-DeployRead 'docker' @('image', 'inspect', $ref, '--format', '{{.Id}}')
+            $releaseIds[$svc] = $(if ($q.Code -eq 0 -and $q.Out.Count -gt 0) { [string]$q.Out[0] } else { '' })
+        }
+    }
+
     return [pscustomobject]@{
         CandidateInput = $Candidate
         CandidateFull  = $(if ($cand.Code -eq 0 -and $cand.Out.Count -gt 0) { $cand.Out[0] } else { '' })
@@ -377,6 +414,8 @@ function Get-DeployContext {
         DeltaKnown     = $deltaKnown
         HubDockerFiles = $hubDocker
         MigrationFiles = $migrations
+        ImagesManifest = $imgManifest
+        ReleaseImageIds = $releaseIds
         MigrationBlobs = $blobs
         Manifest       = $manifest
         N8nFiles       = $n8n
@@ -463,6 +502,24 @@ function Test-DeployGate {
             if (-not ($s.AnchorDigest -and $s.RunningDigest -and $s.AnchorDigest -eq $s.RunningDigest)) { $reasons += ('La etiqueta ' + $s.Anchor + ' ya existe y NO apunta a la imagen en ejecucion: nunca se sobrescribe.') }
         }
     }
+    if ($Options.Contains('UseValidatedImages') -and [bool]$Options['UseValidatedImages']) {
+        $im = $Context.ImagesManifest
+        $want = [string]$Options['ImagesManifestSha256']
+        if (-not $im -or -not $im.Exists) { $reasons += 'Falta el manifiesto de imagenes (-ImagesManifest).' }
+        elseif (-not $want) { $reasons += '-UseValidatedImages exige -ImagesManifestSha256 (SHA-256 del manifiesto de imagenes, entregado fuera del repositorio).' }
+        elseif ($im.Sha256 -ne $want.ToLower()) { $reasons += ('El SHA-256 del manifiesto de imagenes (' + $im.Sha256 + ') no coincide con -ImagesManifestSha256.') }
+        elseif (-not $im.Json -or [string]$im.Json.formato -ne '1' -or -not $im.Json.imagenes) { $reasons += 'El manifiesto de imagenes no es valido.' }
+        else {
+            if (([string]$im.Json.commit).Length -lt 7 -or -not ([string]$Context.HeadFull).StartsWith(([string]$im.Json.commit))) { $reasons += ('El manifiesto de imagenes es del commit ' + [string]$im.Json.commit + ', no del candidato ' + $Context.HeadShort + '.') }
+            foreach ($svc in $script:Services) {
+                $entry = @($im.Json.imagenes | Where-Object { [string]$_.servicio -eq $svc }) | Select-Object -First 1
+                $local = [string]$Context.ReleaseImageIds[$svc]
+                if (-not $entry) { $reasons += ('El manifiesto de imagenes no incluye ' + $svc + '.') }
+                elseif (-not $local) { $reasons += ('No existe la imagen local ' + $script:Project + '-' + $svc + ':release-' + $Context.HeadShort + ' (construirla y validarla con New-ReleaseImages.ps1).') }
+                elseif ($local -ne [string]$entry.imageId) { $reasons += ('La imagen local de ' + $svc + ' (' + $local + ') no es la validada (' + [string]$entry.imageId + ').') }
+            }
+        }
+    }
     if (@($Context.MigrationFiles).Count -gt 0) {
         $ackMigrations = ($Options.Contains('AckMigrations') -and [bool]$Options['AckMigrations'])
         if (-not $ackMigrations) {
@@ -514,7 +571,10 @@ function Get-RollbackProcedure {
 
 function New-DeployPlan {
     param($Context)
-    $composeArgs = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--build') + $script:Services
+    $validated = ($script:Options.Contains('UseValidatedImages') -and [bool]$script:Options['UseValidatedImages'])
+    $composeArgs = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', $(if ($validated) { '--no-build' } else { '--build' })) + $script:Services
+    $promote = @()
+    if ($validated) { foreach ($svc in $script:Services) { $promote += [pscustomobject]@{ Service = $svc; Source = ($script:Project + '-' + $svc + ':release-' + $Context.HeadShort); Target = ($script:Project + '-' + $svc + ':latest') } } }
     $anchors = @()
     foreach ($svc in $script:Services) {
         $s = $Context.Services[$svc]
@@ -529,6 +589,7 @@ function New-DeployPlan {
         Anchors       = $anchors
         EnvVariables  = [ordered]@{ APP_VERSION = $Context.AppVersion; GIT_COMMIT = $Context.HeadShort }
         ComposeArgs   = $composeArgs
+        Promote       = $promote
         Changes       = @($Context.HubDockerFiles)
         PostChecks    = @(
             'api healthy (docker inspect, espera hasta el limite)',
@@ -555,6 +616,10 @@ function Show-DeployPlan {
     foreach ($a in $Plan.Anchors) {
         if ($a.Reuse) { Write-Safe ('  ' + $a.Anchor + ' ya existe y apunta a la imagen en ejecucion (digest ' + $a.Digest + '): se reutiliza, no se vuelve a etiquetar') }
         else { Write-Safe ('  docker tag ' + $a.Source + ' ' + $a.Anchor + '   (digest ' + $a.Digest + ')') }
+    }
+    if (@($Plan.Promote).Count -gt 0) {
+        Write-Safe 'Imagenes VALIDADAS (sin reconstruir; el ID debe coincidir con el manifiesto de imagenes):'
+        foreach ($p in $Plan.Promote) { Write-Safe ('  docker tag ' + $p.Source + ' ' + $p.Target) }
     }
     Write-Safe 'Variables de build:'
     foreach ($k in $Plan.EnvVariables.Keys) { Write-Safe ('  ' + $k + '=' + $Plan.EnvVariables[$k]) }
@@ -667,6 +732,14 @@ function Invoke-DeployPlan {
     try {
         $env:APP_VERSION = $Plan.EnvVariables['APP_VERSION']
         $env:GIT_COMMIT = $Plan.EnvVariables['GIT_COMMIT']
+        if (@($Plan.Promote).Count -gt 0) {
+            Write-Safe ''
+            Write-Safe '--- Promoviendo las imagenes validadas (sin construir) ---'
+            foreach ($p in $Plan.Promote) {
+                $tg = Invoke-DeployMutation 'docker' @('tag', $p.Source, $p.Target)
+                if ($tg.Code -ne 0) { Write-Safe ('docker tag fallo para ' + $p.Target + '; se aborta antes del arranque. Los contenedores en ejecucion no cambiaron.'); return 1 }
+            }
+        }
         Write-Safe ''
         Write-Safe '--- Desplegando api y web ---'
         $up = Invoke-DeployMutation 'docker' $Plan.ComposeArgs
@@ -787,6 +860,6 @@ function Invoke-DeployMain {
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
     $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
-        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
     exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }
