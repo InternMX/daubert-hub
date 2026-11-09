@@ -21,6 +21,7 @@
 .PARAMETER DatabaseManifestSha256   SHA-256 of the manifest text, from the authorisation record (required).
 .PARAMETER Psql                     psql executable (default: psql on PATH).
 .PARAMETER UntilStep                Optional: stop after this step (020, 021, 022, 023, 024 or 026), for staged windows and rehearsals.
+.PARAMETER FromStep                 Optional: resume at this step after a staged stop (earlier steps are NOT re-run; the baseline is then captured at this moment, so it only proves that nothing outside Manufactura changed since then).
 #>
 [CmdletBinding()]
 param(
@@ -29,7 +30,8 @@ param(
     [string]$DatabaseManifest = 'deploy/release-manifests/manufactura-database-release.json',
     [Parameter(Mandatory = $true)][string]$DatabaseManifestSha256,
     [string]$Psql = 'psql',
-    [ValidateSet('', '020', '021', '022', '023', '024', '026')][string]$UntilStep = ''
+    [ValidateSet('', '020', '021', '022', '023', '024', '026')][string]$UntilStep = '',
+    [ValidateSet('020', '021', '022', '023', '024', '026')][string]$FromStep = '020'
 )
 
 Set-StrictMode -Version Latest
@@ -150,6 +152,7 @@ if ($baseVars.Count -ne 28) { Stop-Step ("The baseline must have 14 fingerprints
 Add-Evidence 'BASELINE_CAPTURED (14 fingerprints, read-only)'
 
 foreach ($s in $steps) {
+    if ([int]$s.Paso -lt [int]$FromStep) { Add-Evidence ('SKIPPED_' + $s.Paso + ' (-FromStep ' + $FromStep + ')'); continue }
     Write-Host ("== {0} {1}" -f $s.Paso, $s.Id)
     $pre = Invoke-Sql $s.Files['precheck'] @()
     Add-Evidence ("--- {0} precheck exit={1}`n{2}" -f $s.Id, $pre.Code, $pre.Out.Trim())

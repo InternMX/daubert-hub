@@ -397,7 +397,8 @@ function Test-DatabaseManifest {
     $reasons = @()
     $byPath = @{}
     foreach ($a in @($m.Json.archivos)) { $byPath[[string]$a.ruta] = $a }
-    $forbidden = @($m.Json.prohibidos | Where-Object { $_ })
+    # Forbidden patterns are ALSO hard-coded here (independent of the manifest): the Caterpillar 025 recovery migration of another branch can never ride along, even in a tampered manifest.
+    $forbidden = @(@('_025_', 'caterpillar_folio_recovery') + @($m.Json.prohibidos | Where-Object { $_ }) | Select-Object -Unique)
     foreach ($file in @($Context.MigrationFiles)) {
         $hit = @($forbidden | Where-Object { $file.Contains($_) })
         if ($hit.Count -gt 0) { $reasons += ('Archivo prohibido en el release (' + $file + ' contiene "' + $hit[0] + '").'); continue }

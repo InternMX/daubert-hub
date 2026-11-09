@@ -765,6 +765,15 @@ Describe 'Compuerta con manifiesto de database/ (-DatabaseManifest): autoriza ex
         $script:Mutations.Count | Should Be 0
     }
 
+    It 'la 025 bloquea incluso si el manifiesto alterado ya no la declara prohibida (patron fijo en la compuerta)' {
+        $x = 'database/migrations/daubert_global/20261106_025_caterpillar_folio_recovery_test.up.sql'
+        $script:Fake.Files = $script:Fake.Files + $x; $script:Fake.Blobs[$x] = 'blob-cat'
+        $script:Fake.Manifest.Json.prohibidos = @()
+        $script:Fake.Manifest.Json.archivos = @($script:Fake.Manifest.Json.archivos) + [pscustomobject]@{ ruta = $x; categoria = 'inerte_nunca_en_prod'; blob = 'blob-cat'; sha256 = ('0' * 64) }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'Archivo prohibido en el release'
+    }
+
     It 'un archivo eliminado o ilegible en HEAD bloquea' {
         $script:Fake.Blobs[$script:ProdFiles[0]] = ''
         (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
