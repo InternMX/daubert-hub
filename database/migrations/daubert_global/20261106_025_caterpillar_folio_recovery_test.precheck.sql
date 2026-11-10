@@ -4,6 +4,9 @@ DO $$ BEGIN
   IF to_regnamespace('cat_recovery_test') IS NOT NULL THEN RAISE EXCEPTION 'CAT_RECOVERY_ALREADY_INSTALLED'; END IF;
   IF to_regprocedure('ops.fn_reprocesar_reservar_caterpillar_test(bigint,text,text,integer)') IS NULL
     OR to_regprocedure('ops.fn_admitir_reservar_caterpillar_test(bigint,text,text,integer)') IS NULL THEN RAISE EXCEPTION 'CAT_RECOVERY_REAL_GATES_REQUIRED'; END IF;
+  IF md5(replace(pg_get_functiondef('ops.fn_admitir_reservar_caterpillar_test(bigint,text,text,integer)'::regprocedure),chr(13),''))<>'ef6d6be62d23fa570eed7c7cb5c624da'
+    OR md5(replace(pg_get_functiondef('ops.fn_reprocesar_reservar_caterpillar_test(bigint,text,text,integer)'::regprocedure),chr(13),''))<>'c572b74411b12c3b43166c08b5c56501' THEN
+    RAISE EXCEPTION 'CAT_RECOVERY_REAL_GATE_FINGERPRINT_CHANGED'; END IF;
   IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='cat_recovery_test_coordinator' AND NOT rolcanlogin
     AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls OR rolreplication)) THEN RAISE EXCEPTION 'CAT_RECOVERY_DEDICATED_COORDINATOR_ROLE_REQUIRED'; END IF;
   IF has_function_privilege('n8n_cat_test','operacion.reservar_folios_para_ejecucion(bigint,text,integer)','EXECUTE')

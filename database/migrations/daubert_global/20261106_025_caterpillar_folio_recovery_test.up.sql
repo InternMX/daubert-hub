@@ -246,6 +246,58 @@ BEGIN
     ejecucion_id bigint,reserva_id bigint,folio_inicial bigint,folio_final bigint,cantidad integer,legacy_unverified integer);
 END $$;
 
+-- Receipt/status only: available while disabled, never grants or resumes emission.
+CREATE FUNCTION cat_recovery_test.reconcile(p_request uuid,p_expected_parent bigint) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE r record; code text; consistent boolean;
+BEGIN
+  PERFORM cat_recovery_test.assert_test();
+  SELECT q.*,p.estado AS parent_state,p.automatizacion_id AS parent_auto,c.automatizacion_id AS child_auto,
+    c.n8n_execution_id AS child_worker,c.estado AS child_state,c.reproceso_de_id AS child_parent,
+    c.documento_origen_id AS child_document,p.documento_origen_id AS parent_document,
+    o.ejecucion_id AS original_execution,o.serie_id AS original_series,o.estatus AS original_status,o.folio_inicial AS first_folio,o.folio_final AS last_folio,o.cantidad AS quantity,
+    n.ejecucion_id AS reserved_execution,n.serie_id AS reserved_series,n.folio_inicial AS new_first,n.folio_final AS new_last,n.cantidad AS new_quantity,n.estatus AS reservation_state,
+    s.siguiente_folio AS current_next
+  INTO r FROM cat_recovery_test.requests q
+    JOIN ops.ejecuciones_automatizacion p ON p.ejecucion_id=q.parent_id
+    JOIN operacion.reservas_folios o ON o.reserva_id=q.original_reservation_id
+    JOIN operacion.series_documentales s ON s.serie_id=q.series_id
+    LEFT JOIN ops.ejecuciones_automatizacion c ON c.ejecucion_id=q.child_id
+    LEFT JOIN operacion.reservas_folios n ON n.reserva_id=q.new_reservation_id
+    WHERE q.request_id=p_request AND q.parent_id=p_expected_parent;
+  IF NOT FOUND THEN RETURN jsonb_build_object('requestId',p_request,'parentId',p_expected_parent::text,'code','NOT_FOUND','committed',false,'canEmit',false,'requiresReview',true); END IF;
+  IF r.state<>'RESERVED' THEN
+    RETURN jsonb_build_object('requestId',p_request,'parentId',r.parent_id::text,'state',r.state,'code',
+      CASE WHEN r.state='READY' THEN 'QUARANTINE_READY_NO_RESERVATION' ELSE 'PREPARATION_REQUIRED' END,
+      'enabled',(SELECT enabled FROM cat_recovery_test.settings),
+      'quantity',r.quantity,'sourceSha256',r.source_sha256,'documentId',r.parent_document::text,
+      'expectedManifest',(r.document_snapshot->>'manifestCanonical')::jsonb,
+      'quarantineVerified',COALESCE(r.manifest_sha256~'^[a-f0-9]{64}$' AND r.verified_at>clock_timestamp()-interval '5 minutes',false),
+      'committed',false,'canEmit',false,'requiresReview',true);
+  END IF;
+  consistent:=COALESCE(r.parent_state='ERROR' AND r.original_status='ABANDONADA' AND r.original_execution=r.parent_id
+    AND r.child_parent=r.parent_id AND r.child_document=r.parent_document AND r.child_auto=r.parent_auto
+    AND r.child_worker=r.worker_id AND r.admission_result->>'worker_id'=r.worker_id
+    AND r.original_series=r.series_id AND r.reserved_execution=r.child_id
+    AND r.reserved_series=r.series_id AND r.first_folio=r.new_first AND r.last_folio=r.new_last AND r.quantity=r.new_quantity
+    AND r.manifest_sha256~'^[a-f0-9]{64}$' AND r.admission_result->>'decision'='ADMIT' AND r.admission_result->>'can_emit'='true'
+    AND r.admission_result->>'ejecucion_id'=r.child_id::text AND r.admission_result->>'reserva_id'=r.new_reservation_id::text
+    AND r.next_folio_before=r.last_folio+1 AND r.current_next>=r.next_folio_before
+    AND ((r.child_state='PROCESANDO' AND r.reservation_state='RESERVADA')
+      OR (r.child_state='COMPLETADA' AND r.reservation_state='APLICADA')
+      OR (r.child_state IN ('ERROR','CANCELADA') AND r.reservation_state='ABANDONADA')),false);
+  code:=CASE WHEN NOT consistent THEN 'COMMITTED_STATE_REVIEW_REQUIRED'
+    WHEN r.child_state='COMPLETADA' THEN 'ALREADY_COMPLETED'
+    WHEN r.child_state IN ('ERROR','CANCELADA') THEN 'CHILD_FAILED_REVIEW_REQUIRED'
+    ELSE 'COMMITTED_NO_REEMIT' END;
+  RETURN jsonb_build_object('requestId',p_request,'parentId',r.parent_id::text,'state',r.state,'code',code,
+    'committed',true,'consistent',consistent,'executionId',r.child_id::text,'reservationId',r.new_reservation_id::text,
+    'originalReservationId',r.original_reservation_id::text,'childState',r.child_state,'reservationState',r.reservation_state,
+    'firstFolio',r.first_folio::text,'lastFolio',r.last_folio::text,'sourceSha256',r.source_sha256,'manifestSha256',r.manifest_sha256,
+    'recordedNextFolio',r.next_folio_before::text,'currentNextFolio',r.current_next::text,
+    'canEmit',false,'requiresReview',code<>'ALREADY_COMPLETED');
+END $$;
+
 -- Preserve each real gate definition and change ONLY its reservation seam, not its admission rules.
 DO $$
 DECLARE v_signature text; original text; patched text; anchor text:='SELECT * INTO STRICT reserved FROM operacion.reservar_folios_para_ejecucion(own_id,p_series,p_quantity);'; replacement text;
@@ -298,4 +350,5 @@ GRANT EXECUTE ON FUNCTION cat_recovery_test.evaluate(bigint),cat_recovery_test.r
 GRANT EXECUTE ON FUNCTION cat_recovery_test.attest(uuid,text,text) TO cat_recovery_test_coordinator;
 GRANT EXECUTE ON FUNCTION cat_recovery_test.start(uuid,text) TO n8n_cat_test;
 GRANT EXECUTE ON FUNCTION cat_recovery_test.worker_admission(uuid,text,bigint) TO n8n_cat_test;
+GRANT EXECUTE ON FUNCTION cat_recovery_test.reconcile(uuid,bigint) TO n8n_cat_test,daubert_hub_test_user;
 COMMIT;
