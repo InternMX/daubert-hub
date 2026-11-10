@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
-import { Equals, IsBoolean, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { Equals, IsBoolean, IsString, IsUUID, Matches, MaxLength, isUUID } from 'class-validator';
 import { identityFromRequest, type AuthenticatedRequest } from '../../common/authenticated-request';
 import { Roles } from '../../security/route-access.decorators';
 import { CaterpillarFolioRecoveryService } from './caterpillar-folio-recovery.service';
@@ -22,6 +22,12 @@ export class CaterpillarFolioRecoveryController {
 
   @Get()
   assess(@Param('executionId') executionId: string) { return this.recovery.assess(this.id(executionId)); }
+
+  @Get(':requestId')
+  receipt(@Param('executionId') executionId: string, @Param('requestId') requestId: string) {
+    if (!isUUID(requestId, '4')) throw new BadRequestException('Identificador de solicitud inválido.');
+    return this.recovery.receipt(this.id(executionId), requestId);
+  }
 
   @Post()
   @HttpCode(202)

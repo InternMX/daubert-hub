@@ -39,6 +39,21 @@ export class CaterpillarFolioRecoveryService {
     }
   }
 
+  // Read-only receipts remain available in TEST while emission is disabled.
+  async receipt(parentId: string, requestId: string) {
+    if (this.config.get('database', { infer: true }).name !== 'daubert_hub_test') {
+      throw new ConflictException('La reconciliación de folios solo está disponible en TEST.');
+    }
+    try {
+      const [row] = await this.db.query<{ receipt: Record<string, unknown> }>(
+        'SELECT cat_recovery_test.reconcile($1::uuid,$2::bigint) AS receipt', [requestId, parentId]);
+      if (!row || row.receipt.canEmit !== false) throw new Error('Unsafe receipt');
+      return row.receipt;
+    } catch {
+      throw new ServiceUnavailableException('No se pudo reconciliar la solicitud. No se autoriza otra emisión.');
+    }
+  }
+
   // Prepares an auditable request only. It does not claim emission or call the conventional webhook.
   // The trusted coordinator attests files; n8n TEST must later call cat_recovery_test.start through the existing gate.
   async prepare(parentId: string, requestId: string, adminId: string | null, reason: string, confirmedNoDelivery: boolean) {

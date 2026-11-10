@@ -86,4 +86,34 @@ describe('Caterpillar recovery — disabled defaults, ADMIN and isolated prepara
     const r = await request(app.getHttpServer()).post(route).set('x-synthetic-role', 'ADMIN').send(body).expect(503);
     expect(JSON.stringify(r.body)).not.toContain('DO_NOT_EXPOSE'); expect(JSON.stringify(r.body)).not.toContain('internal.table');
   });
+  describe('read-only receipt route', () => {
+    const receiptRoute = `${route}/264d0c3c-a917-4104-8c0e-9f01b818c2db`;
+    it('requires authentication and ADMIN before touching SQL', async () => {
+      await request(app.getHttpServer()).get(receiptRoute).expect(401);
+      await request(app.getHttpServer()).get(receiptRoute).set('x-synthetic-role', 'GENERAL').expect(403);
+      expect(query).not.toHaveBeenCalled();
+    });
+    it('rejects malformed request identifiers without touching SQL', async () => {
+      await request(app.getHttpServer()).get(`${route}/not-a-uuid`).set('x-synthetic-role', 'ADMIN').expect(400);
+      expect(query).not.toHaveBeenCalled();
+    });
+    it('reconciles through the read-only function and never the emission gate', async () => {
+      enabled = true;
+      const receipt = { requestId: body.requestId, code: 'ALREADY_COMPLETED', canEmit: false, requiresReview: false };
+      query.mockResolvedValue([{ receipt }]);
+      const r = await request(app.getHttpServer()).get(receiptRoute).set('x-synthetic-role', 'ADMIN').expect(200);
+      expect(r.body).toEqual(receipt);
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('cat_recovery_test.reconcile'), [body.requestId, '10000']);
+      expect(query.mock.calls.every(call => !call[0].includes('cat_recovery_test.start'))).toBe(true);
+    });
+    it('stays TEST-only and never authorizes a receipt that could emit', async () => {
+      enabled = true; database = 'daubert_global';
+      await request(app.getHttpServer()).get(receiptRoute).set('x-synthetic-role', 'ADMIN').expect(409);
+      expect(query).not.toHaveBeenCalled();
+      enabled = true; database = 'daubert_hub_test';
+      const r = await request(app.getHttpServer()).get(receiptRoute).set('x-synthetic-role', 'ADMIN').expect(503);
+      expect(r.body.message).toContain('No se autoriza otra emisión');
+      expect(JSON.stringify(r.body)).not.toContain('password');
+    });
+  });
 });
