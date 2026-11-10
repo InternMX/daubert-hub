@@ -13,8 +13,8 @@ Evidencia (fuera del repositorio): `C:\Users\06\Documents\Daubert\Evidencia_6C3_
 Dentro de la ventana, con el script del commit candidato:
 1. `Set-EntryClosure.ps1 -Action Status` (esperado OPEN, `activeSha256 = 4d9dfea5…`). Copia de seguridad de la carpeta `maintenance-window` (3 archivos).
 2. `-Action Close` → cierre verificado con sondas (ahora incluye rutas de Manufactura).
-3. `-Action Prepare -WebImage daubert-hub-web:release-<commit> -ExpectedOpenSha256 <nginxConfSha256 del manifiesto de imágenes>`. Sin el SHA correcto **se niega**. Con la ventana cerrada **no reabre**: solo renueva `default.conf.open` (corrección de esta fase).
-4. `-Action Close` otra vez (instala la política vigente) → despliegue (`Deploy-DaubertHub.ps1 … -RequireClosedWindow`) → `-Action Reload` (obligatorio tras reemplazar la API).
+3. `-Action Prepare -KeepClosure -WebImage daubert-hub-web:release-<commit> -ExpectedOpenSha256 <nginxConfSha256 del manifiesto de imágenes>`. Sin el SHA correcto **se niega**. **`-KeepClosure` es obligatorio dentro de la ventana** (desde la Fase 6D, sin él `Prepare` escribe el archivo abierto en `default.conf`); con él solo renueva `default.conf.open` (corrección de esta fase).
+4. `-Action Close -Policy Manufactura -ExpectedPolicySha256 <sha>` otra vez; `-Action Status` debe decir `CLOSED` → despliegue (`Deploy-DaubertHub.ps1 … -RequireClosedWindow -ClosurePolicy Manufactura -ClosurePolicySha256 <sha>`) → `-Action Reload` (obligatorio tras reemplazar la API).
 5. Al final de la ventana: `-Action Open` (instala el archivo nuevo, `nginx -t`, reload, sondas) y `Test-ManufacturaReleaseReadiness.ps1 -NginxConf <default.conf externo>`.
 Reversión: `-Action Prepare -WebImage daubert-hub-web:rollback-<commit>` (línea base original por omisión) + `-Action Open`. **No es necesaria para revertir la aplicación**: v1.1.1 funciona con el `default.conf` nuevo (ensayado).
 

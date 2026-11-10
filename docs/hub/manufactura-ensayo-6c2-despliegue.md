@@ -81,7 +81,7 @@ Compuerta de `database/` (6C.1, git real, 13 escenarios): commit base distinto, 
 1. Preflight: PROD sano, `/api/health` commit = base del manifiesto de `database/` (si no, regenerarlo con ese `--base`), árbol limpio, Pester deploy y respaldos verdes.
 2. Respaldo completo previo con restauración de prueba (`respaldar-daubert-global.ps1` o el respaldo del día) y su verificación.
 3. Construir las imágenes en el commit final (`New-ReleaseImages.ps1 -Build -SaveDir …`), revalidar en el entorno aislado y registrar IDs; variante web **con** UI en un manifiesto aparte.
-4. **Renovar el `default.conf` externo de nginx** (Prepare `-AcceptNewBaseline` con la imagen web nueva → Open/Reload con `nginx -t`) y decidir la política de cierre (§10).
+4. **Renovar el `default.conf` externo de nginx** (procedimiento vigente en `manufactura-preparacion-junta-6d.md` §1.2: `Prepare -KeepClosure -ExpectedOpenSha256 …` dentro de la ventana cerrada) y decidir la política de cierre (§10).
 5. Aplicar el parche de respaldos **en el mismo acto** que la 026 (con la ventana abierta y sin tareas de respaldo en curso), y correr una ejecución manual de respaldo para confirmar.
 6. Migraciones: `Invoke-ManufacturaMigrations.ps1 -DatabaseManifestSha256 … -Apply -EvidenceFile …` (020→021→022→023→024→026).
 7. `Test-ManufacturaReleaseReadiness.ps1` (base, 9 tablas, 33 políticas, coherencia respaldo↔026, commit, imágenes, nginx).
