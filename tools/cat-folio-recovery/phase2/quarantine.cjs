@@ -120,4 +120,37 @@ function prepare(root, binding, fault = () => {}) {
   } finally { fs.unlinkSync(path.join(lock, 'owner.json')); fs.rmdirSync(lock); }
 }
 
-module.exports = { prepare, digest };
+// Receipt verification only: do not append movements or resume generation after a lost COMMIT response.
+function verifyPrepared(root, requestId, expectedSha256) {
+  root=sandbox(root);assert.match(requestId,/^[0-9a-f-]{36}$/i);assert.match(expectedSha256,/^[a-f0-9]{64}$/);
+  const folder=physical(root,path.join(root,`quarantine-${requestId}`));
+  const text=fs.readFileSync(physical(root,path.join(folder,'manifest.json')),'utf8');
+  assert.equal(digest(text),expectedSha256,'COMMITTED_MANIFEST_HASH_CHANGED');
+  const manifest=JSON.parse(text),binding=json(physical(root,path.join(folder,'binding.json')));
+  assert.equal(manifest.version,'CAT_QUARANTINE_V1');assert.equal(manifest.requestId,requestId);assert.equal(binding.requestId,requestId);
+  assert.equal(manifest.complete,true);assert.equal(manifest.outputClear,true);assert.equal(manifest.custody,'ISOLATED_UNRELEASED');
+  assert.equal(binding.reservationId,manifest.reservationId);assert.equal(binding.sourceSha256,manifest.sourceSha256);
+  const custody=json(physical(root,path.join(root,'custody.json')));
+  assert.equal(custody.state,'ISOLATED_UNRELEASED','DELIVERY_OR_CUSTODY_UNPROVEN');
+  assert.equal(custody.reservationId,binding.reservationId);assert.equal(custody.sourceSha256,binding.sourceSha256);
+  assert.deepEqual(custody.expected,binding.expected);
+  assert.deepEqual(fs.readdirSync(physical(root,path.join(root,'output'))),[],'OUTPUT_REAPPEARED_AFTER_COMMIT');
+  const records=fs.readFileSync(physical(root,path.join(folder,'movements.jsonl')),'utf8').split('\n').filter(Boolean).map(line=>JSON.parse(line));
+  const seen=new Set();
+  for(const file of manifest.files){
+    assert.ok(!seen.has(file.name.toLowerCase()),'DUPLICATE_COMMITTED_FILE');seen.add(file.name.toLowerCase());
+    assert.ok(binding.expected.some(e=>e.name===file.name&&e.folio===file.folio),'COMMITTED_FILE_IDENTITY_CHANGED');
+    assert.equal(file.name,path.basename(file.name));assert.ok(!/[\\/:]/.test(file.name));
+    assert.equal(file.originalPath,path.join(root,'output',file.name));assert.equal(file.quarantinePath,path.join(folder,file.name));
+    assert.equal(fs.existsSync(file.originalPath),false,'SOURCE_REAPPEARED_AFTER_COMMIT');
+    const target=physical(root,file.quarantinePath),stat=fs.lstatSync(target);
+    assert.ok(stat.isFile()&&stat.nlink===1,'COMMITTED_FILE_LINKED');assert.equal(stat.size,file.size);
+    assert.equal(digest(fs.readFileSync(target)),file.sha256,'COMMITTED_PDF_HASH_CHANGED');
+    assert.ok(records.some(r=>r.stage==='INTENT'&&r.name===file.name&&r.source===file.originalPath&&r.destination===file.quarantinePath&&r.sha256===file.sha256&&r.size===file.size),'MOVEMENT_INTENT_MISSING');
+    assert.ok(records.some(r=>r.stage==='MOVED'&&r.name===file.name&&r.sha256===file.sha256),'MOVEMENT_COMPLETION_MISSING');
+  }
+  for(const name of fs.readdirSync(folder).filter(n=>/\.pdf$/i.test(n)))assert.ok(seen.has(name.toLowerCase()),'UNLISTED_COMMITTED_PDF');
+  return {manifest,binding,sha256:expectedSha256};
+}
+
+module.exports = { prepare, digest, verifyPrepared };
