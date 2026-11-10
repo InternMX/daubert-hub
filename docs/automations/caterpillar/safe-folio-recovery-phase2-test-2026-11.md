@@ -187,10 +187,12 @@ los esquemas reales core/ops/operacion/security/audit, incluidos FKs, índices y
 acotados; no se afirma que esto sustituya la validación de ACL del TEST compartido.
 El servidor privado se detiene al finalizar y conserva los artefactos.
 
-Último ensayo: `C:\Users\06\AppData\Local\Temp\opencode\cat-recovery-phase2-CVE6dQ`.
-Allí quedan `test-schema.sql`, `postgres.log`, `synthetic-conversion.log`,
-`synthetic-generation.json` y cuatro PDFs sintéticos. Cada ejecución valida puerto,
-base y datadir; el helper de fixtures también rechaza un pool del TEST compartido.
+Último ensayo: un sandbox nuevo bajo el patrón portable
+`%TEMP%\opencode\cat-recovery-phase2-*` (raíz aislada verificada antes de
+cualquier escritura). Allí quedan `test-schema.sql`, `postgres.log`,
+`synthetic-conversion.log`, `synthetic-generation.json` y cuatro PDFs
+sintéticos. Cada ejecución valida puerto, base y datadir; el helper de fixtures
+también rechaza un pool del TEST compartido.
 
 | Comprobación | Resultado |
 | --- | --- |

@@ -39,3 +39,16 @@ Prerrequisitos antes de preparar una copia ejecutable:
 
 El convertidor TEST fue ejecutado sin cambios con HTML sintético y cuatro PDFs en
 el PostgreSQL/archivo aislado. Esto **no** acredita el E2E del workflow n8n vivo.
+
+Semántica del manifiesto de cuarentena (hash del nodo `Preparar archivo CAT`): es
+evidencia de custodia de los PDFs *existentes no entregados* en la carpeta de
+salida de la generación al momento de atestar, no un inventario de lo que
+producirá el reproceso. `files=[]` es el estado legítimo cuando la ejecución
+original falló antes de generar su primer PDF (ningún archivo por custodiar) y
+el E2E positivo aprobado despachó con un manifiesto vacío y después produjo los
+cuatro PDFs desde el Excel fuente. `attest` tampoco exige files no vacíos:
+producir los PDFs es responsabilidad del flujo posterior con el gate real, y un
+hijo que no completa deja `ERROR` + reserva `ABANDONADA` + recibo
+`CHILD_FAILED_REVIEW_REQUIRED` (nunca reemisión automática). El tooling de
+custodia además rechaza archivos no declarados (`UNATTRIBUTED_OUTPUT_FILE`) y el
+estado aislado no liberado se reverifica en el recibo del coordinador.
