@@ -154,7 +154,7 @@ Procedimiento de aislamiento a implementar/validar antes de habilitar:
 Ejecución desde el nuevo worktree:
 
 ```powershell
-node tools/cat-folio-recovery/rehearse.cjs --test-env-file "C:\Users\06\Documents\Daubert\daubert-hub\apps\api\.env"
+node tools/cat-folio-recovery/rehearse.cjs --test-env-file "apps/api/.env"
 ```
 
 Solo se lee `TEST_DATABASE_URL` de ese archivo; otras claves, incluidas productivas,
@@ -180,7 +180,7 @@ de opciones de URL, y se comprueba `current_database()` con sesión de solo lect
 **13/13 escenarios aprobados**, integridad de contador, estado original y remisiones
 comprobada después de cada escenario. Up aislado sin marca rechazado; down vacío aprobado.
 Los PDFs son bytes sintéticos, no documentos emitidos. Evidencia conservada de la
-última corrida: `C:\Users\06\AppData\Local\Temp\opencode\cat-recovery-synthetic-VGI2Do`.
+última corrida: `%TEMP%\opencode\cat-recovery-synthetic-VGI2Do`.
 
 Se probó además **el primitivo advisory lock** con dos conexiones READ ONLY reales
 a TEST y una clave sintética aleatoria: la segunda no pudo adquirirlo hasta el

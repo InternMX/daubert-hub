@@ -8,12 +8,12 @@ sin sustituir sus archivos ni afirmar que la recuperación automática está ter
 ## 1. Preservación
 
 Antes de editar, el worktree solo contenía los cuatro archivos de Fase 1 sin seguimiento.
-Se respaldaron en `C:\Users\06\AppData\Local\Temp\opencode\cat-folio-phase1-20261106-phase2.zip`:
+Se respaldaron en `%TEMP%\opencode\cat-folio-phase1-20261106-phase2.zip`:
 SHA-256 `b6450a27992fc3d66eb2a7e606f62d7c85f712d8c93fbb945c2b7edc37ad0691`.
 Se cotejaron después contra el ZIP: los cuatro permanecen **idénticos byte por byte**.
 Los 13 escenarios originales volvieron a pasar. No se crearon commits ni PR.
 El respaldo final de los cambios locales de Fase 1 y Fase 2 se conserva en
-`C:\Users\06\AppData\Local\Temp\opencode\cat-folio-phase2-20261106-reviewed.zip`.
+`%TEMP%\opencode\cat-folio-phase2-20261106-reviewed.zip`.
 
 ## 2. Acceso de migración y privilegios
 

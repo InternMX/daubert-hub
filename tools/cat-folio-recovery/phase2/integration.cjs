@@ -176,7 +176,7 @@ exports.run = async (pool, root) => {
       `<!doctype html><html lang="es"><meta charset="utf-8"><title>TEST sintético ${folio}</title><h1>NO ENTREGAR — TEST AISLADO</h1><p>Folio sintético ${folio}</p></html>`,{flag:'wx'});
     assert.deepEqual(fs.readdirSync(output),[]); // Existing TEST converter may overwrite; never give it a reused destination.
     const converted=spawnSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-File',
-      'C:/Users/06/Documents/Dropbox/Pruebas/REMISIONES CAT/05_ARCHIVOS AUXILIARES/SCRIPTS/convertir-cat-pdf.ps1',
+      'C:/Users/<WINDOWS_USER>/Documents/Dropbox/Pruebas/REMISIONES CAT/05_ARCHIVOS AUXILIARES/SCRIPTS/convertir-cat-pdf.ps1',
       '-TempDir',html,'-OutDir',output],{encoding:'utf8',timeout:120000});
     fs.writeFileSync(path.join(root,'synthetic-conversion.log'),converted.stdout||'',{flag:'wx'});
     assert.equal(converted.status,0,'Unmodified TEST converter must succeed in the fresh isolated destination');
