@@ -21,6 +21,7 @@
       Configuration (-EnvFile; only DB_NAME, MANUFACTURING_ENABLED and MANUFACTURING_EMISSION_ENV are read, nothing is printed but those three):
         mirrors apps/api/src/config/environment.ts resolveManufacturing; contradictions fail.
       Migrations evidence (-MigrationsEvidence): contains every POSTCHECK_0NN_PASS and MANUFACTURA_SQL_COMPLETE.
+      Closure policy (-ClosurePolicyFile, -ClosurePolicySha256): the policy SELECTED for the window has the authorised SHA-256 and blocks writes under /api/manufacturing-sheets.
       Running commit (-HealthUrl, -ExpectedCommit), images (-ImagesManifest, -ImagesManifestSha256, -Containers), external nginx file (-NginxConf).
 
     -EvidenceFile (outside the repository) receives one line: MANUFACTURA_READINESS_PASS phase=<phase> or MANUFACTURA_READINESS_FAIL phase=<phase>.
@@ -41,6 +42,8 @@ param(
     [string]$ImagesManifestSha256 = '',
     [string[]]$Containers = @(),
     [string]$NginxConf = '',
+    [string]$ClosurePolicyFile = '',
+    [string]$ClosurePolicySha256 = '',
     [string]$EvidenceFile = '',
     [switch]$SkipDatabase
 )
@@ -72,6 +75,7 @@ function Invoke-ReadinessSql {
     return @($o | ForEach-Object { [string]$_ })
 }
 function Read-ReadinessText { param([string]$Path) if (-not (Test-Path -LiteralPath $Path)) { return $null }; return [string](Get-Content -LiteralPath $Path -Raw) }
+function Get-ReadinessFileSha256 { param([string]$Path) if (-not (Test-Path -LiteralPath $Path)) { return '' }; return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLower() }
 function Invoke-ReadinessHealth { param([string]$Url) return ((Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json) }
 function Get-ReadinessContainerImage {
     param([string]$Name)
@@ -184,6 +188,17 @@ function Test-ReadinessNginx {
     )
 }
 
+function Test-ReadinessClosurePolicy {
+    # $Text/$Sha of the closure policy SELECTED for the window ($null = unreadable). The SHA-256 is of the file bytes (what Set-EntryClosure.ps1 installs).
+    param($Text, [string]$Sha, [string]$AuthorisedSha)
+    if ($null -eq $Text -or -not $Sha) { return @(New-ReadinessResult $false 'politica de cierre seleccionada legible' 'no existe -ClosurePolicyFile') }
+    return @(
+        (New-ReadinessResult ([bool]$AuthorisedSha -and $Sha -eq $AuthorisedSha.ToLower()) 'politica de cierre seleccionada: SHA-256 = el autorizado' $Sha),
+        (New-ReadinessResult ($Text -match '(?m)^\s*~\*\^/api/manufacturing-sheets\(\?:/\|\$\)\s+1;') 'politica de cierre seleccionada: bloquea las escrituras bajo /api/manufacturing-sheets' 'es la politica operativa anterior: durante el cierre las escrituras de Manufactura llegarian al API'),
+        (New-ReadinessResult ($Text -match 'payment-notifications\|remissions/caterpillar' -and $Text -match 'return 503;') 'politica de cierre seleccionada: conserva el bloqueo de Pagos y Caterpillar' '')
+    )
+}
+
 function Test-ReadinessImages {
     # $ManifestText may be $null. $RunningIds: hashtable container -> image id ('' = container not found).
     param($ManifestText, [string]$AuthorisedSha, [string[]]$ContainerNames, $RunningIds)
@@ -238,6 +253,7 @@ function Invoke-ReadinessMain {
         }
     }
     if ($P.NginxConf) { $results += @(Test-ReadinessNginx (Read-ReadinessText $P.NginxConf)) }
+    if ($P.ClosurePolicyFile) { $results += @(Test-ReadinessClosurePolicy (Read-ReadinessText $P.ClosurePolicyFile) (Get-ReadinessFileSha256 $P.ClosurePolicyFile) $P.ClosurePolicySha256) }
 
     if (@($results).Count -eq 0) { $results += New-ReadinessResult $false 'se ejecuto al menos un control' 'nada que comprobar: revise los parametros' }
     foreach ($x in $results) { Write-Host ($(if ($x.Ok) { 'PASS ' } else { 'FAIL ' }) + $x.Name + $(if (-not $x.Ok -and $x.Detail) { ' :: ' + $x.Detail } else { '' })) }
@@ -256,6 +272,6 @@ function Write-ReadinessEvidence {
 
 if ($MyInvocation.InvocationName -ne '.') {
     $p = @{ Phase = $Phase; Psql = $Psql; BackupModule = $BackupModule; EnvFile = $EnvFile; MigrationsEvidence = $MigrationsEvidence; HealthUrl = $HealthUrl; ExpectedCommit = $ExpectedCommit
-        ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; Containers = @($Containers); NginxConf = $NginxConf; EvidenceFile = $EvidenceFile; SkipDatabase = [bool]$SkipDatabase }
+        ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; Containers = @($Containers); NginxConf = $NginxConf; ClosurePolicyFile = $ClosurePolicyFile; ClosurePolicySha256 = $ClosurePolicySha256; EvidenceFile = $EvidenceFile; SkipDatabase = [bool]$SkipDatabase }
     exit (Invoke-ReadinessMain $p)
 }

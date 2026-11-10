@@ -29,6 +29,7 @@ function Set-ReadinessMocks {
     Mock Read-ReadinessText { if ($script:State.Files.ContainsKey($Path)) { $script:State.Files[$Path] } else { $null } }
     Mock Invoke-ReadinessHealth { if ($null -eq $script:State.Health) { throw 'down' }; $script:State.Health }
     Mock Get-ReadinessContainerImage { if ($script:State.Images.ContainsKey($Name)) { $script:State.Images[$Name] } else { '' } }
+    Mock Get-ReadinessFileSha256 { if ($script:State.Files.ContainsKey($Path)) { 'sha-' + $Path } else { '' } }
     Mock Write-ReadinessEvidence { $script:EvidenceLine = $Line }
     Mock Write-Host { $script:Out += [string]$Object }
 }
@@ -36,7 +37,7 @@ function Invoke-Readiness {
     param([hashtable]$Override = @{})
     $script:Out = @(); $script:EvidenceLine = ''
     $p = @{ Phase = 'PreEnable'; Psql = 'psql'; BackupModule = 'backup.psm1'; EnvFile = 'prod.env'; MigrationsEvidence = 'evidence.txt'; HealthUrl = 'http://x/api/health'; ExpectedCommit = '16153a8'
-        ImagesManifest = ''; ImagesManifestSha256 = ''; Containers = @(); NginxConf = 'default.conf'; EvidenceFile = 'C:\fuera\readiness.txt'; SkipDatabase = $false }
+        ImagesManifest = ''; ImagesManifestSha256 = ''; Containers = @(); NginxConf = 'default.conf'; ClosurePolicyFile = ''; ClosurePolicySha256 = ''; EvidenceFile = 'C:\fuera\readiness.txt'; SkipDatabase = $false }
     foreach ($k in $Override.Keys) { $p[$k] = $Override[$k] }
     $r = @(Invoke-ReadinessMain $p)
     return $r[-1]
@@ -258,5 +259,52 @@ Describe 'Readiness de Manufactura: cualquier fallo bloquea (exit 1 + MANUFACTUR
 
     It 'la consulta de comprobacion es de solo lectura (solo SELECT)' {
         $script:ReadinessSql | Should Not Match '(?i)\b(insert|update|delete|alter|create|drop|grant|revoke|truncate|set_config)\b'
+    }
+}
+
+Describe 'Readiness: politica de cierre seleccionada para la ventana (archivos reales versionados)' {
+    $root = [System.IO.Path]::GetFullPath((Join-Path $here '..\..\..'))
+    $operativa = Join-Path $root 'deploy\closure\entry-closure-policy.conf'
+    $manufactura = Join-Path $root 'deploy\closure\entry-closure-policy.manufactura.conf'
+    $shaOp = (Get-FileHash -LiteralPath $operativa -Algorithm SHA256).Hash.ToLower()
+    $shaMf = (Get-FileHash -LiteralPath $manufactura -Algorithm SHA256).Hash.ToLower()
+
+    It 'la politica operativa por omision es exactamente la instalada en produccion (no cambio)' {
+        $shaOp | Should Be 'e86f47494d87222122938c6b580cec465cecdf3835c037ce947f60f9e340068f'
+        (Get-Content -LiteralPath $operativa -Raw) | Should Not Match 'manufacturing-sheets'
+    }
+
+    It 'la politica de Manufactura con su SHA-256 autorizado: PASS' {
+        $r = @(Test-ReadinessClosurePolicy (Get-Content -LiteralPath $manufactura -Raw) $shaMf $shaMf)
+        @($r | Where-Object { -not $_.Ok }).Count | Should Be 0
+        $r.Count | Should Be 3
+    }
+
+    It 'la politica de Manufactura es la operativa mas una sola linea de ruta y dos de comentario' {
+        $a = @(Get-Content -LiteralPath $operativa); $b = @(Get-Content -LiteralPath $manufactura)
+        $extra = @($b | Where-Object { $a -notcontains $_ })
+        $extra.Count | Should Be 3
+        @($extra | Where-Object { $_ -notmatch '^\s*#' }).Count | Should Be 1
+        @($a | Where-Object { $b -notcontains $_ }).Count | Should Be 0
+    }
+
+    It 'seleccionar la politica operativa para la ventana de Manufactura: FAIL (no bloquea sus escrituras)' {
+        $r = @(Test-ReadinessClosurePolicy (Get-Content -LiteralPath $operativa -Raw) $shaOp $shaOp)
+        (@($r | Where-Object { -not $_.Ok }) | ForEach-Object { $_.Name }) -join '|' | Should Match 'bloquea las escrituras bajo /api/manufacturing-sheets'
+    }
+
+    It 'SHA-256 distinto del autorizado, sin SHA-256 autorizado o archivo ausente: FAIL' {
+        $t = Get-Content -LiteralPath $manufactura -Raw
+        @(Test-ReadinessClosurePolicy $t $shaMf ('0' * 64) | Where-Object { -not $_.Ok }).Count | Should Be 1
+        @(Test-ReadinessClosurePolicy $t $shaMf '' | Where-Object { -not $_.Ok }).Count | Should Be 1
+        @(Test-ReadinessClosurePolicy ($t + "`n# cambio") 'otro' $shaMf | Where-Object { -not $_.Ok }).Count | Should Be 1
+        @(Test-ReadinessClosurePolicy $null '' $shaMf | Where-Object { -not $_.Ok }).Count | Should Be 1
+    }
+
+    It 'integrado en la corrida: un archivo de politica ausente es un FALLO' {
+        $script:SavedDb = $env:PGDATABASE; $env:PGDATABASE = 'daubert_global'; $script:State = New-ReadyState; Set-ReadinessMocks
+        (Invoke-Readiness @{ ClosurePolicyFile = 'no-existe.conf'; ClosurePolicySha256 = 'x' }) | Should Be 1
+        (Get-Out) | Should Match 'FAIL politica de cierre seleccionada legible'
+        $env:PGDATABASE = $script:SavedDb
     }
 }

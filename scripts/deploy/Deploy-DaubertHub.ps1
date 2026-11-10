@@ -68,6 +68,14 @@
 .PARAMETER ImagesManifestSha256
     SHA-256 of the images manifest text (LF line endings), delivered outside the repository with the authorisation record.
 
+.PARAMETER ClosurePolicy
+    Operativa (default: deploy/closure/entry-closure-policy.conf, behaviour unchanged) or Manufactura (deploy/closure/entry-closure-policy.manufactura.conf, which also blocks every
+    write under /api/manufacturing-sheets). Manufactura REQUIRES -ClosurePolicySha256: the gate blocks unless the versioned file has exactly that SHA-256, and with -RequireClosedWindow
+    the external default.conf must be that policy. A configuration that ENABLES Manufactura inside a required closed window must use -ClosurePolicy Manufactura.
+
+.PARAMETER ClosurePolicySha256
+    SHA-256 of the selected closure policy file, authorised outside the repository. Optional with the operative policy, mandatory with Manufactura.
+
 .PARAMETER ManufacturingReadinessEvidence
     Evidence file written by scripts/deploy/Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable -EvidenceFile <file outside the repository>. REQUIRED whenever the production
     configuration enables Manufactura (MANUFACTURING_ENABLED=true in deploy/pilot.prod.env or in the shell): the gate blocks unless the file is recent (-EvidenceMaxAgeHours)
@@ -105,6 +113,8 @@ param(
     [string]$ImagesManifest = '',
     [string]$ImagesManifestSha256 = '',
     [string]$ManufacturingReadinessEvidence = '',
+    [ValidateSet('Operativa', 'Manufactura')][string]$ClosurePolicy = 'Operativa',
+    [string]$ClosurePolicySha256 = '',
     [string]$MigrationsEvidence = '',
     [string[]]$EvidenceMarkers = @(),
     [int]$EvidenceMaxAgeHours = 6,
@@ -335,10 +345,12 @@ function Get-ClosureState {
     # Read-only facts about the external conf.d that the override mounts (create_host_path=false: it must exist) and about the versioned closed policy.
     $conf = Join-Path $script:ClosureDir 'default.conf'
     $policy = Join-Path $script:RepoRoot 'deploy\closure\entry-closure-policy.conf'
-    $confSha = ''; $policySha = ''
+    $manufactura = Join-Path $script:RepoRoot 'deploy\closure\entry-closure-policy.manufactura.conf'
+    $confSha = ''; $policySha = ''; $manufacturaSha = ''
+    if (Test-Path -LiteralPath $manufactura) { $manufacturaSha = (Get-FileHash -LiteralPath $manufactura -Algorithm SHA256).Hash.ToLower() }
     if (Test-Path -LiteralPath $conf) { $confSha = (Get-FileHash -LiteralPath $conf -Algorithm SHA256).Hash.ToLower() }
     if (Test-Path -LiteralPath $policy) { $policySha = (Get-FileHash -LiteralPath $policy -Algorithm SHA256).Hash.ToLower() }
-    return @{ ConfExists = [bool]$confSha; ConfSha = $confSha; PolicySha = $policySha }
+    return @{ ConfExists = [bool]$confSha; ConfSha = $confSha; PolicySha = $policySha; ManufacturaPolicySha = $manufacturaSha }
 }
 
 function Get-DeployContext {
@@ -501,7 +513,20 @@ function Test-DeployGate {
     if ($Context.HeadShort -cnotmatch $script:ShaPattern) { $reasons += 'No se pudo determinar el commit corto de HEAD.' }
     if (-not $Context.AppVersion) { $reasons += 'No se pudo leer APP_VERSION de package.json.' }
     if (-not $Context.Closure.ConfExists) { $reasons += 'Falta default.conf en el directorio externo del cierre (override obligatorio en toda recreacion de Web); ejecute Set-EntryClosure.ps1 -Action Prepare.' }
-    if ($Options.Contains('RequireClosedWindow') -and $Options['RequireClosedWindow'] -and (-not $Context.Closure.PolicySha -or $Context.Closure.ConfSha -ne $Context.Closure.PolicySha)) { $reasons += 'La ventana exige el cierre ACTIVO: default.conf externo no es la politica cerrada versionada (ejecute Set-EntryClosure.ps1 -Action Close).' }
+    # Closure policy selection: the operative policy by default; the Manufactura policy only when explicitly selected AND its SHA-256 matches the authorised one.
+    $closureSelected = $(if ($Options.Contains('ClosurePolicy') -and [string]$Options['ClosurePolicy'] -eq 'Manufactura') { 'Manufactura' } else { 'Operativa' })
+    $closureWant = $(if ($Options.Contains('ClosurePolicySha256')) { ([string]$Options['ClosurePolicySha256']).ToLower() } else { '' })
+    $closureSha = [string]$Context.Closure.PolicySha
+    if ($closureSelected -eq 'Manufactura') {
+        $closureSha = $(if ($Context.Closure.ContainsKey('ManufacturaPolicySha')) { [string]$Context.Closure.ManufacturaPolicySha } else { '' })
+        if (-not $closureWant) { $reasons += '-ClosurePolicy Manufactura exige -ClosurePolicySha256 (SHA-256 autorizado de la politica de cierre de Manufactura).' }
+        elseif (-not $closureSha) { $reasons += 'Falta deploy/closure/entry-closure-policy.manufactura.conf.' }
+    }
+    if ($closureWant -and $closureSha -and $closureSha -ne $closureWant) { $reasons += ('La politica de cierre seleccionada (' + $closureSelected + ', ' + $closureSha + ') no coincide con -ClosurePolicySha256.') }
+    $closureRequired = ($Options.Contains('RequireClosedWindow') -and [bool]$Options['RequireClosedWindow'])
+    $closureMf = $(if ($Context.PSObject.Properties.Name -contains 'Manufacturing') { $Context.Manufacturing } else { $null })
+    if ($closureRequired -and $closureMf -and [string]$closureMf.Enabled -ceq 'true' -and $closureSelected -ne 'Manufactura') { $reasons += 'La configuracion habilita Manufactura: la ventana cerrada debe usar la politica de Manufactura (-ClosurePolicy Manufactura -ClosurePolicySha256 ...).' }
+    if ($closureRequired -and (-not $closureSha -or $Context.Closure.ConfSha -ne $closureSha)) { $reasons += 'La ventana exige el cierre ACTIVO: default.conf externo no es la politica cerrada versionada (ejecute Set-EntryClosure.ps1 -Action Close).' }
     if (-not $Context.Health) {
         $reasons += 'No se pudo leer /api/health de PROD.'
     } else {
@@ -902,6 +927,6 @@ function Invoke-DeployMain {
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
     $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
-        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ManufacturingReadinessEvidence = $ManufacturingReadinessEvidence; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ManufacturingReadinessEvidence = $ManufacturingReadinessEvidence; ClosurePolicy = $ClosurePolicy; ClosurePolicySha256 = $ClosurePolicySha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
     exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }

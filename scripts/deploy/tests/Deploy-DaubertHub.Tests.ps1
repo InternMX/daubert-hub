@@ -931,3 +931,46 @@ Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readin
         $script:Mutations.Count | Should Be 0
     }
 }
+
+Describe 'Politica de cierre seleccionable: la operativa por omision; la de Manufactura solo de forma explicita y con su SHA-256 autorizado' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'op'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+    }
+
+    It 'por omision nada cambia: con -RequireClosedWindow el cierre activo debe ser la politica OPERATIVA' {
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true }).Count | Should Be 0
+        $script:Fake.Closure.ConfSha = 'mf'; $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true }) -join ' ') | Should Match 'cierre ACTIVO'
+    }
+
+    It 'la politica operativa admite comprobar su SHA-256 y bloquea si no coincide' {
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{ ClosurePolicySha256 = 'OP' }).Count | Should Be 0
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicySha256 = 'zz' }) -join ' ') | Should Match 'no coincide con -ClosurePolicySha256'
+    }
+
+    It 'Manufactura sin SHA-256, con SHA-256 distinto o sin el archivo: bloquea' {
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura' }) -join ' ') | Should Match 'exige -ClosurePolicySha256'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'zz' }) -join ' ') | Should Match 'no coincide con -ClosurePolicySha256'
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'op'; PolicySha = 'op' }; $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }) -join ' ') | Should Match 'Falta deploy/closure/entry-closure-policy.manufactura.conf'
+    }
+
+    It 'Manufactura con el SHA-256 autorizado: la ventana exige que el default.conf externo sea ESA politica' {
+        $opt = @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf'; RequireClosedWindow = $true }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false $opt) -join ' ') | Should Match 'cierre ACTIVO'
+        $script:Fake.Closure.ConfSha = 'mf'; $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false $opt).Count | Should Be 0
+    }
+
+    It 'una configuracion que habilita Manufactura dentro de una ventana cerrada exige la politica de Manufactura' {
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true; ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt' }) -join ' ') | Should Match 'debe usar la politica de Manufactura'
+    }
+}
