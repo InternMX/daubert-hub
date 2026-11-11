@@ -8,8 +8,9 @@ const { spawnSync } = require('node:child_process');
 const { prepare } = require('./quarantine.cjs');
 const hash = x => createHash('sha256').update(x).digest('hex');
 const migration = kind => fs.readFileSync(path.resolve(__dirname, `../../../database/migrations/daubert_global/20261106_025_caterpillar_folio_recovery_test.${kind}.sql`), 'utf8');
+const renewal = kind => fs.readFileSync(path.resolve(__dirname, `../../../database/migrations/daubert_global/20261111_026_caterpillar_custody_renewal_test.${kind}.sql`), 'utf8');
 
-exports.run = async (pool, root) => {
+exports.run = async (pool, root, converterScript) => {
   const q = async (sql, values = []) => (await pool.query(sql, values)).rows;
   // This helper truncates synthetic fixtures: refuse a caller supplying the shared TEST pool.
   root=path.resolve(root);
@@ -20,6 +21,9 @@ exports.run = async (pool, root) => {
   const instance=(await q("SELECT current_database() AS db,current_setting('data_directory') AS dir,inet_server_port() AS port"))[0];
   assert.equal(instance.db,'daubert_hub_test');assert.equal(instance.port,55441);
   assert.equal(path.resolve(instance.dir).toLowerCase(),path.join(root,'pgdata').toLowerCase());
+  assert.equal(converterScript,path.join(root,'converter.ps1'),'ISOLATED_CONVERTER_REQUIRED');
+  assert.equal(path.resolve(fs.realpathSync(converterScript)).toLowerCase(),converterScript.toLowerCase());
+  assert.equal(fs.lstatSync(converterScript).nlink,1,'CONVERTER_LINK_REJECTED');
   const role = async (name, sql, values = [], after) => {
     assert.ok(['daubert_hub_test_user','n8n_cat_test','cat_recovery_test_coordinator'].includes(name));
     const c = await pool.connect();
@@ -91,6 +95,59 @@ exports.run = async (pool, root) => {
     assert.equal((await q('SELECT siguiente_folio::text AS n FROM operacion.series_documentales WHERE serie_id=$1',[f.series]))[0].n,String(next));
   }
   async function test(label, body) { const f=await seed(); await body(f); console.log('PASS',label); }
+  await test('025 expiry reproduced; 026 up/down/up preserves history and coordinator-only renewal', async f => {
+    await request(f);await attest(f);
+    await q("UPDATE cat_recovery_test.requests SET verified_at=clock_timestamp()-interval '6 minutes' WHERE request_id=$1",[f.requestId]);
+    const before=(await q('SELECT verified_at FROM cat_recovery_test.requests WHERE request_id=$1',[f.requestId]))[0].verified_at;
+    await attest(f);
+    assert.equal((await q('SELECT verified_at FROM cat_recovery_test.requests WHERE request_id=$1',[f.requestId]))[0].verified_at.getTime(),before.getTime());
+    await assert.rejects(start(f),/QUARANTINE_UNPROVEN/);
+    await unchanged(f);
+    console.log('REPRODUCED_025_EXPIRED_ATTESTATION_CANNOT_RENEW');
+    await assert.rejects(q(renewal('up')),/MUST_REMAIN_DISABLED/);await q('ROLLBACK');
+    await q('UPDATE cat_recovery_test.settings SET enabled=false');
+    const history=async()=>(await q(`SELECT jsonb_build_object(
+      'requests',(SELECT jsonb_agg(to_jsonb(r)-'verified_at' ORDER BY request_id) FROM cat_recovery_test.requests r),
+      'executions',(SELECT jsonb_agg(to_jsonb(e) ORDER BY ejecucion_id) FROM ops.ejecuciones_automatizacion e),
+      'reservations',(SELECT jsonb_agg(to_jsonb(r) ORDER BY reserva_id) FROM operacion.reservas_folios r),
+      'series',(SELECT jsonb_agg(to_jsonb(s) ORDER BY serie_id) FROM operacion.series_documentales s)) AS data`))[0].data;
+    const priorHistory=await history();
+    const old=(await q("SELECT prosrc,proacl::text AS acl FROM pg_proc WHERE oid='cat_recovery_test.attest(uuid,text,text)'::regprocedure"))[0];
+    await q(renewal('precheck'));await q(renewal('up'));await q(renewal('postcheck'));
+    const acl=(await q("SELECT proacl::text AS acl FROM pg_proc WHERE oid='cat_recovery_test.attest(uuid,text,text)'::regprocedure"))[0].acl;
+    assert.equal(acl,old.acl);
+    await q(renewal('down'));
+    assert.deepEqual((await q("SELECT prosrc,proacl::text AS acl FROM pg_proc WHERE oid='cat_recovery_test.attest(uuid,text,text)'::regprocedure"))[0],old);
+    await q(renewal('up'));await q(renewal('postcheck'));
+    assert.deepEqual(await history(),priorHistory,'026 DDL must preserve all historical rows');
+    assert.equal((await q('SELECT verified_at FROM cat_recovery_test.requests WHERE request_id=$1',[f.requestId]))[0].verified_at.getTime(),before.getTime());
+    await assert.rejects(attest(f),/DISABLED/);
+    await q('UPDATE cat_recovery_test.settings SET enabled=true');
+    for(const name of ['daubert_hub_test_user','n8n_cat_test'])
+      await assert.rejects(role(name,'SELECT cat_recovery_test.attest($1,$2,$3)',[f.requestId,'{}',hash('{}')]),/permission denied/);
+    await attest(f);
+    assert.equal((await service.assess(f.original.ejecucion_id)).eligible,true);
+    assert.deepEqual(await history(),priorHistory,'Renewal must change only verified_at, never IDs, evidence or emission permission');
+    const recorded=(await q('SELECT manifest::text AS text,manifest_sha256 AS sha FROM cat_recovery_test.requests WHERE request_id=$1',[f.requestId]))[0];
+    assert.notEqual(hash(recorded.text),recorded.sha);
+    await assert.rejects(role('cat_recovery_test_coordinator','SELECT cat_recovery_test.attest($1,$2,$3)',
+      [f.requestId,recorded.text,hash(recorded.text)]),/ATTESTATION_CONFLICT/);
+    await assert.rejects(role('cat_recovery_test_coordinator','SELECT cat_recovery_test.attest($1,$2,$3)',
+      [f.requestId,recorded.text,recorded.sha]),/QUARANTINE_UNPROVEN/);
+    await assert.rejects(attest(f,{version:'CAT_QUARANTINE_V1',files:[]}),/ATTESTATION_CONFLICT/);
+    await assert.rejects(role('cat_recovery_test_coordinator','SELECT cat_recovery_test.attest($1,$2,$3)',[
+      f.requestId,JSON.stringify({version:'CAT_QUARANTINE_V1',files:[]}),'0'.repeat(64)]),/ATTESTATION_CONFLICT/);
+    const a=await start(f);assert.equal(a.canEmit,true);assert.equal((await start(f)).canEmit,false);
+    await assert.rejects(attest(f),/INVALID_STATE/);
+    const receipt=(await role('daubert_hub_test_user','SELECT cat_recovery_test.reconcile($1,$2) AS receipt',[f.requestId,f.original.ejecucion_id]))[0].receipt;
+    assert.equal(receipt.canEmit,false);assert.equal(receipt.consistent,true);await unchanged(f);
+    await role('n8n_cat_test',"SELECT * FROM ops.fn_finalizar_caterpillar_test($1,'recovery-worker','ERROR','synthetic','Renewal terminal-state regression')",[a.executionId]);
+    await assert.rejects(attest(f),/INVALID_STATE/);
+    await q("UPDATE cat_recovery_test.requests SET state='REJECTED' WHERE request_id=$1",[f.requestId]);
+    await assert.rejects(attest(f),/INVALID_STATE/);
+    await q("UPDATE cat_recovery_test.requests SET state='RESERVED' WHERE request_id=$1",[f.requestId]);
+    await unchanged(f);
+  });
   await test('real gate + idempotent request/start preserves 111-114 and 115', async f => {
     assert.deepEqual(await request(f),await request(f)); await attest(f);
     const a=await start(f); const b=await start(f); assert.equal(a.canEmit,true);assert.equal(b.canEmit,false);assert.equal(a.executionId,b.executionId);
@@ -174,15 +231,15 @@ exports.run = async (pool, root) => {
     fs.mkdirSync(html);fs.mkdirSync(output);
     for(let folio=111;folio<=114;folio++)fs.writeFileSync(path.join(html,`REM ${folio} SYNTHETIC.html`),
       `<!doctype html><html lang="es"><meta charset="utf-8"><title>TEST sintético ${folio}</title><h1>NO ENTREGAR — TEST AISLADO</h1><p>Folio sintético ${folio}</p></html>`,{flag:'wx'});
-    assert.deepEqual(fs.readdirSync(output),[]); // Existing TEST converter may overwrite; never give it a reused destination.
-    const converted=spawnSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-File',
-      'C:/Users/<WINDOWS_USER>/Documents/Dropbox/Pruebas/REMISIONES CAT/05_ARCHIVOS AUXILIARES/SCRIPTS/convertir-cat-pdf.ps1',
-      '-TempDir',html,'-OutDir',output],{encoding:'utf8',timeout:120000});
+    assert.deepEqual(fs.readdirSync(output),[]);
+    const browserTemp=path.join(root,'browser-temp');fs.mkdirSync(browserTemp);
+    const converted=spawnSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-File',converterScript,
+      '-TempDir',html,'-OutDir',output],{encoding:'utf8',timeout:120000,env:{...process.env,TEMP:browserTemp,TMP:browserTemp}});
     fs.writeFileSync(path.join(root,'synthetic-conversion.log'),converted.stdout||'',{flag:'wx'});
-    assert.equal(converted.status,0,'Unmodified TEST converter must succeed in the fresh isolated destination');
+    assert.ifError(converted.error);assert.equal(converted.signal,null);assert.equal(converted.status,0,'Isolated converter must succeed');
     const generated=[];
     for(let folio=111;folio<=114;folio++){
-      const pdf=path.join(output,`REM ${folio} SYNTHETIC.pdf`);const bytes=fs.readFileSync(pdf);assert.ok(bytes.subarray(0,5).toString()==='%PDF-');
+      const pdf=path.join(output,`REM ${folio} SYNTHETIC.pdf`),bytes=fs.readFileSync(pdf);assert.ok(bytes.subarray(0,5).toString()==='%PDF-');
       generated.push({folio,path:pdf,size:bytes.length,sha256:hash(bytes)});
       await role('n8n_cat_test','SELECT * FROM operacion.fn_registrar_remision_caterpillar_test($1,$2,$3,$4,$5,$6,$7::jsonb)',
         [gate.ejecucion_id,'adapter-worker','SYNTHETIC_CAT',folio,'2026-11-06',pdf,JSON.stringify([{codigo_interno:`SYNTHETIC-${folio}`,cantidad_texto:'1 PZA'}])]);

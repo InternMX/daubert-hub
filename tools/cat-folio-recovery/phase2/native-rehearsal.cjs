@@ -11,9 +11,19 @@ const phase3 = process.argv[2] === '--phase3-reference-schema';
 const port = phase3 ? 55442 : 55441;
 
 async function main() {
-  assert.equal(process.argv.length, 4);
+  assert.equal(process.argv.length, phase3 ? 4 : 6);
+  let converterBytes;
+  if (!phase3) {
+    assert.equal(process.argv[4], '--converter-script', 'An explicit isolated converter copy is required');
+    const converter=path.resolve(process.argv[5]),approved=path.resolve(os.tmpdir(),'opencode');
+    const relative=path.relative(approved,converter);
+    assert.ok(relative && relative!=='..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative), 'ISOLATED_CONVERTER_REQUIRED');
+    assert.equal(path.resolve(fs.realpathSync(converter)).toLowerCase(),converter.toLowerCase(), 'CONVERTER_LINK_REJECTED');
+    const stat=fs.lstatSync(converter);assert.ok(stat.isFile() && stat.nlink===1 && /\.ps1$/i.test(converter), 'CONVERTER_FILE_REQUIRED');
+    converterBytes=fs.readFileSync(converter);
+  }
   let dump;
-  if (phase3) {
+  if (phase3 || process.argv[2] === '--reference-schema') {
     const bytes=fs.readFileSync(process.argv[3]);
     assert.equal(createHash('sha256').update(bytes).digest('hex'),'d11f301535753b5872bb68cd0b798c11e3183bd5e37ba2b230806b4809f31eeb','Frozen TEST schema changed');
     dump=bytes.toString('utf8');
@@ -26,7 +36,11 @@ async function main() {
   assert.equal(url.search + url.hash, '');
   const source = new Client({ connectionString: url.href, options: '-c default_transaction_read_only=on -c statement_timeout=15000' });
   await source.connect();
-  try { assert.equal((await source.query('SELECT current_database() AS db')).rows[0].db, 'daubert_hub_test'); }
+   try {
+     assert.equal((await source.query('SELECT current_database() AS db')).rows[0].db, 'daubert_hub_test');
+     assert.equal((await source.query("SELECT to_regnamespace('cat_recovery_test') IS NOT NULL AS installed")).rows[0].installed,
+       false, 'PRE_025_REFERENCE_REQUIRED: use --reference-schema with the reviewed pre-025 schema-only dump');
+   }
   finally { await source.end(); }
   dump = native('pg_dump', ['-h', url.hostname, '-p', url.port || '5432', '-U', decodeURIComponent(url.username), '-d', 'daubert_hub_test',
     '--schema-only', '--schema=core', '--schema=ops', '--schema=operacion', '--schema=security', '--schema=audit',
@@ -36,6 +50,8 @@ async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'opencode', phase3 ? 'cat-recovery-phase3-' : 'cat-recovery-phase2-'));
   fs.writeFileSync(path.join(root, 'test-schema.sql'), dump, { flag: 'wx' });
   fs.writeFileSync(path.join(root, 'sandbox.json'), JSON.stringify({ isolated: true, port, database: 'daubert_hub_test' }), { flag: 'wx' });
+  const converterCopy=path.join(root,'converter.ps1');
+  if(converterBytes)fs.writeFileSync(converterCopy,converterBytes,{flag:'wx'});
   const server=new TemporaryPostgres(root,port),data=server.spec.data;
   let pool;
   try {
@@ -50,8 +66,8 @@ async function main() {
     assert.equal(path.resolve(identity.dir).toLowerCase(), path.resolve(data).toLowerCase());
     console.log('ISOLATED_NATIVE_POSTGRES', root, 'port', port, 'real TEST schemas core/ops/operacion/security/audit restored, zero source data');
     const testPath = path.join(__dirname, phase3 ? '../phase3/rehearse.cjs' : 'integration.cjs');
-    if (fs.existsSync(testPath)) await require(testPath).run(pool, root);
-    else console.log('SCHEMA_RESTORE_PASS');
+    assert.ok(fs.existsSync(testPath), 'Requested rehearsal suite is not included in this checkout');
+    await require(testPath).run(pool, root, converterCopy);
   } finally {
     let closeError;
     try{if(pool)await deadline(pool.end(),5000,'temporary pool close');}catch(error){closeError=error;}
