@@ -3,6 +3,8 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $releasePath = [IO.Path]::GetFullPath((Join-Path $here '..\Invoke-DaubertRelease.ps1'))
 . $releasePath -Plan -ExpectedCommit ('a' * 40)
 
+function git { throw 'Git externo prohibido en las pruebas del orquestador.' }
+
 Describe 'Fase 2A: contrato y resumen seguro' {
     BeforeEach {
         $script:Approved = 'a' * 40
@@ -11,10 +13,16 @@ Describe 'Fase 2A: contrato y resumen seguro' {
         $script:ReleaseOutput = @('Resumen: 21 PASS, 2 WARN, 0 FAIL', 'Commit actual en PROD : abc1234')
         $script:ReleasePrinted = @()
         Mock Write-Host { $script:ReleasePrinted += [string]$Object }
+        Mock Invoke-ReleaseDeployment { throw 'Deployment prohibido en Plan' }
+        Mock Write-ReleaseRecord { throw 'Evidencia prohibida en Plan' }
         Mock Invoke-ReleaseRead {
             if ($Operation -eq 'Head') { return @{ Code = 0; Out = @($script:ReleaseHead) } }
             return @{ Code = $script:ReleaseCode; Out = $script:ReleaseOutput }
         }
+    }
+    AfterEach {
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+        Assert-MockCalled Write-ReleaseRecord -Scope It -Times 0 -Exactly
     }
 
     It 'acepta SHA completo, resume preflight y estado, y delega una sola simulacion' {
@@ -79,12 +87,13 @@ Describe 'Fase 2A: contrato y resumen seguro' {
         ($script:ReleasePrinted -join '|') | Should Not Match 'ficcion|secreto-ficticio|example.invalid'
     }
 
-    It 'declara ambos parametros obligatorios y no ofrece Deploy ni Rollback' {
+    It 'exige ExpectedCommit, ofrece Plan y Deploy excluyentes y no ofrece Rollback' {
         $command = Get-Command $releasePath
-        foreach ($name in @('Plan', 'ExpectedCommit')) {
+        foreach ($name in @('ExpectedCommit')) {
             @($command.Parameters[$name].Attributes | Where-Object { $_ -is [Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count | Should Be 1
         }
-        $command.Parameters.ContainsKey('Deploy') | Should Be $false
+        $command.Parameters.ContainsKey('Deploy') | Should Be $true
+        (Invoke-ReleaseMain $true $script:Approved $true) | Should Be 3
         $command.Parameters.ContainsKey('Rollback') | Should Be $false
     }
 }
@@ -174,6 +183,16 @@ Describe 'Fase 2A: reutiliza WhatIf sin mutaciones' {
 }
 
 Describe 'Fase 2A: frontera externa' {
+    It 'lee el codigo nativo global sin ocultarlo con una variable local vacia' {
+        Mock git { $global:LASTEXITCODE = 0; 'a' * 40 }
+        $r = Invoke-ReleaseRead 'Head'
+        $r.Code | Should Be 0
+        $r.Out[0] | Should Be ('a' * 40)
+    }
+    It 'conserva un error nativo aunque exista salida' {
+        Mock git { $global:LASTEXITCODE = 128; 'a' * 40 }
+        (Invoke-ReleaseRead 'Head').Code | Should Be 128
+    }
     It 'rechaza operaciones desconocidas y candidatos invalidos antes de ejecutar procesos' {
         { Invoke-ReleaseRead 'Deploy' ('a' * 40) } | Should Throw
         { Invoke-ReleaseRead 'Simulation' '--help' } | Should Throw
@@ -183,5 +202,79 @@ Describe 'Fase 2A: frontera externa' {
         $text | Should Match ([regex]::Escape("'--no-optional-locks', '-C', " + '$script:ReleaseRoot' + ", 'rev-parse', '--verify', 'HEAD^{commit}'"))
         $text | Should Match ([regex]::Escape("'-WhatIf', '-Candidate', " + '$Commit'))
         $text | Should Not Match '(?i)\b(Start-Process|Set-Content|Out-File|New-Item|Start-Service|Restart-Service|Invoke-Sqlcmd|Start-Transcript)\b'
+    }
+}
+
+Describe 'Fase 2B: adaptador interactivo y resultados ambiguos' {
+    BeforeEach {
+        $script:SavedDeployPath = $script:ReleaseDeployPath
+        $script:ReleaseDeployPath = Join-Path $here 'fixtures\Invoke-FakeDeployment.ps1'
+        $script:ReleasePrinted = @(); $script:EvidenceRecord = $null
+        Mock Write-ReleaseRecord { $script:EvidenceRecord = $Record }
+    }
+    AfterEach { $script:ReleaseDeployPath = $script:SavedDeployPath }
+
+    It 'invoca el script fijo con Deploy, SHA y controles, y propaga exit sin revelar streams' {
+        $location = (Get-Location).Path
+        $result = @(Invoke-ReleasePublish ('a' * 40) $true 'abc1234' '1.1.1' 6>&1)
+        $result[-1] | Should Be 0
+        $script:EvidenceRecord.exitCode | Should Be 0
+        (Get-Location).Path | Should Be $location
+        ($result -join '|') | Should Not Match 'valor-ficticio|salida-libre'
+    }
+    It 'propaga el error del script sin imprimir salida libre y conserva rollback manual' {
+        $result = @(Invoke-ReleasePublish ('a' * 40) $false 'abc1234' '1.1.1' 6>&1)
+        $result[-1] | Should Be 5
+        ($result -join '|') | Should Match 'seccion ROLLBACK'
+        ($result -join '|') | Should Not Match 'valor-ficticio|salida-libre'
+    }
+    It 'un codigo inesperado o una excepcion nunca se informa como exito' {
+        Mock Write-Host { $script:ReleasePrinted += [string]$Object }
+        Mock Invoke-ReleaseDeployment { @{ Code = 99; Out = @('token=ficcion') } }
+        (Invoke-ReleasePublish ('a' * 40) $false 'abc1234' '1.1.1') | Should Be 5
+        Mock Invoke-ReleaseDeployment { throw 'token=ficcion' }
+        (Invoke-ReleasePublish ('a' * 40) $false 'abc1234' '1.1.1') | Should Be 5
+        ($script:ReleasePrinted -join '|') | Should Not Match 'ficcion'
+    }
+    It 'Deploy rechaza simulacion sin metadatos unicos y no solicita confirmacion' {
+        Mock Invoke-ReleaseRead {
+            if ($Operation -eq 'Head') { return @{ Code = 0; Out = @('a' * 40) } }
+            return @{ Code = 0; Out = @('APP_VERSION : 1.1.1', 'Commit actual en PROD : abc1234', 'Commit actual en PROD : abc1234') }
+        }
+        Mock Invoke-ReleaseDeployment { throw 'No debe llegar aqui' }
+        (Invoke-ReleaseMain $false ('a' * 40) $true) | Should Be 1
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+    }
+}
+
+Describe 'Fase 2B: evidencia local minima, sin dependencia operativa' {
+    BeforeEach {
+        $script:ReleasePrinted = @()
+        Mock Write-Host { $script:ReleasePrinted += [string]$Object }
+    }
+    It 'escribe JSON fuera del repo con metadatos estructurados, no salida de procesos' {
+        $root = Join-Path $TestDrive 'local'
+        $record = [ordered]@{ schema = 1; approvedCommit = ('a' * 40); previousCommit = 'abc1234'; candidateVersion = '1.1.1'; exitCode = 0; postChecksPassed = $true }
+        Write-ReleaseRecord $record $root
+        $files = @(Get-ChildItem -LiteralPath (Join-Path $root 'DaubertHub\releases') -Filter '*.json')
+        $files.Count | Should Be 1
+        $json = Get-Content -LiteralPath $files[0].FullName -Raw | ConvertFrom-Json
+        $json.approvedCommit | Should Be ('a' * 40)
+        $json.exitCode | Should Be 0
+    }
+    It 'rechaza rutas del repositorio, Dropbox y rutas relativas sin escribir' {
+        $before = @(Get-ChildItem -LiteralPath $TestDrive -Recurse -Filter '*.json').Count
+        foreach ($root in @($script:ReleaseRoot, (Join-Path $TestDrive 'Dropbox'), 'relativa')) {
+            Write-ReleaseRecord @{ exitCode = 0 } $root
+        }
+        ($script:ReleasePrinted -join '|') | Should Not Match 'guardada en'
+        @(Get-ChildItem -LiteralPath $TestDrive -Recurse -Filter '*.json').Count | Should Be $before
+    }
+    It 'rechaza un ancestro redirigido y omite evidencia sin exponer el error' {
+        Mock Test-Path { $true }
+        Mock Get-Item { [pscustomobject]@{ Attributes = [IO.FileAttributes]::ReparsePoint } }
+        Write-ReleaseRecord @{ exitCode = 0 } (Join-Path $TestDrive 'redirect')
+        ($script:ReleasePrinted -join '|') | Should Match 'evidencia local no guardada'
+        ($script:ReleasePrinted -join '|') | Should Not Match 'Ruta redirigida'
     }
 }
