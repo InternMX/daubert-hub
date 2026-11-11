@@ -85,7 +85,7 @@ Cuentas de demostración (§4) con la contraseña ya cambiada:
 ```
 ENSAYO_PASSWORD=<contraseña> ENSAYO_ADMIN=<admin de demo> ENSAYO_GENERAL=<general de demo> node tools/ensayo-liberacion/smoke-http.cjs http://localhost:8081 enabled
 ```
-Esperado: inicio de sesión de ambas; `/clients`, `/automations/overview`, `/recent-activity` 200; rutas de Manufactura responden; permisos ADMIN/GENERAL correctos; sin sesión 401. Después, a mano: crear un borrador, autoguardado, consulta del borrador por la otra cuenta GENERAL, firma de menos de 2 MB, finalizar y descargar el PDF (con leyenda de prueba), nueva revisión, **Actividad reciente** muestra los tres eventos con enlace.
+Esperado: inicio de sesión de ambas; `/clients`, `/automations/overview`, `/recent-activity` 200; rutas de Manufactura responden; permisos ADMIN/GENERAL correctos; sin sesión 401. Después, a mano: crear un borrador, autoguardado, consulta del borrador por la otra cuenta GENERAL, firma de menos de 2 MB, finalizar y descargar el PDF (sin leyenda de prueba: ver el aviso de la guía), nueva revisión, **Actividad reciente** muestra los tres eventos con enlace.
 
 ### 3.9 Recuperación ante fallos
 | Situación | Acción |

@@ -32,3 +32,4 @@ Solo para instancias **desechables** (réplica de producción, contenedores loca
 | `ensayo-respaldo-cifrado.ps1` | Ensayo 6D del ciclo completo con el pipeline real de un clon y claves age DESECHABLES (positivos y negativos); nunca usa claves, configuración ni destinos operativos |
 | `comparar_formatos_originales.py <originales> <generados> <salida>` | Material de revisión visual de los ocho formatos (Fase 6E): lámina original/generado, mediciones y ficha de aprobación por formato. No decide la aprobación |
 | `diagnostico-test-solo-lectura.ps1 [-EnvFile]` | Diagnóstico de solo lectura de `daubert_hub_test` (catálogo de manufactura 101–105, cuentas, clientes); sesión forzada a solo lectura; no imprime la contraseña |
+| `test-demo/` | Fase 6F: override de Compose de TEST (loopback, imágenes fijas), entorno de aislamiento para la demostración (sin secretos) y validación funcional corta con las cuentas de demostración |

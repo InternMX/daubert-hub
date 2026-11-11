@@ -1,6 +1,6 @@
 # Guía de demostración · Gestor de Hojas de Manufactura (ambiente de pruebas)
 
-Duración: 30–40 minutos. Ambiente: **TEST** (`daubert_hub_test`, emisión `PRUEBA`). **No** se conecta ni se modifica producción. Los PDF de TEST llevan la leyenda de prueba; no son documentos válidos.
+Duración: 30–40 minutos. Ambiente: **TEST** (`daubert_hub_test`, emisión `PRUEBA`). **No** se conecta ni se modifica producción. **Atención:** el PDF finalizado **no lleva ninguna leyenda de prueba** (decisión de diseño: la plantilla se respeta tal cual y TEST se identifica solo en la interfaz). Un PDF de TEST impreso no se distingue de uno válido: usar códigos `DEMO…`, poner «(DEMOSTRACIÓN)» en la descripción y no repartir impresiones.
 
 ## 0. Qué debe prepararse antes de la sesión (hoy NO está listo)
 Estado comprobado el 2026-11-10 (solo lectura): los contenedores `daubert-hub-test-web-1` y `daubert-hub-test-api-1` están **detenidos desde hace cinco semanas**, es decir, TEST no está en marcha y sus imágenes son anteriores a la versión candidata. Antes de la sesión, alguien autorizado debe:
