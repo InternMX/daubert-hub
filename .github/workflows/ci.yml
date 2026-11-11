@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Release plan tests (Windows PowerShell 5.1, mocked operations)
+      - name: Supervised release tests (Windows PowerShell 5.1, mocked operations)
         shell: powershell
         run: |
           Import-Module Pester -RequiredVersion 3.4.0

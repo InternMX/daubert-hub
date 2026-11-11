@@ -1,6 +1,7 @@
-# Pipeline de preparación de releases (Fases 1 y 2A, sin despliegue)
+# Pipeline de releases supervisados (Fases 1, 2A y 2B)
 
-Este proceso **no despliega ni configura PROD**. Complementa el CI existente y el runbook
+GitHub Actions **no despliega ni configura PROD**. El deployment de Fase 2B se ejecuta
+localmente con un operador y confirmación real. Complementa el CI existente y el runbook
 [`deployment-checklist.md`](deployment-checklist.md), que sigue siendo la autoridad para publicar.
 
 ## Qué quedó automatizado
@@ -33,7 +34,9 @@ La clasificación usa **rutas modificadas**; no analiza el contenido de SQL ni c
 
 - Promoción, importación o activación de workflows de n8n (TEST y PROD comparten instancia `:5678`, pero tienen workflows separados).
 - Migraciones PostgreSQL: precheck, backup inmediato, aplicación y postcheck mantienen su procedimiento controlado.
-- Construcción y publicación de imágenes Docker, creación de tags o releases GitHub, ejecución remota y rollback automático.
+- Construcción/publicación de imágenes desde Actions, creación de tags o releases GitHub,
+  ejecución remota y rollback automático. Fase 2B reutiliza el build local y las anclas del
+  deployment existente, sin runner con acceso a PROD.
 - Ejecutar pruebas de integración sobre `daubert_hub_test` desde GitHub Actions: requiere preparar una base temporal reproducible. No se conecta al servidor real.
 
 ## Fase 2A: plan local de solo lectura
@@ -68,12 +71,48 @@ y operaciones externas simuladas; no ejecuta el orquestador contra servicios rea
 El XML vive en `RUNNER_TEMP`, fuera del checkout, y se publica como artifact
 `release-plan-tests` por 14 días. El job de validación API/Web de Fase 1 continúa vigente.
 
-**Verificación local de esta entrega (2026-11-11):** Windows PowerShell
+**Verificación local de Fase 2A (2026-11-11):** Windows PowerShell
 `5.1.26100.9711`, Pester `3.4.0`: **73 pruebas aprobadas, 0 fallidas, 0 omitidas**
 (55 existentes + 18 del orquestador), con XML fuera del repositorio. Ambos scripts
 nuevos pasan el parser de PowerShell 5.1; una invocación CLI con SHA inválido devuelve
 `3` antes de operar. Solo se utilizaron mocks y valores ficticios; no se ejecutó el
 plan real, preflight real ni pruebas contra PROD.
+
+## Fase 2B: entrega supervisada
+
+Flujo: **CI verde → reporte de Fase 1 → aprobación del SHA completo → sincronización manual
+segura de `main` → un comando `Invoke-DaubertRelease.ps1 -Deploy -ExpectedCommit <SHA>` →
+confirmación interactiva real → revalidación → deployment y postchecks existentes**.
+
+El orquestador no actualiza Git ni decide la aprobación. `-Deploy` agrega el requisito
+estricto de remoto accesible y candidato == `HEAD` == `origin/main` == `refs/heads/main`,
+con checkout `main` limpio. `-Plan` conserva su política de solo lectura y WARN heredados.
+No existen excepciones para database/n8n ni rollback automático. `-RequireClosedWindow`
+se transmite, pero el orquestador no prepara ni cambia el cierre.
+
+Se modificó mínimamente `Deploy-DaubertHub.ps1` para ofrecer `-RequireSynchronizedMain`
+y revalidar **después** de que el operador confirme, antes de toda mutación. Esta extensión
+es necesaria para no confiar en comprobaciones anteriores a una espera interactiva y
+reutiliza los gates, anclas, build y postchecks actuales. Además, una ancla prevista para
+reutilizarse que desaparece ahora bloquea antes del build. El preflight no se modificó.
+
+El resultado del intento se registra sin secretos, best-effort, en
+`%LOCALAPPDATA%\DaubertHub\releases`, fuera del repo y Dropbox; una ruta redirigida o un
+fallo de escritura omiten el registro con advertencia y no cambian el resultado operativo.
+Los rechazos anteriores a la delegación no generan archivos. Ver comandos, códigos y
+límites en [deployment-checklist](deployment-checklist.md#publicación-supervisada-con-un-comando-fase-2b).
+
+El job Windows `release-plan` ya ejecuta ambas suites Pester (Plan y Deploy), con todos
+los procesos externos simulados. No se añadieron runners productivos ni credenciales.
+
+**Verificación local de Fase 2B (2026-11-11):** Windows PowerShell `5.1.26100.9711`,
+Pester `3.4.0`: **102 pruebas aprobadas, 0 fallidas, 0 omitidas** (73 previas + 29 nuevas).
+Incluye éxito, cancelación, remoto inaccesible/ambiguo, SHA incorrecto, árbol sucio,
+sin cambios, database/n8n, preflight fallido, Docker, health posterior, anclas ausentes o
+alteradas, revalidación tras confirmar, seguridad de la evidencia y Plan sin mutaciones.
+Los cinco archivos PowerShell modificados/nuevos pasan el parser 5.1. XML NUnit fuera
+del repositorio: `%TEMP%\opencode\daubert-release-phase2b-tests.xml`. No se ejecutaron
+deployments, preflight reales ni pruebas contra PROD; solo mocks y un script fixture inerte.
 
 ## Uso local del clasificador
 

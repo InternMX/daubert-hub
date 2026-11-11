@@ -59,7 +59,7 @@ powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\depl
 $LASTEXITCODE
 ```
 
-`Invoke-DaubertRelease.ps1` exige ambos parámetros y compara el SHA completo con `HEAD`
+`Invoke-DaubertRelease.ps1 -Plan` exige el SHA aprobado y compara el SHA completo con `HEAD`
 antes y después de las comprobaciones. Acepta hexadecimal en mayúsculas o minúsculas;
 rechaza ramas, tags, SHA abreviados y argumentos adicionales de operación.
 Reutiliza **una sola ejecución de `Deploy-DaubertHub.ps1 -WhatIf -Candidate <SHA>`**:
@@ -75,17 +75,17 @@ Con preflight bloqueado o sin cambios, el procedimiento existente termina antes 
 | `3` | Uso incorrecto detectado por el orquestador: falta modo efectivo o SHA de formato inválido |
 
 Los errores del enlazador de parámetros de `powershell -File` (parámetro obligatorio omitido,
-parámetro desconocido como `-Deploy`/`-Rollback`) terminan con `1` antes de ejecutar el cuerpo.
+parámetro desconocido como `-Rollback`) terminan con `1` antes de ejecutar el cuerpo.
 
 **Límites y decisiones operativas:**
 
-- Solo lectura: Git con `--no-optional-locks`; Docker únicamente mediante las lecturas
+- `-Plan` es solo lectura: Git con `--no-optional-locks`; Docker únicamente mediante las lecturas
   del procedimiento existente. Nunca build/tag/up/down/restart, inicio de servicios,
-  SQL ni importación/activación/desactivación de n8n. No hay `-Deploy` ni `-Rollback`.
+  SQL ni importación/activación/desactivación de n8n. Para publicar, ver Fase 2B abajo; no hay `-Rollback`.
 - No recibe credenciales ni opciones para reconocer migraciones/n8n ya aplicados o saltar
   compuertas. Un release con estos cambios que necesite excepciones queda bajo el runbook
   manual; esta entrega no concede esas excepciones.
-- No escribe logs, transcripciones ni temporales. La salida del hijo queda en memoria;
+- `-Plan` no escribe logs, transcripciones ni temporales. La salida del hijo queda en memoria;
   solo publica el resumen numérico del preflight y el commit desplegado si tienen formato
   conocido, además de mensajes fijos y el SHA aprobado. Descarta stderr y no imprime
   excepciones ni salida cruda (ni siquiera secretos sin etiqueta). Los detalles del plan
@@ -94,13 +94,79 @@ parámetro desconocido como `-Deploy`/`-Rollback`) terminan con `1` antes de eje
   el preflight puede advertir sin bloquear aunque compruebe `origin/main` local.
   `APTO` no acredita por sí solo sincronización remota verificada ni CI verde. El resumen
   conserva el número de advertencias; revisar su causa y la aprobación antes de publicar.
-  Endurecer esa política requiere una decisión operativa y queda fuera de este PR.
+  Fase 2B endurece esta política exclusivamente para `-Deploy`: remoto inaccesible bloquea.
 - El plan es una observación, no un bloqueo contra concurrencia ni un permiso reutilizable.
   Revalidar en la ventana autorizada; no copiar secretos al worktree de desarrollo.
 - El desarrollo ocurre en una rama/worktree independiente; las pruebas usan mocks y no
   ejecutan el plan real contra PROD. Un worktree de feature no supera el gate de rama `main`.
 
 Relación con los artifacts y el CI de Fase 1: [release-pipeline](release-pipeline.md#fase-2a-plan-local-de-solo-lectura).
+
+### Publicación supervisada con un comando (Fase 2B)
+
+**Solo en el servidor autorizado, en consola interactiva.** Aprobar el SHA completo del
+reporte de Fase 1 y comprobar su CI. Antes de invocar el orquestador, el operador sincroniza
+el worktree productivo: verificar que está en `main`, sin cambios ni archivos sin seguimiento;
+si no lo está, detenerse y resolverlo sin borrar trabajo. Luego:
+
+```powershell
+$approved = '<SHA completo del expediente de aprobacion>'
+git fetch origin main
+# Exigir exit 0 y verificar que origin/main es EXACTAMENTE $approved antes de continuar.
+git rev-parse origin/main
+git merge --ff-only $approved
+# Exigir exit 0; nunca sustituir un rechazo por reset --hard, clean o un merge forzado.
+git status --short --branch
+git rev-parse HEAD
+# Con main limpia y HEAD == origin/main == SHA aprobado:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\Invoke-DaubertRelease.ps1 -Deploy -ExpectedCommit $approved
+$LASTEXITCODE
+```
+
+La sincronización es **manual y previa**, nunca parte del orquestador. Si `main` remoto ya
+avanzó, detenerse y revisar una nueva aprobación; no desplegar el SHA anterior por fuerza.
+`-Plan` y `-Deploy` son mutuamente excluyentes; sin modo o con ambos se devuelve `3`.
+
+`-Deploy` primero ejecuta el `-WhatIf` existente con `-RequireSynchronizedMain`: SHA completo
+igual a `HEAD`, ref local `origin/main` y **una única respuesta válida** para `refs/heads/main`
+de `git ls-remote`; exige `main` limpia y bloquea cualquier error o ambigüedad del remoto.
+Reutiliza preflight, delta y gates existentes: sin cambios Hub/Docker devuelve `2`; cambios
+`database/` o `n8n/` bloquean sin opciones para exceptuarlos.
+
+Después invoca **el script real** `Deploy-DaubertHub.ps1 -Deploy -Candidate <SHA>` con el
+control estricto, en la misma consola PowerShell. Su `Read-Host` pide la frase exacta
+`DEPLOY DAUBERT HUB`: el operador la escribe, no se inyecta stdin ni se usa `-NonInteractive`.
+Tras confirmar se vuelven a consultar contexto, gates, salud, delta y sincronización remota,
+inmediatamente antes de preservar anclas y reconstruir. Solo el script existente crea/verifica
+anclas, recrea `api web` y verifica Docker y health posterior; el orquestador no duplica esa lógica.
+
+**Ventana cerrada:** agregar `-RequireClosedWindow` al mismo comando cuando el procedimiento
+lo exija. Se transmite a simulación, deployment y revalidación. El cierre se prepara, cierra,
+recarga y abre únicamente mediante el procedimiento de cierre de entradas existente; el
+orquestador no cambia su estado. No declarar la ventana finalizada hasta completar ese runbook.
+
+Resultados de `-Deploy`: `0` deployment y verificaciones posteriores correctos; `1` bloqueado
+o cancelado (puede haber etiquetas de anclas creadas si se abortó su preservación); `2` sin
+cambios, no desplegado; `3` uso inválido; `5` deployment fallido o resultado incierto.
+Ante `5`, comprobar el estado y consultar **ROLLBACK** abajo: no hay rollback automático.
+
+La pantalla muestra SHA aprobado, anterior, versión candidata, estado de checks y resultado
+de deployment/postchecks. Descarta salida libre y errores externos; para diagnóstico detallado
+seguir este checklist en el entorno autorizado, sin transcripciones de credenciales.
+
+**Registro mínimo:** al terminar una delegación de deployment (incluida cancelación), escribe
+un JSON con UTC, SHA aprobado/anterior, versión, código, postchecks y requisito de cierre en
+`%LOCALAPPDATA%\DaubertHub\releases\<GUID>.json`. No contiene stdout, stderr, tokens ni rutas
+de credenciales. No escribe dentro del repo, en rutas con Dropbox ni mediante ancestros
+redirigidos/junctions. La escritura es best-effort: si no es segura o falla, muestra una
+advertencia fija y conserva el resultado del deployment; registrar entonces la evidencia
+manualmente fuera del repo y Dropbox. No genera registro para `-Plan` ni para rechazos previos
+a delegar `-Deploy`. Una interrupción del proceso puede impedir la evidencia final.
+
+Usar un único operador y mantener el worktree sin cambios durante toda la ventana. La
+revalidación no es un lock contra otros procesos; la aprobación externa y CI siguen siendo
+responsabilidad del operador. No usar esta entrega para SQL, n8n, rollback automático o cambios
+solo de configuración. Esta funcionalidad se valida en desarrollo exclusivamente con mocks.
 
 ### Preflight directo
 
