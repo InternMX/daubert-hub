@@ -1,12 +1,12 @@
-\# Daubert Hub — Primer despliegue supervisado CI/CD (2026-11-11)
+﻿# Daubert Hub — Primer despliegue supervisado CI/CD (2026-11-11)
 
 
 
-\*\*Estado:\*\* Despliegue exitoso y validación funcional aprobada.
+**Estado:** Despliegue exitoso y validación funcional aprobada.
 
 
 
-\## Información del release
+## Información del release
 
 
 
@@ -32,45 +32,45 @@
 
 
 
-\## Validaciones previas
+## Validaciones previas
 
 
 
-\- CI de GitHub Actions aprobado.
+- CI de GitHub Actions aprobado.
 
-\- Repositorio limpio y sincronizado con `origin/main`.
+- Repositorio limpio y sincronizado con `origin/main`.
 
-\- Preflight: 38 PASS, 1 WARN y 0 FAIL.
+- Preflight: 38 PASS, 1 WARN y 0 FAIL.
 
-\- Advertencia no bloqueante: candidato sin tag de release.
+- Advertencia no bloqueante: candidato sin tag de release.
 
-\- Respaldos PostgreSQL verificados mediante SHA-256.
+- Respaldos PostgreSQL verificados mediante SHA-256.
 
-\- Respaldo n8n OnChange del 11/11/2026 verificado.
+- Respaldo n8n OnChange del 11/11/2026 verificado.
 
-\- Evidencia de las imágenes anteriores registrada fuera del repositorio.
+- Evidencia de las imágenes anteriores registrada fuera del repositorio.
 
-\- Sin migraciones PostgreSQL ni cambios en workflows n8n.
-
-
-
-\## Despliegue
+- Sin migraciones PostgreSQL ni cambios en workflows n8n.
 
 
 
-1\. Se activó el cierre de entradas de Nginx y se verificó `CLOSURE ACTIVE`.
-
-2\. Se ejecutó el plan con `-RequireClosedWindow`, resultado APTO.
-
-3\. Se ejecutó el despliegue supervisado y se confirmó mediante `DEPLOY DAUBERT HUB`.
-
-4\. El orquestador reportó `DEPLOYMENT CORRECTO`, código 0.
-
-5\. Se ejecutaron `Reload` y `Open`, ambos correctamente.
+## Despliegue
 
 
 
-\## Validaciones posteriores
+1. Se activó el cierre de entradas de Nginx y se verificó `CLOSURE ACTIVE`.
+
+2. Se ejecutó el plan con `-RequireClosedWindow`, resultado APTO.
+
+3. Se ejecutó el despliegue supervisado y se confirmó mediante `DEPLOY DAUBERT HUB`.
+
+4. El orquestador reportó `DEPLOYMENT CORRECTO`, código 0.
+
+5. Se ejecutaron `Reload` y `Open`, ambos correctamente.
+
+
+
+## Validaciones posteriores
 
 
 
@@ -78,15 +78,15 @@ La API confirmó:
 
 
 
-\- Estado: `ok`.
+- Estado: `ok`.
 
-\- Entorno: `PRODUCTION`.
+- Entorno: `PRODUCTION`.
 
-\- Versión: `1.1.1`.
+- Versión: `1.1.1`.
 
-\- Commit: `de13370`.
+- Commit: `de13370`.
 
-\- PostgreSQL: `connected`.
+- PostgreSQL: `connected`.
 
 
 
@@ -98,7 +98,7 @@ No se ejecutaron reprocesos ni se enviaron notificaciones como parte del smoke t
 
 
 
-\## Recuperación
+## Recuperación
 
 
 
@@ -110,17 +110,17 @@ Anclas previstas:
 
 
 
-\- `daubert-hub-api:rollback-16153a8`
+- `daubert-hub-api:rollback-16153a8`
 
-\- `daubert-hub-web:rollback-16153a8`
-
-
-
-Expediente previo: `%LOCALAPPDATA%\\DaubertHub\\releases\\predeploy-20261111-160852.json`.
+- `daubert-hub-web:rollback-16153a8`
 
 
 
-\*\*Pendiente:\*\* anexar el resultado de la comprobación independiente de los digests de ambas anclas.
+Expediente previo: `%LOCALAPPDATA%\DaubertHub\releases\predeploy-20261111-160852.json`.
+
+
+
+**Pendiente:** anexar el resultado de la comprobación independiente de los digests de ambas anclas.
 
 
 
@@ -128,23 +128,23 @@ No se ejecutó rollback real en producción.
 
 
 
-\## Pendientes de mejora
+## Pendientes de mejora
 
 
 
-\- Investigar las dos ejecuciones omitidas del respaldo semanal de n8n.
+- Investigar las dos ejecuciones omitidas del respaldo semanal de n8n.
 
-\- Proteger la rama `main` con políticas de revisión y CI obligatorio.
+- Proteger la rama `main` con políticas de revisión y CI obligatorio.
 
-\- Establecer una convención de tags y versionado.
+- Establecer una convención de tags y versionado.
 
-\- Continuar validando los procedimientos de recuperación en un entorno aislado.
+- Continuar validando los procedimientos de recuperación en un entorno aislado.
 
-\- Documentar la discrepancia observada en una ejecución inicial del plan con ventana abierta.
+- Documentar la discrepancia observada en una ejecución inicial del plan con ventana abierta.
 
 
 
-\## Conclusión
+## Conclusión
 
 
 
@@ -152,5 +152,6 @@ El primer piloto CI/CD de Daubert Hub demostró que es posible publicar una vers
 
 
 
-\*\*Resultado:\*\* despliegue y validación funcional completados satisfactoriamente.
+**Resultado:** despliegue y validación funcional completados satisfactoriamente.
+
 
