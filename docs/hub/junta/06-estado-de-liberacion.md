@@ -24,7 +24,7 @@ Fecha: 2026-11-10. Rama `feat/manufacturing-sheets-coex-baseline`. **Nada public
 | H6 | Autorizar y ejecutar la comprobación de **BIND real**; entrega segura de credenciales | Administrador de BIND / Sistemas | `04-bind-real.md` |
 | H7 | Decidir sobre los **runners** pendientes (corregir `recent-activity`; aceptar el resto por escrito) | Responsables de Caterpillar, Pagos, Audi y del Hub | `05-regresiones-operativas.md` |
 | H8 | Designar **custodio** de la clave de respaldos y estación de recuperación para la ventana | Dirección / Sistemas | `manufactura-preparacion-junta-6d.md` §3.3 |
-| H9 | Decidir si se aplica la corrección mínima del hueco de la ventana cerrada (§3) | Responsable del Hub | este documento |
+| H9 | Decidir si se aplica la tercera corrección (que `Prepare` se niegue sin `-KeepClosure` con un cierre activo); las dos primeras ya están aplicadas (`1edcbe9`) | Responsable del Hub | este documento §3 |
 | H10 | Fecha de la ventana de mantenimiento y **autorización formal** de despliegue, con los hashes del §5 | Junta | `01-informe-ejecutivo.md` §10 |
 Después de la autorización (trabajo técnico, no decisión): cambios pedidos, versión 1.2.0, imágenes definitivas y sus manifiestos, parche de respaldos como commit de la candidata.
 
@@ -35,15 +35,15 @@ Después de la autorización (trabajo técnico, no decisión): cambios pedidos, 
 | # | Hueco | Efecto | Estado |
 |---|---|---|---|
 | K1 | El documento de 6C.3 (§1.2) y el de 6C.2 describían `Prepare` **sin** `-KeepClosure` y afirmaban que no reabría. Desde 6D eso ya no es cierto: sin `-KeepClosure`, `Prepare` escribe el archivo **abierto** en `default.conf` | Quien siguiera esos documentos dejaría el archivo abierto en disco durante la ventana | **Corregido en esta fase** (solo documentación) |
-| K2 | `-RequireClosedWindow` es **opcional**. Con `-ClosurePolicy Manufactura` pero sin ese interruptor, la compuerta comprueba el hash de la política versionada y **no** que el `default.conf` externo siga cerrado | Si además se omitió `-KeepClosure`, el despliegue recrea el contenedor web y este arranca **abierto** en plena ventana, sin aviso | **Abierto.** Corrección propuesta abajo |
-| K3 | `Reload` verifica el estado que encuentra, no el que se espera: si el archivo en disco es el abierto, comprueba «abierto» y termina bien | Un `Reload` posterior al despliegue no delata una ventana reabierta | **Abierto.** Corrección propuesta abajo |
+| K2 | `-RequireClosedWindow` es **opcional**. Con `-ClosurePolicy Manufactura` pero sin ese interruptor, la compuerta comprueba el hash de la política versionada y **no** que el `default.conf` externo siga cerrado | Si además se omitió `-KeepClosure`, el despliegue recrea el contenedor web y este arranca **abierto** en plena ventana, sin aviso | **Cerrado** en `1edcbe9`: `-ClosurePolicy Manufactura` implica la exigencia de ventana cerrada |
+| K3 | `Reload` verifica el estado que encuentra, no el que se espera: si el archivo en disco es el abierto, comprueba «abierto» y termina bien | Un `Reload` posterior al despliegue no delata una ventana reabierta | **Cerrado** en `1edcbe9`: `Reload -ExpectState Closed` se niega antes de recargar |
 | K4 | `Prepare` sin `-KeepClosure` no avisa de que hay un cierre activo | Es el origen de K2 | Abierto (comportamiento operativo anterior, conservado a propósito en 6D) |
 
 **Corrección mínima propuesta (no aplicada; cada una con su prueba, sin tocar producción):**
-1. `Deploy-DaubertHub.ps1`: `-ClosurePolicy Manufactura` **implica** la exigencia de ventana cerrada (equivale a `-RequireClosedWindow`). Cierra K2 en el camino del script. Unas tres líneas y una prueba Pester.
-2. `Set-EntryClosure.ps1 -Action Reload -ExpectState Closed|Open` (opcional; sin él, igual que hoy): falla si el estado no es el esperado. Cierra K3.
+1. **Aplicada (`1edcbe9`).** `Deploy-DaubertHub.ps1`: `-ClosurePolicy Manufactura` implica la exigencia de ventana cerrada. 4 pruebas Pester nuevas (124 en total).
+2. **Aplicada (`1edcbe9`).** `Set-EntryClosure.ps1 -Action Reload -ExpectState Closed|Open` (opcional; sin él, igual que siempre). Ensayado en un proyecto Compose aislado: niega sin recargar en los dos sentidos, y tras un `Prepare` sin `-KeepClosure` dentro de la ventana el `Reload -ExpectState Closed` se negó y las escrituras de Manufactura siguieron en 503. Salida por omisión idéntica a la del script operativo anterior.
 3. `Set-EntryClosure.ps1 -Action Prepare`: si hay un cierre activo y no se pasó `-KeepClosure`, **negarse** salvo `-AllowReopen`. Cierra K4, pero **cambia el comportamiento por omisión** en ese caso: requiere decisión expresa.
-Mientras no se apliquen, la mitigación es de procedimiento: usar siempre `-KeepClosure` y `-RequireClosedWindow`, y ejecutar `Set-EntryClosure.ps1 -Action Status` (debe decir `CLOSED` y la política de Manufactura) **antes y después** del despliegue.
+Pendiente solo la tercera (cambia el comportamiento por omisión). El procedimiento de la ventana sigue exigiendo `-KeepClosure`, `Status` antes y después y `Reload -ExpectState Closed`.
 
 ## 4. Confirmaciones (comprobadas en solo lectura el 2026-11-10)
 | Confirmación | Evidencia |

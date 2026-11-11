@@ -26,8 +26,9 @@ Evidencia (fuera del repositorio): `C:\Users\06\Documents\Daubert\Evidencia_6D_2
 Set-EntryClosure.ps1 -Action Close -Policy Manufactura -ExpectedPolicySha256 <sha del acta>
 Set-EntryClosure.ps1 -Action Prepare -KeepClosure -WebImage daubert-hub-web:release-<commit> -ExpectedOpenSha256 <nginxConfSha256 del manifiesto de imágenes>
 Set-EntryClosure.ps1 -Action Close -Policy Manufactura -ExpectedPolicySha256 <sha del acta>
-Deploy-DaubertHub.ps1 -Deploy … -RequireClosedWindow -ClosurePolicy Manufactura -ClosurePolicySha256 <sha del acta>
-Set-EntryClosure.ps1 -Action Reload        # reconoce la política instalada
+Set-EntryClosure.ps1 -Action Status       # debe decir CLOSED y "policy: MANUFACTURA"
+Deploy-DaubertHub.ps1 -Deploy … -RequireClosedWindow -ClosurePolicy Manufactura -ClosurePolicySha256 <sha del acta>   # -ClosurePolicy Manufactura ya implica -RequireClosedWindow (desde 1edcbe9)
+Set-EntryClosure.ps1 -Action Reload -ExpectState Closed   # se niega sin recargar si el archivo en disco no está cerrado (desde 1edcbe9)
 Set-EntryClosure.ps1 -Action Open
 ```
 Tras la liberación autorizada habrá que **promover** la política de Manufactura a política por omisión (commit aparte), o los cierres posteriores sin `-Policy` no bloquearán Manufactura.
