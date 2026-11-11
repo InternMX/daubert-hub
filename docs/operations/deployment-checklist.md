@@ -48,6 +48,62 @@ El procedimiento recrea únicamente `api` y `web`; no toca PostgreSQL ni n8n (co
 
 ## Preflight de solo lectura
 
+### Entrada centralizada de planificación (Fase 2A)
+
+Desde un checkout operativo **en `main`, limpio y sincronizado**, con el SHA completo
+aprobado en el expediente de autorización (no obtener la aprobación de `HEAD`):
+
+```powershell
+$approved = '<SHA hexadecimal aprobado de 40 caracteres>'
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\deploy\Invoke-DaubertRelease.ps1 -Plan -ExpectedCommit $approved
+$LASTEXITCODE
+```
+
+`Invoke-DaubertRelease.ps1` exige ambos parámetros y compara el SHA completo con `HEAD`
+antes y después de las comprobaciones. Acepta hexadecimal en mayúsculas o minúsculas;
+rechaza ramas, tags, SHA abreviados y argumentos adicionales de operación.
+Reutiliza **una sola ejecución de `Deploy-DaubertHub.ps1 -WhatIf -Candidate <SHA>`**:
+este ya ejecuta el preflight, comprueba rama/limpieza/sincronización, consulta
+`/api/health`, calcula el delta y valida/simula el plan. No vuelve a implementar esos checks.
+Con preflight bloqueado o sin cambios, el procedimiento existente termina antes de simular.
+
+| Exit del orquestador | Resultado |
+| --- | --- |
+| `0` | **APTO**: preflight y simulación completados; no es un despliegue ni una autorización |
+| `1` | **BLOQUEADO**: SHA distinto de `HEAD`, comprobación fallida, excepción o código inesperado del hijo |
+| `2` | **SIN CAMBIOS DE HUB/DOCKER**: no desplegar ni reiniciar para refrescar el SHA |
+| `3` | Uso incorrecto detectado por el orquestador: falta modo efectivo o SHA de formato inválido |
+
+Los errores del enlazador de parámetros de `powershell -File` (parámetro obligatorio omitido,
+parámetro desconocido como `-Deploy`/`-Rollback`) terminan con `1` antes de ejecutar el cuerpo.
+
+**Límites y decisiones operativas:**
+
+- Solo lectura: Git con `--no-optional-locks`; Docker únicamente mediante las lecturas
+  del procedimiento existente. Nunca build/tag/up/down/restart, inicio de servicios,
+  SQL ni importación/activación/desactivación de n8n. No hay `-Deploy` ni `-Rollback`.
+- No recibe credenciales ni opciones para reconocer migraciones/n8n ya aplicados o saltar
+  compuertas. Un release con estos cambios que necesite excepciones queda bajo el runbook
+  manual; esta entrega no concede esas excepciones.
+- No escribe logs, transcripciones ni temporales. La salida del hijo queda en memoria;
+  solo publica el resumen numérico del preflight y el commit desplegado si tienen formato
+  conocido, además de mensajes fijos y el SHA aprobado. Descarta stderr y no imprime
+  excepciones ni salida cruda (ni siquiera secretos sin etiqueta). Los detalles del plan
+  siguen disponibles en el `-WhatIf` existente, para revisión en el entorno autorizado.
+- **Conserva la política de WARN de Fase 1/preflight**: si `git ls-remote` no responde,
+  el preflight puede advertir sin bloquear aunque compruebe `origin/main` local.
+  `APTO` no acredita por sí solo sincronización remota verificada ni CI verde. El resumen
+  conserva el número de advertencias; revisar su causa y la aprobación antes de publicar.
+  Endurecer esa política requiere una decisión operativa y queda fuera de este PR.
+- El plan es una observación, no un bloqueo contra concurrencia ni un permiso reutilizable.
+  Revalidar en la ventana autorizada; no copiar secretos al worktree de desarrollo.
+- El desarrollo ocurre en una rama/worktree independiente; las pruebas usan mocks y no
+  ejecutan el plan real contra PROD. Un worktree de feature no supera el gate de rama `main`.
+
+Relación con los artifacts y el CI de Fase 1: [release-pipeline](release-pipeline.md#fase-2a-plan-local-de-solo-lectura).
+
+### Preflight directo
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\Test-DaubertDeployPreflight.ps1
 ```

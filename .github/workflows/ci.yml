@@ -16,6 +16,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-plan:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Release plan tests (Windows PowerShell 5.1, mocked operations)
+        shell: powershell
+        run: |
+          Import-Module Pester -RequiredVersion 3.4.0
+          Invoke-Pester -Script scripts/deploy/tests -EnableExit -OutputFormat NUnitXml -OutputFile "$env:RUNNER_TEMP/release-plan-tests.xml"
+      - name: Upload release plan test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-plan-tests
+          path: ${{ runner.temp }}/release-plan-tests.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
