@@ -18,6 +18,7 @@ export function CaterpillarFolioRecoveryPanel({ executionId }: { executionId: st
   const [reason, setReason] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState(false);
   const [state, setState] = useState<string | null>(null);
   const [requestId] = useState(() => crypto.randomUUID());
@@ -30,7 +31,7 @@ export function CaterpillarFolioRecoveryPanel({ executionId }: { executionId: st
   if (user?.role !== 'ADMIN') return null;
   async function prepare() {
     if (busy || state || !assessment?.enabled || !assessment.databaseEligible || !reason.trim() || !confirmed) return;
-    setBusy(true); setError(false);
+    setBusy(true); setError(false); setAttempted(true);
     try { setState((await prepareFolioRecovery(executionId, requestId, reason.trim(), confirmed)).state); }
     catch { setError(true); }
     finally { setBusy(false); }
@@ -50,10 +51,11 @@ export function CaterpillarFolioRecoveryPanel({ executionId }: { executionId: st
       <Typography variant="body2">PDFs aislados: {assessment?.quarantine?.fileCount ?? 0} · {assessment?.quarantine?.state ?? 'Sin evidencia'}</Typography>
       {assessment?.quarantine?.sha256 && <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>SHA-256 evidencia: {assessment.quarantine.sha256}</Typography>}
       {error && <Alert severity="error">No se pudo verificar o preparar la recuperación. Permanece bloqueada; no se solicitó un reproceso convencional.</Alert>}
+      {error && attempted && <Alert severity="warning">Solicitud {requestId}: la respuesta no confirma si quedó preparada. Conserva este identificador; reintentar enviará los mismos datos.</Alert>}
       {state && <Alert severity="info">Solicitud {requestId}: {state}. Requiere coordinación verificada de archivos y n8n TEST antes de emitir.</Alert>}
-      <TextField label="Motivo de recuperación" value={reason} required multiline minRows={2} disabled={busy || !!state}
+      <TextField label="Motivo de recuperación" value={reason} required multiline minRows={2} disabled={attempted}
         slotProps={{ htmlInput: { maxLength: 500 } }} onChange={e => setReason(e.target.value)} />
-      <FormControlLabel control={<Checkbox checked={confirmed} disabled={busy || !!state} onChange={e => setConfirmed(e.target.checked)} />}
+      <FormControlLabel control={<Checkbox checked={confirmed} disabled={attempted} onChange={e => setConfirmed(e.target.checked)} />}
         label="Como ADMIN, confirmo que ningún documento del rango fue entregado y solicito verificar su cuarentena." />
       <Button type="button" variant="outlined" disabled={busy || !!state || !assessment?.enabled || !assessment.databaseEligible || !reason.trim() || !confirmed} onClick={() => void prepare()}>
         {busy ? 'Preparando…' : 'Preparar recuperación de folios'}

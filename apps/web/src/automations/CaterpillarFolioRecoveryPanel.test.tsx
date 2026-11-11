@@ -50,4 +50,18 @@ describe('Caterpillar folio recovery — preparation only', () => {
     assess.mockRejectedValue(new Error('offline')); renderPanel();
     expect(await screen.findByText(/No se pudo verificar o preparar/)).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Preparar recuperación de folios' })).toBeDisabled();
   });
+  it('keeps the same UUID and payload after an uncertain preparation response', async () => {
+    prepare.mockRejectedValueOnce(new Error('Response lost after COMMIT'))
+      .mockImplementationOnce(async (_id, requestId) => ({ requestId, state: 'PREPARING' }));
+    renderPanel();await screen.findByText('Folios: 111–114');
+    const reason=screen.getByLabelText(/Motivo de recuperación/),confirmation=screen.getByRole('checkbox');
+    fireEvent.change(reason,{target:{value:'Original confirmed reason'}});fireEvent.click(confirmation);
+    const button=screen.getByRole('button',{name:'Preparar recuperación de folios'});fireEvent.click(button);
+    await screen.findByText(/No se pudo verificar o preparar/);
+    expect(reason).toBeDisabled();expect(confirmation).toBeDisabled();
+    expect(screen.getByText(new RegExp(prepare.mock.calls[0]![1]))).toBeInTheDocument();
+    fireEvent.click(button);
+    await screen.findByText(/Requiere coordinación verificada/);
+    expect(prepare).toHaveBeenCalledTimes(2);expect(prepare.mock.calls[1]).toEqual(prepare.mock.calls[0]);
+  });
 });
