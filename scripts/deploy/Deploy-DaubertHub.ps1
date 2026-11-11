@@ -69,7 +69,8 @@
     SHA-256 of the images manifest text (LF line endings), delivered outside the repository with the authorisation record.
 
 .PARAMETER ClosurePolicy
-    Operativa (default: deploy/closure/entry-closure-policy.conf, behaviour unchanged) or Manufactura (deploy/closure/entry-closure-policy.manufactura.conf, which also blocks every
+    Operativa (default: deploy/closure/entry-closure-policy.conf, behaviour unchanged) or Manufactura. Selecting Manufactura IMPLIES -RequireClosedWindow (the closed window is
+    verified even if that switch is omitted). The Manufactura policy is deploy/closure/entry-closure-policy.manufactura.conf, which also blocks every
     write under /api/manufacturing-sheets). Manufactura REQUIRES -ClosurePolicySha256: the gate blocks unless the versioned file has exactly that SHA-256, and with -RequireClosedWindow
     the external default.conf must be that policy. A configuration that ENABLES Manufactura inside a required closed window must use -ClosurePolicy Manufactura.
 
@@ -523,7 +524,8 @@ function Test-DeployGate {
         elseif (-not $closureSha) { $reasons += 'Falta deploy/closure/entry-closure-policy.manufactura.conf.' }
     }
     if ($closureWant -and $closureSha -and $closureSha -ne $closureWant) { $reasons += ('La politica de cierre seleccionada (' + $closureSelected + ', ' + $closureSha + ') no coincide con -ClosurePolicySha256.') }
-    $closureRequired = ($Options.Contains('RequireClosedWindow') -and [bool]$Options['RequireClosedWindow'])
+    # Selecting the Manufactura policy IMPLIES the closed-window requirement: a Manufactura release never proceeds unless the external default.conf IS that policy (same check as -RequireClosedWindow).
+    $closureRequired = (($Options.Contains('RequireClosedWindow') -and [bool]$Options['RequireClosedWindow']) -or $closureSelected -eq 'Manufactura')
     $closureMf = $(if ($Context.PSObject.Properties.Name -contains 'Manufacturing') { $Context.Manufacturing } else { $null })
     if ($closureRequired -and $closureMf -and [string]$closureMf.Enabled -ceq 'true' -and $closureSelected -ne 'Manufactura') { $reasons += 'La configuracion habilita Manufactura: la ventana cerrada debe usar la politica de Manufactura (-ClosurePolicy Manufactura -ClosurePolicySha256 ...).' }
     if ($closureRequired -and (-not $closureSha -or $Context.Closure.ConfSha -ne $closureSha)) { $reasons += 'La ventana exige el cierre ACTIVO: default.conf externo no es la politica cerrada versionada (ejecute Set-EntryClosure.ps1 -Action Close).' }

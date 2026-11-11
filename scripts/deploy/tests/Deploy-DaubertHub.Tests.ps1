@@ -974,3 +974,29 @@ Describe 'Politica de cierre seleccionable: la operativa por omision; la de Manu
         (@(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true; ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt' }) -join ' ') | Should Match 'debe usar la politica de Manufactura'
     }
 }
+
+Describe 'Seleccionar -ClosurePolicy Manufactura implica la exigencia de ventana cerrada' {
+    BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'Manufactura SIN -RequireClosedWindow y con el default.conf externo abierto: bloquea' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'abierto'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }) -join ' ') | Should Match 'cierre ACTIVO'
+    }
+    It 'Manufactura SIN -RequireClosedWindow y cerrado con la politica OPERATIVA: bloquea' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'op'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }) -join ' ') | Should Match 'cierre ACTIVO'
+    }
+    It 'Manufactura SIN -RequireClosedWindow y cerrado con la politica de Manufactura: pasa' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'mf'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }).Count | Should Be 0
+    }
+    It 'por omision (sin -ClosurePolicy ni -RequireClosedWindow) no se exige ventana cerrada, como siempre' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'abierto'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{}).Count | Should Be 0
+        (Invoke-Main -D $true) | Should Be 0
+    }
+}
