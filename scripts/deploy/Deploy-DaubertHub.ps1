@@ -199,8 +199,14 @@ function Invoke-DeployMutation {
     $refused = Test-AllowedMutation $Exe $CmdArgs
     if ($refused) { throw ('Operacion mutante rechazada: ' + $refused) }
     Write-Safe ('> ' + $Exe + ' ' + ($CmdArgs -join ' '))
-    $out = & $Exe @CmdArgs
-    $code = $LASTEXITCODE
+    # BuildKit escribe progreso en stderr: en PS 5.1 no debe convertirse en una excepcion.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $global:LASTEXITCODE = $null
+        $out = & $Exe @CmdArgs 2>&1
+        $code = if ($null -eq $global:LASTEXITCODE) { 1 } else { $global:LASTEXITCODE }
+    } finally { $ErrorActionPreference = $previous }
     foreach ($line in @($out)) { Write-Safe ([string]$line) }
     return @{ Code = $code; Out = @() }
 }
@@ -576,6 +582,7 @@ function Test-PostDeploy {
         if ($hv -ne $Plan.AppVersion) { $problems += ('version ' + $hv + ' distinta de APP_VERSION ' + $Plan.AppVersion + '.') }
     }
     $ps = Invoke-DeployRead 'docker' (@('compose') + (Get-ComposeBaseArgs) + @('ps'))
+    if ($ps.Code -ne 0) { $problems += 'No se pudo completar docker compose ps.' }
     foreach ($line in $ps.Out) { Write-Safe $line }
     foreach ($svc in $script:Services) {
         $st = Invoke-DeployRead 'docker' @('inspect', ($script:Project + '-' + $svc + '-1'), '--format', '{{.State.Status}}')

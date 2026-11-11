@@ -49,9 +49,9 @@ function Invoke-ReleaseRead {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $LASTEXITCODE = $null
+        $global:LASTEXITCODE = $null
         $output = & $exe @nativeArgs 2>$null
-        $code = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+        $code = if ($null -eq $global:LASTEXITCODE) { 1 } else { $global:LASTEXITCODE }
     } finally { $ErrorActionPreference = $previous }
     return @{ Code = $code; Out = @($output) }
 }

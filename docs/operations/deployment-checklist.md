@@ -369,23 +369,50 @@ La fecha de arranque de ambos procesos debe ser anterior al momento del deploy (
 
 ```powershell
 $prev = '<commit anterior, el usado al crear el ancla>'
-$new  = $env:GIT_COMMIT      # commit con falla (misma sesion del deploy); si no, escribirlo a mano
+$new = '<commit corto del candidato aprobado, registrado ANTES del deploy>'
+$rollbackDigests = @{ api = '<sha256 registrado antes del deploy>'; web = '<sha256 registrado antes del deploy>' }
+# Consola de recuperacion dedicada: stderr nativo puede ser progreso; validar CADA exit code.
+$ErrorActionPreference = 'Continue'
 foreach ($v in $prev, $new) { if ($v -notmatch '^[0-9a-f]{7,40}$') { throw "Commit invalido: '$v'" } }
 
+$latestDigests = @{}
 foreach ($svc in 'api','web') {
     $anchor = "daubert-hub-${svc}:rollback-$prev"
     $failed = "daubert-hub-${svc}:failed-$new"
-    docker image inspect $anchor 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Falta el ancla ${anchor}: no hay rollback por imagen" }
+    $digest = @(docker image inspect $anchor --platform linux/amd64 --format '{{.Id}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $digest.Count -ne 1 -or $rollbackDigests[$svc] -cnotmatch '^sha256:[0-9a-f]{64}$' -or $digest[0] -cne $rollbackDigests[$svc]) { throw "Ancla ausente o distinta de la evidencia previa: $svc" }
     docker image inspect $failed 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) { throw "${failed} ya existe: no se sobrescribe" }
+    $current = @(docker image inspect "daubert-hub-${svc}:latest" --platform linux/amd64 --format '{{.Id}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $current.Count -ne 1) { throw "No se puede preservar latest: $svc" }
+    $latestDigests[$svc] = $current[0]
+}
+# Primero preservar AMBAS imagenes; un fallo detiene el procedimiento antes de recrear.
+foreach ($svc in 'api','web') {
+    docker tag "daubert-hub-${svc}:latest" "daubert-hub-${svc}:failed-$new" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo preservar la imagen fallida: $svc" }
+    $saved = @(docker image inspect "daubert-hub-${svc}:failed-$new" --platform linux/amd64 --format '{{.Id}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $saved.Count -ne 1 -or $saved[0] -cne $latestDigests[$svc]) { throw "Imagen fallida no preservada correctamente: $svc" }
 }
 foreach ($svc in 'api','web') {
-    docker tag "daubert-hub-${svc}:latest" "daubert-hub-${svc}:failed-$new"     # conserva la imagen nueva para analizarla
-    docker tag "daubert-hub-${svc}:rollback-$prev" "daubert-hub-${svc}:latest"  # :latest vuelve a la imagen anterior
+    docker tag "daubert-hub-${svc}:rollback-$prev" "daubert-hub-${svc}:latest" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo devolver el ancla a latest: $svc" }
+    $restored = @(docker image inspect "daubert-hub-${svc}:latest" --platform linux/amd64 --format '{{.Id}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $restored.Count -ne 1 -or $restored[0] -cne $rollbackDigests[$svc]) { throw "latest no coincide con la imagen anterior: $svc" }
 }
-docker compose @cf up -d --no-build api web                                     # --no-build: usa la etiqueta, no reconstruye
+docker compose @cf up -d --no-build api web 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Rollback Compose fallido: conservar anclas y diagnosticar, no repetir ciegamente.' }
+$health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec 10 -ErrorAction Stop
+if ($health.status -ne 'ok' -or $health.database -ne 'connected' -or $health.environment -ne 'PRODUCTION' -or $health.commit -ne $prev) { throw 'Rollback sin verificar: health no confirma el commit anterior sano.' }
+Write-Host 'Rollback por imagen completado; verificar tambien ambos contenedores y el humo de solo lectura.'
 ```
+
+Los SHA y digests se toman del expediente previo, **no** del health posterior al fallo.
+`Deploy-DaubertHub.ps1` restaura `GIT_COMMIT` al salir: no usar esa variable para deducir
+el candidato fallido. Ante cualquier rechazo, detenerse; no borrar etiquetas `failed-*`
+ni repetir el bloque completo sin revisar el estado parcial. Si el proxy devuelve 502 tras
+recrear solo API, seguir el paso de `Set-EntryClosure.ps1 -Action Reload` del procedimiento
+de ventana y repetir únicamente las verificaciones; no volver a etiquetar por ese motivo.
 
 `--no-build` es una opción documentada de `docker compose up` ("Don't build an image, even if it's policy"); `up` recrea los servicios nombrados cuando su imagen cambió. El rollback no depende de Git, pero sí de que las imágenes ancla sigan en el almacén de Docker, de `deploy/pilot.prod.env` y de los archivos Compose. Después: `Invoke-RestMethod http://localhost:8082/api/health` debe mostrar el commit anterior. Las imágenes `failed-<commit>` se conservan para el análisis y se eliminan a mano más tarde (no forma parte de este procedimiento).
 

@@ -3,6 +3,8 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $releasePath = [IO.Path]::GetFullPath((Join-Path $here '..\Invoke-DaubertRelease.ps1'))
 . $releasePath -Plan -ExpectedCommit ('a' * 40)
 
+function git { throw 'Git externo prohibido en las pruebas del orquestador.' }
+
 Describe 'Fase 2A: contrato y resumen seguro' {
     BeforeEach {
         $script:Approved = 'a' * 40
@@ -181,6 +183,16 @@ Describe 'Fase 2A: reutiliza WhatIf sin mutaciones' {
 }
 
 Describe 'Fase 2A: frontera externa' {
+    It 'lee el codigo nativo global sin ocultarlo con una variable local vacia' {
+        Mock git { $global:LASTEXITCODE = 0; 'a' * 40 }
+        $r = Invoke-ReleaseRead 'Head'
+        $r.Code | Should Be 0
+        $r.Out[0] | Should Be ('a' * 40)
+    }
+    It 'conserva un error nativo aunque exista salida' {
+        Mock git { $global:LASTEXITCODE = 128; 'a' * 40 }
+        (Invoke-ReleaseRead 'Head').Code | Should Be 128
+    }
     It 'rechaza operaciones desconocidas y candidatos invalidos antes de ejecutar procesos' {
         { Invoke-ReleaseRead 'Deploy' ('a' * 40) } | Should Throw
         { Invoke-ReleaseRead 'Simulation' '--help' } | Should Throw

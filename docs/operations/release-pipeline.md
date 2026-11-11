@@ -80,6 +80,8 @@ plan real, preflight real ni pruebas contra PROD.
 
 ## Fase 2B: entrega supervisada
 
+Antes de su primer uso, completar el [checklist de primera publicación y revisión del PR #27](first-supervised-deployment.md).
+
 Flujo: **CI verde → reporte de Fase 1 → aprobación del SHA completo → sincronización manual
 segura de `main` → un comando `Invoke-DaubertRelease.ps1 -Deploy -ExpectedCommit <SHA>` →
 confirmación interactiva real → revalidación → deployment y postchecks existentes**.

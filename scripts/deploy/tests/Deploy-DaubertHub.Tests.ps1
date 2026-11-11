@@ -131,6 +131,25 @@ function Set-StandardMocks {
 
 function Get-PrintedText { return ($script:Printed -join "`n") }
 
+Describe 'Validacion operativa: stderr nativo no es un fallo de Docker' {
+    BeforeEach {
+        $script:Mode = 'Deploy'
+        Mock Test-AllowedMutation { $null }
+        Mock Write-Host { }
+    }
+    It 'conserva exit 0 aunque el ejecutable publique progreso por stderr' {
+        # Proceso inerte, nunca Docker: BuildKit publica progreso por stderr de la misma forma.
+        $result = Invoke-DeployMutation (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-File', (Join-Path $here 'fixtures\Write-NativeProgress.ps1')) 2>$null
+        $result.Code | Should Be 0
+    }
+    It 'conserva un exit no cero y restaura la politica de errores' {
+        $before = $ErrorActionPreference
+        $result = Invoke-DeployMutation (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-File', (Join-Path $here 'fixtures\Write-NativeProgress.ps1'), '-Code', '7') 2>$null
+        $result.Code | Should Be 7
+        $ErrorActionPreference | Should Be $before
+    }
+}
+
 Describe 'Fase 2B: sincronizacion estricta y revalidacion tras confirmar' {
     BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
 
@@ -617,6 +636,12 @@ Describe 'Deploy exitoso (simulado)' {
 
 Describe 'Fallos durante el deploy' {
     BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'un compose ps fallido bloquea aunque inspect y health respondan' {
+        $script:Fake.PsFails = $true
+        Mock Invoke-DeployRead { @{ Code = 1; Out = @() } } -ParameterFilter { $CmdArgs -contains 'ps' -and $script:Fake.ContainsKey('PsFails') }
+        (Invoke-Main -D $true) | Should Be 5
+    }
 
     It 'si el health post-deploy no coincide: DEPLOYMENT FALLIDO, ROLLBACK DISPONIBLE y sin rollback automatico' {
         $script:Fake.UpUpdatesHealth = $false
