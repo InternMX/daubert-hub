@@ -15,5 +15,6 @@ Registro puntual de promociones a PROD (qué se promovió, verificación, pendie
 | 2026-10-01 | [hub-v1-prod](2026-10-01-hub-v1-prod.md) | Daubert Hub V1 (`0.9.0-pilot.2`, commit `fbda7c6`): Hub API + Web desde `main`; sin migraciones ni cambios en n8n |
 | 2026-09-25 | [payment-notification-config-prod](2026-09-25-payment-notification-config-prod.md) | Configuración de Notificaciones de pago por empresa desde el Hub (migración 011, API + Web; n8n sin cambios) |
 | 2026-09-24 | [caterpillar-12c-prod](2026-09-24-caterpillar-12c-prod.md) | Reproceso manual de Caterpillar (migración 009, Hub, workflow n8n) |
+| 2026-11-11 | [primer piloto CI/CD](2026-11-11-hub-cicd-pilot-prod.md) | Daubert Hub v1.1.1 (`de13370`): primer despliegue supervisado con CI/CD, cierre controlado y siete pruebas funcionales aprobadas. |
 
 Contexto: [database/migrations](../database/migrations.md) · [caterpillar/production-runbook](../automations/caterpillar/production-runbook.md).
