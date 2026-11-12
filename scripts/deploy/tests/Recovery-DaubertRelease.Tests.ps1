@@ -53,6 +53,7 @@ function New-RecoveryState {
         FailTarget = ''; ComposeFails = $false; ComposeOnly = @('api', 'web'); HealthAfter = 'healthy'
         InterruptAt = 0; Mutations = 0
         Composed = $false; InspectFails = @(); InspectRaw = @{}; RunOverride = @{}; StatusAfter = @{}; StartingReads = 0
+        Start = [datetime]'2026-11-12T10:00:00'; Clock = [datetime]'2026-11-12T10:00:00'; Sleeps = @(); HttpCalls = @()
     }
     foreach ($svc in @('api', 'web')) {
         $s.Tags['daubert-hub-' + $svc + ':rollback-bbbbbbb'] = $s.Expected[$svc]
@@ -120,6 +121,23 @@ function Invoke-RecoveryHealth {
     return [pscustomobject]@{ status = 'ok'; database = 'connected'; environment = 'PRODUCTION'; commit = $commit }
 }
 
+function Step-RecoveryClock {
+    # Simulated time: only Start-Sleep and the simulated HTTP latency advance it; nothing waits for real.
+    param([double]$Milliseconds)
+    $script:Recovery.Clock = $script:Recovery.Clock.AddMilliseconds($Milliseconds)
+}
+
+function Invoke-RecoverySleep {
+    param($Seconds, $Milliseconds)
+    $ms = if ($Milliseconds) { [double]$Milliseconds } else { [double]$Seconds * 1000 }
+    $script:Recovery.Sleeps += [pscustomobject]@{ At = $script:Recovery.Clock; Ms = $ms }
+    Step-RecoveryClock $ms
+}
+
+function Get-RecoveryElapsedSeconds {
+    return ($script:Recovery.Clock - $script:Recovery.Start).TotalSeconds
+}
+
 function Get-RecoveryMutations {
     return @($script:Recovery.Calls | Where-Object { $_[0] -in @('tag', 'compose') })
 }
@@ -130,7 +148,8 @@ Describe 'Recuperacion operativa: rollback documental sin servicios reales' {
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { [pscustomobject]@{ status = 'ok'; database = 'connected'; environment = 'PRODUCTION'; commit = 'bbbbbbb' } }
         Mock Write-Host { }
-        Mock Start-Sleep { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
     }
 
     It 'recupera una recreacion parcial, conserva imagenes fallidas y solo recrea api/web sin build' {
@@ -193,7 +212,8 @@ Describe 'Fase 3D: API que no llega a healthy tras el rollback' {
         $script:Recovery = New-RecoveryState
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Write-Host { }
-        Mock Start-Sleep { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
     }
 
     It 'health inaccesible (API no responde) no se declara recuperacion correcta' {
@@ -225,7 +245,8 @@ Describe 'Fase 3D: diagnostico de recuperacion de solo lectura (rollback-rehears
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
-        Mock Start-Sleep { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
     }
 
     It 'antes del rollback, con anclas correctas, indica SIN_INICIAR y no muta nada' {
@@ -270,7 +291,8 @@ Describe 'Fase 3D: recreacion parcial de API/Web' {
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
-        Mock Start-Sleep { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
     }
 
     It 'un Compose con exit 0 que solo recrea api (health HTTP correcto) NO se declara completado; el diagnostico indica LISTO_PARA_COMPOSE' {
@@ -312,7 +334,8 @@ Describe 'Fase 3D: recuperacion interrumpida o detenida a mitad' {
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
-        Mock Start-Sleep { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
     }
 
     It 'interrupcion en la mutacion <At> (<Momento>): diagnostico <Veredicto> y repetir el bloque completo no muta nada' -TestCases @(
@@ -367,7 +390,8 @@ Describe 'Fase 3D: verificacion posterior del bloque de rollback (contenedores, 
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
-        Mock Start-Sleep { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
     }
 
     It 'recuperacion completa: solo entonces emite el mensaje de completado' {
@@ -400,7 +424,7 @@ Describe 'Fase 3D: verificacion posterior del bloque de rollback (contenedores, 
         { Invoke-DocumentedRecovery } | Should Throw 'Rollback NO completado'
         Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match "PENDIENTE: web: estado '$Estado'" }
         Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
-        Assert-MockCalled Start-Sleep -Times 35 -Exactly -Scope It
+        Get-RecoveryElapsedSeconds | Should Be 180
     }
     It 'API detenida tras Compose: falla y no declara completado' {
         $script:Recovery.StatusAfter = @{ api = 'exited' }
@@ -448,5 +472,123 @@ Describe 'Fase 3D: verificacion posterior del bloque de rollback (contenedores, 
         for ($i = 0; $i -lt $calls.Count; $i++) { if ($calls[$i][0] -eq 'compose') { $composeAt = $i } }
         $composeAt | Should BeGreaterThan -1
         for ($i = $composeAt + 1; $i -lt $calls.Count; $i++) { $calls[$i][0] | Should Be 'inspect' }
+    }
+}
+
+Describe 'Fase 3D: limite de espera unico y verificable de la verificacion posterior' {
+    BeforeEach {
+        $script:Recovery = New-RecoveryState
+        $script:Recovery.HttpLatency = 0; $script:Recovery.HttpHealthy = $true
+        Mock docker { Invoke-RecoveryDocker $args }
+        Mock Write-Host { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
+        Mock Invoke-RestMethod {
+            # Registers the requested timeout and the time left, then advances the clock by the simulated latency
+            # (never beyond -TimeoutSec, like a real client timeout).
+            $s = $script:Recovery
+            $left = (($s.Start.AddSeconds(180)) - $s.Clock).TotalSeconds
+            $s.HttpCalls += [pscustomobject]@{ TimeoutSec = $TimeoutSec; LeftSec = $left }
+            if ($s.HttpLatency -ge $TimeoutSec) { Step-RecoveryClock ($TimeoutSec * 1000); throw 'Tiempo de espera agotado (simulado).' }
+            Step-RecoveryClock ($s.HttpLatency * 1000)
+            if (-not $s.HttpHealthy) { return [pscustomobject]@{ status = 'error'; database = 'connected'; environment = 'PRODUCTION'; commit = 'bbbbbbb' } }
+            Invoke-RecoveryHealth
+        }
+    }
+
+    It 'health que agota siempre su timeout: falla dentro de 180 s simulados y cada GET usa un timeout <= restante y <= 10 s' {
+        $script:Recovery.HttpLatency = 999
+        { Invoke-DocumentedRecovery } | Should Throw 'limite de 180 s'
+        Get-RecoveryElapsedSeconds | Should Not BeGreaterThan 180
+        @($script:Recovery.HttpCalls).Count | Should BeGreaterThan 1
+        foreach ($c in $script:Recovery.HttpCalls) {
+            $c.TimeoutSec | Should BeGreaterThan 0
+            $c.TimeoutSec | Should Not BeGreaterThan 10
+            $c.TimeoutSec | Should Not BeGreaterThan $c.LeftSec
+        }
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
+    }
+    It 'con latencia HTTP que deja un resto menor de 10 s, el ultimo GET se recorta al tiempo restante' {
+        $script:Recovery.HttpLatency = 3; $script:Recovery.HttpHealthy = $false
+        { Invoke-DocumentedRecovery } | Should Throw 'Rollback NO completado'
+        Get-RecoveryElapsedSeconds | Should Not BeGreaterThan 180
+        @($script:Recovery.HttpCalls | Where-Object { $_.TimeoutSec -lt 10 }).Count | Should BeGreaterThan 0
+        foreach ($c in $script:Recovery.HttpCalls) { $c.TimeoutSec | Should Not BeGreaterThan $c.LeftSec }
+    }
+    It 'ninguna espera cruza el plazo y la ultima vuelta no consulta HTTP con menos de 1 s restante' {
+        $script:Recovery.StatusAfter = @{ web = 'exited' }
+        { Invoke-DocumentedRecovery } | Should Throw 'Rollback NO completado'
+        foreach ($z in $script:Recovery.Sleeps) {
+            ($z.At.AddMilliseconds($z.Ms) - $script:Recovery.Start).TotalSeconds | Should Not BeGreaterThan 180
+            $z.Ms | Should Not BeGreaterThan 5000
+        }
+        Get-RecoveryElapsedSeconds | Should Be 180
+        @($script:Recovery.HttpCalls | Where-Object { $_.LeftSec -lt 1 }).Count | Should Be 0
+        Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match 'PENDIENTE: health: sin respuesta \(o plazo agotado\)' }
+    }
+    It 'API que pasa a healthy antes del plazo (<Lecturas> lecturas en starting): completa' -TestCases @(@{ Lecturas = 1 }, @{ Lecturas = 35 }) {
+        param($Lecturas)
+        $script:Recovery.StartingReads = $Lecturas
+        { Invoke-DocumentedRecovery } | Should Not Throw
+        Get-RecoveryElapsedSeconds | Should Not BeGreaterThan 180
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -match '^Rollback por imagen completado' }
+    }
+    It 'API que pasaria a healthy solo despues del plazo: falla de forma segura (no espera mas de 180 s)' {
+        $script:Recovery.StartingReads = 40
+        { Invoke-DocumentedRecovery } | Should Throw 'limite de 180 s'
+        Get-RecoveryElapsedSeconds | Should Be 180
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
+    }
+}
+
+Describe 'Fase 3D: diagnostico ante inspeccion de Docker no verificable' {
+    BeforeEach {
+        $script:Recovery = New-RecoveryState
+        Mock docker { Invoke-RecoveryDocker $args }
+        Mock Invoke-RestMethod { Invoke-RecoveryHealth }
+        Mock Write-Host { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
+    }
+
+    $faults = @(
+        @{ Fallo = 'inspect con exit no cero'; Raw = $null },
+        @{ Fallo = 'salida sin separadores'; Raw = ('sha256:' + ('2' * 64)) },
+        @{ Fallo = 'sin ImageManifestDescriptor'; Raw = '|running|healthy' },
+        @{ Fallo = 'digest truncado'; Raw = 'sha256:abc|running|healthy' },
+        @{ Fallo = 'digest en mayusculas'; Raw = ('sha256:' + ('A' * 64) + '|running|healthy') },
+        @{ Fallo = 'estado vacio'; Raw = ('sha256:' + ('2' * 64) + '||') },
+        @{ Fallo = 'varias lineas'; Raw = @(('sha256:' + ('2' * 64) + '|running|'), ('sha256:' + ('2' * 64) + '|running|')) }
+    )
+    $cases = @()
+    foreach ($svc in @('api', 'web')) {
+        foreach ($estado in @('SIN_INICIAR', 'LISTO_PARA_COMPOSE', 'RECUPERADO')) {
+            foreach ($f in $faults) { $cases += @{ Svc = $svc; Estado = $estado; Fallo = $f.Fallo; Raw = $f.Raw } }
+        }
+    }
+
+    It '<Svc> con <Fallo> en un estado que daria <Estado>: NO_VERIFICABLE y ninguna mutacion' -TestCases $cases {
+        param($Svc, $Estado, $Fallo, $Raw)
+        if ($Estado -eq 'LISTO_PARA_COMPOSE') { $script:Recovery.ComposeFails = $true; { Invoke-DocumentedRecovery } | Should Throw }
+        if ($Estado -eq 'RECUPERADO') { Invoke-DocumentedRecovery }
+        Invoke-RehearsalDiagnosis | Should Be $Estado   # control: sin el fallo, el veredicto seria el del estado
+        if ($null -eq $Raw) { $script:Recovery.InspectFails = @($Svc) } else { $script:Recovery.InspectRaw = @{ $Svc = $Raw } }
+        $before = @(Get-RecoveryMutations).Count
+        $verdict = Invoke-RehearsalDiagnosis
+        $verdict | Should Be 'NO_VERIFICABLE'
+        @('SIN_INICIAR', 'LISTO_PARA_COMPOSE', 'RECUPERADO', 'PARCIAL') -contains $verdict | Should Be $false
+        @(Get-RecoveryMutations).Count | Should Be $before
+        Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match ('^NO VERIFICABLE: ' + $Svc + ': contenedor no verificable') }
+    }
+    It 'una etiqueta <Etiqueta> existente con digest ilegible no autoriza mutaciones' -TestCases @(
+        @{ Etiqueta = 'daubert-hub-web:failed-aaaaaaa' },
+        @{ Etiqueta = 'daubert-hub-api:latest' },
+        @{ Etiqueta = 'daubert-hub-web:rollback-bbbbbbb' }
+    ) {
+        param($Etiqueta)
+        $script:Recovery.Tags[$Etiqueta] = 'no-es-un-digest'
+        $verdict = Invoke-RehearsalDiagnosis
+        @('BLOQUEADO', 'NO_VERIFICABLE') -contains $verdict | Should Be $true
+        @(Get-RecoveryMutations).Count | Should Be 0
     }
 }

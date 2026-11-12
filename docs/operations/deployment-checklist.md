@@ -407,8 +407,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Rollback Compose fallido: conservar anclas y d
 # Verificacion posterior (solo lectura). Con containerd, .Image del contenedor NO es direccionable y el
 # digest de 'latest' no prueba que el contenedor lo use: se compara el manifiesto con el que se creo cada
 # contenedor (.ImageManifestDescriptor.digest) con el digest del ancla registrado ANTES del deploy.
+# Limite unico de $limitSec s desde aqui: ninguna espera ni GET /api/health termina despues del plazo (el GET usa
+# como -TimeoutSec el tiempo restante, maximo 10 s; con menos de 1 s restante no se consulta y queda pendiente).
+$limitSec = 180; $pollMs = 5000; $httpMaxSec = 10
 $fmtRun = '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}'
-for ($try = 1; $try -le 36; $try++) {
+$deadline = (Get-Date).AddSeconds($limitSec)
+while ($true) {
     $pending = @()
     foreach ($svc in 'api','web') {
         $info = @(docker inspect "daubert-hub-${svc}-1" --format $fmtRun 2>$null)
@@ -420,15 +424,20 @@ for ($try = 1; $try -le 36; $try++) {
         if ($svc -eq 'api' -and $f[2] -ne 'healthy') { $pending += "api: salud '$($f[2])', no healthy" }
     }
     $health = $null
-    try { $health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec 10 -ErrorAction Stop } catch { $health = $null }
-    if (-not $health) { $pending += 'health: sin respuesta' }
+    $leftSec = [math]::Floor(($deadline - (Get-Date)).TotalSeconds)
+    if ($leftSec -ge 1) {
+        try { $health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec ([int][math]::Min($httpMaxSec, $leftSec)) -ErrorAction Stop } catch { $health = $null }
+    }
+    if (-not $health) { $pending += 'health: sin respuesta (o plazo agotado)' }
     elseif ($health.status -ne 'ok' -or $health.database -ne 'connected' -or $health.environment -ne 'PRODUCTION' -or $health.commit -ne $prev) { $pending += 'health: no confirma el commit anterior sano' }
     if ($pending.Count -eq 0) { break }
-    if ($try -lt 36) { Start-Sleep -Seconds 5 }
+    $leftMs = [math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+    if ($leftMs -le 0) { break }
+    Start-Sleep -Milliseconds ([int][math]::Min($pollMs, $leftMs))
 }
 if ($pending.Count -gt 0) {
     foreach ($p in $pending) { Write-Host "PENDIENTE: $p" }
-    throw 'Rollback NO completado: comprobaciones pendientes tras ~3 min. Ejecutar el diagnostico de rollback-rehearsal.md; no repetir el bloque.'
+    throw "Rollback NO completado: comprobaciones pendientes al agotar el limite de $limitSec s. Ejecutar el diagnostico de rollback-rehearsal.md; no repetir el bloque."
 }
 Write-Host 'Rollback por imagen completado: api y web ejecutan las anclas registradas, api healthy y health confirma el commit anterior. Continuar con el humo de solo lectura.'
 ```
@@ -438,7 +447,11 @@ Los SHA y digests se toman del expediente previo, **no** del health posterior al
 el candidato fallido. El bloque solo declara el rollback completado cuando `api` y `web`
 están `running` con el manifiesto exacto de su ancla, `api` está `healthy` y `/api/health`
 confirma el commit anterior sano; un contenedor ilegible o con otra imagen falla al instante
-y los estados transitorios se reintentan hasta ~3 min. Ante cualquier rechazo o interrupción,
+y los estados transitorios (`starting`, contenedor no `running`, health sin respuesta) se
+reintentan dentro de un **límite único de 180 s** (`$limitSec`) medido desde el final de Compose:
+las esperas (5 s) y cada `GET /api/health` (`-TimeoutSec` = tiempo restante, máximo 10 s) nunca
+terminan después del plazo; solo `docker inspect`, local y sin timeout propio, puede añadir su
+propia duración a la última vuelta. Agotado el plazo, falla con `PENDIENTE: …`. Ante cualquier rechazo o interrupción,
 detenerse; no borrar etiquetas `failed-*` ni repetir el bloque completo: ejecutar el
 [diagnóstico de solo lectura](rollback-rehearsal.md#3-diagnóstico-de-recuperación-solo-lectura)
 y seguir únicamente el paso que indique su veredicto. Si el proxy devuelve 502 tras

@@ -27,7 +27,9 @@ y, desde la corrección de Fase 3D, **verifica después de Compose** que `api` y
 digest registrado antes del deploy, no el digest de `latest`), que `api` está `healthy` y que
 `/api/health` devuelve `status=ok`, `database=connected`, `environment=PRODUCTION` y
 `commit=$prev`. Un contenedor ilegible, sin digest válido o con otra imagen falla al instante;
-los estados transitorios (`starting`, sin respuesta HTTP) se reintentan 36 veces cada 5 s.
+los estados transitorios (`starting`, contenedor no `running`, sin respuesta HTTP) se reintentan
+dentro de un límite único de 180 s: esperas y `GET /api/health` (timeout = tiempo restante,
+máximo 10 s) nunca terminan después del plazo.
 Solo con todo verificado imprime "Rollback por imagen completado". Cada exit code se comprueba
 y cualquier fallo lanza una excepción.
 
@@ -72,6 +74,8 @@ Invoke-Pester -Script scripts\deploy\tests
 | Web o API detenida | Verificación posterior: Web `exited`/`created`/`restarting`, API `exited`; Parcial: `web` detenido | Excepción tras el límite con `PENDIENTE: … estado` |
 | Digest en ejecución inválido | Verificación posterior: sin `ImageManifestDescriptor`, truncado, mayúsculas | Excepción inmediata, sin reintentos |
 | Error al inspeccionar Docker | Verificación posterior: `docker inspect` con exit no cero (api y web), salida mal formada | Excepción inmediata (`no se pudo inspeccionar …`) |
+| Inspección no verificable en el diagnóstico | Diagnóstico: `docker inspect` de api o web con exit no cero, salida mal formada, varias líneas, digest vacío/truncado/en mayúsculas o estado vacío, en los estados que darían `SIN_INICIAR`, `LISTO_PARA_COMPOSE` y `RECUPERADO`; etiqueta con digest ilegible | Siempre `NO_VERIFICABLE`, sin mutaciones; nunca un veredicto que autorice ejecutar el bloque, Compose o etiquetar |
+| Límite de espera verificable | Límite: reloj simulado (`Get-Date`, `Start-Sleep` e `Invoke-RestMethod` lo avanzan); health que agota siempre su timeout, Web detenida, API que se recupera cerca del plazo | Tiempo simulado total ≤ 180 s; cada `-TimeoutSec` ≤ tiempo restante y ≤ 10 s; ninguna espera cruza el plazo |
 | Recuperación completa | Verificación posterior: mensaje de completado solo en el camino feliz; compara el manifiesto de cada contenedor; tras Compose solo hay lecturas | Un único mensaje "completado" |
 | Recuperación interrumpida | Interrumpida: mutaciones 2–5, imágenes `failed-*` y anclas intactas | Diagnóstico correcto; repetir el bloque completo no muta nada |
 | Solo comandos permitidos | Rollback documental: comandos limitados; Diagnóstico: solo lecturas | Sin `down`, `prune`, `--remove-orphans`, SQL ni n8n |
@@ -98,16 +102,25 @@ $ErrorActionPreference = 'Continue'
 foreach ($v in $prev, $new) { if ($v -notmatch '^[0-9a-f]{7,40}$') { throw "Commit invalido: '$v'" } }
 $fmt = @('--platform', 'linux/amd64', '--format', '{{.Id}}')
 $svcState = @{}
+$unverifiable = @()
 foreach ($svc in 'api', 'web') {
     $read = @{}
     foreach ($k in 'rollback', 'failed', 'latest') {
         $ref = if ($k -eq 'rollback') { "daubert-hub-${svc}:rollback-$prev" } elseif ($k -eq 'failed') { "daubert-hub-${svc}:failed-$new" } else { "daubert-hub-${svc}:latest" }
         $o = @(docker image inspect $ref @fmt 2>$null)
-        $read[$k] = if ($LASTEXITCODE -eq 0 -and $o.Count -eq 1 -and $o[0] -cmatch '^sha256:[0-9a-f]{64}$') { [string]$o[0] } else { '' }
+        $read[$k] = ''
+        if ($LASTEXITCODE -eq 0) {
+            if ($o.Count -eq 1 -and $o[0] -cmatch '^sha256:[0-9a-f]{64}$') { $read[$k] = [string]$o[0] }
+            else { $unverifiable += "${svc}: la imagen ${ref} existe pero su digest es ilegible" }
+        }
     }
     $o = @(docker inspect "daubert-hub-${svc}-1" --format '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>$null)
     $parts = @('', '', '')
-    if ($LASTEXITCODE -eq 0 -and $o.Count -eq 1 -and ([string]$o[0]).Split('|').Count -eq 3) { $parts = ([string]$o[0]).Split('|') }
+    if ($LASTEXITCODE -eq 0 -and $o.Count -eq 1) {
+        $p3 = @(([string]$o[0]).Split('|'))
+        if ($p3.Count -eq 3 -and $p3[0] -cmatch '^sha256:[0-9a-f]{64}$' -and $p3[1]) { $parts = $p3 }
+    }
+    if (-not $parts[0]) { $unverifiable += "${svc}: contenedor no verificable (inspect fallido, salida mal formada o sin digest de manifiesto valido)" }
     $expected = [string]$rollbackDigests[$svc]
     $svcState[$svc] = [pscustomobject]@{
         Servicio = $svc
@@ -125,8 +138,10 @@ $health = $null
 try { $health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec 10 -ErrorAction Stop } catch { $health = $null }
 $httpOk = [bool]($health -and $health.status -eq 'ok' -and $health.database -eq 'connected' -and $health.environment -eq 'PRODUCTION' -and $health.commit -eq $prev)
 Write-Host ('health: respuesta={0} commit_anterior_sano={1}' -f [bool]$health, $httpOk)
+foreach ($u in $unverifiable) { Write-Host "NO VERIFICABLE: $u" }
 $s = @($svcState['api'], $svcState['web'])
 $verdict = if (@($s | Where-Object { -not $_.AnclaOk }).Count -gt 0) { 'BLOQUEADO' }
+elseif ($unverifiable.Count -gt 0) { 'NO_VERIFICABLE' }
 elseif (@($s | Where-Object { $_.Failed -eq 'ausente' -and $_.Latest -eq 'otra' }).Count -eq 2) { 'SIN_INICIAR' }
 elseif (@($s | Where-Object { $_.Failed -eq 'preservada' -and $_.Latest -eq 'ancla' }).Count -eq 2) {
     if (@($s | Where-Object { $_.Ejecuta -eq 'ancla' -and $_.Estado -eq 'running' }).Count -eq 2) {
@@ -141,6 +156,7 @@ $verdict
 | Veredicto | Significado | Único paso permitido |
 | --- | --- | --- |
 | `BLOQUEADO` | Falta un ancla, su digest no coincide con el expediente o la evidencia está mal formada | **Detenerse.** No etiquetar, no reconstruir desde Git como "rollback exacto". Escalar |
+| `NO_VERIFICABLE` | No se puede conocer la imagen o el estado real de algún contenedor (`docker inspect` falló, salida mal formada, sin digest de manifiesto válido) o una etiqueta existente devuelve un digest ilegible | **Detenerse.** No ejecutar el bloque, ni Compose, ni etiquetar. Comprobar Docker (`docker info`, `docker ps -a` de solo lectura) y repetir el diagnóstico; escalar si persiste |
 | `SIN_INICIAR` | Anclas correctas, sin `failed-*`, `latest` es la imagen nueva en ambos servicios | Ejecutar el bloque completo del checklist |
 | `LISTO_PARA_COMPOSE` | Ambas imágenes nuevas preservadas y ambas anclas ya en `latest`, pero algún contenedor no ejecuta el ancla o no está `running` (Compose falló, se interrumpió o recreó parcialmente) | Diagnosticar primero la causa del fallo de Compose; después ejecutar **solo** las líneas finales del bloque del checklist, desde `docker compose @cf up -d --no-build api web` hasta el final (incluye la verificación posterior; requiere `$cf`, `$prev` y `$rollbackDigests` cargados en la consola). Repetir este diagnóstico |
 | `RECREADO_NO_SANO` | Ambos contenedores ejecutan el ancla, pero `api` no está `healthy` o el health HTTP no confirma el commit anterior sano | **No** volver a etiquetar ni recrear. Revisar logs de `api` (`docker compose @cf logs --tail 100 api`), proxy (`Set-EntryClosure.ps1 -Action Reload` si hay 502) y BD. Escalar |
@@ -217,7 +233,8 @@ La limpieza de etiquetas del ensayo se hace a mano al final y **solo** en ese mo
 - La verificación posterior del bloque y el diagnóstico (§3) duplican la lectura de
   contenedores con el mismo formato; si se cambia uno, revisar el otro (ambos están cubiertos
   por pruebas que extraen el texto real de cada documento).
-- El límite de reintentos (~3 min) es fijo; un arranque de `api` más lento termina en
+- El límite de 180 s es fijo (solo `docker inspect`, local y sin timeout propio, puede
+  prolongar la última vuelta); un arranque de `api` más lento termina en
   `Rollback NO completado` aunque luego se recupere: ejecutar el diagnóstico, no repetir el bloque.
 - El diagnóstico depende de `ImageManifestDescriptor` (containerd), igual que el preflight;
   si Docker Desktop cambia de almacén devolverá `desconocida` y nunca `RECUPERADO` (falla

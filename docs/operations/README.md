@@ -1,4 +1,4 @@
-﻿# Operaciones
+# Operaciones
 
 Runbooks generales. Si no hay evidencia suficiente para un procedimiento exacto, se marca **PENDIENTE** en vez de inventarlo.
 
