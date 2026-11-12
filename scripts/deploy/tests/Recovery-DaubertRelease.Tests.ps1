@@ -31,6 +31,7 @@ function Invoke-DocumentedComposeResume {
     $at = $body.IndexOf('docker compose @cf up -d --no-build api web')
     if ($at -lt 0) { throw 'No se encontro el paso Compose del rollback.' }
     $prev = 'bbbbbbb'
+    $rollbackDigests = $script:Recovery.Expected
     $cf = Get-ComposeBaseArgs
     & ([scriptblock]::Create("`$ErrorActionPreference = 'Continue'`n" + $body.Substring($at)))
 }
@@ -51,6 +52,7 @@ function New-RecoveryState {
         Tags = @{}; Running = @{}; Status = @{}; Health = @{}; Calls = @()
         FailTarget = ''; ComposeFails = $false; ComposeOnly = @('api', 'web'); HealthAfter = 'healthy'
         InterruptAt = 0; Mutations = 0
+        Composed = $false; InspectFails = @(); InspectRaw = @{}; RunOverride = @{}; StatusAfter = @{}; StartingReads = 0
     }
     foreach ($svc in @('api', 'web')) {
         $s.Tags['daubert-hub-' + $svc + ':rollback-bbbbbbb'] = $s.Expected[$svc]
@@ -78,7 +80,11 @@ function Invoke-RecoveryDocker {
         if (-not $m.Success) { $global:LASTEXITCODE = 1; return }
         if (($NativeArgs -join ' ') -notmatch 'ImageManifestDescriptor.*\|.*State\.Status.*\|.*State\.Health') { throw 'Formato de docker inspect no simulado.' }
         $svc = $m.Groups[1].Value
-        return ($s.Running[$svc] + '|' + $s.Status[$svc] + '|' + $s.Health[$svc])
+        if ($s.InspectFails -contains $svc) { $global:LASTEXITCODE = 1; return }
+        if ($s.InspectRaw.ContainsKey($svc)) { return $s.InspectRaw[$svc] }
+        $health = $s.Health[$svc]
+        if ($svc -eq 'api' -and $s.Composed -and $s.StartingReads -gt 0) { $s.StartingReads--; $health = 'starting' }
+        return ($s.Running[$svc] + '|' + $s.Status[$svc] + '|' + $health)
     }
     $mutating = ($NativeArgs.Count -eq 3 -and $NativeArgs[0] -eq 'tag') -or $NativeArgs[0] -eq 'compose'
     if ($mutating) {
@@ -98,6 +104,9 @@ function Invoke-RecoveryDocker {
             $s.Status[$svc] = 'running'
         }
         if ($s.ComposeOnly -contains 'api') { $s.Health.api = $s.HealthAfter }
+        foreach ($svc in @($s.RunOverride.Keys)) { $s.Running[$svc] = $s.RunOverride[$svc] }
+        foreach ($svc in @($s.StatusAfter.Keys)) { $s.Status[$svc] = $s.StatusAfter[$svc] }
+        $s.Composed = $true
         return
     }
     throw 'Comando fuera del rollback de api/web permitido en el simulador.'
@@ -121,6 +130,7 @@ Describe 'Recuperacion operativa: rollback documental sin servicios reales' {
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { [pscustomobject]@{ status = 'ok'; database = 'connected'; environment = 'PRODUCTION'; commit = 'bbbbbbb' } }
         Mock Write-Host { }
+        Mock Start-Sleep { }
     }
 
     It 'recupera una recreacion parcial, conserva imagenes fallidas y solo recrea api/web sin build' {
@@ -183,6 +193,7 @@ Describe 'Fase 3D: API que no llega a healthy tras el rollback' {
         $script:Recovery = New-RecoveryState
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Write-Host { }
+        Mock Start-Sleep { }
     }
 
     It 'health inaccesible (API no responde) no se declara recuperacion correcta' {
@@ -214,6 +225,7 @@ Describe 'Fase 3D: diagnostico de recuperacion de solo lectura (rollback-rehears
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
+        Mock Start-Sleep { }
     }
 
     It 'antes del rollback, con anclas correctas, indica SIN_INICIAR y no muta nada' {
@@ -258,17 +270,19 @@ Describe 'Fase 3D: recreacion parcial de API/Web' {
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
+        Mock Start-Sleep { }
     }
 
-    It 'LIMITACION del bloque del checklist: un Compose con exit 0 que solo recrea api pasa su verificacion HTTP; el diagnostico lo detecta' {
+    It 'un Compose con exit 0 que solo recrea api (health HTTP correcto) NO se declara completado; el diagnostico indica LISTO_PARA_COMPOSE' {
         $script:Recovery.ComposeOnly = @('api')
-        { Invoke-DocumentedRecovery } | Should Not Throw
+        { Invoke-DocumentedRecovery } | Should Throw 'web ejecuta'
         $script:Recovery.Running.web | Should Be $script:Recovery.New
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado' }
         Invoke-RehearsalDiagnosis | Should Be 'LISTO_PARA_COMPOSE'
     }
     It 'tras detectar la recreacion parcial, reanudar solo Compose completa la recuperacion sin volver a etiquetar' {
         $script:Recovery.ComposeOnly = @('api')
-        Invoke-DocumentedRecovery
+        { Invoke-DocumentedRecovery } | Should Throw
         $tagsBefore = @($script:Recovery.Calls | Where-Object { $_[0] -eq 'tag' }).Count
         $script:Recovery.ComposeOnly = @('api', 'web')
         Invoke-DocumentedComposeResume
@@ -298,6 +312,7 @@ Describe 'Fase 3D: recuperacion interrumpida o detenida a mitad' {
         Mock docker { Invoke-RecoveryDocker $args }
         Mock Invoke-RestMethod { Invoke-RecoveryHealth }
         Mock Write-Host { }
+        Mock Start-Sleep { }
     }
 
     It 'interrupcion en la mutacion <At> (<Momento>): diagnostico <Veredicto> y repetir el bloque completo no muta nada' -TestCases @(
@@ -343,5 +358,95 @@ Describe 'Fase 3D: recuperacion interrumpida o detenida a mitad' {
             $script:Recovery.Tags['daubert-hub-' + $svc + ':failed-aaaaaaa'] | Should Be $script:Recovery.New
             $script:Recovery.Tags['daubert-hub-' + $svc + ':rollback-bbbbbbb'] | Should Be $script:Recovery.Expected[$svc]
         }
+    }
+}
+
+Describe 'Fase 3D: verificacion posterior del bloque de rollback (contenedores, digests y health)' {
+    BeforeEach {
+        $script:Recovery = New-RecoveryState
+        Mock docker { Invoke-RecoveryDocker $args }
+        Mock Invoke-RestMethod { Invoke-RecoveryHealth }
+        Mock Write-Host { }
+        Mock Start-Sleep { }
+    }
+
+    It 'recuperacion completa: solo entonces emite el mensaje de completado' {
+        { Invoke-DocumentedRecovery } | Should Not Throw
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -match '^Rollback por imagen completado' }
+        foreach ($svc in @('api', 'web')) { $script:Recovery.Running[$svc] | Should Be $script:Recovery.Expected[$svc] }
+    }
+    It 'compara el manifiesto en ejecucion de cada contenedor, no solo la etiqueta latest' {
+        Invoke-DocumentedRecovery
+        foreach ($svc in @('api', 'web')) {
+            @($script:Recovery.Calls | Where-Object { $_[0] -eq 'inspect' -and $_[1] -eq ('daubert-hub-' + $svc + '-1') -and ($_ -join ' ') -match 'ImageManifestDescriptor' }).Count | Should BeGreaterThan 0
+        }
+    }
+    It 'API correcta con Web ejecutando <Caso>: falla explicitamente sin mensaje de completado' -TestCases @(
+        @{ Caso = 'la imagen fallida'; Digest = ('sha256:' + ('3' * 64)) },
+        @{ Caso = 'otra imagen'; Digest = ('sha256:' + ('4' * 64)) },
+        @{ Caso = 'la imagen de api'; Digest = ('sha256:' + ('1' * 64)) }
+    ) {
+        param($Caso, $Digest)
+        $script:Recovery.RunOverride = @{ web = $Digest }
+        { Invoke-DocumentedRecovery } | Should Throw 'web ejecuta'
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
+        Assert-MockCalled Start-Sleep -Times 0 -Scope It
+    }
+    It 'Web con estado <Estado> tras Compose: falla tras agotar reintentos y nunca declara completado' -TestCases @(
+        @{ Estado = 'exited' }, @{ Estado = 'created' }, @{ Estado = 'restarting' }
+    ) {
+        param($Estado)
+        $script:Recovery.StatusAfter = @{ web = $Estado }
+        { Invoke-DocumentedRecovery } | Should Throw 'Rollback NO completado'
+        Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match "PENDIENTE: web: estado '$Estado'" }
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
+        Assert-MockCalled Start-Sleep -Times 35 -Exactly -Scope It
+    }
+    It 'API detenida tras Compose: falla y no declara completado' {
+        $script:Recovery.StatusAfter = @{ api = 'exited' }
+        { Invoke-DocumentedRecovery } | Should Throw 'Rollback NO completado'
+        Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match "PENDIENTE: api: estado 'exited'" }
+    }
+    It 'digest en ejecucion invalido (<Caso>): falla al instante' -TestCases @(
+        @{ Caso = 'sin ImageManifestDescriptor'; Raw = '|running|' },
+        @{ Caso = 'truncado'; Raw = 'sha256:abc|running|' },
+        @{ Caso = 'mayusculas'; Raw = ('sha256:' + ('A' * 64) + '|running|') }
+    ) {
+        param($Caso, $Raw)
+        $script:Recovery.InspectRaw = @{ web = $Raw }
+        { Invoke-DocumentedRecovery } | Should Throw 'digest de manifiesto valido'
+        Assert-MockCalled Start-Sleep -Times 0 -Scope It
+    }
+    It 'error al inspeccionar <Svc> (exit no cero): falla explicitamente' -TestCases @(@{ Svc = 'api' }, @{ Svc = 'web' }) {
+        param($Svc)
+        $script:Recovery.InspectFails = @($Svc)
+        { Invoke-DocumentedRecovery } | Should Throw ('no se pudo inspeccionar daubert-hub-' + $Svc + '-1')
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
+    }
+    It 'salida de inspect mal formada (sin separadores) falla explicitamente' {
+        $script:Recovery.InspectRaw = @{ api = ('sha256:' + ('1' * 64)) }
+        { Invoke-DocumentedRecovery } | Should Throw 'no se pudo inspeccionar daubert-hub-api-1'
+    }
+    It 'API en starting que pasa a healthy: reintenta y completa' {
+        $script:Recovery.StartingReads = 3
+        { Invoke-DocumentedRecovery } | Should Not Throw
+        Assert-MockCalled Start-Sleep -Times 3 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { "$Object" -match '^Rollback por imagen completado' }
+    }
+    It 'API que nunca llega a healthy: falla tras el limite con pendientes de salud y health' {
+        $script:Recovery.HealthAfter = 'unhealthy'
+        { Invoke-DocumentedRecovery } | Should Throw 'Rollback NO completado'
+        Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match "PENDIENTE: api: salud 'unhealthy'" }
+        Assert-MockCalled Write-Host -Times 1 -Scope It -ParameterFilter { "$Object" -match 'PENDIENTE: health: sin respuesta' }
+        Assert-MockCalled Write-Host -Times 0 -Scope It -ParameterFilter { "$Object" -match 'completado:' }
+    }
+    It 'la verificacion posterior solo lee: tras el Compose no hay mas tag ni compose' {
+        $script:Recovery.StartingReads = 2
+        Invoke-DocumentedRecovery
+        $calls = @($script:Recovery.Calls)
+        $composeAt = -1
+        for ($i = 0; $i -lt $calls.Count; $i++) { if ($calls[$i][0] -eq 'compose') { $composeAt = $i } }
+        $composeAt | Should BeGreaterThan -1
+        for ($i = $composeAt + 1; $i -lt $calls.Count; $i++) { $calls[$i][0] | Should Be 'inspect' }
     }
 }

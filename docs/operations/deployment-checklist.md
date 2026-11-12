@@ -402,15 +402,44 @@ foreach ($svc in 'api','web') {
 }
 docker compose @cf up -d --no-build api web 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Rollback Compose fallido: conservar anclas y diagnosticar, no repetir ciegamente.' }
-$health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec 10 -ErrorAction Stop
-if ($health.status -ne 'ok' -or $health.database -ne 'connected' -or $health.environment -ne 'PRODUCTION' -or $health.commit -ne $prev) { throw 'Rollback sin verificar: health no confirma el commit anterior sano.' }
-Write-Host 'Rollback por imagen completado; verificar tambien ambos contenedores y el humo de solo lectura.'
+# Verificacion posterior (solo lectura). Con containerd, .Image del contenedor NO es direccionable y el
+# digest de 'latest' no prueba que el contenedor lo use: se compara el manifiesto con el que se creo cada
+# contenedor (.ImageManifestDescriptor.digest) con el digest del ancla registrado ANTES del deploy.
+$fmtRun = '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}'
+for ($try = 1; $try -le 36; $try++) {
+    $pending = @()
+    foreach ($svc in 'api','web') {
+        $info = @(docker inspect "daubert-hub-${svc}-1" --format $fmtRun 2>$null)
+        $f = @(); if ($LASTEXITCODE -eq 0 -and $info.Count -eq 1) { $f = @(([string]$info[0]).Split('|')) }
+        if ($f.Count -ne 3) { throw "Rollback NO completado: no se pudo inspeccionar daubert-hub-${svc}-1." }
+        if ($f[0] -cnotmatch '^sha256:[0-9a-f]{64}$') { throw "Rollback NO completado: ${svc} no expone un digest de manifiesto valido." }
+        if ($f[0] -cne $rollbackDigests[$svc]) { throw "Rollback NO completado: ${svc} ejecuta $($f[0]), no el ancla registrada." }
+        if ($f[1] -ne 'running') { $pending += "${svc}: estado '$($f[1])', no running" }
+        if ($svc -eq 'api' -and $f[2] -ne 'healthy') { $pending += "api: salud '$($f[2])', no healthy" }
+    }
+    $health = $null
+    try { $health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec 10 -ErrorAction Stop } catch { $health = $null }
+    if (-not $health) { $pending += 'health: sin respuesta' }
+    elseif ($health.status -ne 'ok' -or $health.database -ne 'connected' -or $health.environment -ne 'PRODUCTION' -or $health.commit -ne $prev) { $pending += 'health: no confirma el commit anterior sano' }
+    if ($pending.Count -eq 0) { break }
+    if ($try -lt 36) { Start-Sleep -Seconds 5 }
+}
+if ($pending.Count -gt 0) {
+    foreach ($p in $pending) { Write-Host "PENDIENTE: $p" }
+    throw 'Rollback NO completado: comprobaciones pendientes tras ~3 min. Ejecutar el diagnostico de rollback-rehearsal.md; no repetir el bloque.'
+}
+Write-Host 'Rollback por imagen completado: api y web ejecutan las anclas registradas, api healthy y health confirma el commit anterior. Continuar con el humo de solo lectura.'
 ```
 
 Los SHA y digests se toman del expediente previo, **no** del health posterior al fallo.
 `Deploy-DaubertHub.ps1` restaura `GIT_COMMIT` al salir: no usar esa variable para deducir
-el candidato fallido. Ante cualquier rechazo, detenerse; no borrar etiquetas `failed-*`
-ni repetir el bloque completo sin revisar el estado parcial. Si el proxy devuelve 502 tras
+el candidato fallido. El bloque solo declara el rollback completado cuando `api` y `web`
+están `running` con el manifiesto exacto de su ancla, `api` está `healthy` y `/api/health`
+confirma el commit anterior sano; un contenedor ilegible o con otra imagen falla al instante
+y los estados transitorios se reintentan hasta ~3 min. Ante cualquier rechazo o interrupción,
+detenerse; no borrar etiquetas `failed-*` ni repetir el bloque completo: ejecutar el
+[diagnóstico de solo lectura](rollback-rehearsal.md#3-diagnóstico-de-recuperación-solo-lectura)
+y seguir únicamente el paso que indique su veredicto. Si el proxy devuelve 502 tras
 recrear solo API, seguir el paso de `Set-EntryClosure.ps1 -Action Reload` del procedimiento
 de ventana y repetir únicamente las verificaciones; no volver a etiquetar por ese motivo.
 

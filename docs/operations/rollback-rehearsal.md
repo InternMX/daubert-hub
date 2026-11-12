@@ -22,22 +22,27 @@ El bloque del checklist: valida `$prev`/`$new`; para `api` y `web` comprueba que
 existe y coincide con el digest registrado **antes** del deploy, que `failed-<new>` no existe y
 que `latest` es legible; preserva **ambas** imágenes nuevas como `failed-<new>`; devuelve las
 anclas a `latest` verificando digests; ejecuta `docker compose @cf up -d --no-build api web`;
-y exige `/api/health` con `status=ok`, `database=connected`, `environment=PRODUCTION` y
-`commit=$prev`. Cada exit code se comprueba y cualquier fallo lanza una excepción.
+y, desde la corrección de Fase 3D, **verifica después de Compose** que `api` y `web` están
+`running` con el manifiesto exacto de su ancla (`.ImageManifestDescriptor.digest` frente al
+digest registrado antes del deploy, no el digest de `latest`), que `api` está `healthy` y que
+`/api/health` devuelve `status=ok`, `database=connected`, `environment=PRODUCTION` y
+`commit=$prev`. Un contenedor ilegible, sin digest válido o con otra imagen falla al instante;
+los estados transitorios (`starting`, sin respuesta HTTP) se reintentan 36 veces cada 5 s.
+Solo con todo verificado imprime "Rollback por imagen completado". Cada exit code se comprueba
+y cualquier fallo lanza una excepción.
 
 | # | Limitación | Consecuencia | Mitigación en esta entrega |
 | --- | --- | --- | --- |
-| L1 | Tras Compose solo verifica el health HTTP (que responde la `api`); **no compara la imagen de cada contenedor** con el ancla | Un Compose con exit `0` que recrea solo `api` (o deja `web` detenido) se declara recuperado con `web` en la versión fallida | Diagnóstico de solo lectura (§3): exige que `api` y `web` ejecuten el digest del ancla y estén `running`. Prueba de caracterización que deja constancia de L1 |
+| L1 | **Corregida.** Antes, tras Compose solo verificaba el health HTTP (que responde la `api`) y no comparaba la imagen de cada contenedor | Un Compose con exit `0` que recreaba solo `api` (o dejaba `web` detenido) se declaraba recuperado con `web` en la versión fallida | El bloque del checklist verifica estado y manifiesto de ambos contenedores; pruebas que fallan si se elimina esa verificación |
 | L2 | No es idempotente: una segunda ejecución tras un fallo o interrupción se detiene en "`failed-*` ya existe" | Correcto (no sobrescribe), pero no indica cómo continuar | El diagnóstico clasifica el estado parcial; con `LISTO_PARA_COMPOSE` solo se repite la cola Compose + health del mismo bloque |
-| L3 | No consulta el estado Docker de `api` (`healthy`) ni de `web` (`running`) | Un health HTTP momentáneo podría ocultar un contenedor reiniciándose | Diagnóstico de solo lectura (§3) |
+| L3 | **Corregida.** No consultaba el estado Docker de `api` (`healthy`) ni de `web` (`running`) | Un health HTTP momentáneo podía ocultar un contenedor reiniciándose | El bloque exige `running` en ambos y `healthy` en `api`; el diagnóstico (§3) hace lo mismo |
 | L4 | Depende de evidencia externa (`$prev`, `$new`, digests) introducida a mano | Un dato mal copiado bloquea (seguro) o, si la evidencia era errónea desde el origen, restaura otra imagen | El bloque y el diagnóstico rechazan formatos inválidos; la evidencia se revisa antes del deploy (expediente) |
 | L5 | El ancla solo vive en el almacén de Docker Desktop | Perder el almacén impide el rollback exacto | `docker save` opcional (checklist, alternativa 1b); fuera del alcance de esta entrega |
 | L6 | Solo se ha validado con mocks | No prueba containerd, `--platform`, Compose real ni Nginx | Ensayo real aislado diseñado en §4, no ejecutado |
 | L7 | No hay modo `-Rollback` ni rollback automático | Recuperación manual (copiar/pegar) | Intencional en esta fase; no se implementa automatización en PROD |
 
-No se modificaron `Deploy-DaubertHub.ps1`, el checklist ni ningún otro script productivo. L1
-se documenta aquí y se propone, para revisión humana, añadir al bloque del checklist la
-comparación de imágenes en ejecución (o invocar el diagnóstico de §3 tras Compose).
+No se modificaron `Deploy-DaubertHub.ps1` ni ningún otro script productivo. Del checklist solo
+cambió el bloque **Rollback del Hub** (verificación posterior) y su párrafo de instrucciones.
 
 ## 2. Cobertura automatizada
 
@@ -61,9 +66,13 @@ Invoke-Pester -Script scripts\deploy\tests
 | Fallo al preservar una imagen | Rollback documental (api); Interrumpida: preservar web tras api | Sin Compose; `PARCIAL` |
 | Fallo al restaurar una etiqueta | Rollback documental (web); Interrumpida: restaurar web tras api | Sin Compose; `PARCIAL` |
 | Error durante Compose | Rollback documental: compose fallido; Interrumpida: Compose fallido | Excepción; `LISTO_PARA_COMPOSE`; reanudación sin re-etiquetar |
-| API que no llega a healthy | API no healthy: health inaccesible, `status`/`database`/`environment` incorrectos; Parcial: `RECREADO_NO_SANO` | Excepción; nunca se declara recuperado |
+| API que no llega a healthy | API no healthy: health inaccesible, `status`/`database`/`environment` incorrectos; Verificación posterior: API nunca healthy, API detenida, `starting` que pasa a `healthy`; Parcial: `RECREADO_NO_SANO` | Excepción tras el límite con `PENDIENTE: …`; nunca se declara recuperado. Si la API se recupera dentro del límite, completa |
 | Commit incorrecto tras restaurar | Rollback documental: commit anterior no vuelve; API no healthy: `commit=ccccccc`; Parcial: commit HTTP incorrecto | Excepción; `RECREADO_NO_SANO` |
-| Recreación parcial de API/Web | Parcial: Compose solo recrea `api` (caracteriza L1), `web` detenido, reanudación | El bloque no lo detecta; el diagnóstico sí (`LISTO_PARA_COMPOSE`) |
+| Recreación parcial de API/Web | Parcial: Compose solo recrea `api`, reanudación; Verificación posterior: API correcta con Web en la imagen fallida, en otra imagen o en la de `api` | Excepción inmediata (`web ejecuta …`) sin mensaje de completado; el diagnóstico da `LISTO_PARA_COMPOSE` y la reanudación solo de Compose completa |
+| Web o API detenida | Verificación posterior: Web `exited`/`created`/`restarting`, API `exited`; Parcial: `web` detenido | Excepción tras el límite con `PENDIENTE: … estado` |
+| Digest en ejecución inválido | Verificación posterior: sin `ImageManifestDescriptor`, truncado, mayúsculas | Excepción inmediata, sin reintentos |
+| Error al inspeccionar Docker | Verificación posterior: `docker inspect` con exit no cero (api y web), salida mal formada | Excepción inmediata (`no se pudo inspeccionar …`) |
+| Recuperación completa | Verificación posterior: mensaje de completado solo en el camino feliz; compara el manifiesto de cada contenedor; tras Compose solo hay lecturas | Un único mensaje "completado" |
 | Recuperación interrumpida | Interrumpida: mutaciones 2–5, imágenes `failed-*` y anclas intactas | Diagnóstico correcto; repetir el bloque completo no muta nada |
 | Solo comandos permitidos | Rollback documental: comandos limitados; Diagnóstico: solo lecturas | Sin `down`, `prune`, `--remove-orphans`, SQL ni n8n |
 
@@ -133,7 +142,7 @@ $verdict
 | --- | --- | --- |
 | `BLOQUEADO` | Falta un ancla, su digest no coincide con el expediente o la evidencia está mal formada | **Detenerse.** No etiquetar, no reconstruir desde Git como "rollback exacto". Escalar |
 | `SIN_INICIAR` | Anclas correctas, sin `failed-*`, `latest` es la imagen nueva en ambos servicios | Ejecutar el bloque completo del checklist |
-| `LISTO_PARA_COMPOSE` | Ambas imágenes nuevas preservadas y ambas anclas ya en `latest`, pero algún contenedor no ejecuta el ancla o no está `running` (Compose falló, se interrumpió o recreó parcialmente) | Diagnosticar primero la causa del fallo de Compose; después ejecutar **solo** las líneas finales del bloque del checklist, desde `docker compose @cf up -d --no-build api web` hasta el final. Repetir este diagnóstico |
+| `LISTO_PARA_COMPOSE` | Ambas imágenes nuevas preservadas y ambas anclas ya en `latest`, pero algún contenedor no ejecuta el ancla o no está `running` (Compose falló, se interrumpió o recreó parcialmente) | Diagnosticar primero la causa del fallo de Compose; después ejecutar **solo** las líneas finales del bloque del checklist, desde `docker compose @cf up -d --no-build api web` hasta el final (incluye la verificación posterior; requiere `$cf`, `$prev` y `$rollbackDigests` cargados en la consola). Repetir este diagnóstico |
 | `RECREADO_NO_SANO` | Ambos contenedores ejecutan el ancla, pero `api` no está `healthy` o el health HTTP no confirma el commit anterior sano | **No** volver a etiquetar ni recrear. Revisar logs de `api` (`docker compose @cf logs --tail 100 api`), proxy (`Set-EntryClosure.ps1 -Action Reload` si hay 502) y BD. Escalar |
 | `RECUPERADO` | Ambos contenedores ejecutan el ancla, `api` healthy, `web` running y health con `commit=$prev` | Continuar con el humo de solo lectura, Reload/Open de la ventana y el registro |
 | `PARCIAL` | Cualquier otra combinación (p. ej. solo una imagen preservada, solo un `latest` restaurado, `latest` sin cambios) | **Detenerse.** Revisar la tabla impresa; completar a mano **solo** el paso pendiente de ese servicio con los mismos comandos y comprobaciones del bloque, con autorización del responsable. Nunca borrar ni sobrescribir `failed-*` ni anclas |
@@ -205,9 +214,11 @@ La limpieza de etiquetas del ensayo se hace a mano al final y **solo** en ese mo
 
 - **El rollback no se ha ejecutado contra Docker real** (ni en PROD ni en un ensayo aislado):
   las pruebas validan decisiones y comandos, no el motor.
-- **L1 sigue en el bloque del checklist**: hasta que se incorpore la comparación de imágenes
-  en ejecución, el operador debe ejecutar el diagnóstico tras Compose. Modificar el checklist
-  queda pendiente de revisión humana y coordinación con la Fase 3A/3C (que edita ese archivo).
+- La verificación posterior del bloque y el diagnóstico (§3) duplican la lectura de
+  contenedores con el mismo formato; si se cambia uno, revisar el otro (ambos están cubiertos
+  por pruebas que extraen el texto real de cada documento).
+- El límite de reintentos (~3 min) es fijo; un arranque de `api` más lento termina en
+  `Rollback NO completado` aunque luego se recupere: ejecutar el diagnóstico, no repetir el bloque.
 - El diagnóstico depende de `ImageManifestDescriptor` (containerd), igual que el preflight;
   si Docker Desktop cambia de almacén devolverá `desconocida` y nunca `RECUPERADO` (falla
   cerrado, pero bloquearía una recuperación correcta).
