@@ -583,7 +583,6 @@ export function ManufacturingSpecificationPage({ documentos = DOCUMENTOS_ACTIVOS
       : faltantesFinal.length > 0 || (currentAssessment !== null && !currentAssessment.completo) ? 'faltan'
         : sinReconocer.length > 0 || avisosVistaPrevia.length > 0 ? 'observaciones' : 'completos';
   const bloqueosFinal: BloqueoFinal[] = [
-    ...(documentos && docActual?.estado === 'BORRADOR' && (responsables[0]?.nombre ?? '').trim() === '' ? [{ clave: 'genero', texto: 'Indica el nombre de quien generó la hoja.', irA: () => { const c = document.getElementById('responsables-seccion'); c?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }); c?.querySelector<HTMLElement>('input')?.focus(); } }] : []),
     ...faltantesFinal.map((i) => ({ clave: i.id, texto: i.codigo === 'CLIENTE_SIN_IDENTIFICAR' ? 'Falta identificar al cliente.' : i.resumen ?? i.mensaje, irA: () => localizar(i, ctx) })),
     ...sinReconocer.map((i) => ({ clave: i.id, texto: `Contradicción por reconocer: ${i.resumen ?? i.mensaje}`, irA: () => localizar(i, ctx) })),
     ...(faltantesFinal.length === 0 && currentAssessment !== null && !currentAssessment.completo ? [{ clave: 'hoja-incompleta', texto: 'La hoja está incompleta según la comprobación del servidor.' }] : [])

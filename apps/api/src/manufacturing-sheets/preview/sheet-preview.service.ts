@@ -83,7 +83,8 @@ export class SheetPreviewService {
 
     const template = await this.composedTemplate(family);
     // Con una versión FINALIZADA y responsables (1 a 3), los recuadros de firma llevan función, nombre e imagen opcional; en cualquier otro caso se conserva el marcador «SIN FIRMA» de la plantilla.
-    const bloques = opciones.capaFinalizada?.responsables && opciones.capaFinalizada.responsables.length > 0 ? bloquesDeFirma(opciones.capaFinalizada.responsables) : null;
+    // Finalizada CON lista de responsables (aunque esté vacía): se componen los recuadros; un responsable no capturado deja su recuadro en blanco. Sin lista se conserva el marcador de la plantilla.
+    const bloques = opciones.capaFinalizada?.responsables ? bloquesDeFirma(opciones.capaFinalizada.responsables) : null;
     const values: Record<string, string> = { ...mapped.datos, bloque_firma_elaboro: bloques ? bloques.primero : SIN_FIRMA_MARKER, bloque_firma_aprobo: bloques ? bloques.segundo : SIN_FIRMA_MARKER };
     // Una sola pasada sobre la plantilla: un valor con «{{x}}» nunca se vuelve a interpretar. Los textos se escapan; los bloques de firma son el marcador fijo.
     let html = template.replace(PLACEHOLDER, (whole, name: string) => {

@@ -127,3 +127,71 @@ describe('responsables y firmas (instancia desechable)', () => {
     expect(motor.renders[0]!.info.responsables).toEqual([{ posicion: 1, funcion: 'GENERO', nombre: 'General Dos', firma: null }]);
   });
 });
+
+// Firmas OPCIONALES (Generó, Revisó y Aprobó): sin ninguna selección se finaliza; con selección se imprimen solo las elegidas; las posiciones no se desplazan.
+describe('firmas opcionales al finalizar (casos A–E)', () => {
+  const impreso = (): Array<[number, string, string, boolean]> => (motor.renders.at(-1)!.info.responsables ?? []).map((r) => [r.posicion, r.funcion, r.nombre, r.firma !== null]);
+  const contarPdf = async (id: string): Promise<number> => (await poolAdmin.query('SELECT count(*)::int AS n FROM manufactura.pdfs p JOIN manufactura.revisiones r USING (revision_id) WHERE r.public_id = $1', [id])).rows[0].n;
+
+  it('A · ninguna firma ni nombre: finaliza, registra el PDF y el espacio de «Generó» queda en blanco (sin imagen ni nombre)', async () => {
+    const v = await crear(2);
+    const a = await actualizar(2, v.id, { version: v.version, responsables: [{ funcion: 'GENERO', nombre: '' }] });
+    expect(a.elaboro.nombre).toBeNull();
+    motor.renders = [];
+    const fin = await service.finalizar(actor(2), v.id, a.version) as Vista;
+    expect(fin).toMatchObject({ estado: 'FINALIZADA', revision: 1 });
+    expect(impreso()).toEqual([[1, 'GENERO', '', false]]);
+    expect(await contarPdf(v.id)).toBe(1);
+  });
+
+  it('B · solo una firma: únicamente esa aparece', async () => {
+    const f = await subir(2, pngFirma());
+    const v = await crear(2);
+    const a = await actualizar(2, v.id, { version: v.version, responsables: [{ funcion: 'GENERO', nombre: 'x', firmaId: f.id }] });
+    motor.renders = [];
+    await service.finalizar(actor(2), v.id, a.version);
+    expect(impreso()).toEqual([[1, 'GENERO', 'General Dos', true]]);
+  });
+
+  it('C · dos firmas de tres responsables: ambas aparecen y el tercero queda sin imagen; con «Generó» en blanco su recuadro se conserva vacío', async () => {
+    const f1 = await subir(2, pngFirma()); const f2 = await subir(2, pngFirma());
+    const v = await crear(2);
+    const a = await actualizar(2, v.id, { version: v.version, responsables: [{ funcion: 'GENERO', nombre: 'x', firmaId: f1.id }, { funcion: 'REVISO', nombre: 'Sin imagen' }, { funcion: 'APROBO', nombre: 'y', firmaId: f2.id }] });
+    motor.renders = [];
+    await service.finalizar(actor(2), v.id, a.version);
+    expect(impreso()).toEqual([[1, 'GENERO', 'General Dos', true], [2, 'REVISO', 'Sin imagen', false], [3, 'APROBO', 'General Dos', true]]);
+
+    const w = await crear(2);
+    const b = await actualizar(2, w.id, { version: w.version, responsables: [{ funcion: 'GENERO', nombre: '' }, { funcion: 'REVISO', nombre: 'r', firmaId: f1.id }, { funcion: 'APROBO', nombre: 'a', firmaId: f2.id }] });
+    motor.renders = [];
+    const fin = await service.finalizar(actor(2), w.id, b.version) as Vista;
+    expect(fin.estado).toBe('FINALIZADA');
+    expect(impreso()).toEqual([[1, 'GENERO', '', false], [2, 'REVISO', 'General Dos', true], [3, 'APROBO', 'General Dos', true]]);
+  });
+
+  it('D · tres firmas: las tres aparecen (comportamiento anterior intacto)', async () => {
+    const fs = [await subir(2, pngFirma()), await subir(2, pngFirma()), await subir(2, pngFirma())];
+    const v = await crear(2);
+    const a = await actualizar(2, v.id, { version: v.version, responsables: [{ funcion: 'GENERO', nombre: 'x', firmaId: fs[0]!.id }, { funcion: 'REVISO', nombre: 'x', firmaId: fs[1]!.id }, { funcion: 'APROBO', nombre: 'x', firmaId: fs[2]!.id }] });
+    motor.renders = [];
+    const fin = await service.finalizar(actor(2), v.id, a.version) as Vista;
+    expect(fin).toMatchObject({ estado: 'FINALIZADA', elaboro: { nombre: 'General Dos', confirmado: true } });
+    expect(impreso()).toEqual([[1, 'GENERO', 'General Dos', true], [2, 'REVISO', 'General Dos', true], [3, 'APROBO', 'General Dos', true]]);
+  });
+
+  it('E · nueva revisión sin firmas: se finaliza como REV02 y el historial conserva REV01', async () => {
+    const f = await subir(2, pngFirma());
+    const v = await crear(2);
+    const a = await actualizar(2, v.id, { version: v.version, responsables: [{ funcion: 'GENERO', nombre: 'x', firmaId: f.id }] });
+    const rev1 = await service.finalizar(actor(2), v.id, a.version) as Vista;
+    const borrador = await service.crearRevisionNueva(actor(2), rev1.documentoId) as Vista;
+    const sinFirmas = await actualizar(2, borrador.id, { version: borrador.version, responsables: [{ funcion: 'GENERO', nombre: '' }] });
+    motor.renders = [];
+    const rev2 = await service.finalizar(actor(2), borrador.id, sinFirmas.version) as Vista;
+    expect(rev2).toMatchObject({ estado: 'FINALIZADA', revision: 2 });
+    expect(impreso()).toEqual([[1, 'GENERO', '', false]]);
+    const historial = (await service.historial(actor(2), v.codigo)).data as Vista[];
+    expect(historial.filter((h) => h.estado === 'FINALIZADA').map((h) => h.revision).sort()).toEqual([1, 2]);
+    expect((await service.obtener(actor(2), v.id) as Vista).responsables[0]).toMatchObject({ conFirma: true, nombre: 'General Dos' });   // REV01 intacta
+  });
+});

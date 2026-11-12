@@ -133,13 +133,15 @@ describe('bloque 6 · finalizar desde la copia guardada y producir el PDF', () =
     expect(motor.renders).toHaveLength(0);
   });
 
-  it('sin nombre de «Generó» no se finaliza (se pide el nombre, no una casilla)', async () => {
+  it('sin nombre de «Generó» SÍ se finaliza (es opcional): su espacio queda en blanco y no se añade ningún nombre', async () => {
     restablecer();
     const v = await crear(2, codigoUnico(), { cliente: { nombre: 'Cliente manual' } });
     const sinNombre = await actualizar(2, v.id, { version: v.version, elaboroNombre: '' });
-    const e = await falla(service.finalizar(actor(2), v.id, sinNombre.version));
-    expect(e.body.motivos.map((m: Vista) => m.codigo)).toContain('ELABORO_SIN_CONFIRMAR');
-    expect(e.body.motivos.find((m: Vista) => m.codigo === 'ELABORO_SIN_CONFIRMAR').mensaje).toMatch(/Indica el nombre/);
+    expect(sinNombre.elaboro.nombre).toBeNull();
+    const f = await service.finalizar(actor(2), v.id, sinNombre.version) as Vista;
+    expect(f).toMatchObject({ estado: 'FINALIZADA', revision: 1, elaboro: { nombre: null, confirmado: false } });
+    expect(motor.renders.at(-1)!.info.elaboro).toBe('');
+    expect(await contarPdf(v.id)).toBe(1);
   });
 
   it('hoja incompleta, bloqueada o con contradicciones sin reconocer: no se finaliza', async () => {

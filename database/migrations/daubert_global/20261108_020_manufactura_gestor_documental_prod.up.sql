@@ -176,7 +176,7 @@ CREATE TABLE manufactura.revisiones (
   especificacion             jsonb NOT NULL,                -- copia de la especificación (datos, procedencia, color, incidencias reconocidas, 6 campos de BIND)
   especificacion_sha256      text NOT NULL,                 -- huella de familia + especificación; la calcula el trigger (no la aplicación)
   elaboro_nombre             text,                          -- nombre IMPRESO (sugerido desde la sesión, editable); NO es la identidad de auditoría
-  elaboro_confirmado         boolean NOT NULL DEFAULT false,-- confirmación expresa: obligatoria para finalizar
+  elaboro_confirmado         boolean NOT NULL DEFAULT false,-- confirmación expresa: obligatoria para finalizar si hay nombre (el nombre de «Generó» es opcional)
   autorizo_nombre            text,                          -- opcional; sin flujo de autorización
   revisor_usuario_id         bigint,                        -- revisor asignado: usuario ACTIVO; solo el creador o un ADMIN lo asigna
   cliente_empresa_id         bigint,
@@ -228,7 +228,7 @@ CREATE TABLE manufactura.revisiones (
       WHEN 'BORRADOR'    THEN revision IS NULL AND revision_prevista IS NULL AND finalizando_token IS NULL AND finalizado_en IS NULL AND finalizado_por_usuario_id IS NULL
       WHEN 'FINALIZANDO' THEN revision IS NULL AND revision_prevista IS NOT NULL AND finalizando_token IS NOT NULL AND finalizando_desde IS NOT NULL AND finalizando_por_usuario_id IS NOT NULL AND finalizado_en IS NULL
       WHEN 'FINALIZADA'  THEN revision IS NOT NULL AND revision = revision_prevista AND finalizando_token IS NULL AND finalizado_en IS NOT NULL AND finalizado_por_usuario_id IS NOT NULL AND finalizado_por_email IS NOT NULL
-                              AND cliente_nombre IS NOT NULL AND elaboro_nombre IS NOT NULL AND elaboro_confirmado
+                              AND cliente_nombre IS NOT NULL AND (elaboro_nombre IS NULL OR elaboro_confirmado)   -- «Generó» es opcional; si se indica, queda confirmado
       WHEN 'DESCARTADA'  THEN revision IS NULL AND revision_prevista IS NULL AND finalizando_token IS NULL AND finalizado_en IS NULL
       ELSE false
     END

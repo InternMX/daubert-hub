@@ -121,6 +121,22 @@ describe('Finalizar hoja · finalización segura', () => {
     expect(screen.getByRole('button', { name: 'Finalizar y generar PDF' })).toBeEnabled();         // el borrador sigue; se puede corregir y reintentar
     expect(m.descartarBorrador).not.toHaveBeenCalled();
   });
+
+  it('si la base rechaza los datos (SPEC_INVALID) muestra un motivo comprensible, sin el genérico ni la consulta de «resultado incierto»', async () => {
+    const user = userEvent.setup();
+    montar();
+    await abierto();
+    m.obtenerDocumento.mockClear();
+    m.finalizarDocumento.mockRejectedValue(new docs.DocumentApiError('SPEC_INVALID', 422, { code: 'SPEC_INVALID', message: 'Los datos guardados no cumplen las restricciones del documento.' }));
+    await user.click(screen.getByRole('button', { name: 'Finalizar y generar PDF' }));
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Finalizar la hoja' })).getByRole('button', { name: 'Finalizar' }));
+    const seccion = await abierto();
+    expect(await within(seccion).findByText(/El servidor rechazó los datos del documento/)).toBeInTheDocument();
+    expect(seccion).not.toHaveTextContent('La operación no se pudo completar');
+    expect(seccion).not.toHaveTextContent('Se comprobó en el servidor');
+    expect(m.obtenerDocumento).not.toHaveBeenCalled();                                            // respuesta definitiva del servidor: no se consulta el estado
+    expect(screen.getByRole('button', { name: 'Finalizar y generar PDF' })).toBeEnabled();
+  });
 });
 
 describe('Finalizar hoja · bloqueos conocidos', () => {

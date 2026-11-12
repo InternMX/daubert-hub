@@ -69,10 +69,10 @@ export interface CambiosBorrador extends Partial<Omit<BorradorNuevo, 'codigo' | 
 
 export type DocumentErrorKind =
   | 'INACTIVE' | 'UNAUTHENTICATED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VERSION_CONFLICT' | 'DOCUMENT_EXISTS' | 'OPEN_DRAFT_EXISTS' | 'NOT_EDITABLE' | 'ALREADY_FINAL'
-  | 'FINALIZACION_NO_LISTA' | 'REVISION_BLOQUEADA' | 'PDF_NOT_AVAILABLE' | 'FINALIZACION_EN_CURSO' | 'FINALIZACION_PERDIDA' | 'CLIENTE_NO_VALIDO' | 'CLIENTE_ACTUALIZADO' | 'ELABORO_REQUERIDO' | 'FIRMA_INVALIDA' | 'FIRMA_NO_AUTORIZADA' | 'FIRMAS_NO_DISPONIBLES' | 'FIRMA_NO_DISPONIBLE' | 'RESPONSABLES_INVALIDOS'
+  | 'FINALIZACION_NO_LISTA' | 'REVISION_BLOQUEADA' | 'PDF_NOT_AVAILABLE' | 'FINALIZACION_EN_CURSO' | 'FINALIZACION_PERDIDA' | 'CLIENTE_NO_VALIDO' | 'CLIENTE_ACTUALIZADO' | 'ELABORO_REQUERIDO' | 'FIRMA_INVALIDA' | 'FIRMA_NO_AUTORIZADA' | 'FIRMAS_NO_DISPONIBLES' | 'FIRMA_NO_DISPONIBLE' | 'RESPONSABLES_INVALIDOS' | 'SPEC_INVALID'
   | 'INVALID_DATA' | 'INVALID_RESPONSE' | 'PDF_INTEGRITY' | 'NETWORK' | 'FAILED';
 
-const KNOWN: ReadonlySet<string> = new Set(['NOT_FOUND', 'VERSION_CONFLICT', 'DOCUMENT_EXISTS', 'OPEN_DRAFT_EXISTS', 'NOT_EDITABLE', 'ALREADY_FINAL', 'FINALIZACION_NO_LISTA', 'REVISION_BLOQUEADA', 'PDF_NOT_AVAILABLE', 'FINALIZACION_EN_CURSO', 'FINALIZACION_PERDIDA', 'CLIENTE_NO_VALIDO', 'CLIENTE_ACTUALIZADO', 'ELABORO_REQUERIDO', 'PDF_INTEGRITY', 'FORBIDDEN', 'FIRMA_INVALIDA', 'FIRMA_NO_AUTORIZADA', 'FIRMAS_NO_DISPONIBLES', 'FIRMA_NO_DISPONIBLE', 'RESPONSABLES_INVALIDOS']);
+const KNOWN: ReadonlySet<string> = new Set(['NOT_FOUND', 'VERSION_CONFLICT', 'DOCUMENT_EXISTS', 'OPEN_DRAFT_EXISTS', 'NOT_EDITABLE', 'ALREADY_FINAL', 'FINALIZACION_NO_LISTA', 'REVISION_BLOQUEADA', 'PDF_NOT_AVAILABLE', 'FINALIZACION_EN_CURSO', 'FINALIZACION_PERDIDA', 'CLIENTE_NO_VALIDO', 'CLIENTE_ACTUALIZADO', 'ELABORO_REQUERIDO', 'PDF_INTEGRITY', 'FORBIDDEN', 'FIRMA_INVALIDA', 'FIRMA_NO_AUTORIZADA', 'FIRMAS_NO_DISPONIBLES', 'FIRMA_NO_DISPONIBLE', 'RESPONSABLES_INVALIDOS', 'SPEC_INVALID']);
 
 export class DocumentApiError extends Error {
   constructor(public readonly kind: DocumentErrorKind, public readonly status: number, public readonly body: Record<string, unknown> = {}) {
@@ -181,6 +181,7 @@ export const documentErrorText: Record<DocumentErrorKind, string> = {
   FIRMAS_NO_DISPONIBLES: 'Los responsables adicionales y las firmas todavía no están disponibles en este entorno.',
   FIRMA_NO_DISPONIBLE: 'Una firma asignada ya no está disponible para tu cuenta (autorización retirada o firma retirada). Cámbiala o quítala antes de finalizar.',
   RESPONSABLES_INVALIDOS: 'Los responsables no son válidos: el primero es siempre «Generó» y puede haber hasta tres.',
+  SPEC_INVALID: 'El servidor rechazó los datos del documento porque no cumplen las reglas de la base de datos; la hoja no se finalizó y sigue como borrador. Avisa al administrador del Hub: puede faltar una actualización del entorno.',
   PDF_INTEGRITY: 'No se pudo verificar la integridad del PDF; no se entregó.',
   NETWORK: 'No se pudo comunicar con el servidor de Daubert Hub.',
   FAILED: 'La operación no se pudo completar. Intenta de nuevo.'

@@ -40,6 +40,18 @@ describe('servicio del gestor documental', () => {
     await historialPorCodigo('A/B'); expect(llamada().url).toBe('/api/manufacturing-sheets/documents/history?codigo=A%2FB');
   });
 
+  it('SPEC_INVALID (la base rechazó los datos del documento) tiene tipo y texto propios; cualquier otro código desconocido sigue siendo FAILED', async () => {
+    fetchMock.mockResolvedValueOnce(json(422, { code: 'SPEC_INVALID', message: 'Los datos guardados no cumplen las restricciones del documento.' }));
+    const rechazo = await falla(finalizarDocumento(ID, 5));
+    expect([rechazo.kind, rechazo.status]).toEqual(['SPEC_INVALID', 422]);
+    expect(documentErrorText.SPEC_INVALID).toMatch(/rechazó los datos del documento/);
+    expect(documentErrorText.SPEC_INVALID).toMatch(/sigue como borrador/);
+    fetchMock.mockResolvedValueOnce(json(422, { code: 'OTRO_CODIGO_NUEVO', message: 'x' }));
+    expect((await falla(finalizarDocumento(ID, 5))).kind).toBe('FAILED');
+    fetchMock.mockResolvedValueOnce(json(500, { code: 'INTERNAL' }));
+    expect((await falla(finalizarDocumento(ID, 5))).kind).toBe('FAILED');
+  });
+
   it('traduce los errores del backend a tipos propios; los textos nunca reflejan el cuerpo de la respuesta', async () => {
     fetchMock.mockResolvedValueOnce(json(409, { code: 'VERSION_CONFLICT', message: '<script>x</script>', versionActual: 7 }));
     const conflicto = await falla(actualizarBorrador(ID, { version: 1 }));

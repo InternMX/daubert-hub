@@ -448,8 +448,8 @@ export class DocumentsService {
   /** Lo que falta para finalizar (sin escribir nada). Lista vacía = lista. El motor de PDF se verifica aparte (501), antes de tocar el estado. */
   async motivosNoLista(fila: RevisionRow): Promise<MotivoNoLista[]> {
     const motivos: MotivoNoLista[] = [];
-    if (!fila.elaboro_nombre) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Indica el nombre de quien generó la hoja (Generó).' });
-    else if (!fila.elaboro_confirmado) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' });
+    // «Generó» es opcional (como las firmas): sin nombre su espacio queda en blanco. Si hay nombre, debe estar confirmado (finalizar lo confirma).
+    if (fila.elaboro_nombre && !fila.elaboro_confirmado) motivos.push({ codigo: 'ELABORO_SIN_CONFIRMAR', mensaje: 'Confirma expresamente el nombre de quien elaboró.' });
     if (!fila.cliente_nombre) motivos.push({ codigo: 'CLIENTE_REQUERIDO', mensaje: 'Identifica al cliente (vinculado a la lista de clientes o escrito manualmente).' });
     motivos.push(...(await this.motivosDeBloqueo(fila)));
     return motivos;
@@ -507,6 +507,8 @@ export class DocumentsService {
         }
         // Toda finalización nueva usa la composición de responsables: sin filas guardadas se imprime «Generó» con el nombre documental (espacio de firma vacío), nunca el marcador «SIN FIRMA».
         responsables ??= [{ posicion: 1, funcion: 'GENERO', nombre: trabajo.elaboro_nombre ?? '', firma: null }];
+        // Sin «Generó» guardado (nombre en blanco) pero con otros responsables: su recuadro se conserva vacío para que Revisó/Aprobó no ocupen el primer espacio.
+        if (!responsables.some((r) => r.posicion === 1)) responsables = [{ posicion: 1, funcion: 'GENERO', nombre: '', firma: null }, ...responsables];
         const iniciada = actual.estado === 'BORRADOR' ? await this.repo.iniciarFinalizacion(c, id, v) : await this.repo.reclamarFinalizacion(c, id, v);
         if (!iniciada) throw http(HttpStatus.CONFLICT, 'FINALIZACION_EN_CURSO', 'Otra finalización de esta revisión está en curso o la revisión cambió.');
         return { inicio: iniciada, fila: trabajo, confirmaciones: await this.repo.confirmaciones(c, id), versionFinal: v, responsablesPdf: responsables };

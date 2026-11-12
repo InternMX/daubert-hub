@@ -4,6 +4,7 @@ import type { ResponsableImpreso } from './draft-layer';
 // `firma_aprobo`, con la geometría propia de cada familia) y, solo cuando hay tres responsables, añade un tercer recuadro y reparte el ancho de la zona de firmas en tres partes iguales.
 // Los borradores y las vistas previas conservan el marcador «SIN FIRMA» de la plantilla (ayuda visual de trabajo). En un PDF FINALIZADO un responsable sin imagen deja su espacio vacío, con la
 // línea de firma, el nombre y la función debajo: la ausencia de imagen no significa que alguien haya firmado, y una firma manuscrita posterior solo existe en el ejemplar impreso.
+// Los responsables son OPCIONALES (Generó incluido): uno sin nombre ni imagen no imprime nada y su recuadro queda en blanco, conservando la posición de los demás; sin ninguno, la sección queda vacía.
 
 const FUNCION: Record<ResponsableImpreso['funcion'], string> = { GENERO: 'Generó', REVISO: 'Revisó', APROBO: 'Aprobó' };
 const MIME_PERMITIDOS = new Set(['image/png', 'image/jpeg']);
@@ -13,6 +14,10 @@ const escapar = (t: string): string => t.replace(/[&<>"']/g, (c) => ESCAPES[c] a
 export const FUNCION_IMPRESA = FUNCION;
 
 function bloque(r: ResponsableImpreso): string {
+  const nombre = r.nombre.replace(/\s+/g, ' ').trim();
+  const conImagen = Boolean(r.firma && MIME_PERMITIDOS.has(r.firma.tipoMime));
+  // Responsable no capturado (sin nombre ni firma): no se imprime nada (ni línea ni función); su recuadro queda en blanco y conserva su posición.
+  if (!nombre && !conImagen) return '';
   const imagen = r.firma && MIME_PERMITIDOS.has(r.firma.tipoMime)
     ? `<img alt="" src="data:${r.firma.tipoMime};base64,${r.firma.contenido.toString('base64')}">`
     : '';                                    // sin imagen el espacio queda VACÍO (para firmar a mano en el ejemplar impreso): no se imprime ningún texto sustituto

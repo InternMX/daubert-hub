@@ -67,6 +67,32 @@ describe.each(FAMILY_CODES)('bloque de firmas de %s', (familia) => {
     for (const nombre of ['Ana', 'Beto', 'Carla']) expect(html).toContain(nombre);                    // los nombres se imprimen en los recuadros de la plantilla…
     expect(html).not.toContain('Generó: Ana · Generó: Beto');                                          // …y ya no en un pie añadido por el sistema
   });
+
+  it('sin responsables capturados (ni nombre ni firma): la sección no imprime nada (sin nombres, firmas, líneas ni funciones) y no aparece «SIN FIRMA»', async () => {
+    for (const responsables of [[R(1, 'GENERO', '', false)], [R(1, 'GENERO', '   ', false)], []]) {
+      const html = await compuesto(familia, responsables);
+      expect(cuenta(html, 'class="resp"')).toBe(0);
+      expect(html).toMatch(/id="firma_elaboro"><\/div>/);
+      expect(html).toMatch(/id="firma_aprobo"><\/div>/);
+      expect(html).not.toContain('firma_extra');
+      expect(html).not.toContain('<img alt=""');
+      expect(html).not.toContain('General Dos');                                                        // el nombre documental (info.elaboro) no se cuela en la sección
+      expect(visible(html)).not.toMatch(/SIN FIRMA|PENDIENTE/);
+    }
+  });
+
+  it('solo nombre (sin firma): se imprime el nombre sin imagen; «Generó» no capturado queda en blanco y Revisó/Aprobó conservan su recuadro', async () => {
+    const soloNombre = await compuesto(familia, [R(1, 'GENERO', 'Ana Pérez', false)]);
+    expect(soloNombre).toContain('>Ana Pérez</div>');
+    expect(soloNombre).not.toContain('<img alt=""');
+    const html = await compuesto(familia, [R(1, 'GENERO', '', false), R(2, 'REVISO', 'Beto', true), R(3, 'APROBO', 'Carla', false)]);
+    expect(cuenta(html, 'class="resp"')).toBe(2);
+    expect(html).toMatch(/id="firma_elaboro"><\/div>/);                                                  // el primer recuadro queda en blanco: Revisó no se desplaza
+    expect(html).toMatch(/id="firma_aprobo"><div class="resp" data-posicion="2">/);
+    expect(html).toMatch(/id="firma_extra"><div class="resp" data-posicion="3">/);
+    expect(cuenta(html, '<img alt="" src="data:image/png')).toBe(1);
+    expect(visible(html)).not.toMatch(/SIN FIRMA|PENDIENTE/);
+  });
 });
 
 describe('seguridad del bloque de firmas', () => {

@@ -104,7 +104,7 @@ export function ResponsablesFirmas({ responsables, onChange, puedeFirmas, disabl
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }}>
             <TextField size="small" label={i === 0 ? 'Nombre de Generó' : `Nombre (${etiquetaFuncion(r.funcion)})`} value={r.nombre} onChange={(e) => cambiar(i, { nombre: e.target.value })}
               disabled={disabled || r.firma !== null} sx={{ minWidth: 280 }} slotProps={{ htmlInput: { maxLength: 120 } }}
-              helperText={r.firma ? 'Con firma, el nombre es el de su propietaria.' : i === 0 ? 'Sugerido desde tu cuenta; puedes editarlo. Al finalizar queda confirmado.' : undefined} />
+              helperText={r.firma ? 'Con firma, el nombre es el de su propietaria.' : i === 0 ? 'Sugerido desde tu cuenta; puedes editarlo o dejarlo vacío (opcional: vacío no se imprime).' : undefined} />
             <Stack direction="row" spacing={1} alignItems="center">
               {r.firma ? <Miniatura src={r.firma.miniatura} /> : <Typography variant="body2" color="text.secondary">Sin firma</Typography>}
               {puedeFirmas && <Button size="small" variant="outlined" disabled={disabled} onClick={() => setAbierto(i)}>{r.firma ? 'Cambiar firma' : 'Elegir firma'}</Button>}

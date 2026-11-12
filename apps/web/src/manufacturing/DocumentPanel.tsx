@@ -344,8 +344,8 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
     const base = carga?.responsables
       ? carga.responsables.map((r) => ({ funcion: r.funcion as string, nombre: r.nombre, conFirma: Boolean(r.firmaId) }))
       : (doc?.responsables ?? []).map((r) => ({ funcion: r.funcion as string, nombre: r.nombre, conFirma: r.conFirma }));
-    const lista = base.map((r, i) => ({ posicion: i + 1, funcion: etiquetaFuncion(i === 0 ? 'GENERO' : r.funcion), nombre: (r.nombre.trim() || (i === 0 ? doc?.elaboro.nombre ?? '' : '')).trim(), conFirma: r.conFirma })).filter((r) => r.nombre !== '');
-    return lista.length > 0 ? lista : [{ posicion: 1, funcion: 'Generó', nombre: doc?.elaboro.nombre ?? '', conFirma: false }];
+    // Los responsables son opcionales (Generó incluido): solo se listan los capturados (con nombre o firma). Lista vacía = no se imprime ninguno.
+    return base.map((r, i) => ({ posicion: i + 1, funcion: etiquetaFuncion(i === 0 ? 'GENERO' : r.funcion), nombre: r.nombre.trim(), conFirma: r.conFirma })).filter((r) => r.nombre !== '' || r.conFirma);
   })();
 
   const valor: Documento = {
@@ -363,15 +363,19 @@ export function DocumentoProvider({ codigo, carga, onAbrirDocumento, onDocumento
         <DialogTitle id="fin-titulo">Finalizar la hoja</DialogTitle>
         <DialogContent>
           <Typography>Se generará el PDF de {entorno.texto} desde la copia guardada (versión {doc?.version}) y se registrará como revisión definitiva. Después no podrá modificarse; los cambios requerirán una nueva revisión.</Typography>
-          {autoguardar && <Typography sx={{ mt: 1 }}>Al finalizar confirmas el nombre de «Generó»: <b>{carga?.responsables?.[0]?.nombre ?? doc?.elaboro.nombre ?? ''}</b>.</Typography>}
+          {autoguardar && (carga?.responsables?.[0]?.nombre ?? doc?.elaboro.nombre ?? '').trim() !== '' && <Typography sx={{ mt: 1 }}>Al finalizar confirmas el nombre de «Generó»: <b>{carga?.responsables?.[0]?.nombre ?? doc?.elaboro.nombre ?? ''}</b>.</Typography>}
           {autoguardar && (
             <Box sx={{ mt: 1.5 }} data-testid="fin-responsables">
               <Typography variant="subtitle2" component="h3">Responsables que se imprimirán</Typography>
-              <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
-                {responsablesAImprimir.map((r) => (
-                  <li key={r.posicion}><Typography variant="body2"><b>{r.funcion}</b> · {r.nombre} — {r.conFirma ? 'con firma' : 'sin firma (el espacio queda vacío para firmar a mano)'}</Typography></li>
-                ))}
-              </Box>
+              {responsablesAImprimir.length === 0
+                ? <Typography variant="body2" data-testid="fin-sin-responsables">No se imprimirán responsables en el PDF.</Typography>
+                : (
+                  <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+                    {responsablesAImprimir.map((r) => (
+                      <li key={r.posicion}><Typography variant="body2"><b>{r.funcion}</b> · {r.nombre} — {r.conFirma ? 'con firma' : 'sin firma (el espacio queda vacío para firmar a mano)'}</Typography></li>
+                    ))}
+                  </Box>
+                )}
             </Box>
           )}
           <Typography sx={{ mt: 1 }} variant="body2" color="text.secondary">El PDF respeta la plantilla original, sin leyendas añadidas; la revisión, la fecha y la huella quedan en el historial del Hub.{sucio ? ' Los cambios pendientes se guardan antes de finalizar.' : ''}</Typography>
@@ -504,7 +508,7 @@ export function BarraDocumento() {
       {doc?.estado === 'FINALIZADA' && !d.autoguardar && (
         <Stack spacing={1} sx={{ mt: 1 }}>
           <Alert severity="success">
-            Finalizada en {entorno.esPrueba ? 'TEST' : 'PRODUCCIÓN'} como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
+            Finalizada en {entorno.esPrueba ? 'TEST' : 'PRODUCCIÓN'} como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. {doc.elaboro.nombre ? `Elaboró: ${doc.elaboro.nombre}. ` : ''}{d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
           </Alert>
           {doc.pdf && <Typography variant="caption" color="text.secondary">Archivo: {doc.pdf.nombre} · SHA-256 {doc.pdf.sha256.slice(0, 16)}…</Typography>}
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -652,7 +656,7 @@ export function FinalizarHojaDocumento({ datos, bloqueos, faltantes, contradicci
       <Paper component="section" variant="outlined" aria-label="Finalizar hoja" sx={{ p: 2, mt: 2 }} ref={resultado} data-testid="final-resultado">
         <Typography variant="h6" component="h2" sx={{ mb: 1 }}>Hoja finalizada</Typography>
         <Alert severity="success">
-          Finalizada en {entorno.esPrueba ? 'TEST' : 'PRODUCCIÓN'} como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. Elaboró: {doc.elaboro.nombre}. {d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
+          Finalizada en {entorno.esPrueba ? 'TEST' : 'PRODUCCIÓN'} como <b>{etiquetaRevision(doc)}</b> por {doc.finalizadoPor ?? '—'}. {doc.elaboro.nombre ? `Elaboró: ${doc.elaboro.nombre}. ` : ''}{d.vigentes.length > 0 ? `Revisó: ${d.vigentes.map((k) => k.usuario).join(', ')}.` : 'Sin revisión registrada.'} Las versiones finalizadas no se modifican.
         </Alert>
         {doc.pdf && <Typography variant="body2" sx={{ mt: 1 }}>Archivo: <b>{doc.pdf.nombre}</b> <Typography component="span" variant="caption" color="text.secondary">· SHA-256 {doc.pdf.sha256.slice(0, 16)}…</Typography></Typography>}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>

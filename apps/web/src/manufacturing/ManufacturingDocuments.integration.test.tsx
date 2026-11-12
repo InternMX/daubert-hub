@@ -1293,14 +1293,23 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
       expect(await screen.findByTestId('final-resultado')).toHaveTextContent('REV01');
     });
 
-    it('8) un «Generó» sin nombre bloquea finalizar con un mensaje y acceso al campo', async () => {
+    it('8) un «Generó» sin nombre ni firma NO bloquea: se finaliza sin aviso de validación y sin atribuir ningún nombre', async () => {
       const user = userEvent.setup();
-      await abrirConFirmas(user, guardado({ elaboro: { nombre: null, confirmado: false, sugerido: 'General Dos' }, responsables: [{ posicion: 1, funcion: 'GENERO', nombre: '', conFirma: false, firma: null }] }));
+      await abrirConFirmas(user, { ...lista(), elaboro: { nombre: null, confirmado: false, sugerido: 'General Dos' }, responsables: [{ posicion: 1, funcion: 'GENERO', nombre: '', conFirma: false, firma: null }] });
+      expect((screen.getByLabelText('Nombre de Generó') as HTMLInputElement).value).toBe('');          // lo guardado en blanco no se vuelve a rellenar
+      await waitFor(() => expect(screen.getByTestId('final-datos')).not.toHaveTextContent('Comprobando'));
+      m.actualizarBorrador.mockImplementation(async (_i, c) => ({ ...lista(), version: 4, elaboro: { nombre: null, confirmado: false, sugerido: 'General Dos' }, especificacion: { datos: (c as { datos?: Record<string, string> }).datos ?? lista().especificacion.datos }, responsables: [{ posicion: 1, funcion: 'GENERO', nombre: '', conFirma: false, firma: null }] }));
+      m.finalizarDocumento.mockResolvedValue(finalizada({ id: 'rev-1', version: 4, elaboro: { nombre: null, confirmado: false, sugerido: 'General Dos' } }));
       await user.click(within(screen.getByRole('region', { name: 'Finalizar hoja' })).getByRole('button', { name: 'Finalizar y generar PDF' }));
-      const bloqueos = await screen.findByTestId('final-bloqueos');
-      expect(bloqueos).toHaveTextContent('Indica el nombre de quien generó la hoja.');
-      await user.click(within(bloqueos).getByRole('button', { name: /Ir al campo: Indica el nombre/ }));
-      await waitFor(() => expect(screen.getByLabelText('Nombre de Generó')).toHaveFocus());
+      expect(screen.queryByTestId('final-bloqueos')).toBeNull();
+      expect(screen.queryByText(/Indica el nombre de quien generó/)).toBeNull();
+      const dialogo = await screen.findByRole('dialog');
+      expect(dialogo).not.toHaveTextContent('Al finalizar confirmas el nombre de «Generó»');
+      expect(dialogo).not.toHaveTextContent('General Dos');
+      expect(within(dialogo).getByTestId('fin-sin-responsables')).toHaveTextContent('No se imprimirán responsables en el PDF.');
+      await user.click(within(dialogo).getByRole('button', { name: 'Finalizar' }));
+      expect(await screen.findByTestId('final-resultado')).toHaveTextContent('REV01');
+      expect(m.finalizarDocumento).toHaveBeenCalled();
     });
   });
 
