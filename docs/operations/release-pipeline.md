@@ -1,8 +1,14 @@
-# Pipeline de releases supervisados (Fases 1, 2A y 2B)
+# Pipeline de releases supervisados (Fases 1, 2A/2B y documentación 3A/3C)
 
 GitHub Actions **no despliega ni configura PROD**. El deployment de Fase 2B se ejecuta
 localmente con un operador y confirmación real. Complementa el CI existente y el runbook
 [`deployment-checklist.md`](deployment-checklist.md), que sigue siendo la autoridad para publicar.
+
+La [política de releases](release-policy.md) establece cómo elegir versión, aprobar el SHA
+y registrar tags/expedientes; son decisiones humanas, sin nuevas compuertas automáticas.
+El [primer deployment supervisado del 2026-11-11](../deployments/2026-11-11-hub-cicd-pilot-prod.md)
+quedó registrado con anclas verificadas por digest (2/2), sin rollback real. Su cierre
+documental de Fase 3A y la política de Fase 3C no requieren otro deployment.
 
 ## Qué quedó automatizado
 
@@ -14,7 +20,7 @@ localmente con un operador y confirmación real. Complementa el CI existente y e
 
 1. Consultar desde el entorno autorizado `http://localhost:8082/api/health` del servidor de PROD; guardar el campo `commit` (SHA real publicado, no usar el commit de `main` ni asumir que el tag más reciente está en PROD).
 2. En GitHub: **Actions → Prepare release candidate → Run workflow**, elegir rama `main` e introducir ese SHA en `deployed_commit`.
-3. Revisar el reporte generado, incluyendo archivos de `database/`, `n8n/`, `scripts/`, `deploy/` y rutas desconocidas.
+3. Revisar el reporte generado, incluyendo archivos de `database/`, `n8n/`, `scripts/`, `deploy/` y rutas desconocidas, y resolver versión/tags según la [política](release-policy.md).
 4. Confirmar que el CI correspondiente al candidato pasó. **Este reporte no comprueba por sí mismo el estado de CI**, y no sustituye las validaciones en el servidor.
 5. Si procede continuar, aprobar el SHA completo del candidato y ejecutar el plan local de Fase 2A descrito abajo. Para publicar siguen vigentes los procedimientos y aprobaciones de `deployment-checklist.md`. No ejecutar SQL ni reiniciar n8n como parte de este workflow.
 
