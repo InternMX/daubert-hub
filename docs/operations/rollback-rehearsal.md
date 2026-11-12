@@ -65,6 +65,8 @@ Invoke-Pester -Script scripts\deploy\tests
 | Anclas correctas | Rollback documental: recreación parcial previa; Diagnóstico: `SIN_INICIAR` y `RECUPERADO` | Recupera ambos servicios; preserva `failed-*` |
 | Ancla inexistente | Rollback documental: sin una de las anclas; Diagnóstico: ancla inexistente | Excepción sin `tag`/`compose`; `BLOQUEADO` |
 | Digest distinto al registrado | Rollback documental: ancla alterada; Diagnóstico: digest distinto, evidencia mal formada | Excepción sin mutar; `BLOQUEADO` |
+| Ausencia confirmada de `failed-*` | Ausencia confirmada: etiqueta inexistente (se lista antes de cada `tag`), existente en api/web, existente con inspect fallido (con listado que la muestra o también fallido), listado que la omite junto con una etiqueta conocida, listado ambiguo (línea mal formada, repositorio ajeno, vacío, sin ancla, sin `latest`), `<none>` válido, `docker image ls` fallido, Docker caído, lectura fallida de `latest`/ancla, inspect con exit 0 ilegible | Solo se etiqueta con ausencia confirmada; cualquier error o ambigüedad lanza excepción **sin ninguna mutación**, y el diagnóstico da `NO_VERIFICABLE` (o `BLOQUEADO`). En ningún modo de fallo se sobrescribe una `failed-*` preexistente |
+| Cambios concurrentes detectables | Ausencia confirmada: `failed-web` creada tras preservar api, `latest` movida antes de preservar, `failed-api` alterada antes de restaurar | Se detiene sin sobrescribir ni restaurar `latest` |
 | Fallo al preservar una imagen | Rollback documental (api); Interrumpida: preservar web tras api | Sin Compose; `PARCIAL` |
 | Fallo al restaurar una etiqueta | Rollback documental (web); Interrumpida: restaurar web tras api | Sin Compose; `PARCIAL` |
 | Error durante Compose | Rollback documental: compose fallido; Interrumpida: Compose fallido | Excepción; `LISTO_PARA_COMPOSE`; reanudación sin re-etiquetar |
@@ -105,6 +107,11 @@ $svcState = @{}
 $unverifiable = @()
 foreach ($svc in 'api', 'web') {
     $read = @{}
+    # Misma regla que el bloque de rollback: "ausente" solo si inspect falla Y un listado valido del repositorio no la muestra.
+    $repo = "daubert-hub-${svc}"
+    $tags = @(docker image ls $repo --format '{{.Repository}}:{{.Tag}}' 2>$null | ForEach-Object { [string]$_ })
+    $listOk = ($LASTEXITCODE -eq 0 -and @($tags | Where-Object { $_ -cnotmatch ('^' + $repo + ':([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|<none>)$') }).Count -eq 0)
+    if (-not $listOk) { $unverifiable += "${svc}: no se pudo listar de forma fiable las etiquetas de ${repo}" }
     foreach ($k in 'rollback', 'failed', 'latest') {
         $ref = if ($k -eq 'rollback') { "daubert-hub-${svc}:rollback-$prev" } elseif ($k -eq 'failed') { "daubert-hub-${svc}:failed-$new" } else { "daubert-hub-${svc}:latest" }
         $o = @(docker image inspect $ref @fmt 2>$null)
@@ -112,7 +119,8 @@ foreach ($svc in 'api', 'web') {
         if ($LASTEXITCODE -eq 0) {
             if ($o.Count -eq 1 -and $o[0] -cmatch '^sha256:[0-9a-f]{64}$') { $read[$k] = [string]$o[0] }
             else { $unverifiable += "${svc}: la imagen ${ref} existe pero su digest es ilegible" }
-        }
+            if ($listOk -and $tags -cnotcontains $ref) { $unverifiable += "${svc}: inspect y listado discrepan sobre ${ref}" }
+        } elseif ($listOk -and $tags -ccontains $ref) { $unverifiable += "${svc}: ${ref} figura en el listado pero inspect fallo" }
     }
     $o = @(docker inspect "daubert-hub-${svc}-1" --format '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>$null)
     $parts = @('', '', '')
@@ -140,8 +148,8 @@ $httpOk = [bool]($health -and $health.status -eq 'ok' -and $health.database -eq 
 Write-Host ('health: respuesta={0} commit_anterior_sano={1}' -f [bool]$health, $httpOk)
 foreach ($u in $unverifiable) { Write-Host "NO VERIFICABLE: $u" }
 $s = @($svcState['api'], $svcState['web'])
-$verdict = if (@($s | Where-Object { -not $_.AnclaOk }).Count -gt 0) { 'BLOQUEADO' }
-elseif ($unverifiable.Count -gt 0) { 'NO_VERIFICABLE' }
+$verdict = if ($unverifiable.Count -gt 0) { 'NO_VERIFICABLE' }
+elseif (@($s | Where-Object { -not $_.AnclaOk }).Count -gt 0) { 'BLOQUEADO' }
 elseif (@($s | Where-Object { $_.Failed -eq 'ausente' -and $_.Latest -eq 'otra' }).Count -eq 2) { 'SIN_INICIAR' }
 elseif (@($s | Where-Object { $_.Failed -eq 'preservada' -and $_.Latest -eq 'ancla' }).Count -eq 2) {
     if (@($s | Where-Object { $_.Ejecuta -eq 'ancla' -and $_.Estado -eq 'running' }).Count -eq 2) {
@@ -156,7 +164,7 @@ $verdict
 | Veredicto | Significado | Único paso permitido |
 | --- | --- | --- |
 | `BLOQUEADO` | Falta un ancla, su digest no coincide con el expediente o la evidencia está mal formada | **Detenerse.** No etiquetar, no reconstruir desde Git como "rollback exacto". Escalar |
-| `NO_VERIFICABLE` | No se puede conocer la imagen o el estado real de algún contenedor (`docker inspect` falló, salida mal formada, sin digest de manifiesto válido) o una etiqueta existente devuelve un digest ilegible | **Detenerse.** No ejecutar el bloque, ni Compose, ni etiquetar. Comprobar Docker (`docker info`, `docker ps -a` de solo lectura) y repetir el diagnóstico; escalar si persiste |
+| `NO_VERIFICABLE` | No se puede conocer la imagen o el estado real de algún contenedor (`docker inspect` falló, salida mal formada, sin digest de manifiesto válido), una etiqueta existente devuelve un digest ilegible, o no se puede **confirmar** si una etiqueta existe (`docker image ls` falló o es ambiguo, o contradice a `docker image inspect`). Tiene prioridad sobre los demás veredictos | **Detenerse.** No ejecutar el bloque, ni Compose, ni etiquetar. Comprobar Docker (`docker info`, `docker ps -a` de solo lectura) y repetir el diagnóstico; escalar si persiste |
 | `SIN_INICIAR` | Anclas correctas, sin `failed-*`, `latest` es la imagen nueva en ambos servicios | Ejecutar el bloque completo del checklist |
 | `LISTO_PARA_COMPOSE` | Ambas imágenes nuevas preservadas y ambas anclas ya en `latest`, pero algún contenedor no ejecuta el ancla o no está `running` (Compose falló, se interrumpió o recreó parcialmente) | Diagnosticar primero la causa del fallo de Compose; después ejecutar **solo** las líneas finales del bloque del checklist, desde `docker compose @cf up -d --no-build api web` hasta el final (incluye la verificación posterior; requiere `$cf`, `$prev` y `$rollbackDigests` cargados en la consola). Repetir este diagnóstico |
 | `RECREADO_NO_SANO` | Ambos contenedores ejecutan el ancla, pero `api` no está `healthy` o el health HTTP no confirma el commit anterior sano | **No** volver a etiquetar ni recrear. Revisar logs de `api` (`docker compose @cf logs --tail 100 api`), proxy (`Set-EntryClosure.ps1 -Action Reload` si hay 502) y BD. Escalar |
@@ -243,5 +251,16 @@ La limpieza de etiquetas del ensayo se hace a mano al final y **solo** en ese mo
   migraciones exige su propio plan.
 - Sin lock de concurrencia: otro proceso que cambie etiquetas durante el rollback no se detecta
   hasta el siguiente diagnóstico.
+- **Concurrencia entre la última comprobación y cada `docker tag`** (no eliminable sin cambiar la
+  arquitectura): `docker tag` mueve en silencio una etiqueta existente y no tiene modo «crear solo
+  si no existe». El bloque la reduce a la ventana mínima (ausencia re-confirmada justo antes de
+  cada `tag`, `latest` y `failed-*` re-verificadas antes de restaurar, digest comprobado después)
+  y las pruebas demuestran que detecta cambios concurrentes fuera de esa ventana. Dentro de ella,
+  la única protección es operativa: un solo operador y ningún otro proceso Docker en la ventana.
+  Una alternativa estructural sería preservar con `docker save` a un archivo nuevo (falla si
+  existe) en lugar de una etiqueta; queda como propuesta.
+- La confirmación de ausencia depende de que `docker image ls <repo>` liste las etiquetas por
+  nombre; si el almacén devolviera otra forma (p. ej. solo `<none>` para etiquetas reales), el
+  control del ancla y `latest` en el listado hace que se detenga (falla cerrado).
 - `docker save` de las anclas `rollback-16153a8` no está acreditado: si se pierde el almacén
   de Docker, no hay rollback exacto.

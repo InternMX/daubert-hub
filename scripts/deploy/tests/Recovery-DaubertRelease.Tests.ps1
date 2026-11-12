@@ -54,6 +54,8 @@ function New-RecoveryState {
         InterruptAt = 0; Mutations = 0
         Composed = $false; InspectFails = @(); InspectRaw = @{}; RunOverride = @{}; StatusAfter = @{}; StartingReads = 0
         Start = [datetime]'2026-11-12T10:00:00'; Clock = [datetime]'2026-11-12T10:00:00'; Sleeps = @(); HttpCalls = @()
+        DockerDown = $false; RefInspectFails = @(); RefInspectRaw = @{}; ListFails = @(); ListRaw = @{}; ListOmit = @()
+        Concurrent = @(); Overwritten = @()
     }
     foreach ($svc in @('api', 'web')) {
         $s.Tags['daubert-hub-' + $svc + ':rollback-bbbbbbb'] = $s.Expected[$svc]
@@ -71,10 +73,21 @@ function Invoke-RecoveryDocker {
     $s = $script:Recovery
     $s.Calls += ,@($NativeArgs)
     $global:LASTEXITCODE = 0
+    if ($s.DockerDown) { $global:LASTEXITCODE = 1; return }
     if ($NativeArgs[0] -eq 'image' -and $NativeArgs[1] -eq 'inspect') {
         $ref = $NativeArgs[2]
+        # A failing read (daemon error) is indistinguishable from "not found" by exit code alone.
+        if ($s.RefInspectFails -contains $ref) { $global:LASTEXITCODE = 1; return }
+        if ($s.RefInspectRaw.ContainsKey($ref)) { return $s.RefInspectRaw[$ref] }
         if (-not $s.Tags.ContainsKey($ref)) { $global:LASTEXITCODE = 1; return }
         return $s.Tags[$ref]
+    }
+    if ($NativeArgs[0] -eq 'image' -and $NativeArgs[1] -eq 'ls') {
+        $repo = [string]$NativeArgs[2]
+        if ($repo -notmatch '^daubert-hub-(api|web)$' -or ($NativeArgs -join ' ') -notmatch '--format \{\{\.Repository\}\}:\{\{\.Tag\}\}') { throw 'docker image ls no simulado.' }
+        if ($s.ListFails -contains $repo) { $global:LASTEXITCODE = 1; return }
+        if ($s.ListRaw.ContainsKey($repo)) { return $s.ListRaw[$repo] }
+        return @($s.Tags.Keys | Where-Object { $_.StartsWith($repo + ':') -and $s.ListOmit -notcontains $_ } | Sort-Object)
     }
     if ($NativeArgs[0] -eq 'inspect') {
         $m = [regex]::Match([string]$NativeArgs[1], '^daubert-hub-(api|web)-1$')
@@ -94,7 +107,10 @@ function Invoke-RecoveryDocker {
     }
     if ($NativeArgs.Count -eq 3 -and $NativeArgs[0] -eq 'tag') {
         if ($NativeArgs[2] -eq $s.FailTarget -or -not $s.Tags.ContainsKey($NativeArgs[1])) { $global:LASTEXITCODE = 1; return }
+        # docker tag silently moves an existing tag: record any preserved image that would be lost.
+        if ($NativeArgs[2] -like '*:failed-*' -and $s.Tags.ContainsKey($NativeArgs[2])) { $s.Overwritten += $NativeArgs[2] }
         $s.Tags[$NativeArgs[2]] = $s.Tags[$NativeArgs[1]]
+        foreach ($c in @($s.Concurrent | Where-Object { $_.At -eq $s.Mutations })) { $s.Tags[$c.Ref] = $c.Digest }
         return
     }
     $expected = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--no-build', 'api', 'web')
@@ -267,14 +283,14 @@ Describe 'Fase 3D: diagnostico de recuperacion de solo lectura (rollback-rehears
         @(Get-RecoveryMutations).Count | Should Be 0
     }
     It 'una evidencia previa mal formada bloquea aunque el ancla exista' {
+        # Evidence (operator input) malformed; the anchor image itself is readable.
         $script:Recovery.Expected = @{ api = 'sha256:abc'; web = $script:Recovery.Expected.web }
-        $script:Recovery.Tags['daubert-hub-api:rollback-bbbbbbb'] = 'sha256:abc'
         Invoke-RehearsalDiagnosis | Should Be 'BLOQUEADO'
     }
-    It 'solo ejecuta lecturas: docker image inspect y docker inspect de los contenedores Hub' {
+    It 'solo ejecuta lecturas: docker image inspect, docker image ls y docker inspect de los contenedores Hub' {
         Invoke-RehearsalDiagnosis | Out-Null
         foreach ($call in $script:Recovery.Calls) {
-            $ok = ($call[0] -eq 'image' -and $call[1] -eq 'inspect' -and $call[2] -match '^daubert-hub-(api|web):') -or ($call[0] -eq 'inspect' -and $call[1] -match '^daubert-hub-(api|web)-1$')
+            $ok = ($call[0] -eq 'image' -and $call[1] -eq 'inspect' -and $call[2] -match '^daubert-hub-(api|web):') -or ($call[0] -eq 'inspect' -and $call[1] -match '^daubert-hub-(api|web)-1$') -or ($call[0] -eq 'image' -and $call[1] -eq 'ls' -and $call[2] -match '^daubert-hub-(api|web)$')
             $ok | Should Be $true
         }
         Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter { $Uri -eq 'http://localhost:8082/api/health' }
@@ -590,5 +606,149 @@ Describe 'Fase 3D: diagnostico ante inspeccion de Docker no verificable' {
         $verdict = Invoke-RehearsalDiagnosis
         @('BLOQUEADO', 'NO_VERIFICABLE') -contains $verdict | Should Be $true
         @(Get-RecoveryMutations).Count | Should Be 0
+    }
+}
+
+Describe 'Fase 3D: ausencia confirmada de failed-* antes de etiquetar' {
+    BeforeEach {
+        $script:Recovery = New-RecoveryState
+        Mock docker { Invoke-RecoveryDocker $args }
+        Mock Invoke-RestMethod { Invoke-RecoveryHealth }
+        Mock Write-Host { }
+        Mock Start-Sleep { Invoke-RecoverySleep $Seconds $Milliseconds }
+        Mock Get-Date { $script:Recovery.Clock }
+    }
+
+    It 'etiqueta inexistente confirmada (inspect falla y el listado valido no la muestra): preserva y completa' {
+        { Invoke-DocumentedRecovery } | Should Not Throw
+        foreach ($svc in @('api', 'web')) {
+            $failed = 'daubert-hub-' + $svc + ':failed-aaaaaaa'
+            $script:Recovery.Tags[$failed] | Should Be $script:Recovery.New
+            # The absence was confirmed with the listing right before the tag.
+            $lsAt = -1; $tagAt = -1
+            for ($i = 0; $i -lt $script:Recovery.Calls.Count; $i++) {
+                $c = $script:Recovery.Calls[$i]
+                if ($c[0] -eq 'image' -and $c[1] -eq 'ls' -and $c[2] -eq ('daubert-hub-' + $svc) -and $tagAt -lt 0) { $lsAt = $i }
+                if ($c[0] -eq 'tag' -and $c[2] -eq $failed) { $tagAt = $i }
+            }
+            $lsAt | Should BeGreaterThan -1
+            $tagAt | Should BeGreaterThan $lsAt
+        }
+        @($script:Recovery.Overwritten).Count | Should Be 0
+    }
+    It 'etiqueta failed-* existente en <Svc>: se detiene sin ninguna mutacion y la conserva' -TestCases @(@{ Svc = 'api' }, @{ Svc = 'web' }) {
+        param($Svc)
+        $failed = 'daubert-hub-' + $Svc + ':failed-aaaaaaa'
+        $script:Recovery.Tags[$failed] = 'sha256:' + ('9' * 64)
+        { Invoke-DocumentedRecovery } | Should Throw 'ya existe'
+        @(Get-RecoveryMutations).Count | Should Be 0
+        $script:Recovery.Tags[$failed] | Should Be ('sha256:' + ('9' * 64))
+    }
+    It 'failed-* existente pero inspect falla (error de Docker) en <Svc>, <Fallo>: sin mutaciones ni sobrescritura' -TestCases @(
+        @{ Svc = 'api'; Fallo = 'el listado la muestra'; ListFails = $false },
+        @{ Svc = 'web'; Fallo = 'el listado la muestra'; ListFails = $false },
+        @{ Svc = 'api'; Fallo = 'el listado tambien falla'; ListFails = $true },
+        @{ Svc = 'web'; Fallo = 'el listado tambien falla'; ListFails = $true }
+    ) {
+        param($Svc, $Fallo, $ListFails)
+        $failed = 'daubert-hub-' + $Svc + ':failed-aaaaaaa'
+        $script:Recovery.Tags[$failed] = 'sha256:' + ('9' * 64)
+        $script:Recovery.RefInspectFails = @($failed)
+        if ($ListFails) { $script:Recovery.ListFails = @('daubert-hub-' + $Svc) }
+        { Invoke-DocumentedRecovery } | Should Throw
+        @(Get-RecoveryMutations).Count | Should Be 0
+        @($script:Recovery.Overwritten).Count | Should Be 0
+        $script:Recovery.Tags[$failed] | Should Be ('sha256:' + ('9' * 64))
+        Invoke-RehearsalDiagnosis | Should Be 'NO_VERIFICABLE'
+    }
+    It 'failed-* que inspect no ve y un listado que la omite junto con una etiqueta conocida: ambiguo, sin mutaciones' {
+        $failed = 'daubert-hub-web:failed-aaaaaaa'
+        $script:Recovery.Tags[$failed] = 'sha256:' + ('9' * 64)
+        $script:Recovery.RefInspectFails = @($failed)
+        $script:Recovery.ListOmit = @($failed, 'daubert-hub-web:rollback-bbbbbbb')
+        { Invoke-DocumentedRecovery } | Should Throw 'el listado no muestra'
+        @(Get-RecoveryMutations).Count | Should Be 0
+        @($script:Recovery.Overwritten).Count | Should Be 0
+    }
+    It 'listado ambiguo de <Svc> (<Caso>): se detiene antes de etiquetar' -TestCases @(
+        @{ Svc = 'api'; Caso = 'linea mal formada'; Raw = @('daubert-hub-api:latest', 'daubert-hub-api:rollback-bbbbbbb', 'Error response from daemon') },
+        @{ Svc = 'web'; Caso = 'repositorio ajeno'; Raw = @('daubert-hub-web:latest', 'daubert-hub-web:rollback-bbbbbbb', 'otro-repo:latest') },
+        @{ Svc = 'api'; Caso = 'listado vacio'; Raw = @() },
+        @{ Svc = 'web'; Caso = 'sin el ancla conocida'; Raw = @('daubert-hub-web:latest') },
+        @{ Svc = 'api'; Caso = 'sin latest'; Raw = @('daubert-hub-api:rollback-bbbbbbb') }
+    ) {
+        param($Svc, $Caso, $Raw)
+        $script:Recovery.ListRaw = @{ ('daubert-hub-' + $Svc) = $Raw }
+        { Invoke-DocumentedRecovery } | Should Throw 'No se puede confirmar'
+        @(Get-RecoveryMutations).Count | Should Be 0
+    }
+    It 'listado bien formado con etiquetas <none> no impide confirmar la ausencia' {
+        $script:Recovery.ListRaw = @{ 'daubert-hub-api' = @('daubert-hub-api:<none>', 'daubert-hub-api:latest', 'daubert-hub-api:rollback-bbbbbbb') }
+        { Invoke-DocumentedRecovery } | Should Not Throw
+    }
+    It 'fallo de docker image ls en <Svc>: se detiene sin mutar y el diagnostico es NO_VERIFICABLE' -TestCases @(@{ Svc = 'api' }, @{ Svc = 'web' }) {
+        param($Svc)
+        $script:Recovery.ListFails = @('daubert-hub-' + $Svc)
+        { Invoke-DocumentedRecovery } | Should Throw 'fallo al listar'
+        @(Get-RecoveryMutations).Count | Should Be 0
+        Invoke-RehearsalDiagnosis | Should Be 'NO_VERIFICABLE'
+    }
+    It 'Docker caido por completo: ninguna lectura fallida autoriza etiquetar; diagnostico NO_VERIFICABLE' {
+        $script:Recovery.DockerDown = $true
+        { Invoke-DocumentedRecovery } | Should Throw
+        @(Get-RecoveryMutations).Count | Should Be 0
+        Invoke-RehearsalDiagnosis | Should Be 'NO_VERIFICABLE'
+    }
+    It 'fallo de lectura de <Ref> (existente): se detiene sin mutar y el diagnostico es NO_VERIFICABLE' -TestCases @(
+        @{ Ref = 'daubert-hub-api:latest' }, @{ Ref = 'daubert-hub-web:rollback-bbbbbbb' }
+    ) {
+        param($Ref)
+        $script:Recovery.RefInspectFails = @($Ref)
+        { Invoke-DocumentedRecovery } | Should Throw
+        @(Get-RecoveryMutations).Count | Should Be 0
+        Invoke-RehearsalDiagnosis | Should Be 'NO_VERIFICABLE'
+    }
+    It 'salida de inspect ambigua para failed-* (exit 0 con digest ilegible): se trata como existente, sin mutar' {
+        $script:Recovery.RefInspectRaw = @{ 'daubert-hub-web:failed-aaaaaaa' = 'garbage' }
+        { Invoke-DocumentedRecovery } | Should Throw 'ya existe'
+        @(Get-RecoveryMutations).Count | Should Be 0
+    }
+    It 'otro proceso crea failed-web tras preservar api: la re-comprobacion previa al tag lo detecta y no lo sobrescribe' {
+        $script:Recovery.Concurrent = @(@{ At = 1; Ref = 'daubert-hub-web:failed-aaaaaaa'; Digest = ('sha256:' + ('8' * 64)) })
+        { Invoke-DocumentedRecovery } | Should Throw 'ya existe'
+        $script:Recovery.Tags['daubert-hub-web:failed-aaaaaaa'] | Should Be ('sha256:' + ('8' * 64))
+        @($script:Recovery.Overwritten).Count | Should Be 0
+        @($script:Recovery.Calls | Where-Object { $_[0] -eq 'compose' }).Count | Should Be 0
+    }
+    It 'otro proceso mueve latest de web antes de preservarla: se detiene sin etiquetar web' {
+        $script:Recovery.Concurrent = @(@{ At = 1; Ref = 'daubert-hub-web:latest'; Digest = ('sha256:' + ('7' * 64)) })
+        { Invoke-DocumentedRecovery } | Should Throw 'latest cambio'
+        @(Get-RecoveryMutations).Count | Should Be 1
+    }
+    It 'otro proceso altera failed-api tras preservarla: no se restaura latest (la imagen desplazada no esta a salvo)' {
+        $script:Recovery.Concurrent = @(@{ At = 2; Ref = 'daubert-hub-api:failed-aaaaaaa'; Digest = ('sha256:' + ('6' * 64)) })
+        { Invoke-DocumentedRecovery } | Should Throw 'cambiaron antes de restaurar'
+        $script:Recovery.Tags['daubert-hub-api:latest'] | Should Be $script:Recovery.New
+        @(Get-RecoveryMutations).Count | Should Be 2
+    }
+    It 'ningun modo de fallo de lectura (<Modo>) sobrescribe failed-* preexistentes ni autoriza mutaciones' -TestCases @(
+        @{ Modo = 'inspect' }, @{ Modo = 'ls' }, @{ Modo = 'inspect+ls' }, @{ Modo = 'docker caido' }, @{ Modo = 'inspect+listado incompleto' }
+    ) {
+        param($Modo)
+        $pre = 'sha256:' + ('9' * 64)
+        $hidden = @('daubert-hub-api:failed-aaaaaaa', 'daubert-hub-web:failed-aaaaaaa')
+        foreach ($h in $hidden) { $script:Recovery.Tags[$h] = $pre }
+        switch ($Modo) {
+            'inspect' { $script:Recovery.RefInspectFails = $hidden }
+            'ls' { $script:Recovery.ListFails = @('daubert-hub-api', 'daubert-hub-web') }
+            'inspect+ls' { $script:Recovery.RefInspectFails = $hidden; $script:Recovery.ListFails = @('daubert-hub-api', 'daubert-hub-web') }
+            'docker caido' { $script:Recovery.DockerDown = $true }
+            'inspect+listado incompleto' { $script:Recovery.RefInspectFails = $hidden; $script:Recovery.ListOmit = $hidden + @('daubert-hub-api:latest', 'daubert-hub-web:latest') }
+        }
+        { Invoke-DocumentedRecovery } | Should Throw
+        @($script:Recovery.Overwritten).Count | Should Be 0
+        @(Get-RecoveryMutations).Count | Should Be 0
+        foreach ($h in $hidden) { $script:Recovery.Tags[$h] | Should Be $pre }
+        @('BLOQUEADO', 'NO_VERIFICABLE') -contains (Invoke-RehearsalDiagnosis) | Should Be $true
     }
 }

@@ -377,30 +377,54 @@ $rollbackDigests = @{ api = '<sha256 registrado antes del deploy>'; web = '<sha2
 $ErrorActionPreference = 'Continue'
 foreach ($v in $prev, $new) { if ($v -notmatch '^[0-9a-f]{7,40}$') { throw "Commit invalido: '$v'" } }
 
+# Ausencia CONFIRMADA de una etiqueta: "docker image inspect" falla Y "docker image ls <repo>" termina con exit 0,
+# con salida bien formada, muestra las etiquetas que SI existen ($MustList) y no muestra $Ref. Un exit no cero
+# de inspect puede ser "no existe" o un fallo de Docker: cualquier otra combinacion detiene el rollback sin mutar.
+$assertAbsent = {
+    param([string]$Ref, [string[]]$MustList)
+    $repo = $Ref.Split(':')[0]
+    docker image inspect $Ref 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { throw "${Ref} ya existe: no se sobrescribe" }
+    $tags = @(docker image ls $repo --format '{{.Repository}}:{{.Tag}}' 2>$null | ForEach-Object { [string]$_ })
+    if ($LASTEXITCODE -ne 0) { throw "No se puede confirmar que ${Ref} no existe (fallo al listar ${repo}): detenerse sin etiquetar." }
+    foreach ($t in $tags) { if ($t -cnotmatch ('^' + [regex]::Escape($repo) + ':([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|<none>)$')) { throw "No se puede confirmar que ${Ref} no existe (listado ambiguo): detenerse sin etiquetar." } }
+    foreach ($m in $MustList) { if ($tags -cnotcontains $m) { throw "No se puede confirmar que ${Ref} no existe (el listado no muestra ${m}): detenerse sin etiquetar." } }
+    if ($tags -ccontains $Ref) { throw "${Ref} figura en el listado aunque inspect fallo: estado ambiguo, detenerse sin etiquetar." }
+}
+$readDigest = {
+    param([string]$Ref)
+    $o = @(docker image inspect $Ref --platform linux/amd64 --format '{{.Id}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $o.Count -ne 1 -or [string]$o[0] -cnotmatch '^sha256:[0-9a-f]{64}$') { return '' }
+    return [string]$o[0]
+}
+
+# 1) Validar TODO antes de la primera mutacion.
 $latestDigests = @{}
 foreach ($svc in 'api','web') {
     $anchor = "daubert-hub-${svc}:rollback-$prev"
-    $failed = "daubert-hub-${svc}:failed-$new"
-    $digest = @(docker image inspect $anchor --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $digest.Count -ne 1 -or $rollbackDigests[$svc] -cnotmatch '^sha256:[0-9a-f]{64}$' -or $digest[0] -cne $rollbackDigests[$svc]) { throw "Ancla ausente o distinta de la evidencia previa: $svc" }
-    docker image inspect $failed 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { throw "${failed} ya existe: no se sobrescribe" }
-    $current = @(docker image inspect "daubert-hub-${svc}:latest" --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $current.Count -ne 1) { throw "No se puede preservar latest: $svc" }
-    $latestDigests[$svc] = $current[0]
+    $latest = "daubert-hub-${svc}:latest"
+    $digest = & $readDigest $anchor
+    if ($rollbackDigests[$svc] -cnotmatch '^sha256:[0-9a-f]{64}$' -or -not $digest -or $digest -cne $rollbackDigests[$svc]) { throw "Ancla ausente o distinta de la evidencia previa: $svc" }
+    $current = & $readDigest $latest
+    if (-not $current) { throw "No se puede preservar latest: $svc" }
+    $latestDigests[$svc] = $current
+    & $assertAbsent "daubert-hub-${svc}:failed-$new" @($anchor, $latest)
 }
-# Primero preservar AMBAS imagenes; un fallo detiene el procedimiento antes de recrear.
+# 2) Preservar AMBAS imagenes; justo antes de cada tag se vuelve a confirmar la ausencia y que latest no cambio.
 foreach ($svc in 'api','web') {
-    docker tag "daubert-hub-${svc}:latest" "daubert-hub-${svc}:failed-$new" 2>$null | Out-Null
+    $latest = "daubert-hub-${svc}:latest"
+    if ((& $readDigest $latest) -cne $latestDigests[$svc]) { throw "latest cambio desde la validacion: $svc. Detenerse." }
+    & $assertAbsent "daubert-hub-${svc}:failed-$new" @("daubert-hub-${svc}:rollback-$prev", $latest)
+    docker tag $latest "daubert-hub-${svc}:failed-$new" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "No se pudo preservar la imagen fallida: $svc" }
-    $saved = @(docker image inspect "daubert-hub-${svc}:failed-$new" --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $saved.Count -ne 1 -or $saved[0] -cne $latestDigests[$svc]) { throw "Imagen fallida no preservada correctamente: $svc" }
+    if ((& $readDigest "daubert-hub-${svc}:failed-$new") -cne $latestDigests[$svc]) { throw "Imagen fallida no preservada correctamente: $svc" }
 }
+# 3) Devolver las anclas a latest solo si la imagen desplazada sigue preservada en failed-<new>.
 foreach ($svc in 'api','web') {
+    if ((& $readDigest "daubert-hub-${svc}:failed-$new") -cne $latestDigests[$svc] -or (& $readDigest "daubert-hub-${svc}:latest") -cne $latestDigests[$svc]) { throw "failed-$new o latest cambiaron antes de restaurar: $svc. Detenerse." }
     docker tag "daubert-hub-${svc}:rollback-$prev" "daubert-hub-${svc}:latest" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "No se pudo devolver el ancla a latest: $svc" }
-    $restored = @(docker image inspect "daubert-hub-${svc}:latest" --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $restored.Count -ne 1 -or $restored[0] -cne $rollbackDigests[$svc]) { throw "latest no coincide con la imagen anterior: $svc" }
+    if ((& $readDigest "daubert-hub-${svc}:latest") -cne $rollbackDigests[$svc]) { throw "latest no coincide con la imagen anterior: $svc" }
 }
 docker compose @cf up -d --no-build api web 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Rollback Compose fallido: conservar anclas y diagnosticar, no repetir ciegamente.' }
@@ -452,7 +476,13 @@ reintentan dentro de un **límite único de 180 s** (`$limitSec`) medido desde e
 las esperas (5 s) y cada `GET /api/health` (`-TimeoutSec` = tiempo restante, máximo 10 s) nunca
 terminan después del plazo; solo `docker inspect`, local y sin timeout propio, puede añadir su
 propia duración a la última vuelta. Agotado el plazo, falla con `PENDIENTE: …`. Ante cualquier rechazo o interrupción,
-detenerse; no borrar etiquetas `failed-*` ni repetir el bloque completo: ejecutar el
+detenerse; no borrar etiquetas `failed-*` ni repetir el bloque completo. Una etiqueta `failed-*` solo se crea con su ausencia
+**confirmada** (inspect falla y un listado válido del repositorio, que muestra el ancla y
+`latest`, no la incluye); cualquier error o ambigüedad de Docker detiene el bloque antes de
+etiquetar. `docker tag` no tiene un modo «crear solo si no existe»: entre la última
+comprobación y cada `tag` queda una ventana mínima en la que otro proceso podría crear la
+misma etiqueta; por eso el rollback exige un único operador y ningún otro proceso Docker en
+la ventana. Tras cualquier rechazo o interrupción, ejecutar el
 [diagnóstico de solo lectura](rollback-rehearsal.md#3-diagnóstico-de-recuperación-solo-lectura)
 y seguir únicamente el paso que indique su veredicto. Si el proxy devuelve 502 tras
 recrear solo API, seguir el paso de `Set-EntryClosure.ps1 -Action Reload` del procedimiento
