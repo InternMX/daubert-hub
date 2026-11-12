@@ -1,5 +1,7 @@
 # Checklist de deployment del Hub (PROD)
 
+> **Actualización documental de estado (2026-11-11):** el [primer deployment supervisado](../deployments/2026-11-11-hub-cicd-pilot-prod.md) terminó correctamente y sus anclas fueron verificadas. **No se ejecutó rollback real.** Las instantáneas anteriores conservadas abajo son históricas. Para identificar y aprobar versión/SHA/tags, consultar la [política de releases](release-policy.md); este checklist mantiene la autoridad del procedimiento PROD.
+
 Complementa a [deployment](deployment.md) (orden, trampas) y a [`deploy/README.md`](../../deploy/README.md) (comandos genéricos). Este documento fija el **procedimiento de PROD tal como corre hoy** (proyecto `daubert-hub`, `compose.pilot.yaml` + `compose.prod-temp.yaml`, puerto `8082`; ver [nota 2026-10-01](../deployments/2026-10-01-hub-v1-prod.md)). **Sin secretos.**
 
 > **Estado (actualizado 2026-10-22): en uso.** `Deploy-DaubertHub.ps1 -Deploy` (con su ancla de rollback) se usó en los releases de 2026-10-07 (v1.0.1), 2026-10-09 (v1.0.5) y 2026-10-12 (v1.0.6); ver [deployments](../deployments/README.md). El release de 2026-10-21 (`6370753`, asignación puntual de Pagos) incluía migraciones ya aplicadas a mano y el script **bloquea siempre** los releases con migraciones, por lo que se desplegó con los **comandos manuales** de este documento ([nota](../deployments/2026-10-22-payment-file-assignments-prod.md)). El **rollback por imagen no se ha ejecutado nunca en PROD**: está preparado (anclas y `docker save`) y sus comandos solo se revisaron estáticamente.
@@ -238,7 +240,7 @@ Por eso el ancla **se crea por nombre, tras comprobar que el digest de manifiest
 | **3. Reconstruir desde el commit/tag anterior** | **No**: reconstruye, no recupera (imágenes base y dependencias pueden haber cambiado; ID distinto) | **Sí** (el commit debe existir localmente) | No | Sí (build + recrear) | **Reconstrucción aproximada**, no rollback exacto. Es lenta y no determinista. No presentarla como equivalente a la imagen actual |
 | **4. Lo que ya soporta el Compose actual** | `up -d --no-build api web` usa la imagen que tenga la etiqueta `daubert-hub-<servicio>:latest`; por sí solo no conserva nada | No | Sí | Recrea `api` y `web` | Solo es el *mecanismo* para usar la alternativa 1. Las imágenes `daubert-hub-prod-temp-*` (2026-09-25) son anteriores a V1 y no equivalen al estado actual |
 
-**Opción correcta: la 1** (más la 1b si se quiere independencia del almacén de Docker). La preservación es una operación **previa** y forma parte del PRE-DEPLOY (paso 8 de abajo); no se ha ejecutado.
+**Opción correcta: la 1** (más la 1b si se quiere independencia del almacén de Docker). La preservación es una operación **previa** y forma parte del PRE-DEPLOY (paso 8 de abajo). Las anclas del piloto de 2026-11-11 quedaron verificadas según su expediente; esto no equivale a ejecutar rollback real ni acredita un `docker save` de ese piloto.
 
 ## Checklist
 
@@ -423,19 +425,21 @@ de ventana y repetir únicamente las verificaciones; no volver a etiquetar por e
 | Pieza | Estado |
 | --- | --- |
 | Rollback del Hub antes documentado | Solo "reconstruir la versión anterior" ([deployment](deployment.md#rollback-del-hub)): reconstrucción aproximada, lenta y dependiente de Git |
-| Preservar la imagen exacta | Mecanismo definido (ancla por nombre con comprobación de digest). **No ejecutado, no probado** en PROD |
+| Preservar la imagen exacta | Anclas API/Web `rollback-16153a8` comprobadas por digest contra la evidencia predeploy (2/2), según el expediente del piloto de 2026-11-11; no es una prueba de restauración |
 | Imagen `web` en ejecución | **Es** la imagen etiquetada (mismo manifiesto); el ancla debe crearse por nombre, no con `docker inspect … .Image` |
-| Script de ancla | `Deploy-DaubertHub.ps1 -Deploy` la crea y la verifica (**no ejecutado todavía**). El rollback **no tiene script**: son comandos manuales |
-| Prueba del rollback | **Pendiente**: ni el ancla ni `up --no-build` se han ejecutado en PROD |
+| Script de ancla | Usado por el orquestador en el primer deployment supervisado. El rollback sigue siendo manual, sin modo `-Rollback` |
+| Prueba del rollback | **Pendiente**: no se ejecutó rollback real en el piloto; verificar anclas no demuestra restauración de contenedores |
 | Rollback de PostgreSQL | Cada migración trae `down.sql` con guards; manual |
 | Rollback de n8n | Por workflow, ver [runbook de Caterpillar](../automations/caterpillar/production-runbook.md#rollback) |
 
 ## Pendientes y riesgos conocidos (no bloquean el preflight)
 
-- **`Deploy-DaubertHub.ps1 -Deploy` y el ancla de rollback: nunca ejecutados contra PROD**; solo probados con mocks. Su primera ejecución real será con el primer release que cambie `apps/`, `docker/` o `compose*`. Pendiente: modo `-Rollback` separado, con confirmación explícita.
+Las incidencias con fechas antiguas corresponden a esas revisiones, no a un diagnóstico actual del host. El expediente del piloto registra las comprobaciones de su ventana.
+
+- **Primer deployment supervisado ejecutado el 2026-11-11**, con anclas comprobadas por digest. El rollback real sigue sin ejecutarse en ese piloto; pendiente un modo `-Rollback` separado, con confirmación explícita.
 - **Pruebas automatizadas de `Test-DaubertDeployPreflight.ps1`: pendientes** (recomendado, aún no implementado). Deberían vivir en `scripts/deploy/tests` para no alterar el conteo de las 884 pruebas de backup, y cubrir: ausencia de cmdlets de escritura y de verbos mutantes de Docker/Git, asignación de `PASS`/`WARN`/`FAIL`, los tres códigos de salida (incluido el exit `2`) y que no se impriman secretos.
 - La tarea `Daubert - PostgreSQL Frequent` no ha publicado backup desde 2026-10-01 16:30 aunque figura con resultado `0`; Daily y Monthly están al día. Causa no determinada (posible suspensión del equipo).
-- El commit `add458c` no tiene tag; el último es `v0.9.0-pilot.2` (`bdf6e66`).
+- Referencia histórica de 2026-10-02: `add458c` no tenía tag y el último de aquella revisión era `v0.9.0-pilot.2` (`bdf6e66`). La política y el caso posterior `v1.1.1` se documentan en [release-policy](release-policy.md).
 - `compose.prod-temp.yaml` vive solo en el host de deployment (ver [nota](../deployments/2026-10-01-hub-v1-prod.md)); si se pierde el host, hay que reconstruirlo desde su descripción en esa nota.
 - El ancla vive en el almacén de imágenes de Docker Desktop; sin `docker save` (1b) depende de que ese almacén no se pierda.
 - Pendientes de Disaster Recovery (restore en otra estación, `globals`): **no bloquean** el deployment.
