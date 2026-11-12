@@ -194,3 +194,58 @@ No se exige un nuevo deployment solo para cerrar documentación ni forzar rollba
 - **Trimestralmente, como cadencia propuesta a ratificar:** programar ensayo de recuperación aislado del Hub y restauraciones específicas de PostgreSQL/n8n con sus responsables; medir tiempo real y acordar objetivos RTO/RPO. No hay tiempos de recuperación garantizados por esta auditoría. Repetir fuera de ciclo ante cambios relevantes o incidentes.
 - **Después de cada incidente/drill:** registrar causa, estados parciales, tiempos y acciones correctivas; revisar el checklist y riesgos con los dueños, conservando las notas históricas. No eliminar anclas, imágenes fallidas o evidencias como parte del diagnóstico; acordar retención/limpieza separadas después de aceptación.
 - **Evolución del pipeline:** mantener producción manual y supervisada. Cualquier cambio de automatización, acceso productivo, aprobación o alcance de recuperación requiere revisión explícita; no convertir un workflow informativo en permiso de deployment.
+
+## 8. Actualización posterior al corte — integración de Fase 3D (2026-11-12)
+
+### 8.1. Alcance temporal y evidencia nueva
+
+**Las secciones 1–7 se conservan íntegramente como fotografía histórica del corte de las 21:20 UTC**, correspondiente al commit `9d88391cac8e0d52c18ee7755e0ddd8feb919a73` y al documento del commit local `01b2617`. Sus afirmaciones «3D no integrada», conteos de pruebas, filas A10–A14 y riesgos R01–R03 describen ese momento. Para el estado posterior prevalece esta sección; las condiciones de cierre de la sección 6 siguen siendo exigibles, con el avance acreditado aquí. Los enlaces relativos al checklist y las pruebas resuelven ahora la versión integrada de 3D; para reproducir el análisis original debe consultarse el SHA histórico.
+
+La revisión humana favorable del documento fue reportada por el usuario; no equivale a aceptación de recuperación real ni a cierre formal. Esta actualización tiene corte de verificación a las **21:42 UTC del 2026-11-12** y se limita a documentación y consultas de lectura; no se ejecutó el procedimiento ni se reejecutaron suites locales.
+
+| Ref. | Evidencia nueva observada / fuente | Resultado y límite |
+| --- | --- | --- |
+| E10 | [PR #32](https://github.com/InternMX/daubert-hub/pull/32), consultado mediante `gh pr view` | `MERGED`, `mergedAt: 2026-11-12T21:35:08Z`; commit final `87485ac53f301ffae799faa74fd768dd0c884408`; head del PR `5f28954a70498effd4132c33acbfe54a632a40ef`. API de main confirma ese SHA y `protected: true` |
+| E11 | [CI del PR #32, run 43310812704](https://github.com/InternMX/daubert-hub/actions/runs/43310812704), rollup del PR y API check-runs del head completo | `release-plan` terminó SUCCESS a las `21:31:43Z` y `validate` a las `21:34:41Z`, antes del merge. Ambos `completed/success`, App `github-actions`, ID `15368`. El CI del PR no sustituye al del commit final de main |
+| E12 | [CI posterior al merge, run push 43311700513](https://github.com/InternMX/daubert-hub/actions/runs/43311700513), sobre `87485ac53f301ffae799faa74fd768dd0c884408` | Inicialmente en ejecución; resultado final comprobado: workflow `completed/success`, `release-plan` completed/success a las `21:36:56Z` y `validate` completed/success a las `21:41:43Z`. Es evidencia del SHA final de main, separada del verde del PR |
+| E13 | Lectura posterior de `/branches/main/protection` | Se mantienen PR obligatorio (cero aprobaciones externas), strict, ambos checks con App `15368`, aplicación a admins y force push/borrado prohibidos. La integración legítima de #32 tras CI aporta ruta positiva observada; no demuestra todos los rechazos ni constituye una auditoría histórica completa de cambios/bypass |
+| E14 | Contenido incorporado por `git fetch origin main` y merge local `c831247` | Main integrada sin rebase ni conflictos; el documento de cierre no cambió durante el merge. Revisión estática del [bloque de rollback](deployment-checklist.md#comandos-powershell-desde-la-raíz-del-repositorio), [diagnóstico y diseño de ensayo](rollback-rehearsal.md) y [suite de recuperación](../../scripts/deploy/tests/Recovery-DaubertRelease.Tests.ps1). Los cambios de 3D proceden de origin/main; esta entrega solo edita el documento de cierre |
+| E15 | Cuerpo del PR #32 y reporte del usuario sobre Claude | **238 Pester aprobadas localmente: resultado reportado por Claude**, no repetido aquí ni confirmado mediante inspección del XML. E11 acredita ejecución hospedada satisfactoria de release-plan con operaciones simuladas; no acredita Docker real ni permite equiparar automáticamente su conteo al local |
+
+### 8.2. Matriz vigente de los controles afectados
+
+Se conserva la leyenda de la sección 2. Las siguientes filas sustituyen su evaluación histórica **solo para el estado vigente**; el resto de controles conserva sus límites y obligaciones por release.
+
+| ID | Estado vigente | Evidencia posterior y criterio que queda abierto |
+| --- | --- | --- |
+| A03 | PENDIENTE — validación funcional incompleta | E10/E11/E13 acreditan la **ruta positiva**: main protegida permitió integrar legítimamente #32 después de completar ambos checks requeridos. No se ensayaron push directo, CI pendiente/fallido, base desactualizada, force push ni borrado; mantener los escenarios negativos del plan E7 pendientes, sin probar escrituras prohibidas sobre main real |
+| A04 | VALIDADO — CI del nuevo SHA final de main | E12 acredita validate y release-plan completed/success del commit final 3D; se distingue del CI de PR E11. Para publicar cualquier candidato, verificar nuevamente ambos checks del SHA exacto |
+| A10 | IMPLEMENTADO — procedimiento 3D integrado, recuperación real no validada | E10/E14: bloque manual endurecido, comprobación de manifiestos/estado de **ambos** contenedores, API healthy, health del commit anterior y espera posterior acotada. Diagnóstico de estados parciales integrado. No existe modo `-Rollback` ni rollback automático; el procedimiento sigue siendo manual. Su disponibilidad no demuestra restauración |
+| A11 | VALIDADO — exclusivamente pruebas automatizadas simuladas | E11 y release-plan de E12 aprobaron en GitHub Actions; E14 extrae los bloques documentados y simula almacén Docker, contenedores, HTTP, reloj y fallos. Incluye recreación parcial, interrupciones, lecturas ambiguas y concurrencia detectable. E15 conserva el conteo local 238 como reportado, no como resultado independiente de esta auditoría |
+| A12 | IMPLEMENTADO — integración y CI comprobados; aceptación de expediente todavía pendiente | Fase 3D integrada mediante E10 y revisada estáticamente en E14; CI del PR y del SHA final de main aprobados (E11/E12). Restan revisión/archivo de XML y aceptación trazable exigida en sección 6; el conteo local sigue siendo reportado. Ya no está pendiente fusionar #32 ni esperar su CI final |
+| A13 | PENDIENTE OBLIGATORIO — ensayo aislado con Docker real | [Ensayo 3D §4](rollback-rehearsal.md#4-ensayo-real-aislado-diseño-no-ejecutado) es diseño **no ejecutado**. Sin evidencia de recuperación real, ni aislada ni productiva. Exigir camino feliz y seis rondas de fallo, digests API/Web, health/humo, estados parciales y expediente conforme al procedimiento y sección 6 |
+| A14 | IMPLEMENTADO — diagnóstico/reanudación documentados y probados con mocks | E14 aporta clasificación `BLOQUEADO`, `NO_VERIFICABLE`, `SIN_INICIAR`, `LISTO_PARA_COMPOSE`, `RECREADO_NO_SANO`, `RECUPERADO` y `PARCIAL`. E11 valida la suite simulada; falta demostrar respuesta y estado final con Docker real en A13. Las respuestas ante CI/deployment fallido de sección 3 siguen vigentes |
+
+### 8.3. Riesgos R01–R03: evaluación vigente
+
+| Riesgo | Estado posterior / prioridad | Tratamiento y evidencia necesaria |
+| --- | --- | --- |
+| R01 | **Dependencia de integración resuelta**; seguimiento P1 de evidencia/aceptación | #32 ya está fusionado (E10), procedimiento/pruebas disponibles y CI del PR y de main aprobados (E11/E12). Las 238 pruebas locales siguen siendo reportadas. Revisar/archivar XML y aceptación antes de dar por satisfecha la condición 6.1; no mantener «3D sin integrar» como riesgo vigente ni confundir esta resolución con rollback probado |
+| R02 | **ABIERTO / P1 / bloquea cierre formal** | Sigue sin ejecutarse rollback con Docker real. Usar el diseño aislado integrado, en **otro host o VM con motor Docker propio y sin acceso a PROD**, con autorización específica; no realizarlo en el host productivo. Archivar rondas, digests, veredictos, tiempos y resultados. PostgreSQL/n8n mantienen planes separados |
+| R03 | **ABIERTO PARCIAL / P1** | La ruta positiva está observada en #32; los escenarios negativos siguen sin ensayo. Completar el plan E7 con autorización y aislamiento, conservar configuración/identidad/resultados y no extrapolar el merge exitoso a todas las prohibiciones |
+
+R04–R12 mantienen su tratamiento salvo el avance documental expreso anterior. La Fase 3D no resuelve pérdida del almacén de imágenes, DR de dependencias, custodia de configuración ni ausencia de lock: `docker tag` mantiene una ventana residual de concurrencia, y la espera de 180 s no limita la duración del proceso Docker local sin timeout propio. No declarar esos riesgos eliminados por aprobar mocks.
+
+### 8.4. Uso operativo de la documentación integrada y cierre pendiente
+
+Para próximas recuperaciones autorizadas, el checklist reutilizable de sección 3 debe consultarse junto al [diagnóstico 3D](rollback-rehearsal.md#3-diagnóstico-de-recuperación-solo-lectura), que concreta su paso mínimo ante un estado parcial. La mención histórica «no usar 3D no integrada» ya no bloquea el uso de **esta versión integrada y revisada**; no autoriza versiones posteriores de otra rama ni una intervención productiva por sí sola.
+
+- `NO_VERIFICABLE`/`BLOQUEADO`: detener mutaciones y escalar conforme al diagnóstico; no forzar el bloque.
+- `LISTO_PARA_COMPOSE`: diagnosticar primero la causa y seguir únicamente la cola indicada por el procedimiento, incluida su verificación; no repetir etiquetado.
+- `PARCIAL`: autorización del responsable para completar solo el paso pendiente con las comprobaciones existentes; no borrar/sobrescribir `failed-*` ni anclas.
+- `RECREADO_NO_SANO`: no retaggear ni recrear a ciegas; diagnóstico de salud/proxy/dependencias según runbook.
+- `RECUPERADO`: es veredicto técnico sujeto al estado observado; aún requiere humo, Reload/Open cuando corresponda y registro. Un `RECUPERADO` simulado no acredita recuperación real.
+
+Los enlaces al diagnóstico/desarrollo de ensayo son referencias técnicas, no comandos nuevos ni duplicación del procedimiento de Claude. Se conserva el rollback manual y supervisado. Esta actualización no requiere deployment, tag ni cambio de versión de aplicación.
+
+**Dictamen posterior: Fase 3D integrada; Fase 3E documental preparada para revisión/publicación, pero Fase 3E y cierre formal del CI/CD NO CONCLUIDOS.** Sigue siendo obligatorio ejecutar y documentar el ensayo aislado con Docker real (A13/R02), completar los escenarios funcionales pendientes de protección (A03/R03), cerrar la evidencia/aceptación restante de A12 y satisfacer las demás condiciones de sección 6. Publicar este documento no sustituye esa aceptación.
