@@ -249,3 +249,93 @@ Para próximas recuperaciones autorizadas, el checklist reutilizable de sección
 Los enlaces al diagnóstico/desarrollo de ensayo son referencias técnicas, no comandos nuevos ni duplicación del procedimiento de Claude. Se conserva el rollback manual y supervisado. Esta actualización no requiere deployment, tag ni cambio de versión de aplicación.
 
 **Dictamen posterior: Fase 3D integrada; Fase 3E documental preparada para revisión/publicación, pero Fase 3E y cierre formal del CI/CD NO CONCLUIDOS.** Sigue siendo obligatorio ejecutar y documentar el ensayo aislado con Docker real (A13/R02), completar los escenarios funcionales pendientes de protección (A03/R03), cerrar la evidencia/aceptación restante de A12 y satisfacer las demás condiciones de sección 6. Publicar este documento no sustituye esa aceptación.
+
+## 9. Actualización de alcance — cierre operativo práctico (2026-11-12)
+
+### 9.1. Decisión vigente y límites
+
+Por decisión de alcance comunicada por el responsable del proyecto, **no se realizará el laboratorio de pruebas negativas de branch protection**. No se creará otro repositorio ni se provocarán rechazos de push, force push, borrado o CI. Esos escenarios quedan como endurecimiento opcional para una auditoría futura: **no ejecutados, no validados y no bloqueantes del cierre operativo acordado**. Esta decisión de alcance no constituye todavía aceptación formal de todos los riesgos residuales.
+
+Las secciones 1–8 y los expedientes enlazados se conservan sin cambios como historia. **Esta sección prevalece únicamente para los criterios vigentes de aceptación y cierre**: sustituye la obligatoriedad del ensayo negativo de A03/R03 y de las seis rondas de A13 indicada en las secciones 2, 4, 6 y 8. El plan de [protección de main](main-branch-protection.md) y el diseño de [ensayo de rollback](rollback-rehearsal.md) siguen siendo referencias históricas/técnicas; no se modifica su procedimiento ni se afirma haber completado su cobertura original.
+
+La única validación técnica adicional prioritaria para el cierre es **un ensayo de recuperación del Hub con Docker real, aislado, con camino feliz y al menos un escenario parcial controlado**. Su preparación y ejecución corresponden al trabajo separado de Claude Code. Esta actualización define evidencia de aceptación, no instrucciones nuevas de ejecución ni autorización para actuar sobre PROD.
+
+### 9.2. Evidencia complementaria de implementación y CI
+
+Base documental de esta actualización: `main` actualizado en `9f5a2fa1a7c2a39f0b3e3153b32fb0f382907e93`. Las Fases 3A–3E están integradas; no confundir integración de documentación con cierre operativo aceptado.
+
+| Ref. | Evidencia | Resultado y límite |
+| --- | --- | --- |
+| E16 | [PR #33](https://github.com/InternMX/daubert-hub/pull/33) y [CI del PR 43313639673](https://github.com/InternMX/daubert-hub/actions/runs/43313639673), consultados por lectura el 2026-11-12 | PR integrado a las `21:52:44Z` en `9f5a2fa1a7c2a39f0b3e3153b32fb0f382907e93`; `release-plan` success a las `21:48:52Z` y `validate` success a las `21:52:02Z`, antes del merge. Complementa la ruta positiva de #32 (E10–E13); no acredita rechazos |
+| E17 | [CI push posterior a #33, run 43314551489](https://github.com/InternMX/daubert-hub/actions/runs/43314551489), confirmado mediante `gh run view` el 2026-11-12, después de las `22:04 UTC` | SHA final `9f5a2fa1a7c2a39f0b3e3153b32fb0f382907e93`, workflow completed/success; `release-plan` success a las `21:53:46Z` y `validate` success a las `21:59:21Z`. Es CI del SHA final, separado del CI del PR; no implica deployment |
+| E18 | API de rama/protección/rulesets de `InternMX/daubert-hub`, lectura aproximada de las `21:58 UTC` del 2026-11-12; rama consultada de nuevo al preparar esta actualización | `main` protegida, PR obligatorio con cero aprobaciones externas, strict, checks `validate`/`release-plan` con App GitHub Actions `15368`, aplicación a administradores y force push/borrado prohibidos; sin rulesets superpuestos en las respuestas. Confirma configuración, no pruebas negativas ni historial de bypass |
+
+El piloto productivo del **2026-11-11** conserva su evidencia E6 y el alcance de la [política de releases](release-policy.md#7-ejemplo-real-y-límite-histórico-piloto-de-2026-11-11): publicación exitosa registrada, anclas verificadas entonces y rollback real no ejecutado. No se consultó PROD en esta actualización. Las pruebas Pester siguen siendo simuladas; no se reejecutaron ni se eleva el conteo local reportado a resultado independiente.
+
+### 9.3. Matriz simplificada de aceptación vigente
+
+| Grupo / controles | Estado vigente | Evidencia o condición de aceptación |
+| --- | --- | --- |
+| Implementados y validados: protección y ruta normal de integración (A01–A03, alcance reducido) | VALIDADO para configuración y ruta positiva | E10–E13/E16/E18: PR #32 y #33 integrados tras checks aprobados, main protegida y cero aprobaciones externas obligatorias. No incluye escenarios negativos |
+| Implementados y validados: CI de PR/main y preparación supervisada (A04/A05) | VALIDADO en los SHA/ejecuciones citados | E2/E3/E11/E12/E16/E17; renovar CI/reporte por candidato según la política, sin confundir preparación con deployment |
+| Implementados y validados: piloto y anclas históricas (A08/A09) | VALIDADO solo para el piloto registrado | E6: deployment exitoso, humo y anclas de API/Web. No demuestra disponibilidad actual ni rollback real |
+| Implementados: política, aprobación humana, checklist y procedimiento de recuperación (A06/A07/A10/A14) | IMPLEMENTADO; aplicación por release y recuperación real pendiente | Documentación integrada y automatización supervisada; no exige un nuevo deployment para cerrar documentación |
+| Implementados y validados con simulación: recuperación Pester (A11/A12) | CI simulado satisfactorio e integración comprobada | E10–E15/E17. Revisar/archivar evidencia disponible y aceptar el expediente; no exigir un conteo fijo ni nuevas pruebas locales para este cierre |
+| Implementados, pendientes de validación real: rollback y respuesta parcial (A10/A13/A14, R02) | PENDIENTE — único ensayo técnico adicional bloqueante | Dos casos mínimos de 9.4 con resultado PASS y evidencia revisada |
+| Mejoras opcionales: negativos de GitHub (parte de A03/R03), seis rondas completas de rollback y copia externa de imágenes | NO EJECUTADAS / no acreditadas; no bloqueantes por sí mismas | Alcance diferido explícitamente; la cobertura ampliada y la recuperación desde copia externa no se consideran demostradas |
+| Riesgos residuales y custodia (R04–R12, incluido A15) | ACEPTACIÓN EXPLÍCITA PENDIENTE | Responsable nominal acepta límites aplicables de 9.6 y conserva evidencia. BD/n8n y DR integral permanecen fuera del cierre acotado del Hub; no se declaran recuperables por este ensayo |
+
+La reclasificación de A03/R03 elimina su bloqueo por ausencia de pruebas negativas, no demuestra que todos los rechazos funcionen. A12 conserva revisión/archivo y aceptación documental pendientes, sin introducir otro ensayo técnico. Los requisitos GO/NO-GO de cada release siguen vigentes; aceptar riesgos no permite publicar con SHA/CI incorrectos, anclas insuficientes o health degradado.
+
+### 9.4. Evidencias mínimas del ensayo Docker real
+
+El entorno debe ser **otro host o VM con motor propio**, sin acceso a PROD, sus datos, secretos, montajes ni servicios. Se mantienen las comprobaciones y el procedimiento revisado que prepare Claude; aquí solo se acota qué debe demostrar el expediente.
+
+| Caso mínimo | Resultado esperado | Evidencia mínima para PASS |
+| --- | --- | --- |
+| D01 — recuperación completa | Recuperación de API y Web a las imágenes anteriores preservadas, sin rebuild | SHA Git completo anterior/nuevo y versiones; digests previos de ambas imágenes/anclas; digests e identidad de los contenedores después de recuperar; ambos running, API healthy; `/api/health` sano con commit anterior y versión esperada; Web accesible y bundle/identidad anterior comprobados; humo de lectura satisfactorio |
+| D02 — recuperación parcial controlada y terminación segura | El sistema detecta un estado parcial, no declara éxito prematuro y, tras diagnóstico y autorización, recupera ambos servicios | Estado e inyección controlada identificados (por ejemplo, solo API recreada, como ronda F); diagnóstico que no sea RECUPERADO mientras Web siga incorrecta; detención y paso mínimo autorizado; anclas e imágenes preservadas sin sobrescritura; verificación final completa equivalente a D01 |
+
+Para **ambos casos**, conservar fuera del repo: autorización, operador y hora UTC; identificación del host/VM, contexto y motor Docker, versiones Docker/Compose, proyecto/puertos y endpoints aislados; SHA del procedimiento y copia/diff de las adaptaciones de ensayo; comandos/logs sanitizados, códigos de salida, diagnóstico antes/después, duración y PASS/FAIL por caso. Diferenciar ID de imagen, digest de manifiesto y digest de archivo: registrar qué campo se compara y no intercambiarlos.
+
+La ausencia de afectación a PROD se sustentará en la configuración del aislamiento, falta de rutas/credenciales productivas y destinos efectivos de los comandos, no solo en una declaración del operador. No se requiere tocar PROD para demostrarla. Una API o BD ficticia limita la evidencia; el health utilizado para aceptar recuperación debe provenir del Hub real y de sus dependencias de ensayo aisladas, no de una respuesta HTTP simulada.
+
+El resultado mínimo global será **PASS únicamente con D01 y D02 aprobados y evidencia de aislamiento completa**. Si falta evidencia, el caso queda NO VERIFICADO y el cierre pendiente; una desviación del resultado esperado se registra FAIL. Un exit 0 o una API sana con Web incorrecta no bastan. No se exige provocar un rollback productivo.
+
+Las rondas A–F del diseño original permanecen como **cobertura ampliada opcional**. Ejecutar D02 sobre una de ellas no equivale a completar las seis ni acredita los modos de fallo restantes. El informe deberá decir «ensayo mínimo D01/D02 aprobado» y enumerar las rondas no ejecutadas, no «cobertura completa de rollback validada».
+
+### 9.5. Preservación sencilla de imágenes — propuesta documental
+
+**Requisito operativo vigente:** antes de cada publicación, disponer y verificar las anclas de **API y Web** por digest según el checklist. **Mejora recomendada, no bloqueo adicional de este cierre acotado:** una copia externa con `docker save` y restauración probada. Mientras no exista, el responsable deberá aceptar expresamente que perder el almacén local de Docker puede impedir la recuperación exacta. Si se exige recuperación ante pérdida del host/almacén, esa copia y su prueba de restauración pasan a ser requisito de ese alcance ampliado.
+
+Estrategia mínima propuesta, sin scripts ni ejecución en esta entrega:
+
+1. Seleccionar las dos imágenes exactas de recuperación verificadas; usar referencias identificadas por SHA Git, no depender solo de `latest` ni de la versión de aplicación. Exportarlas mediante `docker save`, una por archivo o ambas en un archivo identificado; no sobrescribir copias existentes. La extracción desde un host productivo requiere su autorización propia.
+2. Guardar archivo(s) y un manifiesto sencillo **fuera del repositorio y del directorio de trabajo**, preferentemente en otro dispositivo/almacenamiento independiente del host. Otra carpeta en el mismo disco no protege contra pérdida del host. Tratar las imágenes como material restringido: pueden contener código/configuración incorporados al build.
+3. Identificar archivo(s) con fecha UTC y SHA Git completo anterior; registrar API/Web, versión, plataforma, tags, IDs y digests esperados, tamaño y SHA-256 de cada archivo. El hash verifica integridad del archivo; no demuestra arranque, contenido correcto ni recuperabilidad.
+4. En un **motor de prueba independiente**, verificar SHA-256 y ejecutar `docker load` únicamente allí. Demostrar que las imágenes cargadas proceden del archivo y no de imágenes previas del motor; comparar IDs/digests del mismo tipo y plataforma con el manifiesto. Si faltan metadatos necesarios para el procedimiento vigente, registrar la incompatibilidad y no declarar la copia verificada.
+5. Para llamarla «respaldo recuperable verificado», además de cargarla, levantar API/Web desde esas imágenes en el entorno aislado, sin rebuild, y verificar imágenes, health, versión/SHA anterior y humo. Una copia solo exportada queda «copia creada, restauración no probada»; cargar sin arrancar queda «carga verificada, recuperación funcional pendiente».
+6. Retención mínima: conservar el par completo API/Web de la **última versión anterior recuperable**, con manifiesto/evidencia, durante toda la ventana de recuperación de la versión actual. No retirar ese par hasta que el siguiente par esté preservado y verificado para la capacidad declarada y el responsable cierre la ventana anterior. No borrar anclas ni `failed-*` de incidentes abiertos; acordar su disposición por separado.
+
+Esta copia solo preserva imágenes del Hub: no respalda BD, n8n, secretos, Compose externo ni datos/montajes. Un rebuild desde Git tampoco sustituye las imágenes exactas. No hay copia exportada/restaurada acreditada por esta actualización; R05 permanece abierto con el alcance local explícito.
+
+### 9.6. Riesgos a aceptar y condiciones finales de cierre
+
+| Riesgo residual | Aceptación o tratamiento exigido |
+| --- | --- |
+| Sin pruebas negativas de GitHub; cero revisores obligatorios; administrador capaz de editar reglas y misma App capaz de reutilizar nombres de checks (R03/R11) | Aceptar configuración leída y ruta positiva como alcance suficiente actual, sin revisión independiente garantizada; revisar permisos, reglas y cambios de CI. Negativos opcionales, no validados |
+| Anclas dependientes del almacén local; exportación/carga no probadas (R05) | Aceptar recuperación limitada al almacén disponible y posible pérdida de rollback exacto; asignar responsable y fecha de revisión de copia externa, o exigirla si se amplía la capacidad declarada |
+| Docker real pendiente y cobertura parcial futura (R02) | D01/D02 no son sustituibles por aceptación de riesgo. Tras PASS, aceptar expresamente que las demás rondas no fueron ensayadas y que no se probó rollback en PROD |
+| Concurrencia, interrupciones y límites de timeout (A14) | Un operador y ningún proceso concurrente durante recuperación; conservar diagnóstico y autorización de continuación. Sigue sin lock transaccional y el proceso Docker local puede exceder la espera del health |
+| BD/n8n, configuración externa y recuperación ante pérdida de host (A15/R06) | Delimitar cierre al CI/CD supervisado y recuperación de imágenes del Hub; conservar pendientes separados con responsable/fecha. Ninguna aceptación acredita DR integral ni permite omitir el plan específico de un release que los afecte |
+| Evidencias efímeras, aprobación manual y trazabilidad SHA/versión (R04/R07–R12 aplicables) | Archivar evidencia disponible, conservar excepciones históricas y controles por release; nombrar custodio y pendientes. La política sigue siendo supervisada, sin automatizar identidad del aprobador ni garantías de disponibilidad futura |
+
+Se distinguen tres decisiones:
+
+1. **Cierre de implementación:** Fases 3A–3E integradas, CI/protección/gobierno/procedimiento disponibles y ruta positiva evidenciada. La implementación está entregada; esta actualización documental aún requiere revisión/integración y no publica una nueva versión del Hub.
+2. **Validación operativa:** piloto y CI acreditados en sus fechas; recuperación real **pendiente** hasta revisar el expediente D01/D02 con ambos PASS. No se exige laboratorio negativo, seis rondas completas, otro deployment ni restore productivo para este cierre.
+3. **Aceptación de riesgos y cierre formal:** después de la evidencia técnica, el responsable designado registra nombre, fecha UTC, SHA/documentación aceptada, referencias a D01/D02, alcance local o copia externa verificada, aceptación explícita de cada riesgo aplicable y responsables/fechas de pendientes. La decisión de reducir alcance no reemplaza esa firma/registro.
+
+Antes de emitir el acta final: revisar y archivar CI/XML disponible de 3D sin atribuir el conteo local como verificado, completar D01/D02, custodiar expediente y obtener la aceptación anterior. Si alguna evidencia histórica ya no está disponible, registrar el límite y su tratamiento explícito, sin inventarla. Actualizar estados con evidencia fechada, sin reescribir las evaluaciones anteriores.
+
+**Dictamen vigente: implementación 3A–3E integrada; validación operativa de recuperación y cierre formal PENDIENTES.** El único ensayo técnico adicional obligatorio es el mínimo Docker real aislado. La aceptación de riesgos y del expediente también sigue pendiente. Esta entrega es documental: no ejecuta Docker, SQL, n8n, deployments ni pruebas negativas, no crea laboratorios y no modifica reglas, workflows ni el procedimiento de Claude.
