@@ -74,7 +74,7 @@
     "cat_recovery"
   ],
   "resumen": {
-    "inerte_nunca_en_prod": 51,
+    "inerte_nunca_en_prod": 55,
     "produccion_lectura": 2,
     "produccion_reversion": 6,
     "produccion_aplicar": 18
@@ -160,9 +160,9 @@
     {
       "ruta": "database/migrations/daubert_global/20261108_020_manufactura_gestor_documental_prod.up.sql",
       "categoria": "produccion_aplicar",
-      "blob": "bac3b01333bad17d6b4bb8a4a08817e9fe7c25cd",
-      "sha256": "ba37551d036b6c406c21c721e6f236d8bf215453e76d0d052d0d95e81ae4eebd",
-      "bytes": 46867
+      "blob": "714c1baef8e9d767631f8ad39e9e3b17ee93f2e9",
+      "sha256": "fd7285ac952213eb9138ba35f8578c5168cc21d2bc8b966a0ac4f115038885c8",
+      "bytes": 46978
     },
     {
       "ruta": "database/migrations/daubert_global/20261108_021_manufactura_responsables_firmas_prod.down.sql",
@@ -307,8 +307,8 @@
     {
       "ruta": "database/migrations/daubert_global/README-manufactura-020-024.md",
       "categoria": "inerte_nunca_en_prod",
-      "blob": "69ac6d308fec45cc9a5efcbb4fe553a5e26bd80a",
-      "sha256": "172cdced1ed9b8371eeee546243b63f4cad1ee23e970e685375ce919d43aaa57",
+      "blob": "cde3dcedc5a3e74f9537ced356599c324ed8a2a5",
+      "sha256": "77bcd8166c8c072b59b038d39d00b859a19b3daf0f65481bc6d5e5524f7d8312",
       "bytes": 21698
     },
     {
@@ -548,6 +548,34 @@
       "blob": "9d7a44233348ba55ac0033fbadb331c0c80ab3b4",
       "sha256": "1b0c62216a44850c190ffa665e5b11d62147dc4d02535cba38ebd10e9ea773b1",
       "bytes": 6938
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261111_106_manufactura_genero_opcional_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "bdfdc5354f08a85c83062bcf754d8f49f99a2245",
+      "sha256": "b56bf921200006c13f6086092d3fde9c1b307bbf797f7a0ed110cf55541c68b0",
+      "bytes": 2695
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261111_106_manufactura_genero_opcional_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "1395797726a2ebb37214d3d769a277d38d021084",
+      "sha256": "9c032d4d7f253381bb12fc0e59d794d70124e24db198506cd1391867d693b547",
+      "bytes": 3427
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261111_106_manufactura_genero_opcional_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "8010d14a5c755d4f81e12111184454f7251f6f89",
+      "sha256": "e2bc7dd86da6a8ec332ae98b67c513ce1217f414a619b76c617bc336ce4c603a",
+      "bytes": 3435
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261111_106_manufactura_genero_opcional_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "55add585b48efda7648cab36a5db4dd28ebc4c77",
+      "sha256": "67618544e59a908ebcea0e74d0a5367b857ee46feeeca0afcf9ae80f73d4464b",
+      "bytes": 4628
     },
     {
       "ruta": "database/migrations/daubert_hub_test/README-104.md",
