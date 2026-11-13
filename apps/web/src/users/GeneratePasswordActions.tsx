@@ -1,5 +1,6 @@
 import { Button, Stack } from '@mui/material';
 import { useState } from 'react';
+import { copyText } from '../utils/copyText';
 import { generateTemporaryPassword } from '../utils/generateTemporaryPassword';
 
 interface GeneratePasswordActionsProps {
@@ -9,40 +10,6 @@ interface GeneratePasswordActionsProps {
 }
 
 type CopyState = 'idle' | 'copied' | 'failed';
-
-// navigator.clipboard only exists in secure contexts (HTTPS/localhost). Over
-// plain HTTP it is undefined, so fall back to the legacy execCommand path with
-// a temporary off-screen textarea that is always removed afterwards.
-function legacyCopy(text: string): boolean {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.setAttribute('aria-hidden', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.top = '-1000px';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  try {
-    textarea.select();
-    return document.execCommand('copy');
-  } catch {
-    return false;
-  } finally {
-    document.body.removeChild(textarea);
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // Permission denied or similar — try the legacy path below.
-    }
-  }
-  return legacyCopy(text);
-}
 
 // Shared by NewUserPage and ResetPasswordDialog so the generation/copy logic
 // exists in exactly one place. The generated value is only ever handed to the

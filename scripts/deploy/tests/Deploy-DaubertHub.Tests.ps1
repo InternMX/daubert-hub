@@ -21,6 +21,10 @@ $script:Fake = $null
 function New-Fake {
     return @{
         PreflightCode   = 0
+        Branch          = 'main'
+        OriginMain      = $script:Head
+        RemoteSha       = $script:Head
+        RemoteCode      = 0
         HeadFull        = $script:Head
         CandidateFull   = $script:Head
         HeadShort       = $script:HeadShort
@@ -51,12 +55,21 @@ function Get-FakeRead {
     $f = $script:Fake
     $line = $Exe + ' ' + ($CmdArgs -join ' ')
     if ($Exe -eq 'powershell') { return @{ Code = $f.PreflightCode; Out = @('(salida simulada del preflight)') } }
+    if ($line -match 'rev-parse --verify (\S+)') {
+        if ($Matches[1] -like 'refs/remotes/origin/main*') { return @{ Code = 0; Out = @($f.OriginMain) } }
+        return @{ Code = 0; Out = @($f.HeadFull) }
+    }
+    if ($line -match 'rev-parse --abbrev-ref HEAD') { return @{ Code = 0; Out = @($f.Branch) } }
+    if ($line -match 'ls-remote --exit-code origin refs/heads/main') {
+        if ($f.ContainsKey('RemoteLines')) { return @{ Code = $f.RemoteCode; Out = @($f.RemoteLines) } }
+        return @{ Code = $f.RemoteCode; Out = @(($f.RemoteSha + "`trefs/heads/main")) }
+    }
     if ($line -match 'rev-parse --short=7 HEAD') { return @{ Code = 0; Out = @($f.HeadShort) } }
     if ($line -match 'rev-parse (\S+)$') {
         if ($Matches[1] -eq 'HEAD') { return @{ Code = 0; Out = @($f.HeadFull) } }
         return @{ Code = 0; Out = @($f.CandidateFull) }
     }
-    if ($line -match 'status --short') { return @{ Code = 0; Out = @($f.Dirty) } }
+    if ($line -match 'status (--short|--porcelain=v1)') { return @{ Code = 0; Out = @($f.Dirty) } }
     if ($line -match 'cat-file -e') { return @{ Code = 0; Out = @() } }
     if ($line -match 'diff --name-only') { return @{ Code = 0; Out = @($f.Files) } }
     if ($line -match 'config --images') { return @{ Code = 0; Out = @($f.Images) } }
@@ -117,6 +130,201 @@ function Set-StandardMocks {
 }
 
 function Get-PrintedText { return ($script:Printed -join "`n") }
+
+Describe 'Validacion operativa: stderr nativo no es un fallo de Docker' {
+    BeforeEach {
+        $script:Mode = 'Deploy'
+        Mock Test-AllowedMutation { $null }
+        Mock Write-Host { }
+    }
+    It 'conserva exit 0 aunque el ejecutable publique progreso por stderr' {
+        # Proceso inerte, nunca Docker: BuildKit publica progreso por stderr de la misma forma.
+        $result = Invoke-DeployMutation (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-File', (Join-Path $here 'fixtures\Write-NativeProgress.ps1')) 2>$null
+        $result.Code | Should Be 0
+    }
+    It 'conserva un exit no cero y restaura la politica de errores' {
+        $before = $ErrorActionPreference
+        $result = Invoke-DeployMutation (Join-Path $PSHOME 'powershell.exe') @('-NoProfile', '-File', (Join-Path $here 'fixtures\Write-NativeProgress.ps1'), '-Code', '7') 2>$null
+        $result.Code | Should Be 7
+        $ErrorActionPreference | Should Be $before
+    }
+}
+
+Describe 'Fase 2B: sincronizacion estricta y revalidacion tras confirmar' {
+    BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'acepta exclusivamente el SHA completo sincronizado en main limpia' {
+        (Test-DeploySynchronizedMain $script:Head) | Should Be $true
+        (Test-DeploySynchronizedMain 'HEAD') | Should Be $false
+        (Test-DeploySynchronizedMain $script:HeadShort) | Should Be $false
+    }
+    It 'bloquea si no puede consultar el remoto aunque el preflight seria apto' {
+        $script:Fake.RemoteCode = 128
+        (Invoke-Main -D $true -C $script:Head -Opt @{ RequireSynchronizedMain = $true }) | Should Be 1
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
+    }
+    It 'bloquea salida remota ausente, duplicada, mal formada o de otra referencia' {
+        foreach ($lines in @(@(), @('no-es-sha'), @(($script:Head + "`trefs/heads/otro")), @(($script:Head + "`trefs/heads/main"), ($script:Head + "`trefs/heads/main")))) {
+            $script:Fake.RemoteLines = $lines
+            (Test-DeploySynchronizedMain $script:Head) | Should Be $false
+        }
+    }
+    It 'bloquea diferencias en HEAD, origin/main, remoto y rama' {
+        foreach ($key in @('HeadFull', 'OriginMain', 'RemoteSha', 'Branch')) {
+            $script:Fake = New-Fake
+            $script:Fake[$key] = ('b' * 40)
+            (Test-DeploySynchronizedMain $script:Head) | Should Be $false
+        }
+    }
+    It 'bloquea status fallido incluso sin salida (nunca lo interpreta como limpio)' {
+        $script:Fake.StatusFailure = $true
+        Mock Invoke-DeployRead { @{ Code = 1; Out = @() } } -ParameterFilter { $CmdArgs -contains '--porcelain=v1' -and $script:Fake.ContainsKey('StatusFailure') }
+        (Test-DeploySynchronizedMain $script:Head) | Should Be $false
+    }
+    It 'revalida un arbol que se ensucia mientras el operador confirma' {
+        Mock Read-DeployConfirmation { $script:Fake.Dirty = @('?? sorpresa'); 'DEPLOY DAUBERT HUB' }
+        (Invoke-Main -D $true -C $script:Head -Opt @{ RequireSynchronizedMain = $true }) | Should Be 1
+        (Get-PrintedText) | Should Match 'PLAN DE DEPLOYMENT'
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+    It 'revalida el remoto DESPUES de la confirmacion y bloquea si se pierde' {
+        Mock Read-DeployConfirmation { $script:Fake.RemoteCode = 128; 'DEPLOY DAUBERT HUB' }
+        (Invoke-Main -D $true -C $script:Head -Opt @{ RequireSynchronizedMain = $true }) | Should Be 1
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+    It 'revalida salud, delta y cierre despues de la confirmacion' {
+        foreach ($change in @('health', 'delta', 'closure', 'n8n', 'database')) {
+            $script:Fake = New-Fake; $script:Change = $change
+            Mock Read-DeployConfirmation {
+                switch ($script:Change) {
+                    health { $script:Fake.HealthStatus = 'error' }
+                    delta { $script:Fake.Files = @('docs/x.md') }
+                    closure { $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'open'; PolicySha = 'closed' } }
+                    n8n { $script:Fake.Files += 'n8n/x.json' }
+                    database { $script:Fake.Files += 'database/x.sql' }
+                }
+                'DEPLOY DAUBERT HUB'
+            }
+            (Invoke-Main -D $true -C $script:Head -Opt @{ RequireSynchronizedMain = $true; RequireClosedWindow = $true }) | Should Be 1
+        }
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 5 -Exactly
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+    It 'bloquea si un ancla prevista para reutilizarse desaparece' {
+        $script:Fake.Tags['daubert-hub-api:rollback-' + $script:Prev] = $script:Fake.Running.api
+        $plan = New-DeployPlan (Get-DeployContext $script:Head)
+        $script:Fake.Tags.Remove('daubert-hub-api:rollback-' + $script:Prev)
+        (New-RollbackAnchors $plan) | Should Be $false
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+}
+
+. (Join-Path $here '..\Invoke-DaubertRelease.ps1') -Plan -ExpectedCommit $script:Head
+Describe 'Fase 2B: orquestador y deployment reales con procesos simulados' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Printed = @(); $script:Mutations = @()
+        $script:Record = $null
+        Mock Write-ReleaseRecord { $script:Record = $Record }
+        Mock Invoke-ReleaseRead {
+            if ($Operation -eq 'Head') { return @{ Code = 0; Out = @($script:Fake.HeadFull) } }
+            $before = $script:Printed.Count
+            $code = Invoke-DeployMain $false $true $false $Commit 0 $false @{ RequireSynchronizedMain = $Strict; RequireClosedWindow = $ClosedWindow }
+            return @{ Code = $code; Out = @($script:Printed | Select-Object -Skip $before) }
+        }
+        Mock Invoke-ReleaseDeployment {
+            $code = Invoke-DeployMain $false $false $true $Commit 0 $false @{ RequireSynchronizedMain = $true; RequireClosedWindow = $ClosedWindow }
+            return @{ Code = $code; Out = @('salida externa ficticia no debe mostrarse') }
+        }
+    }
+
+    It 'publica, verifica y registra solo metadatos aprobados' {
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 0
+        $script:Record.approvedCommit | Should Be $script:Head
+        $script:Record.previousCommit | Should Be $script:Prev
+        $script:Record.candidateVersion | Should Be $script:RealVersion
+        $script:Record.postChecksPassed | Should Be $true
+        ($script:Record.Keys -join ',') | Should Not Match 'password|token|stdout|stderr'
+        (Get-PrintedText) | Should Match 'Verificaciones posteriores: aprobadas'
+        (Get-PrintedText) | Should Not Match 'salida externa ficticia'
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
+    }
+    It 'conserva la cancelacion del operador sin mutaciones' {
+        $script:Fake.Confirmation = 'cancelar'
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+        $script:Record.exitCode | Should Be 1
+    }
+    It 'bloquea remoto inaccesible antes de delegar Deploy' {
+        $script:Fake.RemoteCode = 128
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+    }
+    It 'bloquea commit distinto y repositorio sucio' {
+        (Invoke-ReleaseMain $false ('b' * 40) $true) | Should Be 1
+        $script:Fake.Dirty = @(' M apps/api/src/x.ts')
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+    }
+    It 'sin cambios devuelve 2 y no llega a confirmacion' {
+        $script:Fake.Files = @('docs/x.md')
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 2
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+    It 'bloquea database y n8n sin admitir excepciones' {
+        foreach ($path in @('database/x.sql', 'n8n/x.json')) {
+            $script:Fake.Files = @('apps/api/src/x.ts', $path)
+            (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        }
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+    }
+    It 'preflight fallido bloquea' {
+        $script:Fake.PreflightCode = 1
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+    It 'propaga fallo de Docker sin rollback automatico' {
+        $script:Fake.UpFails = $true
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 5
+        $script:Record.postChecksPassed | Should Be $false
+        (Get-PrintedText) | Should Match 'seccion ROLLBACK'
+        $script:Mutations.Count | Should Be 3
+    }
+    It 'propaga fallo del healthcheck posterior' {
+        $script:Fake.UpUpdatesHealth = $false
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 5
+        $script:Record.postChecksPassed | Should Be $false
+    }
+    It 'bloquea si no se crea el ancla y nunca reconstruye' {
+        $script:Fake.TagNoOp = $true
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        (@($script:Mutations | Where-Object { $_.Args[0] -eq 'compose' })).Count | Should Be 0
+    }
+    It 'bloquea anclas alteradas sin sobrescribirlas' {
+        $script:Fake.Tags['daubert-hub-api:rollback-' + $script:Prev] = 'sha256:alterada'
+        (Invoke-ReleaseMain $false $script:Head $true) | Should Be 1
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+    }
+    It 'respeta RequireClosedWindow sin cambiar el cierre' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'open'; PolicySha = 'closed' }
+        (Invoke-ReleaseMain $false $script:Head $true $true) | Should Be 1
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+        $script:Fake.Closure.ConfSha = 'closed'
+        (Invoke-ReleaseMain $false $script:Head $true $true) | Should Be 0
+        $script:Record.requireClosedWindow | Should Be $true
+    }
+    It 'Plan nunca confirma, muta ni escribe evidencia' {
+        (Invoke-ReleaseMain $true $script:Head) | Should Be 0
+        Assert-MockCalled Invoke-ReleaseDeployment -Scope It -Times 0 -Exactly
+        Assert-MockCalled Invoke-DeployMutation -Scope It -Times 0 -Exactly
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
+        Assert-MockCalled Write-ReleaseRecord -Scope It -Times 0 -Exactly
+    }
+}
 
 Describe 'Modos' {
     BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
@@ -428,6 +636,12 @@ Describe 'Deploy exitoso (simulado)' {
 
 Describe 'Fallos durante el deploy' {
     BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'un compose ps fallido bloquea aunque inspect y health respondan' {
+        $script:Fake.PsFails = $true
+        Mock Invoke-DeployRead { @{ Code = 1; Out = @() } } -ParameterFilter { $CmdArgs -contains 'ps' -and $script:Fake.ContainsKey('PsFails') }
+        (Invoke-Main -D $true) | Should Be 5
+    }
 
     It 'si el health post-deploy no coincide: DEPLOYMENT FALLIDO, ROLLBACK DISPONIBLE y sin rollback automatico' {
         $script:Fake.UpUpdatesHealth = $false
