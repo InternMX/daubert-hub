@@ -134,6 +134,15 @@ function Set-StandardMocks {
 
 function Get-PrintedText { return ($script:Printed -join "`n") }
 
+function New-ReadinessText {
+    # One evidence line of Test-ManufacturaReleaseReadiness.ps1 (contract completo-v1); every field can be altered to build invalid evidence.
+    param([string]$Verdict = 'PASS', [string]$Phase = 'PreEnable', [string]$Profile = 'completo-v1', [string]$Controls = '31', [string]$Fails = '0',
+        [string]$Groups = 'bd,respaldo,configuracion,migraciones,salud,imagenes,nginx,cierre', [string]$Commit = $script:Prev, [string]$Missing = '-', [double]$AgeHours = 1)
+    $ts = (Get-Date).ToUniversalTime().AddHours(-$AgeHours).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    return ('MANUFACTURA_READINESS_' + $Verdict + ' phase=' + $Phase + ' perfil=' + $Profile + ' controles=' + $Controls + ' fallos=' + $Fails + ' grupos=' + $Groups + ' commit=' + $Commit + ' faltan=' + $Missing + ' ' + $ts + "`n")
+}
+function New-ReadinessEvidence { param([string]$Text, [double]$AgeHours = 1) return [pscustomobject]@{ Exists = $true; AgeHours = $AgeHours; Text = $Text } }
+
 Describe 'Validacion operativa: stderr nativo no es un fallo de Docker' {
     BeforeEach {
         $script:Mode = 'Deploy'
@@ -1127,7 +1136,7 @@ Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readin
     BeforeEach {
         $script:Fake = New-Fake; Set-StandardMocks
         $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }
-        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable controles=24 fallos=0' }
+        $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText)
         $script:RdOpt = @{ ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt' }
     }
 
@@ -1152,12 +1161,114 @@ Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readin
     }
 
     It 'habilitada con evidencia FAIL, de otra fase o vieja: bloquea' {
-        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_FAIL phase=PreEnable controles=24 fallos=1' }
+        $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -Verdict 'FAIL' -Fails '1')
         (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no dice MANUFACTURA_READINESS_PASS phase=PreEnable'
-        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreDeploy controles=24 fallos=0' }
+        $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -Phase 'PreDeploy')
         (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no dice MANUFACTURA_READINESS_PASS phase=PreEnable'
-        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 30; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable' }
+        $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText) 30
         (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'evidencia de readiness de Manufactura tiene'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: evidencia del contrato anterior (sin perfil ni grupos), aunque diga PASS phase=PreEnable y sea reciente: bloquea' {
+        foreach ($t in @('MANUFACTURA_READINESS_PASS phase=PreEnable controles=24 fallos=0 2026-11-13T10:00:00Z', 'MANUFACTURA_READINESS_PASS phase=PreEnable', 'MANUFACTURA_READINESS_PASS phase=PreEnable controles=24 fallos=0')) {
+            $script:Fake.Readiness = New-ReadinessEvidence $t
+            (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+            (Get-PrintedText) | Should Match 'formato no reconocido o del contrato anterior'
+        }
+        $script:Mutations.Count | Should Be 0
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
+    }
+
+    It 'H2: evidencia parcial (diagnostico, -SkipDatabase, grupos faltantes): bloquea' {
+        $partials = @(
+            (New-ReadinessText -Verdict 'PARTIAL' -Profile 'diagnostico' -Groups 'configuracion,migraciones,salud,imagenes,nginx,cierre' -Missing 'bd,respaldo'),
+            (New-ReadinessText -Profile 'diagnostico'),
+            (New-ReadinessText -Groups 'bd,respaldo,configuracion,migraciones,salud,nginx,cierre'),
+            (New-ReadinessText -Groups 'bd,respaldo,configuracion,migraciones,salud,imagenes,nginx,cierre,extra'),
+            (New-ReadinessText -Missing 'imagenes'),
+            (New-ReadinessText -Controls '0')
+        )
+        foreach ($t in $partials) {
+            $script:Fake.Readiness = New-ReadinessEvidence $t
+            (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+            (Get-PrintedText) | Should Match 'NO habilitar'
+        }
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: fase incorrecta, perfil desconocido o mayusculas alteradas: bloquea' {
+        foreach ($t in @((New-ReadinessText -Phase 'PreDeploy'), (New-ReadinessText -Phase 'preenable'), (New-ReadinessText -Profile 'completo-v2'), (New-ReadinessText -Verdict 'pass'))) {
+            $script:Fake.Readiness = New-ReadinessEvidence $t
+            (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+        }
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: evidencia contradictoria o duplicada (dos lineas, PASS con fallos, PASS mas FAIL): bloquea' {
+        $ok = New-ReadinessText
+        $cases = @(
+            ($ok + $ok),
+            ($ok + (New-ReadinessText -Verdict 'FAIL' -Fails '2')),
+            ((New-ReadinessText -Verdict 'PARTIAL' -Profile 'diagnostico' -Missing 'bd') + $ok),
+            ($ok.TrimEnd() + ' MANUFACTURA_READINESS_FAIL phase=PreEnable'),
+            (New-ReadinessText -Fails '1'),
+            ("# nota del operador`n" + $ok)
+        )
+        foreach ($t in $cases) {
+            $script:Fake.Readiness = New-ReadinessEvidence $t
+            (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+            (Get-PrintedText) | Should Match 'NO habilitar'
+        }
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: evidencia fallida (FAIL del perfil completo): bloquea' {
+        $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -Verdict 'FAIL' -Fails '3' -Commit '-')
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'veredicto FAIL'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: evidencia de otra version en ejecucion o sin commit acreditado: bloquea' {
+        foreach ($c in @('abcdef1', '-', 'FBDA7C6', ($script:Prev + '0'))) {
+            $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -Commit $c)
+            (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+            (Get-PrintedText) | Should Match 'la evidencia debe ser de la version que corre en PROD'
+        }
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: archivo reciente con fecha interna antigua o futura: bloquea' {
+        foreach ($age in @(30, -2)) {
+            $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -AgeHours $age) 0.1
+            (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+            (Get-PrintedText) | Should Match 'fecha interna invalida, futura o de mas de'
+        }
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'H2: evidencia completa con BOM y CRLF del archivo real: se acepta' {
+        $script:Fake.Readiness = New-ReadinessEvidence ([string][char]0xFEFF + (New-ReadinessText).TrimEnd() + "`r`n")
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 0
+    }
+
+    It 'H2: sincronizacion estricta conservada y la evidencia se REVALIDA despues de la confirmacion' {
+        $opt = @{ ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt'; RequireSynchronizedMain = $true }
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 0
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
+
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }; $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText)
+        Mock Read-DeployConfirmation { $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -Verdict 'PARTIAL' -Profile 'diagnostico' -Missing 'bd'); 'DEPLOY DAUBERT HUB' }
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'revalidacion posterior a la confirmacion fallo'
+        $script:Mutations.Count | Should Be 0
+
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }; $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText)
+        (Invoke-Main -D $true -C 'HEAD' -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'se exige main limpia'
         $script:Mutations.Count | Should Be 0
     }
 
