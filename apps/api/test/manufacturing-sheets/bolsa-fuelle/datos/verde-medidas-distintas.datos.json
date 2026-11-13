@@ -1,0 +1,37 @@
+{
+  "caso": "verde-medidas-distintas",
+  "formato": "BOLSA_FUELLE",
+  "nota": "Producto verde #00B050 con otras medidas, para comprobar que el SVG es dinámico. Datos de prueba, no corresponden a un pedido real; los bloques de firma son marcadores SIN FIRMA.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 2%",
+    "producto": "Bolsa Con Fuelle",
+    "color": "VERDE",
+    "codigo": "BFPMG-0107",
+    "descripcion": "Bolsa VCI PMG con fuelles laterales 24 x 36 x 6\" Cal. 3 mil, Rollo con 250 bolsas, Color Verde",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "250 Bolsas",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "24\"",
+    "largo": "36\"",
+    "fuelle_derecho": "6\"",
+    "fuelle_izquierdo": "6\"",
+    "calibre": "3 MIL",
+    "peso_bolsa_lb": "0.4120",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#00B050",
+    "color_cotas_internas_hex": "#4A7EBB"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

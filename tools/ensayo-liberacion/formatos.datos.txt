@@ -1,0 +1,14 @@
+const INFO = { revision: 3, finalizadoEn: '2026-11-05', elaboro: 'Alejandro López', huella: 'c'.repeat(64) };
+const BASE = { codigo: 'SINLEY-001', descripcion: 'Regresión sin leyendas', producto: 'Bolsa', composicion: 'PMG', presentacion: 'ROLLO', cantidad: '100', cantidadUnidad: 'BOLSAS', ancho: '61', largo: '70.9', unidadDimensiones: 'IN', calibre: '2.7', pesoLb: '10', cliente: 'Cliente de prueba', fechaEmision: '2026-11-05', colorNombre: 'AZUL', colorHex: '#538DD5', resinaVci: 'PMG AL 3%', etiqueta: 'BOLSA VCI PMG' };
+const FUELLES = { fuelleTotal: '48', fuelleDerecho: '24', fuelleIzquierdo: '24' };
+const COEX = { codigo: 'COEX-001', descripcion: 'Bolsa COEX VCI PMG 51.2 x 23.6 x 31.5" Cal. 2.5 mil', producto: 'Bolsa Con Fuelle - 20% de material reciclado', composicion: 'PMG', presentacion: 'ROLLO', cantidad: '150', cantidadUnidad: 'BOLSAS', ancho: '51.2', fuelleTotal: '23.6', fuelleDerecho: '11.8', fuelleIzquierdo: '11.8', largo: '31.5', unidadDimensiones: 'IN', calibre: '2.5 MIL', pesoLb: '0.3929', colorNombre: 'AZUL', coexVariante: 'AZUL', pesoCapaInterior: '0.13097', pesoCapaIntermedia: '0.13097', pesoCapaExterior: '0.13097', lbVciInterior: '0.005239', lbVciIntermedia: '0.002619', lbVciExterior: '0' };
+const FORMATOS: Array<[string, (typeof FAMILY_CODES)[number], Record<string, string>]> = [
+  ['Bolsa Plana 1', 'BOLSA_PLANA_1', BASE],
+  ['Hojas', 'HOJA_PAQ', { ...BASE, modalidad: 'DOBLADA' }],
+  ['Bolsa Fuelle', 'BOLSA_FUELLE', { ...BASE, ...FUELLES }],
+  ['Bolsa Natural', 'BOLSA_NATURAL', { ...BASE, ...FUELLES, composicion: 'CP5000', colorNombre: 'NATURAL', colorHex: '#FFF2CC', resinaVci: '' }],
+  ['Rollo Continuo', 'ROLLO_CONTINUO', { codigo: 'RC-001', descripcion: 'Rollo VCI PMG doblado 58 x 4500" Cal. 3 mil', producto: 'ROLLO VCI', composicion: 'PMG', presentacion: 'ROLLO', modalidad: 'DOBLADA', ancho: '58', largo: '4500', unidadDimensiones: 'IN', anchoRollo: '30', calibre: '3 MIL', pesoLb: '8.25', colorNombre: 'ROJO', colorHex: '#C0504D' }],
+  ['Termoencogible', 'TERMOENCOGIBLE', { codigo: 'TE-001', descripcion: 'Rollo VCI + UV termoencogible doblado 6 x 30 metros Cal. 8 mil', producto: 'ROLLO VCI + UV TERMOENCOGIBLE', composicion: 'PMG', presentacion: 'ROLLO', modalidad: 'DOBLADA', ancho: '6', largo: '30', unidadDimensiones: 'M', calibre: '8 MIL', pesoLb: '45.2', colorNombre: 'NATURAL', anchoDoblado: '1.60', medidaPliegue: '0.70', largoPresentacionFinal: '30', anchoPresentacionFinal: '1.60' }],
+  ['COEX Azul', 'COEX', COEX],
+  ['COEX Verde', 'COEX', { ...COEX, coexVariante: 'VERDE', colorNombre: 'VERDE', colorHex: '#00B050' }]
+];

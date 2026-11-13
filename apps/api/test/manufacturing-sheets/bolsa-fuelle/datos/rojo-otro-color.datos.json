@@ -1,0 +1,37 @@
+{
+  "caso": "rojo-otro-color",
+  "formato": "BOLSA_FUELLE",
+  "nota": "Otro color de producto (rojo, solo para esta prueba; no es un código confirmado). Datos de prueba, no corresponden a un pedido real; los bloques de firma son marcadores SIN FIRMA.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Bolsa Con Fuelle",
+    "color": "ROJO",
+    "codigo": "BFPMG-0211",
+    "descripcion": "Bolsa VCI PMG con fuelles laterales 40 x 52.5 x 10\" Cal. 5 mil, Paquete con 50 bolsas, Color Rojo",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "50 Bolsas",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "40\"",
+    "largo": "52.5\"",
+    "fuelle_derecho": "10\"",
+    "fuelle_izquierdo": "10\"",
+    "calibre": "5 MIL",
+    "peso_bolsa_lb": "2.0310",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#C0504D",
+    "color_cotas_internas_hex": "#FFFFFF"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

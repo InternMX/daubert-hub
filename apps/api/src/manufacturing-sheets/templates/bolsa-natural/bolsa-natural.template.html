@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de Instrucción de Manufactura{{sufijo_titulo}}</title>
+  <style>
+    /* @include components/base-sheet/base-sheet.css */
+    /* @include components/header/header.css */
+    /* @include components/label-section/label-section.css */
+    /* @include components/label-section/label-section.bi.css */
+    /* @include components/label-section/label-section.heights.css */
+    /* @include components/gusset-bag-drawing/gusset-bag-drawing.css geometria=bolsa-natural */
+    /* @include components/note-seal-height/note-seal-height.css */
+    /* @include components/note-seal-height/note-seal-height.bolsa-plana-1.css */
+    /* @include components/signatures/signatures.css */
+    /* @include components/signatures/signatures.bolsa-fuelle.css */
+
+    /* @include components/base-sheet/base-sheet.print.css */
+    /* @include components/base-sheet/base-sheet.centered.css */
+    @media screen and (max-width: 816px) {
+      .hoja { width: 100%; margin: 0; padding: 14px; }
+      /* @include components/header/header.mobile.css */
+    }
+  </style>
+</head>
+<body>
+  <!-- Formato BOLSA_NATURAL · BN-2 (hoja completa). Orden: encabezado, datos generales (con Resina VCI, Composición PMG / ESD / Natural, Presentación y
+       Cantidad), Medidas con fuelles, Peso lb, Dibujo Bolsa y Etiqueta, dibujo con fuelles y sello de fondo, nota de manufactura y firmas. La Composición de este formato es una restricción fija (PMG = NA, ESD = NA, Natural = X) que valida
+       tools/validate-bolsa-natural-data.mjs; no incluye CP5000, coextrusión de tres capas ni Doblada/Extendida. -->
+  <main class="hoja">
+    <!-- @include components/header/header.html -->
+
+    <!-- @include components/general-info-vci/general-info-vci.html cantidad_fila=con composicion_fila=pmg-esd-natural -->
+
+    <!-- @include components/measures-gussets/measures-gussets.html -->
+
+    <!-- @include components/weight-row/weight-row.html rotulo=Peso&#32;lb: -->
+
+    <!-- @include components/label-section/label-section.bi.html -->
+
+    <!-- @include components/gusset-bag-drawing/gusset-bag-drawing.html id=flecha-bolsa seccion=seccion-dibujo-bolsa geometria=bolsa-natural -->
+
+    <!-- @include components/note-seal-height/note-seal-height.bolsa-natural.html -->
+
+    <!-- @include components/signatures/signatures.html -->
+  </main>
+</body>
+</html>

@@ -19,6 +19,18 @@
     Probes are safe: target routes are asked with GET plus the header X-Hub-Window-Probe: <METHOD> (the policy evaluates it as that method, it can only increase denial and the
     upstream request stays a GET); a few real unauthenticated writes are also sent to target routes (rejected before the API when closed, 401/404 when open) and never to non-target routes.
 
+    Policies. WITHOUT -Policy nothing changes: the operative policy deploy\closure\entry-closure-policy.conf is used, exactly as before.
+      -Policy Manufactura   EXPLICIT selection of deploy\closure\entry-closure-policy.manufactura.conf (same policy + every write under /api/manufacturing-sheets answers 503). It REQUIRES
+                            -ExpectedPolicySha256 (the SHA-256 authorised for the release): if the file does not match, the script stops before touching anything. The verification
+                            probes then also cover Manufactura routes. Only for the authorised Manufactura release window.
+      -ExpectedPolicySha256 Optional with the operative policy (same check). Mandatory with -Policy Manufactura.
+      -ExpectState          Only for Reload (optional): Closed or Open. Reload then REFUSES, before reloading anything, unless the file installed in default.conf is in that state
+                            (Closed = it is exactly a closure policy: the operative one or the Manufactura one), and the probes must confirm that same state afterwards.
+                            Without it Reload behaves exactly as before: it re-verifies whatever state it finds. Mandatory in the Manufactura release procedure (-ExpectState Closed).
+      -KeepClosure          Only for Prepare: if default.conf currently IS a closure policy, refresh only the OPEN copy and leave default.conf closed (refreshing the Nginx baseline
+                            inside a closed window). Without it Prepare behaves exactly as before (it writes the open file to default.conf).
+    Reload and Status recognise by SHA-256 which policy is installed, so a window closed with -Policy Manufactura is re-verified with its own probes even if -Policy is omitted.
+
     Safety: it touches the host directory and, with docker exec, only <Project>-web-1 (nginx -t / nginx -s reload; docker cp ONLY while Web does not yet mount the directory).
     It never recreates, stops or removes anything and never runs compose. Not a control over host administrators, docker, n8n manual runs/CLI/retries (see the plan).
 #>
@@ -30,7 +42,11 @@ param(
     [string]$ClosureDir = 'C:\Users\06\AppData\Local\DaubertHub\maintenance-window\nginx-conf.d',
     [string]$WebImage = '',
     [string]$ExpectedOpenSha256 = '4d9dfea5f58cc2c0069f15b91e5406d62832806ff3e5a045fed48960499c0495',
-    [switch]$AcceptNewBaseline
+    [switch]$AcceptNewBaseline,
+    [ValidateSet('Operativa', 'Manufactura')][string]$Policy = 'Operativa',
+    [string]$ExpectedPolicySha256 = '',
+    [switch]$KeepClosure,
+    [ValidateSet('', 'Closed', 'Open')][string]$ExpectState = ''
 )
 
 Set-StrictMode -Version Latest
@@ -39,6 +55,11 @@ if ($Project -notmatch '^daubert-hub(-rbtest[a-z0-9]*)?$') { throw "Project not 
 if (-not $WebImage) { $WebImage = "$Project-web:latest" }
 $container = "$Project-web-1"
 $policyPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\deploy\closure\entry-closure-policy.conf'))
+$manufacturaPolicyPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\deploy\closure\entry-closure-policy.manufactura.conf'))
+if ($Policy -eq 'Manufactura') {
+    if (-not $ExpectedPolicySha256) { throw '-Policy Manufactura requires -ExpectedPolicySha256 (the SHA-256 authorised for deploy\closure\entry-closure-policy.manufactura.conf). Nothing was changed.' }
+    $policyPath = $manufacturaPolicyPath
+}
 $active = Join-Path $ClosureDir 'default.conf'
 $parent = Split-Path -Parent $ClosureDir
 $openCopy = Join-Path $parent 'default.conf.open'
@@ -106,6 +127,23 @@ function Update-Nginx([bool]$copyIfNotMounted) {
 }
 function Get-State { $s = Get-ProbeSummary; if (@($s.targetProbes | Where-Object { $_.Code -ne '503' }).Count -eq 0) { return 'CLOSED' } elseif (@($s.targetProbes | Where-Object { $_.Code -eq '503' }).Count -eq 0) { return 'OPEN' } else { return 'MIXED' } }
 
+# Policy selection guard (reached only with the new parameters, or when the Manufactura policy is the file already installed).
+if ($ExpectedPolicySha256) {
+    $policyHave = Get-Sha $policyPath
+    if ($policyHave -ne $ExpectedPolicySha256.ToLower()) { throw "Policy '$Policy' ($policyPath) has SHA-256 '$policyHave', not the expected $($ExpectedPolicySha256.ToLower()). Nothing was changed." }
+}
+$manufacturaSha = Get-Sha $manufacturaPolicyPath
+$activeIsManufactura = ($manufacturaSha -ne '' -and (Get-Sha $active) -eq $manufacturaSha)
+if ($activeIsManufactura -and $Action -in @('Reload', 'Status')) { $policyPath = $manufacturaPolicyPath }
+if ($Policy -eq 'Manufactura' -or ($activeIsManufactura -and $Action -in @('Reload', 'Status'))) {
+    $blocked += @('/api/manufacturing-sheets/documents/drafts', '/api/manufacturing-sheets/documents/signatures', '/api/manufacturing-sheets/documents/revisions/0/finalize',
+        '/api/manufacturing-sheets/documents/signatures/0/authorize', '/api/manufacturing-sheets/client-abbreviations', '/api/manufacturing-sheets/previews/pdf')
+    $realWrites += @(, @('POST', '/api/manufacturing-sheets/documents/drafts')); $realWrites += @(, @('POST', '/api/manufacturing-sheets/documents/signatures')); $realWrites += @(, @('PATCH', '/api/manufacturing-sheets/documents/revisions/0'))
+    Write-Host ("policy: MANUFACTURA sha256=" + $manufacturaSha)
+}
+
+if ($ExpectState -and $Action -ne 'Reload') { throw '-ExpectState only applies to -Action Reload. Nothing was changed.' }
+
 switch ($Action) {
     'Prepare' {
         $null = New-Item -ItemType Directory -Force -Path $ClosureDir
@@ -115,6 +153,16 @@ switch ($Action) {
         $sha = Get-Sha $tmp
         if ($sha -ne $ExpectedOpenSha256 -and -not $AcceptNewBaseline) { throw "The Nginx file of $WebImage has SHA-256 $sha, not the expected baseline $ExpectedOpenSha256 (review; -AcceptNewBaseline to continue)" }
         $bytes = [System.IO.File]::ReadAllBytes($tmp)
+        if ($KeepClosure) {
+            $activeSha = Get-Sha $active
+            if ($activeSha -ne '' -and ($activeSha -eq (Get-Sha $policyPath) -or $activeSha -eq $manufacturaSha -or $activeSha -eq (Get-Sha $policyCopy))) {
+                Write-InPlace $openCopy $bytes
+                if ((Get-Sha $openCopy) -ne $sha) { throw 'default.conf.open does not reproduce the original byte for byte' }
+                Write-Host "Prepared $parent (-KeepClosure): the closure is ACTIVE, default.conf was KEPT CLOSED; default.conf.open = ORIGINAL sha256=$sha. Run -Action Close now, -Action Open at the end of the window."
+                break
+            }
+            throw '-KeepClosure: default.conf is not a closure policy (the window is not closed). Run -Action Close first, or omit -KeepClosure. Nothing was changed.'
+        }
         Write-InPlace $openCopy $bytes; Write-InPlace $active $bytes
         Write-InPlace $policyCopy ([System.IO.File]::ReadAllBytes($policyPath))
         if ((Get-Sha $active) -ne $sha) { throw 'default.conf does not reproduce the original byte for byte' }
@@ -122,7 +170,15 @@ switch ($Action) {
     }
     'Close' { Install-File $policyPath; Assert-Probes 'closed'; Write-Host 'CLOSURE ACTIVE (verified)' }
     'Open' { Install-File $openCopy; Assert-Probes 'open'; Write-Host 'CLOSURE OFF (verified)' }
-    'Reload' { $before = Get-Sha $active; Update-Nginx $false; Assert-Probes $(if ($before -eq (Get-Sha $policyPath)) { 'closed' } else { 'open' }); Write-Host 'RELOADED (state unchanged and verified)' }
+    'Reload' {
+        $before = Get-Sha $active
+        $foundState = $(if ($before -eq (Get-Sha $policyPath)) { 'closed' } else { 'open' })
+        if ($ExpectState -and $ExpectState.ToLower() -ne $foundState) {
+            throw "Reload -ExpectState ${ExpectState}: default.conf is $($foundState.ToUpper()) (sha256=$before). NOTHING was reloaded. $(if ($ExpectState -eq 'Closed') { 'The window is NOT closed on disk: run -Action Close (with the policy of the window) and verify before continuing.' } else { 'Run -Action Open first.' })"
+        }
+        Update-Nginx $false; Assert-Probes $foundState
+        Write-Host $(if ($ExpectState) { "RELOADED (state $($foundState.ToUpper()) as expected and verified)" } else { 'RELOADED (state unchanged and verified)' })
+    }
     'Status' {
         [pscustomobject]@{ state = (Get-State); activeSha256 = (Get-Sha $active); policySha256 = (Get-Sha $policyPath); openCopySha256 = (Get-Sha $openCopy); webRunning = (Test-Running); webMountsDir = (Test-Mounted) } | Format-List
     }

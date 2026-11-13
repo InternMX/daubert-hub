@@ -1,0 +1,10 @@
+    <!-- SECCIÓN FIRMAS · elaboración y aprobación.
+         En el PDF original cada firma es una imagen completa (trazo, nombre, línea de firma, función y área).
+         Cada .firma-bloque tiene el tamaño y la posición de esa imagen (elaboración x 76.3, y 655.7, 97.5 x 71.5 pt;
+         aprobación x 298.3, y 655.6, 108.8 x 69.5 pt). El backend (Daubert Hub) sustituye cada placeholder por un
+         <img> de una firma autorizada o, en modo de prueba, por <span class="sin-firma">SIN FIRMA</span>.
+         La plantilla no decide quién puede aprobar ni valida la firma: la aprobación se registra en el backend. -->
+    <div class="firmas-zona" id="seccion-firmas" data-seccion="firmas">
+      <div class="firma-bloque firma-elaboro" id="firma_elaboro">{{bloque_firma_elaboro}}</div>
+      <div class="firma-bloque firma-aprobo" id="firma_aprobo">{{bloque_firma_aprobo}}</div>
+    </div>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoja de Instrucción de Manufactura{{sufijo_titulo}}</title>
+  <style>
+    /* @include components/base-sheet/base-sheet.css */
+    /* @include components/header/header.css */
+    /* @include components/label-section/label-section.css */
+    /* @include components/label-section/label-section.bi.css */
+    /* @include components/folded-roll-drawing/folded-roll-drawing.css */
+    /* @include components/final-presentation-drawing/final-presentation-drawing.css */
+    /* @include components/signatures/signatures.css */
+    /* @include components/signatures/signatures.hoja-paq.css */
+
+    /* @include components/base-sheet/base-sheet.print.css */
+    /* @include components/base-sheet/base-sheet.centered.css */
+    @media screen and (max-width: 816px) {
+      .hoja { width: 100%; margin: 0; padding: 14px; }
+      /* @include components/header/header.mobile.css */
+    }
+  </style>
+</head>
+<body>
+  <!-- Formato TERMOENCOGIBLE · TE-2. Orden: encabezado, datos generales (con Resina VCI, Composición y Presentación; SIN Cantidad), tipo de hoja,
+       Medidas, Peso lb, Etiqueta, Dibujo de rollo doblado, Dibujo de presentación final y firmas. Solo la modalidad DOBLADA tiene variante
+       gráfica (el validador rechaza EXTENDIDA). La plantilla no valida datos ni decide la modalidad. -->
+  <main class="hoja">
+    <!-- @include components/header/header.html -->
+
+    <!-- @include components/general-info-vci/general-info-vci.html cantidad_fila=sin composicion_fila=pmg-cp5000-natural -->
+
+    <!-- @include components/sheet-type-row/sheet-type-row.html -->
+
+    <!-- @include components/measures-simple/measures-simple.html -->
+
+    <!-- @include components/weight-row/weight-row.html rotulo=Peso&#32;lb: -->
+
+    <!-- @include components/label-section/label-section.solo.html -->
+
+    <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-rollo-doblado titulo=Dibujo&#32;de&#32;rollo&#32;doblado -->
+
+    <!-- @include components/folded-roll-drawing/folded-roll-drawing.html id=flecha-rollo-doblado -->
+
+    <!-- @include components/drawing-title/drawing-title.html id=encabezado-dibujo-presentacion-final titulo=Dibujo&#32;de&#32;presentaci&#243;n&#32;final -->
+
+    <!-- @include components/final-presentation-drawing/final-presentation-drawing.html id=flecha-presentacion-final -->
+
+    <!-- @include components/signatures/signatures.html -->
+  </main>
+</body>
+</html>

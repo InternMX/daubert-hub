@@ -1,0 +1,13 @@
+      <!-- Rollo de hoja doblada: silueta horizontal tipo cápsula con el extremo derecho circular/elíptico visible, relleno del color del producto
+           ({{color_bolsa_hex}}) y contornos delgados en dorado suave (#C4BD97). Sin núcleo ni líneas internas. Cota superior del ancho del rollo doblado. -->
+      <svg viewBox="0 0 400.4 66" role="img" aria-label="Dibujo de rollo doblado: ancho del rollo doblado">
+        <defs>
+          <marker id="@{id}" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="6" markerHeight="6" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 Z" fill="#4A7EBB"/>
+          </marker>
+        </defs>
+        <text x="200" y="7" font-size="10.2" fill="#000" text-anchor="middle" dominant-baseline="central">{{ancho_rollo}}</text>
+        <line x1="101" y1="17" x2="299" y2="17" stroke="#4A7EBB" stroke-width="0.9" marker-start="url(#@{id})" marker-end="url(#@{id})"/>
+        <path class="rollo-cuerpo" d="M111 25 A10 19 0 0 0 111 63 L289 63 A10 19 0 0 0 289 25 Z" fill="{{color_bolsa_hex}}" stroke="#C4BD97" stroke-width="0.75" stroke-linejoin="round"/>
+        <ellipse class="rollo-cara" cx="289" cy="44" rx="10" ry="19" fill="{{color_bolsa_hex}}" stroke="#C4BD97" stroke-width="0.75"/>
+      </svg>

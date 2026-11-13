@@ -1,0 +1,60 @@
+    :root {
+      /* Identidad corporativa de las Hojas de Instrucción de Manufactura (mismos valores que COEX). */
+      --azul: #244062;        /* azul oscuro: rótulos y encabezado de sección principal */
+      --azul-claro: #366092;  /* azul claro: encabezados de Medidas y Dibujo Bolsa */
+      --azul-celda: #28517b;  /* etiquetas internas (PMG, CP5000, Rollo, Fuelle...): pendiente de código oficial */
+      --rosa: #DA9694;        /* sección Etiqueta */
+      --amarillo: #ffff00;
+      --borde: #000;
+
+      --fuente: Calibri, Carlito, "Segoe UI", Arial, Helvetica, sans-serif;
+      --fs-titulo: 14.9pt;
+      --fs-base: 10.2pt;      /* etiquetas y valores */
+      --fs-etiqueta: 11.1pt;  /* sección Etiqueta */
+
+      --alto-fila: 13.5pt;
+      --ancho-hoja: 493.4pt;  /* ancho del contenido; las tablas de datos ocupan B:I = 81.154 % (400.4 pt) */
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f2f4f7; font-family: var(--fuente); color: #000; }
+    /* Carta vertical 8.5 x 11 in; márgenes superior e inferior de 0.55 in; el contenido comienza en x = 18.5 pt. */
+    .hoja { width: 8.5in; max-width: 100%; min-height: 11in; margin: 32px auto; padding: 0.55in 0.7in 0.55in 18.5pt; background: white; box-shadow: 0 2px 15px #00000012; }
+
+    .encabezado, .tabla-contenedor { width: 100%; max-width: var(--ancho-hoja); margin: 0; }
+
+    /* Layout fijo: ninguna tabla genera desplazamiento horizontal. */
+    table { border-collapse: collapse; table-layout: fixed; font-size: var(--fs-base); }
+    .t-bi { width: 81.154%; }       /* datos generales y Medidas (B:I) */
+    .t-peso { width: 56.991%; }     /* fila de peso (B:F) */
+    .seccion-pegada { margin-top: -1px; }
+
+    /* Columnas B:I (porcentaje del ancho B:I). */
+    col.g-b { width: 18.915%; } col.g-c { width: 17.978%; } col.g-d { width: 11.048%; } col.g-e { width: 10.300%; }
+    col.g-f { width: 11.985%; } col.g-g { width: 11.985%; } col.g-h { width: 11.985%; } col.g-i { width: 5.803%; }
+    /* Fila de peso: etiqueta B:D y valor E:F. */
+    col.peso-etiqueta { width: 68.266%; } col.peso-valor { width: 31.734%; }
+
+    /* Los textos largos (o placeholders sin sustituir) saltan de línea dentro de su celda en lugar de desbordarla. */
+    th, td { padding: 1px 4px; vertical-align: middle; min-width: 0; overflow-wrap: anywhere; line-height: 1.1; }
+    td { border: 1px solid var(--borde); text-align: center; }
+    .rotulo { border: 1px solid var(--azul); background: var(--azul); color: white; text-align: right; font-weight: 400; padding-right: 5px; }
+    .fecha-label { background: var(--azul); color: white; text-align: left; font-weight: 400; padding-left: 6px; border-top: 1px solid var(--borde); }
+    .tipo { background: var(--azul-celda); color: #fff; }
+    .seccion-titulo { background: var(--azul); color: #fff; font-weight: 400; }
+    .titulo-claro { background: var(--azul-claro); }
+    .destacado { background: var(--amarillo); font-weight: bold; }
+    .descripcion { line-height: 1.1; padding: 1px 5px; }
+    /* Marcas dinámicas (Composición / Presentación): el valor llega como "X" o "NA".
+       Solo "X" lleva fondo amarillo; cada marca es independiente (selección múltiple). */
+    .marca[data-valor="X" i] { background: var(--amarillo); font-weight: bold; }
+
+    /* Alturas de fila (pt), iguales a las de COEX para que todas las hojas se vean como un mismo sistema.
+       Las filas pueden crecer si el texto lo requiere. */
+    tr { height: var(--alto-fila); }
+    .alto-doble { height: 27.2pt; }
+    .alto-descripcion { height: 25.8pt; }
+    .alto-color { height: 14.2pt; }
+    .alto-codigo { height: 13.4pt; }
+    .alto-136 { height: 13.6pt; }
+    .alto-peso { height: 17.5pt; }

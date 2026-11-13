@@ -11,6 +11,8 @@ export default defineConfig({
     }
   },
   test: {
+    // Las pruebas no dependen de .env.local: el gestor documental está APAGADO salvo que una prueba lo active explícitamente.
+    env: { VITE_MANUFACTURING_DOCUMENTS: 'false' },
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     coverage: { provider: 'v8', reporter: ['text', 'json-summary'] }

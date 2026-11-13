@@ -55,6 +55,7 @@ function Get-FakeRead {
     $f = $script:Fake
     $line = $Exe + ' ' + ($CmdArgs -join ' ')
     if ($Exe -eq 'powershell') { return @{ Code = $f.PreflightCode; Out = @('(salida simulada del preflight)') } }
+    if ($line -match 'rev-parse HEAD:(\S+)$') { $p = $Matches[1]; if ($f.ContainsKey('Blobs') -and $f.Blobs.ContainsKey($p) -and $f.Blobs[$p]) { return @{ Code = 0; Out = @($f.Blobs[$p]) } }; return @{ Code = 1; Out = @() } }
     if ($line -match 'rev-parse --verify (\S+)') {
         if ($Matches[1] -like 'refs/remotes/origin/main*') { return @{ Code = 0; Out = @($f.OriginMain) } }
         return @{ Code = 0; Out = @($f.HeadFull) }
@@ -113,7 +114,9 @@ function Set-StandardMocks {
     Mock Get-ClosureState { if ($script:Fake.ContainsKey('Closure')) { $script:Fake.Closure } else { @{ ConfExists = $true; ConfSha = 'aa'; PolicySha = 'aa' } } }
     Mock Start-DeploySleep { }
     Mock Read-DeployConfirmation { $script:Fake.Confirmation }
-    Mock Read-DeployEvidence { $script:Fake.Evidence }
+    Mock Read-DeployEvidence { if ($Path -like '*readiness*') { if ($script:Fake.ContainsKey('Readiness')) { $script:Fake.Readiness } else { [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' } } } else { $script:Fake.Evidence } }
+    Mock Read-ManufacturingFlags { if ($script:Fake.ContainsKey('Manufacturing')) { [pscustomobject]$script:Fake.Manufacturing } else { [pscustomobject]@{ Enabled = ''; Emission = '' } } }
+    Mock Read-DeployManifest { $script:Fake.Manifest }
     Mock Write-Host { $script:Printed += [string]$Object }
     Mock Invoke-DeployMutation {
         $f = $script:Fake
@@ -911,5 +914,329 @@ Describe 'Cierre externo obligatorio' {
         $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'aa'; PolicySha = 'aa' }
         $ctx2 = Get-DeployContext 'HEAD'
         (@(Test-DeployGate $ctx2 $false @{ RequireClosedWindow = $true }) -join ' ') | Should Not Match 'cierre ACTIVO'
+    }
+}
+
+
+Describe 'Compuerta con manifiesto de database/ (-DatabaseManifest): autoriza exactamente el conjunto de archivos de la liberacion y sigue detectando desviaciones' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $g = 'database/migrations/daubert_global/'
+        $script:ProdFiles = @(($g + '20261108_020_manufactura_gestor_documental_prod.precheck.sql'), ($g + '20261108_020_manufactura_gestor_documental_prod.up.sql'), ($g + '20261108_020_manufactura_gestor_documental_prod.postcheck.sql'),
+            ($g + '20261109_026_manufactura_respaldo_rls_prod.up.sql'), ($g + '20261108_000_manufactura_prod_verificar_fuera_de_manufactura.readonly.sql'))
+        $script:InertFiles = @('database/migrations/daubert_hub_test/20261030_101_manufactura_gestor_documental_test.up.sql', 'database/maintenance/daubert_hub_test/limpieza_manufactura_documentos.delete.sql', ($g + 'tools/generar-manufactura-prod.cjs'))
+        $all = $script:ProdFiles + $script:InertFiles
+        $script:Fake.Files = @('apps/api/src/x.ts') + $all
+        $script:Fake.Blobs = @{}
+        foreach ($p in $all) { $script:Fake.Blobs[$p] = 'blob-' + [string]$p.GetHashCode() }
+        $entries = @()
+        foreach ($p in $all) { $cat = if ($script:ProdFiles -contains $p) { if ($p -like '*readonly*') { 'produccion_lectura' } else { 'produccion_aplicar' } } else { 'inerte_nunca_en_prod' }; $entries += [pscustomobject]@{ ruta = $p; categoria = $cat; blob = $script:Fake.Blobs[$p]; sha256 = ('0' * 64) } }
+        $script:ManifestSha = ('a1' * 32)
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $true; Sha256 = $script:ManifestSha; Json = [pscustomobject]@{ formato = 1; prohibidos = @('_025_', 'caterpillar_folio_recovery'); archivos = $entries } }
+        $script:ManOpt = @{ AckMigrations = $true; ExpectedMigrations = @('20261108_0', '20261109_026'); MigrationsEvidence = 'evidence.txt'; EvidenceMarkers = @('POSTCHECK_019_PASS')
+            EvidenceMaxAgeHours = 6; ExpectedN8nPaths = @(); DatabaseManifest = 'deploy/release-manifests/m.json'; DatabaseManifestSha256 = $script:ManifestSha }
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'POSTCHECK_019_PASS' }
+    }
+
+    It 'el conjunto legitimo (migraciones de produccion + TEST + mantenimiento + herramientas, todos listados y sin cambios) se acepta' {
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 0
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+    }
+
+    It 'un archivo de database/ que NO esta en el manifiesto bloquea (migracion inesperada)' {
+        $script:Fake.Files = $script:Fake.Files + 'database/migrations/daubert_global/20261199_099_sorpresa_prod.up.sql'
+        $script:Fake.Blobs['database/migrations/daubert_global/20261199_099_sorpresa_prod.up.sql'] = 'blob-x'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no autorizado por el manifiesto'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un archivo TEST o de mantenimiento nuevo (no listado) tambien bloquea' {
+        $x = 'database/migrations/daubert_hub_test/20261110_106_otra_cosa_test.up.sql'
+        $script:Fake.Files = $script:Fake.Files + $x; $script:Fake.Blobs[$x] = 'blob-t'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no autorizado por el manifiesto'
+    }
+
+    It 'una migracion conocida MODIFICADA (otro contenido) bloquea aunque su nombre este autorizado' {
+        $p = $script:ProdFiles[1]; $script:Fake.Blobs[$p] = 'blob-distinto'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'MODIFICADO respecto del manifiesto'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un archivo inerte (TEST) modificado tambien bloquea' {
+        $p = $script:InertFiles[0]; $script:Fake.Blobs[$p] = 'blob-distinto'
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'MODIFICADO respecto del manifiesto'
+    }
+
+    It 'la migracion 025 de Caterpillar bloquea aunque alguien la agregara al manifiesto' {
+        $x = 'database/migrations/daubert_global/20261106_025_caterpillar_folio_recovery_test.up.sql'
+        $script:Fake.Files = $script:Fake.Files + $x; $script:Fake.Blobs[$x] = 'blob-cat'
+        $script:Fake.Manifest.Json.archivos = @($script:Fake.Manifest.Json.archivos) + [pscustomobject]@{ ruta = $x; categoria = 'inerte_nunca_en_prod'; blob = 'blob-cat'; sha256 = ('0' * 64) }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'Archivo prohibido en el release'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'la 025 bloquea incluso si el manifiesto alterado ya no la declara prohibida (patron fijo en la compuerta)' {
+        $x = 'database/migrations/daubert_global/20261106_025_caterpillar_folio_recovery_test.up.sql'
+        $script:Fake.Files = $script:Fake.Files + $x; $script:Fake.Blobs[$x] = 'blob-cat'
+        $script:Fake.Manifest.Json.prohibidos = @()
+        $script:Fake.Manifest.Json.archivos = @($script:Fake.Manifest.Json.archivos) + [pscustomobject]@{ ruta = $x; categoria = 'inerte_nunca_en_prod'; blob = 'blob-cat'; sha256 = ('0' * 64) }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'Archivo prohibido en el release'
+    }
+
+    It 'un archivo de produccion autorizado que ya no existe en HEAD bloquea aunque no figure en el delta' {
+        $p = $script:ProdFiles[1]
+        $script:Fake.Files = @($script:Fake.Files | Where-Object { $_ -ne $p }); $script:Fake.Blobs[$p] = ''
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'ausente o distinto en HEAD'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'un archivo eliminado o ilegible en HEAD bloquea' {
+        $script:Fake.Blobs[$script:ProdFiles[0]] = ''
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1
+        (Get-PrintedText) | Should Match 'eliminado o ilegible'
+    }
+
+    It 'un archivo de produccion cuyo nombre no cubre -ExpectedMigrations bloquea aunque este en el manifiesto' {
+        $opt = $script:ManOpt.Clone(); $opt.ExpectedMigrations = @('20261108_020')
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'fuera de -ExpectedMigrations'
+    }
+
+    It 'sin -ExpectedMigrations, sin -DatabaseManifestSha256, con otro SHA-256 o sin el archivo del manifiesto, bloquea' {
+        $opt = $script:ManOpt.Clone(); $opt.ExpectedMigrations = @()
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'exige -ExpectedMigrations'
+        $opt = $script:ManOpt.Clone(); $opt.DatabaseManifestSha256 = ''
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'exige -DatabaseManifestSha256'
+        $opt = $script:ManOpt.Clone(); $opt.DatabaseManifestSha256 = ('b2' * 32)
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'no coincide con -DatabaseManifestSha256'
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $false; Sha256 = ''; Json = $null }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Falta el manifiesto'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'la evidencia sigue siendo obligatoria con el manifiesto (ausente, vieja o sin marcadores)' {
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Falta el archivo de evidencia'
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 9; Text = 'POSTCHECK_019_PASS' }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'tiene 9 h'
+        $script:Fake.Evidence = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'otra cosa' }
+        (Invoke-Main -D $true -Opt $script:ManOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no contiene'
+    }
+
+    It 'sin -DatabaseManifest el comportamiento anterior no cambia: los archivos fuera de daubert_global siguen bloqueando' {
+        $opt = $script:ManOpt.Clone(); $opt.DatabaseManifest = ''; $opt.DatabaseManifestSha256 = ''
+        (Invoke-Main -D $true -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'no esperados'
+    }
+
+    # Integracion con la Fase 2B (-RequireSynchronizedMain): ambas compuertas se aplican juntas y la revalidacion posterior a la confirmacion vuelve a exigir el manifiesto.
+    It 'con -RequireSynchronizedMain el conjunto legitimo del manifiesto se despliega con el SHA completo y revalida tras confirmar' {
+        $opt = $script:ManOpt.Clone(); $opt.RequireSynchronizedMain = $true
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 0
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
+        Assert-MockCalled Read-DeployManifest -Scope It -Times 2 -Exactly
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+    }
+
+    It 'con -RequireSynchronizedMain una migracion modificada mientras el operador confirma bloquea en la revalidacion' {
+        $opt = $script:ManOpt.Clone(); $opt.RequireSynchronizedMain = $true
+        Mock Read-DeployConfirmation { $script:Fake.Blobs[$script:ProdFiles[1]] = 'blob-cambiado'; 'DEPLOY DAUBERT HUB' }
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'revalidacion posterior a la confirmacion fallo'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'con -RequireSynchronizedMain un manifiesto valido no sustituye a la main sincronizada (rama distinta bloquea antes del preflight)' {
+        $opt = $script:ManOpt.Clone(); $opt.RequireSynchronizedMain = $true
+        $script:Fake.Branch = 'integ/manufactura'
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'se exige main limpia'
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
+        $script:Mutations.Count | Should Be 0
+    }
+}
+
+Describe 'Imagenes validadas (-UseValidatedImages): se despliegan exactamente las imagenes construidas y verificadas, sin reconstruir' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:IdApi = 'sha256:' + ('1' * 64); $script:IdWeb = 'sha256:' + ('2' * 64)
+        $script:Fake.Tags['daubert-hub-api:release-' + $script:HeadShort] = $script:IdApi
+        $script:Fake.Tags['daubert-hub-web:release-' + $script:HeadShort] = $script:IdWeb
+        $script:ImgSha = ('b2' * 32)
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $true; Sha256 = $script:ImgSha; Json = [pscustomobject]@{ formato = '1'; commit = $script:Head; imagenes = @(
+            [pscustomobject]@{ servicio = 'api'; imageId = $script:IdApi }, [pscustomobject]@{ servicio = 'web'; imageId = $script:IdWeb }) } }
+        $script:ImgOpt = @{ UseValidatedImages = $true; ImagesManifest = 'deploy/release-manifests/imagenes.json'; ImagesManifestSha256 = $script:ImgSha }
+    }
+
+    It 'con imagenes y manifiesto coincidentes: etiqueta release->latest y arranca con --no-build (nunca --build)' {
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 0
+        $m = ($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|'
+        $m | Should Match 'tag daubert-hub-api:release-a1b2c3d daubert-hub-api:latest'
+        $m | Should Match 'tag daubert-hub-web:release-a1b2c3d daubert-hub-web:latest'
+        $m | Should Match 'up -d --no-build api web'
+        $m | Should Not Match '--build api'
+    }
+
+    It 'sin el switch el comportamiento sigue siendo el de siempre (up --build)' {
+        (Invoke-Main -D $true) | Should Be 0
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+    }
+
+    It 'un SHA-256 de manifiesto distinto, ausente o un manifiesto inexistente bloquean sin mutar nada' {
+        $o = $script:ImgOpt.Clone(); $o.ImagesManifestSha256 = ('0' * 64)
+        (Invoke-Main -D $true -Opt $o) | Should Be 1; (Get-PrintedText) | Should Match 'no coincide con -ImagesManifestSha256'; $script:Mutations.Count | Should Be 0
+        $o = $script:ImgOpt.Clone(); $o.ImagesManifestSha256 = ''
+        (Invoke-Main -D $true -Opt $o) | Should Be 1; (Get-PrintedText) | Should Match 'exige -ImagesManifestSha256'
+        $script:Fake.Manifest = [pscustomobject]@{ Exists = $false; Sha256 = ''; Json = $null }
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Falta el manifiesto de imagenes'
+    }
+
+    It 'una imagen local distinta de la validada, o ausente, bloquea' {
+        $script:Fake.Tags['daubert-hub-web:release-' + $script:HeadShort] = 'sha256:' + ('9' * 64)
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no es la validada'; $script:Mutations.Count | Should Be 0
+        $script:Fake.Tags.Remove('daubert-hub-api:release-' + $script:HeadShort)
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'No existe la imagen local'
+    }
+
+    It 'un manifiesto de imagenes de otro commit bloquea' {
+        $script:Fake.Manifest.Json.commit = 'deadbeefdeadbeef'
+        (Invoke-Main -D $true -Opt $script:ImgOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no del candidato'
+    }
+
+    It 'la lista de mutaciones solo acepta release->latest y --no-build con el switch' {
+        $cf = @('--project-name', 'daubert-hub', '--env-file', 'deploy/pilot.prod.env', '-f', 'compose.pilot.yaml', '-f', 'compose.prod-temp.yaml', '-f', 'deploy/closure/entry-closure-override.yaml')
+        $script:Options = @{ UseValidatedImages = $false }
+        (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-api:latest')) | Should Not BeNullOrEmpty
+        (Test-AllowedMutation 'docker' (@('compose') + $cf + @('up', '-d', '--no-build', 'api', 'web'))) | Should Not BeNullOrEmpty
+        $script:Options = @{ UseValidatedImages = $true }
+        (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-api:latest')) | Should BeNullOrEmpty
+        (Test-AllowedMutation 'docker' (@('compose') + $cf + @('up', '-d', '--no-build', 'api', 'web'))) | Should BeNullOrEmpty
+        (Test-AllowedMutation 'docker' @('tag', 'daubert-hub-api:release-a1b2c3d', 'daubert-hub-web:latest')) | Should Not BeNullOrEmpty
+        (Test-AllowedMutation 'docker' @('tag', 'evil:release-a1b2c3d', 'daubert-hub-api:latest')) | Should Not BeNullOrEmpty
+    }
+}
+
+Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readiness y rechaza configuraciones contradictorias' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable controles=24 fallos=0' }
+        $script:RdOpt = @{ ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt' }
+    }
+
+    It 'Manufactura sin habilitar (vacia o false): nada cambia y no se exige evidencia' {
+        $script:Fake.Manufacturing = @{ Enabled = ''; Emission = '' }; $script:Fake.Remove('Readiness')
+        (Invoke-Main -D $true) | Should Be 0
+        $script:Fake = New-Fake; Set-StandardMocks; $script:Fake.Manufacturing = @{ Enabled = 'false'; Emission = 'PRODUCCION' }
+        (Invoke-Main -D $true) | Should Be 0
+    }
+
+    It 'habilitada con evidencia PASS reciente de la fase PreEnable: se acepta' {
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 0
+    }
+
+    It 'habilitada sin -ManufacturingReadinessEvidence o sin el archivo: bloquea sin mutar nada' {
+        (Invoke-Main -D $true) | Should Be 1
+        (Get-PrintedText) | Should Match 'falta la evidencia de Test-ManufacturaReleaseReadiness'
+        $script:Mutations.Count | Should Be 0
+        $script:Fake.Remove('Readiness')
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'habilitada con evidencia FAIL, de otra fase o vieja: bloquea' {
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_FAIL phase=PreEnable controles=24 fallos=1' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no dice MANUFACTURA_READINESS_PASS phase=PreEnable'
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreDeploy controles=24 fallos=0' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'no dice MANUFACTURA_READINESS_PASS phase=PreEnable'
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 30; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'evidencia de readiness de Manufactura tiene'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'configuracion contradictoria bloquea aunque exista evidencia PASS' {
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = '' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'exige MANUFACTURING_EMISSION_ENV=PRODUCCION'
+        $script:Fake.Manufacturing = @{ Enabled = ''; Emission = 'PRUEBA' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'solo puede ser vacia o PRODUCCION'
+        $script:Fake.Manufacturing = @{ Enabled = 'True'; Emission = 'PRODUCCION' }
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'debe ser vacia, true o false'
+        $script:Mutations.Count | Should Be 0
+    }
+}
+
+Describe 'Politica de cierre seleccionable: la operativa por omision; la de Manufactura solo de forma explicita y con su SHA-256 autorizado' {
+    BeforeEach {
+        $script:Fake = New-Fake; Set-StandardMocks
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'op'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+    }
+
+    It 'por omision nada cambia: con -RequireClosedWindow el cierre activo debe ser la politica OPERATIVA' {
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true }).Count | Should Be 0
+        $script:Fake.Closure.ConfSha = 'mf'; $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true }) -join ' ') | Should Match 'cierre ACTIVO'
+    }
+
+    It 'la politica operativa admite comprobar su SHA-256 y bloquea si no coincide' {
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{ ClosurePolicySha256 = 'OP' }).Count | Should Be 0
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicySha256 = 'zz' }) -join ' ') | Should Match 'no coincide con -ClosurePolicySha256'
+    }
+
+    It 'Manufactura sin SHA-256, con SHA-256 distinto o sin el archivo: bloquea' {
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura' }) -join ' ') | Should Match 'exige -ClosurePolicySha256'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'zz' }) -join ' ') | Should Match 'no coincide con -ClosurePolicySha256'
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'op'; PolicySha = 'op' }; $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }) -join ' ') | Should Match 'Falta deploy/closure/entry-closure-policy.manufactura.conf'
+    }
+
+    It 'Manufactura con el SHA-256 autorizado: la ventana exige que el default.conf externo sea ESA politica' {
+        $opt = @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf'; RequireClosedWindow = $true }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false $opt) -join ' ') | Should Match 'cierre ACTIVO'
+        $script:Fake.Closure.ConfSha = 'mf'; $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false $opt).Count | Should Be 0
+    }
+
+    It 'una configuracion que habilita Manufactura dentro de una ventana cerrada exige la politica de Manufactura' {
+        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }
+        $script:Fake.Readiness = [pscustomobject]@{ Exists = $true; AgeHours = 1; Text = 'MANUFACTURA_READINESS_PASS phase=PreEnable' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ RequireClosedWindow = $true; ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt' }) -join ' ') | Should Match 'debe usar la politica de Manufactura'
+    }
+}
+
+Describe 'Seleccionar -ClosurePolicy Manufactura implica la exigencia de ventana cerrada' {
+    BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    It 'Manufactura SIN -RequireClosedWindow y con el default.conf externo abierto: bloquea' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'abierto'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }) -join ' ') | Should Match 'cierre ACTIVO'
+    }
+    It 'Manufactura SIN -RequireClosedWindow y cerrado con la politica OPERATIVA: bloquea' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'op'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        (@(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }) -join ' ') | Should Match 'cierre ACTIVO'
+    }
+    It 'Manufactura SIN -RequireClosedWindow y cerrado con la politica de Manufactura: pasa' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'mf'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{ ClosurePolicy = 'Manufactura'; ClosurePolicySha256 = 'mf' }).Count | Should Be 0
+    }
+    It 'por omision (sin -ClosurePolicy ni -RequireClosedWindow) no se exige ventana cerrada, como siempre' {
+        $script:Fake.Closure = @{ ConfExists = $true; ConfSha = 'abierto'; PolicySha = 'op'; ManufacturaPolicySha = 'mf' }
+        $ctx = Get-DeployContext 'HEAD'
+        @(Test-DeployGate $ctx $false @{}).Count | Should Be 0
+        (Invoke-Main -D $true) | Should Be 0
     }
 }

@@ -45,6 +45,44 @@
     any other database/ file still blocks), -MigrationsEvidence (a file written within -EvidenceMaxAgeHours that contains every -EvidenceMarkers text, e.g. the saved output of the
     postchecks) and -EvidenceMarkers. The script still runs no SQL and applies nothing.
 
+.PARAMETER DatabaseManifest
+    Optional. Path (relative to the repository) of a RELEASE MANIFEST of database/ files (scripts/deploy/generar-manifiesto-database.cjs). Only honoured together with
+    -AcknowledgeMigrationsAlreadyApplied, -ExpectedMigrations, -MigrationsEvidence, -EvidenceMarkers and -DatabaseManifestSha256. With it, EVERY database/ file of the release
+    (the delta against the commit running in PROD) must be listed in the manifest with exactly the same git blob id, and nothing else is allowed: a new, deleted or modified file
+    still blocks. Files categorised produccion_* must ALSO satisfy -ExpectedMigrations (under database/migrations/daubert_global/); inerte_nunca_en_prod files (TEST migrations,
+    maintenance, tools, documentation) are accepted only because they are listed, and are never applied. Files matching the manifest's "prohibidos" (e.g. the Caterpillar 025
+    migration of another branch) block even if listed. Without this parameter the previous behaviour is unchanged.
+
+.PARAMETER DatabaseManifestSha256
+    SHA-256 of the manifest text (LF line endings), delivered OUTSIDE the repository (the authorization record). The gate recomputes it and blocks on any difference, so changing a
+    migration AND the manifest in the same commit is detected.
+
+.PARAMETER UseValidatedImages
+    Optional. Deploy EXACTLY the images that were built and validated beforehand (scripts/deploy/New-ReleaseImages.ps1) instead of building at deployment time: nothing is rebuilt, no floating
+    tag is trusted. Requires -ImagesManifest and -ImagesManifestSha256. The gate blocks unless the local tags daubert-hub-<svc>:release-<commit> exist and their image IDs equal the manifest's.
+    The plan then tags release-<commit> as :latest (after the rollback anchors) and runs 'docker compose up -d --no-build api web'. Without this switch the behaviour is unchanged ('up -d --build').
+
+.PARAMETER ImagesManifest
+    Path (relative to the repository or absolute) of the images manifest written by New-ReleaseImages.ps1 (commit, version and image ID per service).
+
+.PARAMETER ImagesManifestSha256
+    SHA-256 of the images manifest text (LF line endings), delivered outside the repository with the authorisation record.
+
+.PARAMETER ClosurePolicy
+    Operativa (default: deploy/closure/entry-closure-policy.conf, behaviour unchanged) or Manufactura. Selecting Manufactura IMPLIES -RequireClosedWindow (the closed window is
+    verified even if that switch is omitted). The Manufactura policy is deploy/closure/entry-closure-policy.manufactura.conf, which also blocks every
+    write under /api/manufacturing-sheets). Manufactura REQUIRES -ClosurePolicySha256: the gate blocks unless the versioned file has exactly that SHA-256, and with -RequireClosedWindow
+    the external default.conf must be that policy. A configuration that ENABLES Manufactura inside a required closed window must use -ClosurePolicy Manufactura.
+
+.PARAMETER ClosurePolicySha256
+    SHA-256 of the selected closure policy file, authorised outside the repository. Optional with the operative policy, mandatory with Manufactura.
+
+.PARAMETER ManufacturingReadinessEvidence
+    Evidence file written by scripts/deploy/Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable -EvidenceFile <file outside the repository>. REQUIRED whenever the production
+    configuration enables Manufactura (MANUFACTURING_ENABLED=true in deploy/pilot.prod.env or in the shell): the gate blocks unless the file is recent (-EvidenceMaxAgeHours)
+    and says MANUFACTURA_READINESS_PASS phase=PreEnable. A contradictory configuration (ENABLED=true without EMISSION_ENV=PRODUCCION, EMISSION_ENV=PRUEBA, any value other than
+    true/false) blocks always. With Manufactura not enabled nothing changes.
+
 .PARAMETER ExpectedN8nPaths
     Optional. With -AcknowledgeN8nAlreadyApplied, every changed n8n/ file must start with one of these path prefixes; anything else still blocks.
 
@@ -74,6 +112,14 @@ param(
     [switch]$AcknowledgeN8nAlreadyApplied,
     [switch]$AcknowledgeMigrationsAlreadyApplied,
     [string[]]$ExpectedMigrations = @(),
+    [string]$DatabaseManifest = '',
+    [string]$DatabaseManifestSha256 = '',
+    [switch]$UseValidatedImages,
+    [string]$ImagesManifest = '',
+    [string]$ImagesManifestSha256 = '',
+    [string]$ManufacturingReadinessEvidence = '',
+    [ValidateSet('Operativa', 'Manufactura')][string]$ClosurePolicy = 'Operativa',
+    [string]$ClosurePolicySha256 = '',
     [string]$MigrationsEvidence = '',
     [string[]]$EvidenceMarkers = @(),
     [int]$EvidenceMaxAgeHours = 6,
@@ -181,6 +227,12 @@ function Test-AllowedMutation {
     # The complete list of mutations this script can ever perform. Returns $null when allowed.
     param([string]$Exe, [string[]]$CmdArgs)
     if ($Exe -ne 'docker') { return ('ejecutable no permitido: ' + $Exe) }
+    $validated = ($script:Options.Contains('UseValidatedImages') -and [bool]$script:Options['UseValidatedImages'])
+    if ($validated -and $CmdArgs.Count -eq 3 -and $CmdArgs[0] -eq 'tag') {
+        $p1 = [regex]::Match($CmdArgs[1], '^daubert-hub-(api|web):release-[0-9a-f]{7,40}$')
+        $p2 = [regex]::Match($CmdArgs[2], '^daubert-hub-(api|web):latest$')
+        if ($p1.Success -and $p2.Success -and $p1.Groups[1].Value -eq $p2.Groups[1].Value) { return $null }
+    }
     if ($CmdArgs.Count -eq 3 -and $CmdArgs[0] -eq 'tag') {
         $src = [regex]::Match($CmdArgs[1], '^daubert-hub-(api|web):latest$')
         $dst = [regex]::Match($CmdArgs[2], '^daubert-hub-(api|web):rollback-[0-9a-f]{7,40}$')
@@ -189,6 +241,10 @@ function Test-AllowedMutation {
     }
     $expected = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--build') + $script:Services
     if (($CmdArgs -join ' ') -ceq ($expected -join ' ')) { return $null }
+    if ($validated) {
+        $expectedNoBuild = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--no-build') + $script:Services
+        if (($CmdArgs -join ' ') -ceq ($expectedNoBuild -join ' ')) { return $null }
+    }
     return 'solo se permite el docker compose up -d --build api web definido para PROD'
 }
 
@@ -232,6 +288,19 @@ function Read-DeployEvidence {
     return [pscustomobject]@{ Exists = $true; AgeHours = ((Get-Date) - $item.LastWriteTime).TotalHours; Text = (Get-Content -LiteralPath $Path -Raw) }
 }
 
+function Read-DeployManifest {
+    # Reads (never writes) the release manifest: existence, SHA-256 of its text with LF line endings, and the parsed JSON. Mocked in the tests.
+    param([string]$Path)
+    $full = $Path
+    if (-not [System.IO.Path]::IsPathRooted($full)) { $full = Join-Path $script:RepoRoot $Path }
+    if (-not (Test-Path -LiteralPath $full)) { return [pscustomobject]@{ Exists = $false; Sha256 = ''; Json = $null } }
+    $text = (Get-Content -LiteralPath $full -Raw -Encoding UTF8) -replace "`r`n", "`n"
+    $sha = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($text))).Replace('-', '').ToLower()
+    $json = $null
+    try { $json = $text | ConvertFrom-Json } catch { $json = $null }
+    return [pscustomobject]@{ Exists = $true; Sha256 = $sha; Json = $json }
+}
+
 function Start-DeploySleep {
     param([int]$Seconds)
     Start-Sleep -Seconds $Seconds
@@ -246,6 +315,21 @@ function Read-HubPort {
         }
     }
     return '8082'
+}
+
+function Read-ManufacturingFlags {
+    # Only MANUFACTURING_ENABLED and MANUFACTURING_EMISSION_ENV are read (not secrets). Compose gives the shell environment precedence over --env-file, so does this. Mocked in the tests.
+    $flags = @{ Enabled = ''; Emission = '' }
+    $path = Join-Path $script:RepoRoot $script:EnvFile
+    if (Test-Path -LiteralPath $path) {
+        foreach ($line in (Get-Content -LiteralPath $path)) {
+            if ($line -match '^\s*MANUFACTURING_ENABLED\s*=\s*(.*?)\s*$') { $flags.Enabled = $Matches[1].Trim('"').Trim("'") }
+            if ($line -match '^\s*MANUFACTURING_EMISSION_ENV\s*=\s*(.*?)\s*$') { $flags.Emission = $Matches[1].Trim('"').Trim("'") }
+        }
+    }
+    if ($env:MANUFACTURING_ENABLED) { $flags.Enabled = [string]$env:MANUFACTURING_ENABLED }
+    if ($env:MANUFACTURING_EMISSION_ENV) { $flags.Emission = [string]$env:MANUFACTURING_EMISSION_ENV }
+    return [pscustomobject]$flags
 }
 
 # ================================================================== Facts
@@ -273,10 +357,12 @@ function Get-ClosureState {
     # Read-only facts about the external conf.d that the override mounts (create_host_path=false: it must exist) and about the versioned closed policy.
     $conf = Join-Path $script:ClosureDir 'default.conf'
     $policy = Join-Path $script:RepoRoot 'deploy\closure\entry-closure-policy.conf'
-    $confSha = ''; $policySha = ''
+    $manufactura = Join-Path $script:RepoRoot 'deploy\closure\entry-closure-policy.manufactura.conf'
+    $confSha = ''; $policySha = ''; $manufacturaSha = ''
+    if (Test-Path -LiteralPath $manufactura) { $manufacturaSha = (Get-FileHash -LiteralPath $manufactura -Algorithm SHA256).Hash.ToLower() }
     if (Test-Path -LiteralPath $conf) { $confSha = (Get-FileHash -LiteralPath $conf -Algorithm SHA256).Hash.ToLower() }
     if (Test-Path -LiteralPath $policy) { $policySha = (Get-FileHash -LiteralPath $policy -Algorithm SHA256).Hash.ToLower() }
-    return @{ ConfExists = [bool]$confSha; ConfSha = $confSha; PolicySha = $policySha }
+    return @{ ConfExists = [bool]$confSha; ConfSha = $confSha; PolicySha = $policySha; ManufacturaPolicySha = $manufacturaSha }
 }
 
 function Get-DeployContext {
@@ -334,8 +420,40 @@ function Get-DeployContext {
     $evidence = [pscustomobject]@{ Required = $false; Exists = $false; AgeHours = 0; Text = '' }
     if ($script:Options.Contains('MigrationsEvidence') -and $script:Options['MigrationsEvidence']) { $evidence = Read-DeployEvidence ([string]$script:Options['MigrationsEvidence']) }
 
+    # Release manifest of database/ files (optional): blob id of every changed database/ file at HEAD, read-only (git rev-parse).
+    $manifest = $null
+    $blobs = @{}
+    if ($script:Options.Contains('DatabaseManifest') -and $script:Options['DatabaseManifest']) {
+        $manifest = Read-DeployManifest ([string]$script:Options['DatabaseManifest'])
+        # The changed database/ files AND every production file the manifest authorises (a required migration that disappeared from HEAD must block even though it is not in the delta).
+        $wantBlobs = @($migrations)
+        if ($manifest -and $manifest.Json -and $manifest.Json.archivos) { foreach ($ma in @($manifest.Json.archivos)) { if ([string]$ma.categoria -like 'produccion_*') { $wantBlobs += [string]$ma.ruta } } }
+        foreach ($mf in @($wantBlobs | Select-Object -Unique)) {
+            $b = Invoke-DeployRead 'git' ($git + @('rev-parse', ('HEAD:' + $mf)))
+            $blobs[$mf] = $(if ($b.Code -eq 0 -and $b.Out.Count -gt 0) { [string]$b.Out[0] } else { '' })
+        }
+    }
+
+    # Validated images (optional): the images manifest and the IDs of the local release-<commit> tags (read-only).
+    $imgManifest = $null
+    $releaseIds = @{}
+    if ($script:Options.Contains('UseValidatedImages') -and [bool]$script:Options['UseValidatedImages']) {
+        if ($script:Options.Contains('ImagesManifest') -and $script:Options['ImagesManifest']) { $imgManifest = Read-DeployManifest ([string]$script:Options['ImagesManifest']) }
+        $shortHead = $(if ($headShort.Code -eq 0 -and $headShort.Out.Count -gt 0) { [string]$headShort.Out[0] } else { '' })
+        foreach ($svc in $script:Services) {
+            $ref = $script:Project + '-' + $svc + ':release-' + $shortHead
+            $q = Invoke-DeployRead 'docker' @('image', 'inspect', $ref, '--format', '{{.Id}}')
+            $releaseIds[$svc] = $(if ($q.Code -eq 0 -and $q.Out.Count -gt 0) { [string]$q.Out[0] } else { '' })
+        }
+    }
+
+    $readiness = $null
+    if ($script:Options.Contains('ManufacturingReadinessEvidence') -and $script:Options['ManufacturingReadinessEvidence']) { $readiness = Read-DeployEvidence ([string]$script:Options['ManufacturingReadinessEvidence']) }
+
     return [pscustomobject]@{
         CandidateInput = $Candidate
+        Manufacturing  = (Read-ManufacturingFlags)
+        ReadinessEvidence = $readiness
         CandidateFull  = $(if ($cand.Code -eq 0 -and $cand.Out.Count -gt 0) { $cand.Out[0] } else { '' })
         HeadFull       = $(if ($head.Code -eq 0 -and $head.Out.Count -gt 0) { $head.Out[0] } else { '' })
         HeadShort      = $(if ($headShort.Code -eq 0 -and $headShort.Out.Count -gt 0) { $headShort.Out[0] } else { '' })
@@ -347,6 +465,10 @@ function Get-DeployContext {
         DeltaKnown     = $deltaKnown
         HubDockerFiles = $hubDocker
         MigrationFiles = $migrations
+        ImagesManifest = $imgManifest
+        ReleaseImageIds = $releaseIds
+        MigrationBlobs = $blobs
+        Manifest       = $manifest
         N8nFiles       = $n8n
         Evidence       = $evidence
         Closure        = (Get-ClosureState)
@@ -356,6 +478,42 @@ function Get-DeployContext {
 }
 
 # ================================================================== Validation
+function Test-DatabaseManifest {
+    # Pure: turns the context + the release manifest into blocking reasons for the database/ files of the release. Empty list = every file is authorised with identical content.
+    param($Context, $Options, [string[]]$Expected, [string]$MigrationPrefix)
+    $m = $Context.Manifest
+    if (-not $m -or -not $m.Exists) { return @('Falta el manifiesto de database/ (-DatabaseManifest).') }
+    $want = [string]$Options['DatabaseManifestSha256']
+    if (-not $want) { return @('-DatabaseManifest exige -DatabaseManifestSha256 (SHA-256 del manifiesto, entregado fuera del repositorio).') }
+    if ($m.Sha256 -ne $want.ToLower()) { return @('El SHA-256 del manifiesto (' + $m.Sha256 + ') no coincide con -DatabaseManifestSha256.') }
+    if (-not $m.Json -or [string]$m.Json.formato -ne '1' -or -not $m.Json.archivos) { return @('El manifiesto de database/ no es valido.') }
+    $reasons = @()
+    $byPath = @{}
+    foreach ($a in @($m.Json.archivos)) { $byPath[[string]$a.ruta] = $a }
+    # Forbidden patterns are ALSO hard-coded here (independent of the manifest): the Caterpillar 025 recovery migration of another branch can never ride along, even in a tampered manifest.
+    $forbidden = @(@('_025_', 'caterpillar_folio_recovery') + @($m.Json.prohibidos | Where-Object { $_ }) | Select-Object -Unique)
+    foreach ($file in @($Context.MigrationFiles)) {
+        $hit = @($forbidden | Where-Object { $file.Contains($_) })
+        if ($hit.Count -gt 0) { $reasons += ('Archivo prohibido en el release (' + $file + ' contiene "' + $hit[0] + '").'); continue }
+        if (-not $byPath.ContainsKey($file)) { $reasons += ('Archivo de database/ no autorizado por el manifiesto: ' + $file); continue }
+        $entry = $byPath[$file]
+        $blob = [string]$Context.MigrationBlobs[$file]
+        if (-not $blob) { $reasons += ('Archivo de database/ eliminado o ilegible en HEAD (no autorizado): ' + $file); continue }
+        if ($blob -ne [string]$entry.blob) { $reasons += ('Archivo de database/ MODIFICADO respecto del manifiesto: ' + $file); continue }
+        if ([string]$entry.categoria -like 'produccion_*') {
+            if (-not ($file.StartsWith($MigrationPrefix) -and @($Expected | Where-Object { $file.Substring($MigrationPrefix.Length).StartsWith($_) }).Count -gt 0)) { $reasons += ('Archivo de produccion fuera de -ExpectedMigrations: ' + $file) }
+        }
+    }
+    foreach ($entry in @($m.Json.archivos | Where-Object { [string]$_.categoria -like 'produccion_*' })) {
+        $ruta = [string]$entry.ruta
+        if (@($Context.MigrationFiles) -contains $ruta) { continue }
+        $blob = ''
+        if ($Context.MigrationBlobs.ContainsKey($ruta)) { $blob = [string]$Context.MigrationBlobs[$ruta] }
+        if ($blob -ne [string]$entry.blob) { $reasons += ('Archivo autorizado de produccion ausente o distinto en HEAD: ' + $ruta) }
+    }
+    return $reasons
+}
+
 function Test-DeploySynchronizedMain {
     param([string]$Candidate)
     if ($Candidate -notmatch '\A[0-9a-fA-F]{40}\z') { return $false }
@@ -383,7 +541,21 @@ function Test-DeployGate {
     if ($Context.HeadShort -cnotmatch $script:ShaPattern) { $reasons += 'No se pudo determinar el commit corto de HEAD.' }
     if (-not $Context.AppVersion) { $reasons += 'No se pudo leer APP_VERSION de package.json.' }
     if (-not $Context.Closure.ConfExists) { $reasons += 'Falta default.conf en el directorio externo del cierre (override obligatorio en toda recreacion de Web); ejecute Set-EntryClosure.ps1 -Action Prepare.' }
-    if ($Options.Contains('RequireClosedWindow') -and $Options['RequireClosedWindow'] -and (-not $Context.Closure.PolicySha -or $Context.Closure.ConfSha -ne $Context.Closure.PolicySha)) { $reasons += 'La ventana exige el cierre ACTIVO: default.conf externo no es la politica cerrada versionada (ejecute Set-EntryClosure.ps1 -Action Close).' }
+    # Closure policy selection: the operative policy by default; the Manufactura policy only when explicitly selected AND its SHA-256 matches the authorised one.
+    $closureSelected = $(if ($Options.Contains('ClosurePolicy') -and [string]$Options['ClosurePolicy'] -eq 'Manufactura') { 'Manufactura' } else { 'Operativa' })
+    $closureWant = $(if ($Options.Contains('ClosurePolicySha256')) { ([string]$Options['ClosurePolicySha256']).ToLower() } else { '' })
+    $closureSha = [string]$Context.Closure.PolicySha
+    if ($closureSelected -eq 'Manufactura') {
+        $closureSha = $(if ($Context.Closure.ContainsKey('ManufacturaPolicySha')) { [string]$Context.Closure.ManufacturaPolicySha } else { '' })
+        if (-not $closureWant) { $reasons += '-ClosurePolicy Manufactura exige -ClosurePolicySha256 (SHA-256 autorizado de la politica de cierre de Manufactura).' }
+        elseif (-not $closureSha) { $reasons += 'Falta deploy/closure/entry-closure-policy.manufactura.conf.' }
+    }
+    if ($closureWant -and $closureSha -and $closureSha -ne $closureWant) { $reasons += ('La politica de cierre seleccionada (' + $closureSelected + ', ' + $closureSha + ') no coincide con -ClosurePolicySha256.') }
+    # Selecting the Manufactura policy IMPLIES the closed-window requirement: a Manufactura release never proceeds unless the external default.conf IS that policy (same check as -RequireClosedWindow).
+    $closureRequired = (($Options.Contains('RequireClosedWindow') -and [bool]$Options['RequireClosedWindow']) -or $closureSelected -eq 'Manufactura')
+    $closureMf = $(if ($Context.PSObject.Properties.Name -contains 'Manufacturing') { $Context.Manufacturing } else { $null })
+    if ($closureRequired -and $closureMf -and [string]$closureMf.Enabled -ceq 'true' -and $closureSelected -ne 'Manufactura') { $reasons += 'La configuracion habilita Manufactura: la ventana cerrada debe usar la politica de Manufactura (-ClosurePolicy Manufactura -ClosurePolicySha256 ...).' }
+    if ($closureRequired -and (-not $closureSha -or $Context.Closure.ConfSha -ne $closureSha)) { $reasons += 'La ventana exige el cierre ACTIVO: default.conf externo no es la politica cerrada versionada (ejecute Set-EntryClosure.ps1 -Action Close).' }
     if (-not $Context.Health) {
         $reasons += 'No se pudo leer /api/health de PROD.'
     } else {
@@ -411,6 +583,39 @@ function Test-DeployGate {
             if (-not ($s.AnchorDigest -and $s.RunningDigest -and $s.AnchorDigest -eq $s.RunningDigest)) { $reasons += ('La etiqueta ' + $s.Anchor + ' ya existe y NO apunta a la imagen en ejecucion: nunca se sobrescribe.') }
         }
     }
+    if ($Options.Contains('UseValidatedImages') -and [bool]$Options['UseValidatedImages']) {
+        $im = $Context.ImagesManifest
+        $want = [string]$Options['ImagesManifestSha256']
+        if (-not $im -or -not $im.Exists) { $reasons += 'Falta el manifiesto de imagenes (-ImagesManifest).' }
+        elseif (-not $want) { $reasons += '-UseValidatedImages exige -ImagesManifestSha256 (SHA-256 del manifiesto de imagenes, entregado fuera del repositorio).' }
+        elseif ($im.Sha256 -ne $want.ToLower()) { $reasons += ('El SHA-256 del manifiesto de imagenes (' + $im.Sha256 + ') no coincide con -ImagesManifestSha256.') }
+        elseif (-not $im.Json -or [string]$im.Json.formato -ne '1' -or -not $im.Json.imagenes) { $reasons += 'El manifiesto de imagenes no es valido.' }
+        else {
+            if (([string]$im.Json.commit).Length -lt 7 -or -not ([string]$Context.HeadFull).StartsWith(([string]$im.Json.commit))) { $reasons += ('El manifiesto de imagenes es del commit ' + [string]$im.Json.commit + ', no del candidato ' + $Context.HeadShort + '.') }
+            foreach ($svc in $script:Services) {
+                $entry = @($im.Json.imagenes | Where-Object { [string]$_.servicio -eq $svc }) | Select-Object -First 1
+                $local = [string]$Context.ReleaseImageIds[$svc]
+                if (-not $entry) { $reasons += ('El manifiesto de imagenes no incluye ' + $svc + '.') }
+                elseif (-not $local) { $reasons += ('No existe la imagen local ' + $script:Project + '-' + $svc + ':release-' + $Context.HeadShort + ' (construirla y validarla con New-ReleaseImages.ps1).') }
+                elseif ($local -ne [string]$entry.imageId) { $reasons += ('La imagen local de ' + $svc + ' (' + $local + ') no es la validada (' + [string]$entry.imageId + ').') }
+            }
+        }
+    }
+    # Manufactura: enabling it is gated by the read-only readiness check; a contradictory configuration never deploys.
+    $mf = $(if ($Context.PSObject.Properties.Name -contains 'Manufacturing') { $Context.Manufacturing } else { $null })
+    if ($mf) {
+        $mEnabled = [string]$mf.Enabled; $mEmission = [string]$mf.Emission
+        if (-not ($mEnabled -ceq '' -or $mEnabled -ceq 'true' -or $mEnabled -ceq 'false')) { $reasons += 'Configuracion de Manufactura invalida: MANUFACTURING_ENABLED debe ser vacia, true o false (la API no arrancaria).' }
+        if (-not ($mEmission -ceq '' -or $mEmission -ceq 'PRODUCCION')) { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_EMISSION_ENV solo puede ser vacia o PRODUCCION con la base de produccion.' }
+        if ($mEnabled -ceq 'true') {
+            if ($mEmission -cne 'PRODUCCION') { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_ENABLED=true exige MANUFACTURING_EMISSION_ENV=PRODUCCION.' }
+            $re = $(if ($Context.PSObject.Properties.Name -contains 'ReadinessEvidence') { $Context.ReadinessEvidence } else { $null })
+            $reMaxAge = if ($Options.Contains('EvidenceMaxAgeHours')) { [double]$Options['EvidenceMaxAgeHours'] } else { 6 }
+            if (-not $re -or -not $re.Exists) { $reasons += 'La configuracion HABILITA Manufactura: falta la evidencia de Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable (-ManufacturingReadinessEvidence).' }
+            elseif ($re.AgeHours -gt $reMaxAge) { $reasons += ('La evidencia de readiness de Manufactura tiene ' + [math]::Round($re.AgeHours, 1) + ' h (maximo ' + $reMaxAge + ' h).') }
+            elseif (-not ([string]$re.Text).Contains('MANUFACTURA_READINESS_PASS phase=PreEnable') -or ([string]$re.Text).Contains('MANUFACTURA_READINESS_FAIL')) { $reasons += 'La evidencia de readiness de Manufactura no dice MANUFACTURA_READINESS_PASS phase=PreEnable: NO habilitar.' }
+        }
+    }
     if (@($Context.MigrationFiles).Count -gt 0) {
         $ackMigrations = ($Options.Contains('AckMigrations') -and [bool]$Options['AckMigrations'])
         if (-not $ackMigrations) {
@@ -419,6 +624,7 @@ function Test-DeployGate {
             $expected = @($Options['ExpectedMigrations'] | Where-Object { $_ })
             $markers = @($Options['EvidenceMarkers'] | Where-Object { $_ })
             if ($expected.Count -eq 0) { $reasons += '-AcknowledgeMigrationsAlreadyApplied exige -ExpectedMigrations (prefijos de nombre permitidos).' }
+            elseif ($Options.Contains('DatabaseManifest') -and $Options['DatabaseManifest']) { $reasons += @(Test-DatabaseManifest $Context $Options $expected $migrationPrefix) }
             else {
                 $unexpected = @($Context.MigrationFiles | Where-Object { $file = $_; -not ($file.StartsWith($migrationPrefix) -and @($expected | Where-Object { $file.Substring($migrationPrefix.Length).StartsWith($_) }).Count -gt 0) })
                 if ($unexpected.Count -gt 0) { $reasons += ('Archivos de database/ no esperados en el release (' + $unexpected.Count + '): ' + (($unexpected | Select-Object -First 3) -join ', ')) }
@@ -461,7 +667,10 @@ function Get-RollbackProcedure {
 
 function New-DeployPlan {
     param($Context)
-    $composeArgs = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', '--build') + $script:Services
+    $validated = ($script:Options.Contains('UseValidatedImages') -and [bool]$script:Options['UseValidatedImages'])
+    $composeArgs = @('compose') + (Get-ComposeBaseArgs) + @('up', '-d', $(if ($validated) { '--no-build' } else { '--build' })) + $script:Services
+    $promote = @()
+    if ($validated) { foreach ($svc in $script:Services) { $promote += [pscustomobject]@{ Service = $svc; Source = ($script:Project + '-' + $svc + ':release-' + $Context.HeadShort); Target = ($script:Project + '-' + $svc + ':latest') } } }
     $anchors = @()
     foreach ($svc in $script:Services) {
         $s = $Context.Services[$svc]
@@ -476,6 +685,7 @@ function New-DeployPlan {
         Anchors       = $anchors
         EnvVariables  = [ordered]@{ APP_VERSION = $Context.AppVersion; GIT_COMMIT = $Context.HeadShort }
         ComposeArgs   = $composeArgs
+        Promote       = $promote
         Changes       = @($Context.HubDockerFiles)
         PostChecks    = @(
             'api healthy (docker inspect, espera hasta el limite)',
@@ -502,6 +712,10 @@ function Show-DeployPlan {
     foreach ($a in $Plan.Anchors) {
         if ($a.Reuse) { Write-Safe ('  ' + $a.Anchor + ' ya existe y apunta a la imagen en ejecucion (digest ' + $a.Digest + '): se reutiliza, no se vuelve a etiquetar') }
         else { Write-Safe ('  docker tag ' + $a.Source + ' ' + $a.Anchor + '   (digest ' + $a.Digest + ')') }
+    }
+    if (@($Plan.Promote).Count -gt 0) {
+        Write-Safe 'Imagenes VALIDADAS (sin reconstruir; el ID debe coincidir con el manifiesto de imagenes):'
+        foreach ($p in $Plan.Promote) { Write-Safe ('  docker tag ' + $p.Source + ' ' + $p.Target) }
     }
     Write-Safe 'Variables de build:'
     foreach ($k in $Plan.EnvVariables.Keys) { Write-Safe ('  ' + $k + '=' + $Plan.EnvVariables[$k]) }
@@ -616,6 +830,14 @@ function Invoke-DeployPlan {
     try {
         $env:APP_VERSION = $Plan.EnvVariables['APP_VERSION']
         $env:GIT_COMMIT = $Plan.EnvVariables['GIT_COMMIT']
+        if (@($Plan.Promote).Count -gt 0) {
+            Write-Safe ''
+            Write-Safe '--- Promoviendo las imagenes validadas (sin construir) ---'
+            foreach ($p in $Plan.Promote) {
+                $tg = Invoke-DeployMutation 'docker' @('tag', $p.Source, $p.Target)
+                if ($tg.Code -ne 0) { Write-Safe ('docker tag fallo para ' + $p.Target + '; se aborta antes del arranque. Los contenedores en ejecucion no cambiaron.'); return 1 }
+            }
+        }
         Write-Safe ''
         Write-Safe '--- Desplegando api y web ---'
         $up = Invoke-DeployMutation 'docker' $Plan.ComposeArgs
@@ -754,6 +976,6 @@ function Invoke-DeployMain {
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
     $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
-        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow; RequireSynchronizedMain = [bool]$RequireSynchronizedMain }
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ManufacturingReadinessEvidence = $ManufacturingReadinessEvidence; ClosurePolicy = $ClosurePolicy; ClosurePolicySha256 = $ClosurePolicySha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow; RequireSynchronizedMain = [bool]$RequireSynchronizedMain }
     exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }

@@ -1,0 +1,38 @@
+{
+  "caso": "invalido-composicion-todo-na",
+  "formato": "BOLSA_NATURAL",
+  "esperado": "invalido",
+  "nota": "Ninguna opción seleccionada (Natural = NA). Debe rechazarse: la composición de BOLSA_NATURAL es fija (PMG = NA, ESD = NA, Natural = X).",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "",
+    "fecha_": "",
+    "resina_vci": "",
+    "producto": "Bolsa Con Fuelle",
+    "color": "",
+    "codigo": "",
+    "descripcion": "",
+    "comp_pmg": "NA",
+    "comp_esd": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "16\"",
+    "largo": "18\"",
+    "fuelle_derecho": "6.25\"",
+    "fuelle_izquierdo": "6.25\"",
+    "calibre": "3.3 mil",
+    "peso_bolsa_lb": "0.1129",
+    "etiqueta": ""
+  },
+  "visual": {
+    "color_bolsa_hex": "#FFF2CC",
+    "color_cotas_internas_hex": "#000000"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

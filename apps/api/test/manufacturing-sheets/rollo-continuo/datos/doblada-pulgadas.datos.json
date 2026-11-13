@@ -1,0 +1,38 @@
+{
+  "caso": "doblada-pulgadas",
+  "formato": "ROLLO_CONTINUO",
+  "esperado": "valido",
+  "modalidad": "DOBLADA",
+  "nota": "Otro rollo doblado con medidas distintas; el ancho del rollo (30\") no es la mitad del ancho (58\"). Color rojo solo de prueba.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "ROLLO VCI",
+    "color": "ROJO",
+    "codigo": "RCPMG-0001",
+    "descripcion": "Rollo VCI PMG doblado 58 x 4500\" Cal. 3 mil",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "58\"",
+    "largo": "4500\"",
+    "calibre": "3 MIL",
+    "ancho_rollo": "30\"",
+    "peso_bolsa_lb": "8.2500",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#C0504D"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

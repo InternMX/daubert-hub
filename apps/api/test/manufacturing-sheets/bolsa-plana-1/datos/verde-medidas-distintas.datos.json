@@ -1,0 +1,34 @@
+{
+  "caso": "verde-medidas-distintas",
+  "formato": "BOLSA_PLANA_1",
+  "nota": "Otro color de producto (verde confirmado #00B050) y otras medidas.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "DANA CV COMPONENTES",
+    "fecha_": "13/10/2026",
+    "resina_vci": "PMG AL 3%",
+    "producto": "Bolsa Plana",
+    "color": "VERDE",
+    "codigo": "EJEMPLO-FICTICIO-002",
+    "descripcion": "BOLSA VCI PMG 80 x 60 cm Cal.400",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "250",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "31.5\"",
+    "largo": "23.62\"",
+    "calibre": "400",
+    "peso_bolsa_lb": "0.1520",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#00B050"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

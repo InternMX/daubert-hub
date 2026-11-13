@@ -1,0 +1,38 @@
+{
+  "caso": "descripcion-desborde",
+  "formato": "HOJA_PAQ",
+  "esperado": "estres",
+  "modalidad": "DOBLADA",
+  "nota": "Prueba de estrés (no es un caso real): descripción de unos 1500 caracteres que obliga a una segunda página. El verificador debe reportar LÍMITE DETECTADO y el documento queda marcado como no apto para emisión productiva.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Hoja Plástica",
+    "color": "ROJO",
+    "codigo": "HPMG-0017",
+    "descripcion": "Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "250 Hojas",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "58\"",
+    "largo": "43\"",
+    "calibre": "2 MIL",
+    "peso_bolsa_lb": "0.7400",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#C0504D"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

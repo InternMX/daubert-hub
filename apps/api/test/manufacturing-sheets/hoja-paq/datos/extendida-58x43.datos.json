@@ -1,0 +1,38 @@
+{
+  "caso": "extendida-58x43",
+  "formato": "HOJA_PAQ",
+  "esperado": "valido",
+  "modalidad": "EXTENDIDA",
+  "nota": "Referencia del Excel original: hoja extendida 58 x 43\", rollo de 58\". Datos de prueba.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Hoja Plástica",
+    "color": "AZUL",
+    "codigo": "HPMG-0017",
+    "descripcion": "Hoja VCI PMG extendida 58 x 43\" Cal. 2 mil, Rollo con 250 hojas",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "250 Hojas",
+    "hoja_doblada": "NA",
+    "hoja_extendida": "X",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "58\"",
+    "largo": "43\"",
+    "calibre": "2 MIL",
+    "peso_bolsa_lb": "0.7400",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#538DD5"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

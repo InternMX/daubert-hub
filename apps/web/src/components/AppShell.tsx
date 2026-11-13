@@ -8,6 +8,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded';
+import AccountCircleRoundedIcon from '@mui/icons-material/AccountCircleRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
 import { Avatar, Box, ButtonBase, Chip, Divider, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material';
@@ -17,7 +18,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
-import { AUTOMATION_ROUTE_BY_CODE } from '../automations/automationRoutes';
+import { AUTOMATION_ROUTE_BY_CODE, MANUFACTURING_SHEETS_ROUTE, MANUFACTURING_UI_VISIBLE } from '../automations/automationRoutes';
 import { useAuth } from '../auth/authContext.core';
 import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { getSystemStatus, type SystemStatus } from '../services/systemStatus';
@@ -55,7 +56,8 @@ const auditNavigation = { to: '/audit', label: 'Auditoría', end: false, icon: F
 const automationSubmenu = [
   { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_AUDI!, label: 'Remisiones Audi' },
   { to: AUTOMATION_ROUTE_BY_CODE.PAYMENT_NOTIFICATIONS!, label: 'Notificaciones de pago' },
-  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' }
+  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' },
+  ...(MANUFACTURING_UI_VISIBLE ? [{ to: MANUFACTURING_SHEETS_ROUTE, label: 'Hojas de manufactura' }] : [])
 ];
 
 // Every automation matches its whole subtree (e.g. /automations/payment-notifications/:executionId
@@ -358,6 +360,11 @@ function UserAccountControl({ collapsed, environment, version, commit }: { colla
           <Typography noWrap variant="body2" color="text.secondary">{user.email}</Typography>
           <Typography variant="caption" color="text.secondary">{roleLabel}</Typography>
         </Box>
+        <Divider />
+        <MenuItem component={Link} to="/profile" onClick={handleClose}>
+          <ListItemIcon><AccountCircleRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Mi perfil</ListItemText>
+        </MenuItem>
         <Divider />
         <Box component="li" role="presentation" sx={{ px: 2, py: 1, minWidth: 200, maxWidth: 280, userSelect: 'text' }}>
           <Typography component="h3" variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>Información del sistema</Typography>

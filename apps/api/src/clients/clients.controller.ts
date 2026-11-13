@@ -12,6 +12,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { identityFromRequest, type AuthenticatedRequest } from '../common/authenticated-request';
+import { Roles } from '../security/route-access.decorators';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsDto } from './dto/list-clients.dto';
@@ -32,18 +33,23 @@ export class ClientsController {
     return this.clients.detail(clientId);
   }
 
+  // TODOS los cambios a datos maestros de clientes son solo de ADMIN: alta (incluida la que agrega el rol CLIENTE a una empresa existente), edición (PATCH), desactivar y reactivar. Lo impone el RolesGuard
+  // global (403 ROLE_NOT_ALLOWED), no la interfaz. La consulta (GET lista y detalle) sigue abierta a GENERAL y ADMIN.
+  @Roles('ADMIN')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() input: CreateClientDto, @Req() request: AuthenticatedRequest) {
     return this.clients.create(input, request.requestId, identityFromRequest(request));
   }
 
+  @Roles('ADMIN')
   @Patch(':clientId')
   update(@Param('clientId') clientId: string, @Body() input: UpdateClientDto, @Req() request: AuthenticatedRequest) {
     this.assertId(clientId);
     return this.clients.update(clientId, input, request.requestId, identityFromRequest(request));
   }
 
+  @Roles('ADMIN')
   @Post(':clientId/deactivate')
   @HttpCode(HttpStatus.OK)
   deactivate(@Param('clientId') clientId: string, @Req() request: AuthenticatedRequest) {
@@ -51,6 +57,7 @@ export class ClientsController {
     return this.clients.deactivate(clientId, request.requestId, identityFromRequest(request));
   }
 
+  @Roles('ADMIN')
   @Post(':clientId/reactivate')
   @HttpCode(HttpStatus.OK)
   reactivate(@Param('clientId') clientId: string, @Req() request: AuthenticatedRequest) {

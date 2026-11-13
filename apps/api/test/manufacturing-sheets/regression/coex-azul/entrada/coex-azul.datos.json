@@ -1,0 +1,67 @@
+{
+  "caso": "coex-azul-excel",
+  "formato": "COEXTRUSION",
+  "variante": "COEX_AZUL",
+  "nota": "Caso de referencia de COEX Azul con SOLO valores comprobados en la pestaña «COEX Azul» del Excel original. Vacíos (el Excel no los da): cliente, fecha, código DCMX, descripción y etiqueta. Firmas: marcadores SIN FIRMA. No es una línea base de píxeles.",
+  "datos": {
+    "sufijo_titulo": " - COEXTRUSIÓN",
+    "cliente": "",
+    "fecha_": "",
+    "producto": "Bolsa Con Fuelle - 20% de material reciclado",
+    "color": "AZUL",
+    "codigo": "",
+    "descripcion": "",
+    "cantidad": "150 Bolsas",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "51.2\"",
+    "largo": "31.5\"",
+    "fuelle_derecho": "11.8\"",
+    "fuelle_izquierdo": "11.8\"",
+    "calibre": "2.5 MIL",
+    "peso_capa_interior": "0.13097",
+    "peso_capa_intermedia": "0.13097",
+    "peso_capa_exterior": "0.13097",
+    "resina_capa_interior": "VCI PMG al 4%",
+    "resina_capa_intermedia": "VCI PMG al 2%",
+    "resina_capa_exterior": "SIN VCI",
+    "resaltar_resina_capa_interior": "SI",
+    "resaltar_resina_capa_intermedia": "SI",
+    "resaltar_resina_capa_exterior": "SI",
+    "lb_vci_interior": "0.005239",
+    "lb_vci_intermedia": "0.002619",
+    "lb_vci_exterior": "0",
+    "peso_bolsa_lb": "0.3929",
+    "etiqueta": ""
+  },
+  "visual": {
+    "color_capa_interior": "#376092",
+    "color_capa_intermedia": "#95B3D7",
+    "color_capa_exterior": "#C6D9F1",
+    "color_bolsa_hex": "#558ED5",
+    "color_cotas_internas_hex": "#FFFFFF"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  },
+  "procedencia_colores": {
+    "cuerpo #558ED5": "celdas combinadas D29:H40 de la pestaña «COEX Azul»: color de tema dk2 (#1F497D) con tint +0.4; con el tema de este Excel el cálculo da #558ED5 (en COEX Verde el mismo relleno es explícito, #00B050)",
+    "capa interior #376092": "forma «Arco de bloque 8»: accent1 (#4F81BD) lumMod 75 %",
+    "capa intermedia #95B3D7": "forma «Arco de bloque 9»: accent1 lumMod 60 % + lumOff 40 %",
+    "capa exterior #C6D9F1": "forma «Arco de bloque 10»: tx2/dk2 lumMod 20 % + lumOff 80 %",
+    "barra inferior #244062": "celdas combinadas C41:I41: accent1 más oscuro 50 % (barra fija de la geometría COEX; sobresale por ambos lados del cuerpo)",
+    "criterio de conversión": "HLS en coma flotante (colorsys): lumMod/lumOff → L'=L·mod+off; tint>0 → L'=L·(1-tint)+tint. Reproduce el exterior de COEX Verde (#D7E4BD). Puede diferir ±1-2 niveles RGB de la paleta de Office (#538DD5, #366092, #C5D9F1), que se conservan como referencia visual.",
+    "referencias visuales (no usadas)": {
+      "cuerpo": "#538DD5",
+      "capa interior": "#366092",
+      "capa exterior": "#C5D9F1"
+    },
+    "cotas internas #FFFFFF": "DECISIÓN DE LEGIBILIDAD autorizada para la versión digital (no es el color del Excel): las flechas horizontales dentro del cuerpo pasan a blanco sobre #558ED5. El Excel original usa #4A7EBB (estilo de conector accent1 por defecto, el mismo de COEX Verde). No afecta valores numéricos ni especificaciones de manufactura; las flechas externas de ancho y largo siguen en #4A7EBB.",
+    "cotas internas (color original del Excel) #4A7EBB": "conectores 4 y 5: estilo lnRef accent1 por defecto; se conserva solo como referencia del original"
+  }
+}

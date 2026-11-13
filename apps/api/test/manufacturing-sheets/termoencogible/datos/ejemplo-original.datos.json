@@ -1,0 +1,38 @@
+{
+  "caso": "ejemplo-original",
+  "formato": "TERMOENCOGIBLE",
+  "esperado": "valido",
+  "modalidad": "DOBLADA",
+  "nota": "Valores visibles en el Excel: ROLLO VCI + UV TERMOENCOGIBLE, Resina NA, PMG = X, Rollo = X, Doblada = X, Metros (m), 6 x 30 metros, 8 MIL; cotas 1.60 y 0.70 mts; presentación final 30 x 1.60 metros. Cliente, fecha, color, código, descripción, peso y etiqueta quedan vacíos (no hay valores completos en la referencia).",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "",
+    "fecha_": "",
+    "resina_vci": "NA",
+    "producto": "ROLLO VCI + UV TERMOENCOGIBLE",
+    "color": "",
+    "codigo": "",
+    "descripcion": "",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "Metros (m)",
+    "ancho": "6 metros",
+    "largo": "30 metros",
+    "calibre": "8 MIL",
+    "peso_bolsa_lb": "",
+    "etiqueta": "",
+    "ancho_doblado": "1.60 mts",
+    "medida_pliegue": "0.70 mts",
+    "largo_presentacion_final": "30 metros",
+    "ancho_presentacion_final": "1.60 metros"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

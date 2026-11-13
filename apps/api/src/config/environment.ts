@@ -55,6 +55,17 @@ export interface EnvironmentConfig {
     url: string | null;
     token: string | null;
   };
+  // Fase 2 de manufactura: cliente de solo lectura de BIND ERP (https://api.bind.com.mx). Opcional como las demás integraciones: sin BIND_API_KEY la consulta de
+  // productos informa NOT_CONFIGURED en tiempo de llamada y nunca bloquea el arranque. Las claves viven solo en variables de entorno del backend: no se registran
+  // en logs, no se devuelven en ninguna respuesta y no van al frontend ni al repositorio. Solo HTTPS y solo hosts *.bind.com.mx.
+  bind: {
+    baseUrl: string;
+    apiKey: string | null;
+    subscriptionKey: string | null;
+  };
+  // Manufactura (hojas de manufactura): habilitación EXPLÍCITA por entorno. Se resuelve con resolveManufacturing() a partir de la base configurada
+  // (daubert_hub_test => PRUEBA, daubert_global => PRODUCCION) y de MANUFACTURING_ENABLED / MANUFACTURING_EMISSION_ENV. Ver docs/hub/manufactura-habilitacion-produccion.md.
+  manufacturing: ManufacturingAccess;
   // Hub -> n8n availability check (GET /api/system/status). Optional like the other n8n webhook
   // configs: missing values report NOT_CONFIGURED at call time, never a boot-time crash. Never
   // logged, never returned in any API response.
@@ -78,6 +89,62 @@ function port(value: string | undefined, name: string, fallback?: number): numbe
     throw new Error(`Environment variable ${name} must be an integer between 1 and 65535`);
   }
   return parsed;
+}
+
+const DEFAULT_BIND_API_BASE_URL = 'https://api.bind.com.mx';
+
+function bindBaseUrl(value: string | undefined): string {
+  const raw = value?.trim() || DEFAULT_BIND_API_BASE_URL;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('Environment variable BIND_API_BASE_URL must be a valid URL');
+  }
+  // Nunca HTTP sin TLS ni un host ajeno a BIND (el destino de las credenciales no puede cambiarse por configuración).
+  if (url.protocol !== 'https:' || !(url.hostname === 'bind.com.mx' || url.hostname.endsWith('.bind.com.mx')) || url.username || url.password || url.port) {
+    throw new Error('Environment variable BIND_API_BASE_URL must be an https://*.bind.com.mx URL without credentials or port');
+  }
+  return url.origin;
+}
+
+export type ManufacturingEmission = 'PRUEBA' | 'PRODUCCION';
+export interface ManufacturingAccess {
+  /** true solo si el módulo puede responder en este entorno. */
+  enabled: boolean;
+  /** Entorno de emisión que corresponde a la base configurada; null si la base no es ninguna de las dos conocidas. */
+  emission: ManufacturingEmission | null;
+}
+
+const MANUFACTURING_TEST_DATABASE = 'daubert_hub_test';
+const MANUFACTURING_PRODUCTION_DATABASE = 'daubert_global';
+
+/**
+ * Habilitación de Manufactura. TEST y PROD están separados por construcción:
+ * - `daubert_hub_test`: habilitado por omisión (comportamiento histórico); MANUFACTURING_ENABLED=false lo apaga. Nunca admite MANUFACTURING_EMISSION_ENV=PRODUCCION.
+ * - `daubert_global`: APAGADO por omisión. Para encenderlo hacen falta DOS declaraciones explícitas: MANUFACTURING_ENABLED=true y MANUFACTURING_EMISSION_ENV=PRODUCCION.
+ * - cualquier otra base: siempre apagado; pedir MANUFACTURING_ENABLED=true ahí impide el arranque (no se adivina el entorno de emisión).
+ * Una combinación contradictoria detiene el arranque en lugar de operar con el entorno equivocado.
+ */
+export function resolveManufacturing(databaseName: string, env: Record<string, string | undefined>): ManufacturingAccess {
+  const name = databaseName.trim().toLowerCase();
+  // Vacío = no declarado (compose pasa las variables aunque no tengan valor).
+  const flag = env.MANUFACTURING_ENABLED?.trim() ? booleanFlag(env.MANUFACTURING_ENABLED, 'MANUFACTURING_ENABLED', false) : undefined;
+  const declared = env.MANUFACTURING_EMISSION_ENV?.trim();
+  if (declared !== undefined && declared !== '' && declared !== 'PRUEBA' && declared !== 'PRODUCCION') {
+    throw new Error('Environment variable MANUFACTURING_EMISSION_ENV must be exactly "PRUEBA" or "PRODUCCION"');
+  }
+  if (name === MANUFACTURING_TEST_DATABASE) {
+    if (declared === 'PRODUCCION') throw new Error('MANUFACTURING_EMISSION_ENV=PRODUCCION is not allowed with the TEST database');
+    return { enabled: flag ?? true, emission: 'PRUEBA' };
+  }
+  if (name === MANUFACTURING_PRODUCTION_DATABASE) {
+    if (declared === 'PRUEBA') throw new Error('MANUFACTURING_EMISSION_ENV=PRUEBA is not allowed with the production database');
+    if (flag === true && declared !== 'PRODUCCION') throw new Error('MANUFACTURING_ENABLED=true on the production database also requires MANUFACTURING_EMISSION_ENV=PRODUCCION');
+    return { enabled: flag === true, emission: 'PRODUCCION' };
+  }
+  if (flag === true) throw new Error('MANUFACTURING_ENABLED=true is only allowed with the TEST or the production database');
+  return { enabled: false, emission: null };
 }
 
 function booleanFlag(value: string | undefined, name: string, fallback: boolean): boolean {
@@ -130,6 +197,12 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
       url: env.CATERPILLAR_REPROCESS_WEBHOOK_URL?.trim() || null,
       token: env.CATERPILLAR_REPROCESS_WEBHOOK_TOKEN?.trim() || null
     },
+    bind: {
+      baseUrl: bindBaseUrl(env.BIND_API_BASE_URL),
+      apiKey: env.BIND_API_KEY?.trim() || null,
+      subscriptionKey: env.BIND_SUBSCRIPTION_KEY?.trim() || null
+    },
+    manufacturing: resolveManufacturing(required(env.DB_NAME, 'DB_NAME'), env),
     n8nHealthWebhook: {
       url: env.N8N_HEALTH_WEBHOOK_URL?.trim() || null,
       token: env.N8N_HEALTH_WEBHOOK_TOKEN?.trim() || null

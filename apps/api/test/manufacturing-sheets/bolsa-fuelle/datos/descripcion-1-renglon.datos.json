@@ -1,0 +1,39 @@
+{
+  "caso": "descripcion-1-renglon",
+  "formato": "BOLSA_FUELLE",
+  "nota": "Descripción habitual de un solo renglón (escenario de producción): debe generar una página carta completa con al menos 20 pt libres.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Bolsa Con Fuelle",
+    "color": "AZUL",
+    "codigo": "BFPMG-0042",
+    "descripcion": "Bolsa VCI PMG con fuelles 61 x 70.9 x 24\" Cal. 4 mil",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "100 Bolsas",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "61\"",
+    "largo": "70.9\"",
+    "fuelle_derecho": "24\"",
+    "fuelle_izquierdo": "24\"",
+    "calibre": "4 MIL",
+    "peso_bolsa_lb": "1.2850",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#538DD5",
+    "color_cotas_internas_hex": "#FFFFFF"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  },
+  "esperado": "valido",
+  "renglones_descripcion": 1
+}

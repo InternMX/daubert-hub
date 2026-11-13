@@ -1,0 +1,36 @@
+# Herramientas del ensayo de liberación de Manufactura
+
+Solo para instancias **desechables** (réplica de producción, contenedores locales). Ninguna se conecta a `daubert_global`, a `daubert_hub_test` ni a servicios operativos. Procedimiento completo: `docs/hub/manufactura-ensayo-liberacion.md`.
+
+| Archivo | Uso |
+|---|---|
+| `contar-filas.readonly.sql` | Conteo exacto de filas por tabla (solo lectura). Se ejecuta en el origen y en la réplica; las salidas deben coincidir |
+| `smoke-http.cjs <url> disabled\|enabled` | Comprueba por HTTP, con ADMIN y GENERAL, que las rutas de Manufactura dan 404 (apagada) o responden (habilitada), que los módulos existentes siguen en 200 y los permisos ADMIN/GENERAL. Requiere `ENSAYO_PASSWORD` y los usuarios `admin1@example.invalid` y `g2@example.invalid` (sembrados en la réplica) |
+| `flujo-documento.cjs <url> [salida.pdf]` | Borrador → cliente del catálogo (`empresaId` 1) → finalizar → PDF → entorno de emisión → inmutabilidad → alta de firma de 1.5 MB (útil frente a nginx) |
+| `generar-ocho-formatos.cjs <dist/src> <chrome> <carpeta> [true]` | PDF finalizado de los ocho formatos con el código compilado y el Chrome indicado (el 4.º argumento `true` añade `--no-sandbox`, solo dentro del contenedor) |
+| `comparar_pdfs.py <carpeta_host> <carpeta_contenedor>` | Compara palabra por palabra (PyMuPDF): páginas, texto, desviación de posición y fuentes |
+| `formatos.datos.txt` | Datos de los ocho formatos (copia de `sheet-pdf-sin-leyendas.real.spec.ts`) |
+| `datos-sinteticos-manufactura.cjs` | Genera datos SINTÉTICOS en Manufactura con la API real (se ejecuta dentro del contenedor de la API de la réplica): borradores, revisiones, PDF, firmas, responsables, revisor, descartado, abreviatura. `SOLO_REVISION=1` añade la revisión registrada |
+| `probar-respaldo-rls.cjs` | Respaldo con `daubert_backup` (`--enable-row-security`) → restauración en otra instancia → comparación de filas, hashes, objetos y permisos; controles negativos (respaldo incompleto, escrituras, reversión de la 026) |
+| `huellas-datos.readonly.sql` | MD5 por tabla de todo lo que no es `manufactura` (solo lectura) |
+| `respaldar-daubert-global.ps1` | Respaldo completo de solo lectura de `daubert_global` (lo ejecuta una persona con su contraseña) |
+| `respaldo-rls/enable-row-security.patch` | Parche (NO aplicado) de `scripts/backup`: `pg_dump --enable-row-security` + prueba Pester |
+| `simulador-bind.cjs` | Simulador HTTPS controlado de BIND (producto, inexistente, incompleto, ambiguo, duplicado, 401/429/500/lento/inválido) para réplicas desechables |
+| `validacion-funcional-manufactura.cjs` | Recorrido funcional completo por la pila (borradores, autoguardado, permisos ADMIN/GENERAL, firmas, finalización, PDF, inmutabilidad, revisiones, clientes y abreviaturas, cliente manual, auditoría, integridad, BIND) |
+| `validacion-ocho-formatos.cjs` + `analizar_formatos.py` | Genera y analiza el PDF finalizado de los ocho formatos (páginas, tamaño, texto, firmas, leyendas, registro en la base) |
+| `cdp.cjs` + `validacion-navegador.cjs` | Chrome real por DevTools Protocol (sin dependencias nuevas): recorrido ADMIN y GENERAL con capturas |
+| `verificar-respaldo-manufactura.cjs` | Controles de integridad de un respaldo posterior a la liberación (catálogo y restauración de prueba sin red) |
+| `comprobar-bind-real.cjs` | Comprobación de solo lectura contra BIND REAL vía la API del Hub (NO ejecutada; para una etapa posterior) |
+| `ensayo-compuerta-real.ps1` | Ensayo de la compuerta de database/ con git real y el manifiesto real, sobre un CLON aislado (13 escenarios positivos y negativos, incluida la 025 de Caterpillar) |
+| `ensayo-migraciones-manufactura.ps1` | Ensayo de `scripts/deploy/Invoke-ManufacturaMigrations.ps1` contra PostgreSQL desechable y un clon (negativos, etapas, fallo seguro, aplicación completa y repetición) |
+| `ensayo-despliegue/` | Ensayo 6C.2: override de Compose, variables sinteticas y `probar-pgdump-modulo.ps1` para ensayar despliegue/reversion en un entorno aislado (ver `docs/hub/manufactura-ensayo-6c2-despliegue.md`) |
+| `ensayo-ventana-respaldos.ps1` | Ensayo 6C.3 de la secuencia coordinada respaldo previo → pausa de tareas (simulada) → parche → migraciones → readiness → respaldo nuevo comprobado → reanudación, con escenarios negativos. Solo clones e instancias desechables |
+| `sondas-nginx-manufactura.cjs <url> abierto\|cerrado` | Comprueba el límite de 3 MB solo en la ruta exacta de firmas (abierto) y el bloqueo 503 de toda escritura de Manufactura (cerrado) |
+| `finalizar-hoja.cjs <url> <codigo> exito\|fallo [revision]` | Crea y finaliza una hoja; en modo `fallo` (Chromium inutilizado) comprueba que no queda finalizada ni bloqueada y que los PDF ya emitidos se siguen descargando |
+| `limites-firmas.cjs <url> abierto\|cerrado <contenedor-pg>` | Límites de la carga de firmas por separado: nginx (3 MB solo en la ruta exacta) y API (2 MB); en cerrado, 503 y ninguna fila nueva |
+| `verificar-artefacto-cifrado.ps1` | Comprobación del ARTEFACTO FINAL de un respaldo (`.age`): sidecar, descifrado con la identidad que indique el custodio, desempaquetado, restauración aislada y borrado del texto plano. Lo ejecuta el custodio autorizado en una estación de recuperación |
+| `ensayo-respaldo-cifrado.ps1` | Ensayo 6D del ciclo completo con el pipeline real de un clon y claves age DESECHABLES (positivos y negativos); nunca usa claves, configuración ni destinos operativos |
+| `comparar_formatos_originales.py <originales> <generados> <salida>` | Material de revisión visual de los ocho formatos (Fase 6E): lámina original/generado, mediciones y ficha de aprobación por formato. No decide la aprobación |
+| `diagnostico-test-solo-lectura.ps1 [-EnvFile]` | Diagnóstico de solo lectura de `daubert_hub_test` (catálogo de manufactura 101–105, cuentas, clientes); sesión forzada a solo lectura; no imprime la contraseña |
+| `test-demo/` | Fase 6F: override de Compose de TEST (loopback, imágenes fijas), entorno de aislamiento para la demostración (sin secretos) y validación funcional corta con las cuentas de demostración |
+| `limpieza-demo-6F/` | Limpieza SELECTIVA de los recursos de la demostración 6F en daubert_hub_test (PREVIEW sin persistencia + DELETE con identificadores exactos, huellas independientes de la zona horaria, 8 triggers restaurados y cuentas desactivadas, no borradas). Ensayada sobre una copia restaurada: 14 negativos abortan sin cambios |

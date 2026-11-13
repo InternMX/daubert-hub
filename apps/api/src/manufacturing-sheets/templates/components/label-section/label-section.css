@@ -1,0 +1,4 @@
+    /* Dibujo Bolsa (C:I) y Etiqueta (B:I): misma cuadrícula B:I de la tabla general. */
+    /* Franja azul claro de B a K en una sola celda (sin costuras); los paddings (ancho de B y de J:K) mantienen el texto centrado en C:I. */
+    .titulo-dibujo { font-weight: bold; padding-left: 15.350%; padding-right: 18.846%; }
+    .etiqueta-seccion { border: 0; background: var(--rosa); font-size: var(--fs-etiqueta); height: 27.3pt; padding: 1px 6px; }  /* medido en el PDF original */

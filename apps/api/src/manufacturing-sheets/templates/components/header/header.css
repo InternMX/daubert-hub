@@ -1,0 +1,7 @@
+    /* Encabezado según el PDF original (puntos desde el borde de la página; el padding superior de .hoja es 39.6 pt):
+       logotipo x 23.35-207.17, y 68.07-110.64 (183.82 x 42.57 pt); título x 226-403, y 73-107; tablas desde y = 122.5.
+       Columna del logotipo 207.5 pt (hasta x = 226) y columna del título 177 pt. */
+    .encabezado { display: grid; grid-template-columns: 207.5pt 177pt; align-items: center; padding: 28.47pt 0 11.86pt; }
+    .logo { display: block; width: 183.82pt; height: 42.57pt; margin-left: 4.85pt; }
+    .titulo { text-align: center; font-size: var(--fs-titulo); font-weight: 400; line-height: 1.14; }
+    .titulo span { display: block; white-space: nowrap; }
