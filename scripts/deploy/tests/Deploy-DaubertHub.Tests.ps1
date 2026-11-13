@@ -1035,6 +1035,32 @@ Describe 'Compuerta con manifiesto de database/ (-DatabaseManifest): autoriza ex
         (Invoke-Main -D $true -Opt $opt) | Should Be 1
         (Get-PrintedText) | Should Match 'no esperados'
     }
+
+    # Integracion con la Fase 2B (-RequireSynchronizedMain): ambas compuertas se aplican juntas y la revalidacion posterior a la confirmacion vuelve a exigir el manifiesto.
+    It 'con -RequireSynchronizedMain el conjunto legitimo del manifiesto se despliega con el SHA completo y revalida tras confirmar' {
+        $opt = $script:ManOpt.Clone(); $opt.RequireSynchronizedMain = $true
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 0
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
+        Assert-MockCalled Read-DeployManifest -Scope It -Times 2 -Exactly
+        (($script:Mutations | ForEach-Object { $_.Args -join ' ' }) -join '|') | Should Match 'up -d --build api web'
+    }
+
+    It 'con -RequireSynchronizedMain una migracion modificada mientras el operador confirma bloquea en la revalidacion' {
+        $opt = $script:ManOpt.Clone(); $opt.RequireSynchronizedMain = $true
+        Mock Read-DeployConfirmation { $script:Fake.Blobs[$script:ProdFiles[1]] = 'blob-cambiado'; 'DEPLOY DAUBERT HUB' }
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'revalidacion posterior a la confirmacion fallo'
+        $script:Mutations.Count | Should Be 0
+    }
+
+    It 'con -RequireSynchronizedMain un manifiesto valido no sustituye a la main sincronizada (rama distinta bloquea antes del preflight)' {
+        $opt = $script:ManOpt.Clone(); $opt.RequireSynchronizedMain = $true
+        $script:Fake.Branch = 'integ/manufactura'
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1
+        (Get-PrintedText) | Should Match 'se exige main limpia'
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
+        $script:Mutations.Count | Should Be 0
+    }
 }
 
 Describe 'Imagenes validadas (-UseValidatedImages): se despliegan exactamente las imagenes construidas y verificadas, sin reconstruir' {
