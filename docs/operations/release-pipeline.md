@@ -36,6 +36,11 @@ La acción rechaza una referencia base que no sea hexadecimal, un commit no ance
 
 La clasificación usa **rutas modificadas**; no analiza el contenido de SQL ni compara workflows vivos con exports. Puede ser más restrictiva de lo necesario, nunca un permiso automático para PROD.
 
+Para el PR #25 preparatorio de recuperación Caterpillar, revisar antes de fusionar
+el [impacto sobre el próximo release](../automations/caterpillar/safe-folio-recovery-cicd-integration-2026-11.md):
+SQL exclusivo de TEST y borradores n8n también bloquean el orquestador, aunque los
+flags estén apagados; no califican como «ya aplicados en PROD».
+
 ## Qué sigue fuera de alcance
 
 - Promoción, importación o activación de workflows de n8n (TEST y PROD comparten instancia `:5678`, pero tienen workflows separados).
