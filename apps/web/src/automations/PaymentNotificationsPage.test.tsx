@@ -877,13 +877,13 @@ describe('PaymentNotificationsPage', () => {
       const callsAfterMount = listMock.mock.calls.length;
 
       setViewportWidth(VIEWPORT_MD_TO_LG);
-      expect(detailColumnDisplays()).toEqual(COMPACT); // md..<lg + expanded: compact
+      await waitFor(() => expect(detailColumnDisplays()).toEqual(COMPACT)); // md..<lg + expanded: compact
 
       setViewportWidth(VIEWPORT_BELOW_MD);
-      expect(detailColumnDisplays()).toEqual(COMPACT); // <md: compact regardless
+      await waitFor(() => expect(detailColumnDisplays()).toEqual(COMPACT)); // <md: compact regardless
 
       setViewportWidth(VIEWPORT_AT_LEAST_LG);
-      expect(detailColumnDisplays()).toEqual(FULL); // back to >=lg: full again
+      await waitFor(() => expect(detailColumnDisplays()).toEqual(FULL)); // back to >=lg: full again
 
       expect(listMock.mock.calls.length).toBe(callsAfterMount);
     });

@@ -1,0 +1,7 @@
+{
+  "operation": "executeQuery",
+  "query": "={{ (() => { if ($json.recovery_request_id) { throw new Error('CAT_RECOVERY_LIVE_E2E_NOT_APPROVED'); } return ($json.reproceso_de_id ? 'SELECT * FROM ops.fn_reprocesar_reservar_caterpillar_test($1::bigint,$2::text,$3::text,$4::integer);' : 'SELECT * FROM ops.fn_admitir_reservar_caterpillar_test($1::bigint,$2::text,$3::text,$4::integer);'); })() }}",
+  "options": {
+    "queryReplacement": "={{ [ $json.reproceso_de_id || $json.documento_origen_id, String($execution.id), $json.serie_codigo, $json.cantidad ] }}"
+  }
+}
