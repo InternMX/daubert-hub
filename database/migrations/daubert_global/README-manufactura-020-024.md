@@ -13,6 +13,12 @@
 
 Los archivos PROD los produce `tools/generar-manufactura-prod.cjs` con sustituciones **explícitas y contadas** (si una no ocurre el número esperado de veces, falla). El diff contra TEST es la revisión: base `daubert_global`, rol `daubert_hub_app`, **`entorno_emision = 'PRODUCCION'`** (valor por defecto, CHECK y trigger), textos «TEST/PRUEBA», guarda inversa del precheck (aborta en `daubert_hub_test`), lista de roles que no deben tener acceso (en PROD el «otro» rol es `daubert_hub_test_user`), conteos del postcheck 020 (`>=` en lugar de `=`: con la aplicación en línea pueden aparecer filas de inicio de sesión/auditoría; la migración no escribe ninguna) y **frases de confirmación de DOWN explícitas de producción**. Los `smoke` de TEST se generan solo en `replica_only/` (escriben, aunque dentro de un ROLLBACK, y necesitan usuarios sintéticos): **se niegan a correr si no existe el esquema `replica_desechable`**.
 
+**Correcciones que en TEST llegaron como migraciones incrementales** (la 101 aplicada no se modifica) y que la 020 incorpora porque aún no está aplicada; el generador las aplica con sustituciones contadas, igual que las demás:
+- TEST **106** · «Generó» opcional al finalizar (restricción de coherencia de `revisiones`).
+- TEST **107** · `manufactura.fn_nombre_pdf`: la revisión tiene dos dígitos como mínimo y nunca se trunca (`REV100`, `REV105`), igual que `nombreArchivoFinalizado()` de la API. Contrato completo en `../daubert_hub_test/README-107.md`.
+
+> **Condición previa a aplicar en PROD.** El repositorio documenta que la 020 está preparada y **no aplicada**, pero eso no demuestra el estado actual de `daubert_global` (no se consultó PROD). Antes de aplicar, un operador autorizado debe verificar que `manufactura` **no existe** (el precheck de la 020 lo exige). Si la 020 ya estuviera instalada, **no** se reaplica ni se sustituye retrospectivamente: se prepara una migración productiva incremental equivalente a la 107 de TEST (solo `CREATE OR REPLACE` del cuerpo de `fn_nombre_pdf`, con sus comprobaciones y la misma restricción de reversión).
+
 ### 1.1 Numeración (revisada el 2026-11-05 contra el árbol real de migraciones)
 La serie `NNN` es **global** a TEST y PROD. En `main` (v1.1.0+) ya existen, para `daubert_global`: 009, 010, 011, 012 (asignación de archivos de pago), 013 (cancelación Caterpillar / resolución de pagos), 014, 015, 016 (admisión atómica Caterpillar / resolución de pagos), 017, 018 y 019 (recuperación de pagos); las más recientes versionadas llegan a la **019**. Por eso los números **012–016 propuestos al inicio chocaban con la serie existente** (los nombres de archivo no coincidían, pero el número sí) y las migraciones de Manufactura quedaron como **020–024**. El inventario de `daubert_global` del 2026-11-05 muestra objetos de varias de ellas (p. ej. recuperaciones de pago y cancelaciones/autorizaciones de regeneración de Caterpillar). **Confirmar con el directorio externo del operador que no existe una 020 o posterior no versionada** antes de aplicar.
 
@@ -84,7 +90,7 @@ Interrumpa y no continúe si: (a) algún precheck tiene un `f`; (b) un UP falla 
 ae9aeb0f778148b7b643812d643179fa4f364a4c78c9ff0f0818af64e57441e1  20261108_020_manufactura_gestor_documental_prod.down.sql
 e99f28210ad4070b6f004287265a4aef04e663d5867d25456931228ad8837bd8  20261108_020_manufactura_gestor_documental_prod.postcheck.sql
 49ddf21a5b21bf99c6abbf288891426fd6ecce77a40fbc94d93f701cf97d379f  20261108_020_manufactura_gestor_documental_prod.precheck.sql
-fd7285ac952213eb9138ba35f8578c5168cc21d2bc8b966a0ac4f115038885c8  20261108_020_manufactura_gestor_documental_prod.up.sql
+d7aa30388446e511238e5ac5838a66ccfed6004920a646da2c5acae211695e37  20261108_020_manufactura_gestor_documental_prod.up.sql
 8bf0ae50ec878ba1ccb86c0c448a7732f7a083505abdfb8a17073025f8ff3e31  20261108_021_manufactura_responsables_firmas_prod.down.sql
 0440dfb1a3fb31f306c35016f8cde4b928589f47117e6c8a2662848b0358f6c5  20261108_021_manufactura_responsables_firmas_prod.postcheck.sql
 9318d023eba7d33011900fdfdd4e844bff05725fa9b9d6d680b4dd0551f641cf  20261108_021_manufactura_responsables_firmas_prod.precheck.sql

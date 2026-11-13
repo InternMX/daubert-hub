@@ -39,6 +39,19 @@ const LECTOR_RESPALDOS = (ind) => ind + "COALESCE((SELECT bool_and(\n" +
   ind + "    AND NOT EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE n.nspname = 'manufactura' AND a.grantee = b.oid)\n" +
   ind + "  ) FROM pg_roles b WHERE b.rolname = 'daubert_backup'), true)";
 
+// ---- Correcciones de la 101 que en TEST llegaron como migraciones INCREMENTALES (la 101 aplicada no se modifica) y que en PROD van en la propia 020 (aún no aplicada).
+// TEST 106 · «Generó» opcional al finalizar (misma redacción que la 020 versionada en f36a874).
+const GENERO_101 = {
+  columna: "  elaboro_confirmado         boolean NOT NULL DEFAULT false,-- confirmación expresa: obligatoria para finalizar\n",
+  columna020: "  elaboro_confirmado         boolean NOT NULL DEFAULT false,-- confirmación expresa: obligatoria para finalizar si hay nombre (el nombre de «Generó» es opcional)\n",
+  coherencia: "                              AND cliente_nombre IS NOT NULL AND elaboro_nombre IS NOT NULL AND elaboro_confirmado\n",
+  coherencia020: "                              AND cliente_nombre IS NOT NULL AND (elaboro_nombre IS NULL OR elaboro_confirmado)   -- «Generó» es opcional; si se indica, queda confirmado\n"
+};
+// TEST 107 · nombre del PDF finalizado: la revisión tiene DOS dígitos como MÍNIMO y nunca se trunca (lpad(…, 2) convertía 100 en «10»). Solo cambia el cuerpo de manufactura.fn_nombre_pdf.
+const NOMBRE_PDF_CUERPO_101 = " SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, 2, '0') || '.pdf' ";
+const NOMBRE_PDF_CUERPO_107 = " SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, greatest(2, length(p_revision::text)), '0') || '.pdf' ";
+const NOMBRE_PDF_DEF = (cuerpo) => "CREATE FUNCTION manufactura.fn_nombre_pdf(p_codigo text, p_variante text, p_revision integer) RETURNS text\nLANGUAGE sql IMMUTABLE SET search_path = pg_catalog\nAS $fn$" + cuerpo + "$fn$;\n";
+
 const errores = [];
 function sub(texto, desde, hacia, { min = 1, max = Infinity, etiqueta, archivo }) {
   let n = 0;
@@ -82,6 +95,11 @@ function transformar(texto, tipo, m) {
     t = sub(t, "NEW.entorno_emision := 'PRUEBA'", "NEW.entorno_emision := 'PRODUCCION'", o(1, 1, 'trigger entorno'));
     t = sub(t, '(permitido en TEST)', '(permitido)', o(1, 1));
     t = sub(t, 'autorrevisión permitida en TEST, con constancia', 'autorrevisión permitida, con constancia', o(1, 1));
+    // Equivalente de la 106 de TEST («Generó» opcional): la 020 nace ya con la restricción corregida.
+    t = sub(t, GENERO_101.columna, GENERO_101.columna020, o(1, 1, 'comentario elaboro_confirmado (106)'));
+    t = sub(t, GENERO_101.coherencia, GENERO_101.coherencia020, o(1, 1, 'coherencia FINALIZADA: «Generó» opcional (106)'));
+    // Equivalente de la 107 de TEST: SOLO la definición de manufactura.fn_nombre_pdf (revisión sin truncar).
+    t = sub(t, NOMBRE_PDF_DEF(NOMBRE_PDF_CUERPO_101), NOMBRE_PDF_DEF(NOMBRE_PDF_CUERPO_107), o(1, 1, 'fn_nombre_pdf: revisión sin truncar (107)'));
   }
   if (m.n === '104' && tipo === 'up') {
     t = sub(t, 'ya lo tiene en TEST (la API de clientes lo usa)', 'ya lo tiene en producción (la API de clientes lo usa)', o(1, 1));

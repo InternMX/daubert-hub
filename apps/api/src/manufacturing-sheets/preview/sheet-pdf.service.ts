@@ -23,9 +23,16 @@ export const NOMBRE_GENERICO = 'HOJA_SIN_CODIGO';
  * rechaza lo que no es un código válido (espacios, separadores de ruta, caracteres de control…), lo que se completa con un nombre genérico en vez de «arreglarlo».
  */
 export function codigoDcmxSeguro(codigo: string | undefined): string | null {
+  const c = codigoDcmxValido(codigo);
+  if (c === null) return null;
+  return NOMBRES_RESERVADOS_WINDOWS.test(c) ? `_${c}` : c;                             // el nombre del BORRADOR es `<código>.pdf`: CON.pdf sería un dispositivo en Windows
+}
+
+/** Código DCMX validado y conservado TAL CUAL (sin protección de nombres reservados), o null si falta o no es válido. */
+function codigoDcmxValido(codigo: string | undefined): string | null {
   const c = (codigo ?? '').trim();
   if (!CODIGO_DCMX.test(c) || /^[.-]+$/.test(c) || c.startsWith('.')) return null;      // sin archivos ocultos ni nombres solo de puntuación
-  return NOMBRES_RESERVADOS_WINDOWS.test(c) ? `_${c}` : c;
+  return c;
 }
 
 /** Variante en forma de nombre de archivo: mayúsculas, solo [A-Z0-9-] (misma regla que `manufactura.fn_nombre_pdf` en la base). */
@@ -35,13 +42,17 @@ export function varianteParaArchivo(variante: string | null | undefined): string
   return v.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').toUpperCase() || null;
 }
 
-/** Nombre del PDF FINALIZADO: `CODIGO-VARIANTE_REV01.pdf`, o `CODIGO_REV01.pdf` sin variante. Coincide EXACTAMENTE con `manufactura.fn_nombre_pdf` (la base lo exige). */
+/**
+ * Nombre del PDF FINALIZADO: `CODIGO[-VARIANTE]_REVNN.pdf` (revisión con dos dígitos como mínimo, sin truncar: REV01, REV99, REV100). Coincide EXACTAMENTE con `manufactura.fn_nombre_pdf`
+ * (la base lo exige al registrar el PDF). El código documental se conserva tal cual: `CON_REV01.pdf` no es un nombre reservado de Windows (lo sería `CON.pdf`), así que aquí no se antepone `_`.
+ */
 export function nombreArchivoFinalizado(codigo: string, variante: string | null | undefined, revision: number): string {
-  const seguro = codigoDcmxSeguro(codigo);
-  if (seguro === null) throw new Error('El código DCMX no es válido para nombrar el PDF.');
+  const valido = codigoDcmxValido(codigo);
+  // Misma regla que ck_manufactura_documentos_codigo: tampoco empieza por «-» (un documento así no puede existir en la base).
+  if (valido === null || valido.startsWith('-')) throw new Error('El código DCMX no es válido para nombrar el PDF.');
   if (!Number.isInteger(revision) || revision < 1) throw new Error('Revisión no válida.');
   const v = varianteParaArchivo(variante);
-  return `${seguro}${v ? `-${v}` : ''}_REV${String(revision).padStart(2, '0')}.pdf`;
+  return `${valido}${v ? `-${v}` : ''}_REV${String(revision).padStart(2, '0')}.pdf`;
 }
 
 /** `<CODIGO_DCMX>.pdf`, o un nombre genérico seguro si no hay un código válido. */
