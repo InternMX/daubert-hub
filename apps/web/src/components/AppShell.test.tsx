@@ -243,53 +243,136 @@ describe('AppShell sidebar', () => {
   });
 });
 
-describe('AppShell version footer', () => {
-  it('renders the discreet "vX.Y.Z" version near the bottom of the expanded sidebar', async () => {
-    mockWideViewport(true);
-    mockHealth('TEST', '0.8.0-pilot.1', 'a1b2c3d');
-
-    renderShell();
-
-    expect(await screen.findByText('v0.8.0-pilot.1')).toBeInTheDocument();
-    // Never prominent — the raw commit SHA must not appear as visible text.
-    expect(screen.queryByText('a1b2c3d')).not.toBeInTheDocument();
+describe('AppShell system information in the account menu', () => {
+  const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand');
+  afterEach(() => {
+    if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand);
+    else Reflect.deleteProperty(document, 'execCommand');
   });
 
-  it('exposes "vX.Y.Z · commit" only via tooltip, not in the visible UI', async () => {
+  it.each([
+    ['PRODUCTION', true], ['PRODUCTION', false], ['TEST', true], ['TEST', false]
+  ] as const)('shows and copies %s metadata with wide=%s, without another health request or version indicator', async (environment, wide) => {
     const user = userEvent.setup();
-    mockWideViewport(true);
-    mockHealth('TEST', '0.8.0-pilot.1', 'a1b2c3d');
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    mockWideViewport(wide);
+    const commit = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+    mockHealth(environment, '1.1.1', commit);
     renderShell();
-    const versionText = await screen.findByText('v0.8.0-pilot.1');
+    expect(screen.queryByText('1.1.1')).not.toBeInTheDocument();
 
-    await user.hover(versionText);
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('heading', { name: 'Información del sistema' })).toBeInTheDocument();
+    expect(within(menu).getByText(environment)).toBeInTheDocument();
+    expect(screen.getAllByText('1.1.1')).toHaveLength(1);
+    expect(screen.queryByText('v1.1.1')).not.toBeInTheDocument();
+    expect(within(menu).getByText(commit)).toBeInTheDocument();
+    expect(writeText).not.toHaveBeenCalled();
 
-    expect(await screen.findByRole('tooltip', { name: 'v0.8.0-pilot.1 · a1b2c3d' })).toBeInTheDocument();
+    await user.click(within(menu).getByRole('menuitem', { name: 'Copiar información del sistema' }));
+    expect(writeText).toHaveBeenCalledWith(`Daubert Hub\nEntorno: ${environment}\nVersión: 1.1.1\nCommit: ${commit}`);
+    expect(await screen.findByText('Información del sistema copiada.')).toHaveAttribute('role', 'status');
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('link', { name: 'Proveedores' }));
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    expect(screen.queryByText('Información del sistema copiada.')).not.toBeInTheDocument();
+    expect(getHealth).toHaveBeenCalledTimes(1);
   });
 
-  it('hides the version entirely while the sidebar is collapsed, and the sidebar remains otherwise usable', async () => {
+  it('updates an already open menu when the existing health request finishes', async () => {
     const user = userEvent.setup();
-    mockWideViewport(true);
-    mockHealth('TEST', '0.8.0-pilot.1', 'a1b2c3d');
+    let resolveHealth: (health: Awaited<ReturnType<typeof getHealth>>) => void = () => undefined;
+    vi.mocked(getHealth).mockReturnValue(new Promise((resolve) => { resolveHealth = resolve; }));
     renderShell();
-    await screen.findByText('v0.8.0-pilot.1');
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    expect(screen.getByText('Consultando información del sistema…')).toHaveAttribute('role', 'status');
+    expect(screen.getByRole('menuitem', { name: 'Copiar información del sistema' })).toHaveAttribute('aria-disabled', 'true');
 
-    await user.click(screen.getByRole('button', { name: 'Contraer menú' }));
-
-    expect(shell()).toHaveAttribute('data-sidebar-collapsed', 'true');
-    expect(screen.queryByText('v0.8.0-pilot.1')).not.toBeInTheDocument();
-    // Collapsed sidebar remains fully usable: navigation and logout still work.
-    expect(screen.getByRole('link', { name: 'Inicio' })).toBeInTheDocument();
+    await act(async () => resolveHealth({ environment: 'TEST', version: '1.1.1', commit: 'abc1234' }));
+    expect(screen.queryByText('Consultando información del sistema…')).not.toBeInTheDocument();
+    expect(screen.getByText('abc1234')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Copiar información del sistema' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(getHealth).toHaveBeenCalledTimes(1);
   });
 
-  it('renders nothing (no crash, no empty placeholder) when the backend does not report a version', async () => {
-    mockWideViewport(true);
-    mockHealth('TEST', null, null);
+  it('shows unavailable metadata safely after health fails and keeps logout and navigation usable', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getHealth).mockRejectedValue(new Error('private diagnostic not for display'));
+    renderShell('/', { logout });
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    expect(screen.getAllByText('No disponible')).toHaveLength(3);
+    expect(screen.getByRole('menuitem', { name: 'Copiar información del sistema' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.queryByText(/private diagnostic/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Cerrar sesión' }));
+    expect(logout).toHaveBeenCalledTimes(1);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('link', { name: 'Contactos' }));
+    expect(screen.getByText('Contacts page')).toBeInTheDocument();
+  });
 
+  it.each([
+    ['TEST', null, 'abc1234', 1],
+    ['UNKNOWN', null, null, 3],
+    ['PRODUCTION', 'unknown', 'unknown', 2]
+  ] as const)('handles missing metadata for %s without inventing values', async (environment, version, commit, unavailable) => {
+    const user = userEvent.setup();
+    mockHealth(environment, version, commit);
     renderShell();
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    expect(screen.getAllByText('No disponible')).toHaveLength(unavailable);
+    if (environment === 'UNKNOWN') {
+      expect(screen.getByRole('menuitem', { name: 'Copiar información del sistema' })).toHaveAttribute('aria-disabled', 'true');
+    } else {
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+      await user.click(screen.getByRole('menuitem', { name: 'Copiar información del sistema' }));
+      expect(writeText).toHaveBeenCalledWith(`Daubert Hub\nEntorno: ${environment}\nVersión: ${version === 'unknown' || !version ? 'No disponible' : version}\nCommit: ${commit === 'unknown' || !commit ? 'No disponible' : commit}`);
+    }
+  });
 
-    await screen.findByText('PRUEBAS');
-    expect(screen.queryByText(/^v\d/)).not.toBeInTheDocument();
+  it('supports keyboard copying and returns focus to the collapsed account control on Escape', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    mockWideViewport(false);
+    mockHealth('TEST', '1.1.1', 'abc1234');
+    renderShell();
+    const account = screen.getByRole('button', { name: 'Cuenta de usuario' });
+    account.focus();
+    await user.keyboard('{Enter}');
+    screen.getByRole('menuitem', { name: 'Copiar información del sistema' }).focus();
+    await user.keyboard('{Enter}');
+    expect(writeText).toHaveBeenCalledTimes(1);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(account).toHaveFocus());
+  });
+
+  it('uses the existing HTTP copy fallback and removes its temporary textarea', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand });
+    mockHealth('TEST', '1.1.1', 'abc1234');
+    renderShell();
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Copiar información del sistema' }));
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(await screen.findByText('Información del sistema copiada.')).toBeInTheDocument();
+    expect(document.querySelector('textarea')).toBeNull();
+  });
+
+  it('reports denied copying without leaking errors or breaking the menu', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('private clipboard diagnostic'));
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => { throw new Error('denied'); }) });
+    mockHealth('TEST', '1.1.1', 'abc1234');
+    renderShell();
+    await user.click(screen.getByRole('button', { name: 'Cuenta de usuario' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Copiar información del sistema' }));
+    expect(await screen.findByText('No se pudo copiar. Selecciona los datos y cópialos manualmente.')).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(/private clipboard/)).not.toBeInTheDocument();
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Cerrar sesión' })).toBeInTheDocument();
   });
 });
 

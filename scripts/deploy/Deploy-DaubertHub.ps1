@@ -94,6 +94,10 @@
 .PARAMETER HealthTimeoutSeconds
     How long -Deploy waits for api to become healthy and web to answer. Default: 180.
 
+.PARAMETER RequireSynchronizedMain
+    Supervised release gate: full SHA == HEAD == origin/main == live refs/heads/main,
+    clean main checkout. Rechecks facts and gates AFTER interactive confirmation.
+
 .NOTES
     Rollback anchors and /api/health use the 7-character commit (git rev-parse --short=7 HEAD) everywhere; GIT_COMMIT is built with the same value. An anchor that already exists is
     reused ONLY when it points at exactly the running image (same digest); otherwise the deployment is blocked and nothing is overwritten.
@@ -120,7 +124,8 @@ param(
     [string[]]$EvidenceMarkers = @(),
     [int]$EvidenceMaxAgeHours = 6,
     [string[]]$ExpectedN8nPaths = @(),
-    [switch]$RequireClosedWindow
+    [switch]$RequireClosedWindow,
+    [switch]$RequireSynchronizedMain
 )
 
 Set-StrictMode -Version Latest
@@ -250,8 +255,14 @@ function Invoke-DeployMutation {
     $refused = Test-AllowedMutation $Exe $CmdArgs
     if ($refused) { throw ('Operacion mutante rechazada: ' + $refused) }
     Write-Safe ('> ' + $Exe + ' ' + ($CmdArgs -join ' '))
-    $out = & $Exe @CmdArgs
-    $code = $LASTEXITCODE
+    # BuildKit escribe progreso en stderr: en PS 5.1 no debe convertirse en una excepcion.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $global:LASTEXITCODE = $null
+        $out = & $Exe @CmdArgs 2>&1
+        $code = if ($null -eq $global:LASTEXITCODE) { 1 } else { $global:LASTEXITCODE }
+    } finally { $ErrorActionPreference = $previous }
     foreach ($line in @($out)) { Write-Safe ([string]$line) }
     return @{ Code = $code; Out = @() }
 }
@@ -503,6 +514,22 @@ function Test-DatabaseManifest {
     return $reasons
 }
 
+function Test-DeploySynchronizedMain {
+    param([string]$Candidate)
+    if ($Candidate -notmatch '\A[0-9a-fA-F]{40}\z') { return $false }
+    foreach ($ref in @('HEAD', 'refs/remotes/origin/main')) {
+        $r = Invoke-DeployRead 'git' @('--no-optional-locks', 'rev-parse', '--verify', ($ref + '^{commit}'))
+        if ($r.Code -ne 0 -or $r.Out.Count -ne 1 -or [string]$r.Out[0] -ne $Candidate) { return $false }
+    }
+    $branch = Invoke-DeployRead 'git' @('--no-optional-locks', 'rev-parse', '--abbrev-ref', 'HEAD')
+    if ($branch.Code -ne 0 -or $branch.Out.Count -ne 1 -or [string]$branch.Out[0] -cne 'main') { return $false }
+    $dirty = Invoke-DeployRead 'git' @('--no-optional-locks', 'status', '--porcelain=v1', '--untracked-files=all')
+    if ($dirty.Code -ne 0 -or $dirty.Out.Count -ne 0) { return $false }
+    $remote = Invoke-DeployRead 'git' @('--no-optional-locks', 'ls-remote', '--exit-code', 'origin', 'refs/heads/main')
+    if ($remote.Code -ne 0 -or $remote.Out.Count -ne 1) { return $false }
+    return ([string]$remote.Out[0] -cmatch ('\A' + $Candidate.ToLowerInvariant() + '\s+refs/heads/main\z'))
+}
+
 function Test-DeployGate {
     # Pure: turns facts into a list of blocking reasons. Empty list = may proceed.
     # $AcknowledgeN8n lifts ONLY the n8n/ reason; migrations and every other check are unaffected.
@@ -713,6 +740,7 @@ function New-RollbackAnchors {
             if ($a.Reuse -and $existing -and $existing -eq $a.Digest) { continue }
             Write-Safe ('La etiqueta ' + $a.Anchor + ' ya existe y no es la imagen en ejecucion: se aborta sin sobrescribir.'); return $false
         }
+        if ($a.Reuse) { Write-Safe 'Un ancla prevista para reutilizacion desaparecio: se aborta antes del build.'; return $false }
     }
     foreach ($a in $Plan.Anchors) {
         if ($a.Reuse) { Write-Safe ('OK ' + $a.Anchor + ' (existente, mismo digest ' + $a.Digest + ')'); continue }
@@ -768,6 +796,7 @@ function Test-PostDeploy {
         if ($hv -ne $Plan.AppVersion) { $problems += ('version ' + $hv + ' distinta de APP_VERSION ' + $Plan.AppVersion + '.') }
     }
     $ps = Invoke-DeployRead 'docker' (@('compose') + (Get-ComposeBaseArgs) + @('ps'))
+    if ($ps.Code -ne 0) { $problems += 'No se pudo completar docker compose ps.' }
     foreach ($line in $ps.Out) { Write-Safe $line }
     foreach ($svc in $script:Services) {
         $st = Invoke-DeployRead 'docker' @('inspect', ($script:Project + '-' + $svc + '-1'), '--format', '{{.State.Status}}')
@@ -839,6 +868,7 @@ function Show-Usage {
     Write-Host '  -WhatIf     Valida y muestra el plan completo sin ejecutar ninguna operacion mutante.'
     Write-Host '  -Deploy     Unico modo que modifica PROD; pide escribir exactamente: DEPLOY DAUBERT HUB.'
     Write-Host 'Opciones: -Candidate <commit> (debe ser HEAD), -HealthTimeoutSeconds <n>.'
+    Write-Host '  -RequireSynchronizedMain  Exige SHA completo, main limpia y remoto accesible; revalida despues de confirmar (orquestador supervisado).'
     Write-Host '  -AcknowledgeN8nAlreadyApplied  Reconoce que los archivos n8n/ del release ya estan aplicados y verificados en PROD (no aplica ni toca n8n; no afecta a las migraciones).'
     Write-Host '  -AcknowledgeMigrationsAlreadyApplied  Reconoce que las migraciones de database/ ya se aplicaron a mano; exige -ExpectedMigrations <prefijos>, -MigrationsEvidence <archivo reciente> y -EvidenceMarkers <textos> (no ejecuta SQL).'
     Write-Host '  -ExpectedN8nPaths <prefijos>          Con -AcknowledgeN8nAlreadyApplied, todo archivo n8n/ del release debe empezar por uno de estos prefijos.'
@@ -864,6 +894,12 @@ function Invoke-DeployMain {
         return 3
     }
     $script:Mode = $(if ($DoPreflight) { 'Preflight' } elseif ($DoWhatIf) { 'WhatIf' } else { 'Deploy' })
+
+    $strict = ($Options.Contains('RequireSynchronizedMain') -and [bool]$Options['RequireSynchronizedMain'])
+    if ($strict -and -not (Test-DeploySynchronizedMain $Candidate)) {
+        Write-Safe 'BLOQUEADO: se exige main limpia y candidato == HEAD == origin/main == main remoto accesible.'
+        return 1
+    }
 
     $pf = Invoke-Preflight $Candidate
     if ($script:Mode -eq 'Preflight') { return $pf }
@@ -918,6 +954,17 @@ function Invoke-DeployMain {
         return 1
     }
     try {
+        if ($strict) {
+            $fresh = Get-DeployContext $Candidate
+            $reasons = @(Test-DeployGate $fresh $AcknowledgeN8n $Options)
+            if ($reasons.Count -gt 0 -or -not $fresh.DeltaKnown -or @($fresh.HubDockerFiles).Count -eq 0 -or $fresh.PreviousCommit -ne $ctx.PreviousCommit -or
+                -not (Test-DeploySynchronizedMain $Candidate)) {
+                Write-Safe 'BLOQUEADO: la revalidacion posterior a la confirmacion fallo; no se inicia el deployment.'
+                return 1
+            }
+            $ctx = $fresh
+            $plan = New-DeployPlan $ctx
+        }
         return (Invoke-DeployPlan $ctx $plan $TimeoutSeconds)
     } catch {
         Show-DeployFailure $plan @('Error inesperado: ' + $_.Exception.Message.Split("`n")[0])
@@ -929,6 +976,6 @@ function Invoke-DeployMain {
 if ($MyInvocation.InvocationName -ne '.') {
     Set-Location -LiteralPath $script:RepoRoot
     $options = @{ AckMigrations = [bool]$AcknowledgeMigrationsAlreadyApplied; ExpectedMigrations = @($ExpectedMigrations); MigrationsEvidence = $MigrationsEvidence; EvidenceMarkers = @($EvidenceMarkers)
-        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ManufacturingReadinessEvidence = $ManufacturingReadinessEvidence; ClosurePolicy = $ClosurePolicy; ClosurePolicySha256 = $ClosurePolicySha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow }
+        EvidenceMaxAgeHours = $EvidenceMaxAgeHours; DatabaseManifest = $DatabaseManifest; DatabaseManifestSha256 = $DatabaseManifestSha256; UseValidatedImages = [bool]$UseValidatedImages; ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; ManufacturingReadinessEvidence = $ManufacturingReadinessEvidence; ClosurePolicy = $ClosurePolicy; ClosurePolicySha256 = $ClosurePolicySha256; ExpectedN8nPaths = @($ExpectedN8nPaths); RequireClosedWindow = [bool]$RequireClosedWindow; RequireSynchronizedMain = [bool]$RequireSynchronizedMain }
     exit (Invoke-DeployMain ([bool]$Preflight) ([bool]$WhatIf) ([bool]$Deploy) $Candidate $HealthTimeoutSeconds ([bool]$AcknowledgeN8nAlreadyApplied) $options)
 }

@@ -1,0 +1,50 @@
+name: Prepare release candidate
+
+# Generates an informational report only. No secrets, database, Docker or deployment.
+on:
+  workflow_dispatch:
+    inputs:
+      deployed_commit:
+        description: 'Commit SHA reported by PROD /api/health (7-40 hex characters)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Test release classifier
+        run: node --test scripts/release/*.test.cjs
+
+      - name: Generate read-only report
+        shell: bash
+        env:
+          DEPLOYED_COMMIT: ${{ inputs.deployed_commit }}
+        run: |
+          node scripts/release/plan-release.cjs \
+            --base "$DEPLOYED_COMMIT" \
+            --head "$GITHUB_SHA" \
+            --out-dir "$RUNNER_TEMP/release-plan"
+          cat "$RUNNER_TEMP/release-plan/release-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: daubert-release-candidate
+          path: ${{ runner.temp }}/release-plan/
+          if-no-files-found: error
+          retention-days: 30

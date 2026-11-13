@@ -2,6 +2,7 @@ import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
@@ -23,6 +24,7 @@ import { getHealth, type RuntimeEnvironment } from '../services/health';
 import { getSystemStatus, type SystemStatus } from '../services/systemStatus';
 import { roleLabels } from '../services/userLabels';
 import { appTokens, useColorMode } from '../theme';
+import { copyText } from '../utils/copyText';
 import { SidebarContext } from './sidebarContext.core';
 
 const logoUrl = 'https://daubertcromwell.com/wp-content/uploads/daubertcromwell_2lines.png';
@@ -223,24 +225,6 @@ function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-// Visually secondary, discreet — never as prominent as the environment
-// chip. The Git commit is deliberately never shown in the normal UI, only
-// in the tooltip, and only when the backend actually reports one.
-function VersionFooter({ version, commit, collapsed }: { version: string | null; commit: string | null; collapsed: boolean }) {
-  if (!version || collapsed) return null;
-
-  const label = `v${version}`;
-  const title = commit ? `${label} · ${commit}` : label;
-
-  return (
-    <Tooltip title={title} placement="right">
-      <Typography noWrap variant="caption" color={appTokens.navigationMuted} sx={{ px: 1, mt: 1, display: 'block', fontSize: '0.6875rem', cursor: 'default' }}>
-        {label}
-      </Typography>
-    </Tooltip>
-  );
-}
-
 // Small status dot + label. Purely informational: renders nothing until the first check resolves,
 // and a failed check never blocks or throws — it just shows "sin verificar".
 function N8nStatusIndicator({ status, collapsed }: { status: SystemStatus['n8n'] | 'UNKNOWN' | null; collapsed: boolean }) {
@@ -290,15 +274,23 @@ function AppearanceToggle({ collapsed }: { collapsed: boolean }) {
 // avatar + standalone logout icon, which had no room to breathe in the
 // narrow collapsed sidebar. Collapsed mode shows only the centered avatar,
 // with the identity available via tooltip and via opening the menu.
-function UserAccountControl({ collapsed }: { collapsed: boolean }) {
+function UserAccountControl({ collapsed, environment, version, commit }: { collapsed: boolean; environment: RuntimeEnvironment | null; version: string | null; commit: string | null }) {
   const { user, logout } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const menuOpen = Boolean(anchorEl);
+  const systemInfo = [
+    ['Entorno', environment === 'UNKNOWN' ? null : environment],
+    ['Versión', version === 'unknown' ? null : version],
+    ['Commit', commit === 'unknown' ? null : commit]
+  ] as const;
+  const canCopy = systemInfo.some(([, value]) => value != null);
 
   if (!user) return null;
 
   function handleOpen(event: MouseEvent<HTMLElement>) {
+    setCopyState('idle');
     setAnchorEl(event.currentTarget);
   }
 
@@ -310,6 +302,11 @@ function UserAccountControl({ collapsed }: { collapsed: boolean }) {
     if (signingOut) return;
     setSigningOut(true);
     await logout();
+  }
+
+  async function handleCopySystemInfo() {
+    const text = ['Daubert Hub', ...systemInfo.map(([label, value]) => `${label}: ${value ?? 'No disponible'}`)].join('\n');
+    setCopyState((await copyText(text)) ? 'copied' : 'failed');
   }
 
   const roleLabel = roleLabels[user.role];
@@ -368,6 +365,28 @@ function UserAccountControl({ collapsed }: { collapsed: boolean }) {
           <ListItemIcon><AccountCircleRoundedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Mi perfil</ListItemText>
         </MenuItem>
+        <Divider />
+        <Box component="li" role="presentation" sx={{ px: 2, py: 1, minWidth: 200, maxWidth: 280, userSelect: 'text' }}>
+          <Typography component="h3" variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>Información del sistema</Typography>
+          {environment === null ? <Typography role="status" variant="caption">Consultando información del sistema…</Typography> : (
+            <Box component="dl" sx={{ m: 0 }}>
+              {systemInfo.map(([label, value]) => (
+                <Box key={label} sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                  <Typography component="dt" variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{label}:</Typography>
+                  <Typography component="dd" variant="caption" sx={{ m: 0, minWidth: 0, overflowWrap: 'anywhere' }}>{value ?? 'No disponible'}</Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+          <Typography role="status" variant="caption" color={copyState === 'failed' ? 'error' : 'text.secondary'}>
+            {copyState === 'copied' ? 'Información del sistema copiada.' : copyState === 'failed' ? 'No se pudo copiar. Selecciona los datos y cópialos manualmente.' : ''}
+          </Typography>
+        </Box>
+        <MenuItem onClick={handleCopySystemInfo} disabled={!canCopy}>
+          <ListItemIcon><ContentCopyRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Copiar información del sistema</ListItemText>
+        </MenuItem>
+        <Divider />
         <MenuItem onClick={handleLogout} disabled={signingOut}>
           <ListItemIcon><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Cerrar sesión</ListItemText>
@@ -487,8 +506,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Divider sx={{ borderColor: appTokens.navigationDivider, my: 2 }} />
           <N8nStatusIndicator status={n8nStatus} collapsed={collapsed} />
           <AppearanceToggle collapsed={collapsed} />
-          <UserAccountControl collapsed={collapsed} />
-          <VersionFooter version={appVersion} commit={appCommit} collapsed={collapsed} />
+          <UserAccountControl collapsed={collapsed} environment={runtimeEnvironment} version={appVersion} commit={appCommit} />
         </Stack>
       </Box>
       <Box component="main" sx={{ minWidth: 0, px: { xs: 3, sm: 4, lg: 6 }, py: { xs: 4, md: 5 } }}>
