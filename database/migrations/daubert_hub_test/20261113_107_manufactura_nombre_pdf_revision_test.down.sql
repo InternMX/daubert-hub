@@ -10,6 +10,11 @@
 \set ON_ERROR_STOP on
 \pset pager off
 BEGIN;
+DO $$
+BEGIN
+  IF current_database() <> 'daubert_hub_test' THEN RAISE EXCEPTION 'ABORTO: solo daubert_hub_test (base actual: %).', current_database(); END IF;
+  IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN RAISE EXCEPTION 'ABORTO: se requiere el rol administrativo.'; END IF;
+END $$;
 SET LOCAL lock_timeout = '10s';
 -- Bloquea el registro de PDF y la reserva de revisiones mientras se comprueba y se restaura (nadie puede finalizar entre la comprobación y el cambio).
 LOCK TABLE manufactura.revisiones, manufactura.pdfs IN SHARE MODE;
@@ -17,8 +22,6 @@ CREATE TEMP TABLE m107_accion ON COMMIT DROP AS SELECT 'pendiente'::text AS acci
 DO $$
 DECLARE v_oid oid := to_regprocedure('manufactura.fn_nombre_pdf(text,text,integer)'); v_src text; v_n bigint; v_m bigint;
 BEGIN
-  IF current_database() <> 'daubert_hub_test' THEN RAISE EXCEPTION 'ABORTO: solo daubert_hub_test (base actual: %).', current_database(); END IF;
-  IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN RAISE EXCEPTION 'ABORTO: se requiere el rol administrativo.'; END IF;
   IF v_oid IS NULL THEN RAISE EXCEPTION 'ABORTO: no existe manufactura.fn_nombre_pdf(text, text, integer).'; END IF;
   SELECT prosrc INTO v_src FROM pg_proc WHERE oid = v_oid;
   IF v_src = $b$ SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, 2, '0') || '.pdf' $b$ THEN

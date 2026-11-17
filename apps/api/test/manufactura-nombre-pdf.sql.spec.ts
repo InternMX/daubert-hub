@@ -199,6 +199,29 @@ describe('nombre del PDF finalizado: PostgreSQL y TypeScript producen EXACTAMENT
   });
 });
 
+describe('migración 107: el DOWN rechaza un destino incorrecto ANTES de bloquear (base vacía, sin esquema manufactura)', () => {
+  // Si el LOCK TABLE se ejecutara antes de las guardas, estas pruebas fallarían con «relation "manufactura.revisiones" does not exist».
+  let vacia: PGlite;
+  beforeAll(async () => { vacia = new PGlite(); await vacia.exec('CREATE ROLE m107_no_admin NOLOGIN'); }, 60_000);
+  afterAll(async () => vacia?.close());
+  const sinEsquema = async () => expect((await vacia.query("SELECT 1 FROM pg_namespace WHERE nspname = 'manufactura'")).rows).toHaveLength(0);
+
+  it('otra base: aborta por la guarda de base, no por la tabla bloqueada inexistente', async () => {
+    await sinEsquema();
+    const error = await fallo(vacia, sinMeta(leer(TEST, `${M107}.down.sql`)));   // sin adaptar la guarda: la base es «postgres»
+    expect(error).toMatch(/solo daubert_hub_test/);
+    expect(error).not.toMatch(/does not exist|no existe la relación/);
+  });
+
+  it('rol no administrativo: aborta por la guarda de rol, no por la tabla bloqueada inexistente', async () => {
+    await sinEsquema();
+    const error = await fallo(vacia, 'SET ROLE m107_no_admin;\n' + migracion107('down'));
+    await vacia.exec('RESET ROLE');
+    expect(error).toMatch(/se requiere el rol administrativo/);
+    expect(error).not.toMatch(/does not exist|no existe la relación|permission denied/);
+  });
+});
+
 describe('migración 107: reversión segura sin revisiones >= 100 y rechazo de estados desconocidos', () => {
   let db: PGlite;
   beforeAll(async () => { db = await baseTestAnteriorA107(); }, 180_000);
@@ -211,6 +234,15 @@ describe('migración 107: reversión segura sin revisiones >= 100 y rechazo de e
     expect(await fallo(db, 'SET ROLE daubert_hub_test_user;\n' + migracion107('up'))).toMatch(/rol administrativo|permission denied/);
     await db.exec('RESET ROLE');
     expect(await prosrc(db)).toBe(src101);
+  });
+
+  it('el DOWN comprueba la base y el rol antes del primer LOCK TABLE', () => {
+    const sql = leer(TEST, `${M107}.down.sql`);
+    const primerLock = sql.search(/^\s*LOCK\s+TABLE\b/im);
+    expect(primerLock).toBeGreaterThan(-1);
+    const antesDelLock = sql.slice(0, primerLock);
+    expect(antesDelLock).toContain("IF current_database() <> 'daubert_hub_test'");
+    expect(antesDelLock).toContain('IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)');
   });
 
   it('UP, DOWN e idempotencia: el DOWN restaura exactamente la 101 (con PDF de revisiones < 100) y conserva propietario y privilegios', async () => {
