@@ -60,7 +60,7 @@ Pendiente solo la tercera (cambia el comportamiento por omisión). El procedimie
 ## 5. Hashes para el acta
 | Elemento | SHA-256 |
 |---|---|
-| Manifiesto de `database/` (86 archivos, base `16153a8`; regenerado tras H3, nombre del PDF: 020 actualizada —solo `fn_nombre_pdf`— y 107 de TEST como inerte) | `e185f8ffa17113422066871568a1f628796d7fd6de7a74df80dc383f1358b686` (sustituye a `0163bb19…`) |
+| Manifiesto de `database/` (86 archivos, base `16153a8`; regenerado tras corregir el DOWN de la 107 de TEST —guardas de base y rol antes de los bloqueos—; solo cambian el DOWN y README-107, ambos inertes; producción sin cambios) | `d940964a19934af4d1dc0b2ec113a26d60d7c263f99f0c59942bce086c864619` (sustituye a `e185f8ff…`) |
 | Política de cierre operativa (por omisión) | `e86f47494d87222122938c6b580cec465cecdf3835c037ce947f60f9e340068f` |
 | Política de cierre de Manufactura | `dcadb58dc1cd8d124b383462e1390160155e3012d053b1e0fd021ef2f147bdd9` |
 | `default.conf` actual de producción | `4d9dfea5f58cc2c0069f15b91e5406d62832806ff3e5a045fed48960499c0495` |

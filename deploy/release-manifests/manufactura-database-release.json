@@ -580,9 +580,9 @@
     {
       "ruta": "database/migrations/daubert_hub_test/20261113_107_manufactura_nombre_pdf_revision_test.down.sql",
       "categoria": "inerte_nunca_en_prod",
-      "blob": "ac62f123fd93a8feb9977d9feaba27af6dead1bd",
-      "sha256": "5fdc5b53cacccc3e430a009809b02047a3c8ca47487f8e99a63bfffdfa9a004a",
-      "bytes": 5518
+      "blob": "2f800a77320dfc1f02e2369791f99eba68cc75d5",
+      "sha256": "099dfa55159441fb08ab2bb9926cae60dbdc051691f38d1cd681b50ddcf296dd",
+      "bytes": 5538
     },
     {
       "ruta": "database/migrations/daubert_hub_test/20261113_107_manufactura_nombre_pdf_revision_test.postcheck.sql",
@@ -622,8 +622,8 @@
     {
       "ruta": "database/migrations/daubert_hub_test/README-107.md",
       "categoria": "inerte_nunca_en_prod",
-      "blob": "69a770ceda5b49c13c2a394317fe8fb01f16369e",
-      "sha256": "931bb18a5af571b66231ac396d55e03915e32d063c6857f17431a4c3bbbfe46b",
+      "blob": "f6c403a1cc9073714958edd0990c2d0cbece6511",
+      "sha256": "d6558b03e0accce8b6412636809e342eacd7a8f7ffd29731e6e3f669bfab7881",
       "bytes": 4336
     },
     {
