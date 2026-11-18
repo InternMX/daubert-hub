@@ -107,7 +107,8 @@ describe('bloque 2b · borradores INCOMPLETOS (base del guardado automático)', 
     const v1 = await service.crearBorrador(actor(2), { codigo, familia: 'BOLSA_PLANA_1', datos: {} } as never) as Vista;
     expect(v1.estado).toBe('BORRADOR');
     expect(v1.version).toBe(1);
-    expect(Object.keys(v1.especificacion.datos)).toEqual(['codigo']);               // el único dato es el código del documento; nada técnico inventado
+    // Solo el código y el cliente impreso, ligado a la identidad documental (H1): sin cliente documental es '' (vacío explícito, no un valor inventado). Nada técnico inventado.
+    expect(v1.especificacion.datos).toEqual({ codigo, cliente: '' });
     expect(v1.elaboro.confirmado).toBe(false);
     const v2 = await actualizar(2, v1.id, { version: 1, datos: { ancho: '13', largo: '' } });
     expect(v2.version).toBe(2);

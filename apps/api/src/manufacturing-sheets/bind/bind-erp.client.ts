@@ -165,31 +165,66 @@ export class BindErpClient {
     return ultimo;
   }
 
+  /**
+   * Una solicitud: el temporizador (acotado por el deadline total en requestWithRetries) cubre la conexión, las cabeceras y la lectura completa del cuerpo. La lectura se
+   * acota también por sí misma, porque un cuerpo bloqueado no siempre respeta la señal de cancelación. El temporizador se libera siempre al salir.
+   */
   private async requestOnce(url: string, headers: Record<string, string>, timeoutMs: number): Promise<PageOutcome> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let response: Response;
     try {
-      response = await fetch(url, { method: 'GET', headers, signal: controller.signal, redirect: 'error' });
-    } catch {
-      // Sanitizado: ni el error subyacente, ni la URL, ni las credenciales llegan al llamador. Solo se distingue el timeout.
-      clearTimeout(timer);
-      return controller.signal.aborted ? { kind: 'TIMEOUT' } : { kind: 'NETWORK_ERROR' };
-    }
-    clearTimeout(timer);
-    const status = response.status;
-    if (status >= 200 && status < 300) {
+      let response: Response;
       try {
-        return { kind: 'OK', body: await response.json() };
+        response = await acotarPorSenal(fetch(url, { method: 'GET', headers, signal: controller.signal, redirect: 'error' }), controller.signal);
       } catch {
-        return { kind: 'INVALID_RESPONSE' };
+        // Sanitizado: ni el error subyacente, ni la URL, ni las credenciales llegan al llamador. Solo se distingue el timeout.
+        return controller.signal.aborted ? { kind: 'TIMEOUT' } : { kind: 'NETWORK_ERROR' };
       }
+      const status = response.status;
+      if (status >= 200 && status < 300) {
+        try {
+          return { kind: 'OK', body: await acotarPorSenal(response.json(), controller.signal) };
+        } catch (error) {
+          // Vencimiento durante la lectura: TIMEOUT. JSON mal formado: INVALID_RESPONSE. Conexión interrumpida a mitad del cuerpo: NETWORK_ERROR.
+          if (controller.signal.aborted) return { kind: 'TIMEOUT' };
+          return error instanceof SyntaxError ? { kind: 'INVALID_RESPONSE' } : { kind: 'NETWORK_ERROR' };
+        }
+      }
+      // El cuerpo de un error no se lee (nunca llega al llamador): se descarta para liberar la conexión.
+      descartarCuerpo(response);
+      if (status === 401) return { kind: 'UNAUTHORIZED' };
+      if (status === 403) return { kind: 'FORBIDDEN' };
+      if (status === 429) return { kind: 'RATE_LIMITED', retryAfterSeconds: parseRetryAfter(response.headers?.get?.('retry-after') ?? null) };
+      if (status === 408 || status >= 500) return { kind: 'UPSTREAM_ERROR' };
+      return { kind: 'BAD_REQUEST' };
+    } finally {
+      clearTimeout(timer);
     }
-    if (status === 401) return { kind: 'UNAUTHORIZED' };
-    if (status === 403) return { kind: 'FORBIDDEN' };
-    if (status === 429) return { kind: 'RATE_LIMITED', retryAfterSeconds: parseRetryAfter(response.headers?.get?.('retry-after') ?? null) };
-    if (status === 408 || status >= 500) return { kind: 'UPSTREAM_ERROR' };
-    return { kind: 'BAD_REQUEST' };
+  }
+}
+
+/** Rechaza en cuanto la señal se cancela aunque la promesa subyacente nunca termine; retira su escucha al resolverse y absorbe un rechazo tardío de la promesa. */
+function acotarPorSenal<T>(promesa: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      promesa.catch(() => undefined);
+      reject(new Error('aborted'));
+      return;
+    }
+    const alCancelar = () => reject(new Error('aborted'));
+    signal.addEventListener('abort', alCancelar, { once: true });
+    promesa.then(
+      (valor) => { signal.removeEventListener('abort', alCancelar); resolve(valor); },
+      (error: unknown) => { signal.removeEventListener('abort', alCancelar); reject(error); }
+    );
+  });
+}
+
+function descartarCuerpo(response: Response): void {
+  try {
+    void response.body?.cancel().catch(() => undefined);
+  } catch {
+    // Un cuerpo ya bloqueado o inexistente no requiere limpieza.
   }
 }
 

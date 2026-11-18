@@ -4,6 +4,10 @@
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 . ([System.IO.Path]::GetFullPath((Join-Path $here '..\Test-ManufacturaReleaseReadiness.ps1')))
+# The deployment consumer of the evidence, loaded ALONE from Deploy-DaubertHub.ps1 (its parameters would clash with this script's), to test the producer -> consumer contract.
+$script:DeployAst = [System.Management.Automation.Language.Parser]::ParseFile([System.IO.Path]::GetFullPath((Join-Path $here '..\Deploy-DaubertHub.ps1')), [ref]$null, [ref]$null)
+. ([scriptblock]::Create($script:DeployAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-ManufacturingReadinessEvidence' }, $true).Extent.Text))
+$script:ClosureMf = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath((Join-Path $here '..\..\..\deploy\closure\entry-closure-policy.manufactura.conf'))) -Raw
 
 $script:AllTables = 'cliente_abreviaturas,confirmaciones_revision,documentos,firma_autorizaciones,firmas,pdf_contenidos,pdfs,revision_responsables,revisiones'
 $script:Markers = 'POSTCHECK_020_PASS POSTCHECK_021_PASS POSTCHECK_022_PASS POSTCHECK_023_PASS POSTCHECK_024_PASS POSTCHECK_026_PASS MANUFACTURA_SQL_COMPLETE'
@@ -19,6 +23,9 @@ function New-ReadyState {
             'evidence.txt'  = $script:Markers
             'default.conf'  = $script:NginxOk
             'imagenes.json' = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":false,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
+            'imagenes-ui.json' = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
+            'prod-on.env'   = "DB_NAME=daubert_global`nDB_PASSWORD=no-debe-imprimirse`nMANUFACTURING_ENABLED=true`nMANUFACTURING_EMISSION_ENV=PRODUCCION"
+            'cierre-mf.conf' = $script:ClosureMf
         }
         Images   = @{ 'x-api-1' = 'sha256:aaa'; 'x-web-1' = 'sha256:bbb' }
         Health   = [pscustomobject]@{ status = 'ok'; database = 'connected'; commit = '16153a8' }
@@ -42,6 +49,15 @@ function Invoke-Readiness {
     $r = @(Invoke-ReadinessMain $p)
     return $r[-1]
 }
+function Get-CompleteArgs {
+    # Every mandatory argument of the complete profile completo-v1 for the phase (PreEnable: enabling configuration + web WITH the interface; PreDeploy: neither).
+    param([string]$Phase = 'PreEnable', [hashtable]$Override = @{})
+    $manifest = $(if ($Phase -eq 'PreEnable') { 'imagenes-ui.json' } else { 'imagenes.json' })
+    $a = @{ Phase = $Phase; EnvFile = $(if ($Phase -eq 'PreEnable') { 'prod-on.env' } else { 'prod.env' }); ImagesManifest = $manifest; ImagesManifestSha256 = (Get-TextSha256 $script:State.Files[$manifest])
+        Containers = @('x-api-1', 'x-web-1'); ClosurePolicyFile = 'cierre-mf.conf'; ClosurePolicySha256 = 'sha-cierre-mf.conf' }
+    foreach ($k in $Override.Keys) { $a[$k] = $Override[$k] }
+    return $a
+}
 function Get-Out { return ($script:Out -join "`n") }
 function Get-Fails { return @($script:Out | Where-Object { $_ -like 'FAIL *' }) }
 
@@ -50,16 +66,15 @@ Describe 'Readiness de Manufactura: cualquier fallo bloquea (exit 1 + MANUFACTUR
     AfterEach { $env:PGDATABASE = $script:SavedDb }
 
     It 'entorno correctamente preparado: todos los controles PASS, exit 0 y evidencia PASS' {
-        (Invoke-Readiness) | Should Be 0
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 0
         @(Get-Fails).Count | Should Be 0
-        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreEnable '
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreEnable perfil=completo-v1 '
         (Get-Out) | Should Match 'todos los controles PASS'
     }
 
     It 'entorno preparado en fase PreDeploy con imagenes validadas y web sin interfaz: PASS' {
-        $sha = Get-TextSha256 $script:State.Files['imagenes.json']
-        (Invoke-Readiness @{ Phase = 'PreDeploy'; ImagesManifest = 'imagenes.json'; ImagesManifestSha256 = $sha; Containers = @('x-api-1,x-web-1') }) | Should Be 0
-        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreDeploy '
+        (Invoke-Readiness (Get-CompleteArgs 'PreDeploy' @{ Containers = @('x-api-1,x-web-1') })) | Should Be 0
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreDeploy perfil=completo-v1 '
     }
 
     It 'base de datos equivocada (el servidor informa otra base): FAIL' {
@@ -193,7 +208,7 @@ Describe 'Readiness de Manufactura: cualquier fallo bloquea (exit 1 + MANUFACTUR
 
     It 'configuracion coherente para habilitar (true + PRODUCCION) con la base preparada: PASS' {
         $script:State.Files['prod.env'] = "DB_NAME=daubert_global`nMANUFACTURING_ENABLED=true`nMANUFACTURING_EMISSION_ENV=PRODUCCION"
-        (Invoke-Readiness) | Should Be 0
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod.env' })) | Should Be 0
     }
 
     It 'fase PreDeploy: la configuracion ya habilita Manufactura (activacion accidental): FAIL' {
@@ -250,7 +265,9 @@ Describe 'Readiness de Manufactura: cualquier fallo bloquea (exit 1 + MANUFACTUR
     }
 
     It 'no imprime ningun otro valor del archivo de entorno (secretos)' {
-        (Invoke-Readiness) | Should Be 0
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 0
+        (Get-Out) | Should Not Match 'no-debe-imprimirse'
+        (Invoke-Readiness (Get-CompleteArgs 'PreDeploy')) | Should Be 0
         (Get-Out) | Should Not Match 'no-debe-imprimirse'
         $script:State.Files['prod.env'] = "DB_NAME=otra`nDB_PASSWORD=no-debe-imprimirse`nMANUFACTURING_ENABLED=x"
         (Invoke-Readiness) | Should Be 1
@@ -306,5 +323,164 @@ Describe 'Readiness: politica de cierre seleccionada para la ventana (archivos r
         (Invoke-Readiness @{ ClosurePolicyFile = 'no-existe.conf'; ClosurePolicySha256 = 'x' }) | Should Be 1
         (Get-Out) | Should Match 'FAIL politica de cierre seleccionada legible'
         $env:PGDATABASE = $script:SavedDb
+    }
+}
+
+Describe 'H2: solo un readiness COMPLETO (perfil completo-v1) produce evidencia habilitante; un diagnostico parcial nunca' {
+    BeforeEach { $script:SavedDb = $env:PGDATABASE; $env:PGDATABASE = 'daubert_global'; $script:State = New-ReadyState; Set-ReadinessMocks }
+    AfterEach { $env:PGDATABASE = $script:SavedDb }
+
+    It 'PreDeploy completo y valido: PASS con todos los grupos, commit verificado y nada pendiente' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreDeploy')) | Should Be 0
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreDeploy perfil=completo-v1 controles=\d+ fallos=0 grupos=bd,respaldo,configuracion,migraciones,salud,imagenes,nginx,cierre commit=16153a8 faltan=- \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
+        (Get-Out) | Should Match 'PASS fase PreDeploy: la imagen web NO trae compilada la interfaz'
+        (Get-Out) | Should Match 'PASS imagen en ejecucion de x-api-1'
+        (Get-Out) | Should Match 'PASS imagen en ejecucion de x-web-1'
+        (Get-Out) | Should Not Match 'NO EJECUTADO'
+    }
+
+    It 'PreEnable completo y valido: PASS con configuracion habilitante y web con interfaz' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 0
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreEnable perfil=completo-v1 controles=\d+ fallos=0 grupos=bd,respaldo,configuracion,migraciones,salud,imagenes,nginx,cierre commit=16153a8 faltan=- '
+        (Get-Out) | Should Match 'PASS fase PreEnable: la imagen web trae compilada la interfaz'
+        (Get-Out) | Should Match 'PASS politica de cierre seleccionada: bloquea las escrituras'
+    }
+
+    It '-SkipDatabase nunca produce PASS: diagnostico parcial (exit 2, PARTIAL, perfil=diagnostico)' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreDeploy' @{ SkipDatabase = $true })) | Should Be 2
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PARTIAL phase=PreDeploy perfil=diagnostico .* faltan=bd,respaldo '
+        (Get-Out) | Should Match 'NO EJECUTADO bd: -SkipDatabase'
+        (Get-Out) | Should Match 'DIAGNOSTICO PARCIAL.*NO autoriza'
+        # PreEnable: the enabling configuration cannot be confirmed without the database -> FAIL (never PASS), still flagged as diagnostic.
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ SkipDatabase = $true })) | Should Be 1
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_FAIL phase=PreEnable perfil=diagnostico .* faltan=bd,respaldo '
+        (Get-Out) | Should Match 'NO EJECUTADO bd: -SkipDatabase'
+        Assert-MockCalled Invoke-ReadinessSql -Scope It -Times 0 -Exactly
+    }
+
+    It 'falta cualquier argumento esencial: nunca PASS (PARTIAL si lo ejecutado pasa, FAIL si algo no se puede evaluar)' {
+        foreach ($ph in 'PreDeploy', 'PreEnable') {
+            foreach ($k in 'BackupModule', 'EnvFile', 'MigrationsEvidence', 'HealthUrl', 'ExpectedCommit', 'ImagesManifest', 'ImagesManifestSha256', 'NginxConf', 'ClosurePolicyFile', 'ClosurePolicySha256') {
+                $script:State = New-ReadyState
+                $code = Invoke-Readiness (Get-CompleteArgs $ph @{ $k = '' })
+                (@(1, 2) -contains $code) | Should Be $true
+                $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_(PARTIAL|FAIL) '
+                $script:EvidenceLine | Should Not Match 'perfil=completo-v1'
+            }
+            $script:State = New-ReadyState
+            (Invoke-Readiness (Get-CompleteArgs $ph @{ Containers = @() })) | Should Be 2
+            $script:EvidenceLine | Should Match 'faltan=imagenes '
+        }
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ ExpectedCommit = '' })) | Should Be 2
+        (Get-Out) | Should Match 'NO EJECUTADO salud: falta -ExpectedCommit'
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ BackupModule = '' })) | Should Be 2
+        (Get-Out) | Should Match 'NO EJECUTADO respaldo: falta -BackupModule'
+    }
+
+    It 'falta el contenedor API: diagnostico parcial, sin PASS' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ Containers = @('x-web-1') })) | Should Be 2
+        (Get-Out) | Should Match 'NO EJECUTADO imagenes: -Containers debe incluir exactamente un contenedor API'
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PARTIAL '
+    }
+
+    It 'falta el contenedor Web: diagnostico parcial, sin PASS' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreDeploy' @{ Containers = @('x-api-1') })) | Should Be 2
+        (Get-Out) | Should Match 'NO EJECUTADO imagenes: -Containers debe incluir exactamente un contenedor Web'
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PARTIAL '
+    }
+
+    It 'contenedores duplicados, ambiguos o desconocidos: nunca PASS; un contenedor declarado que no corre: FAIL' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ Containers = @('x-api-1', 'x-api-2', 'x-web-1') })) | Should Not Be 0
+        $script:EvidenceLine | Should Not Match 'READINESS_PASS'
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ Containers = @('x-api-1', 'x-web-1', 'x-apiweb-1') })) | Should Be 1
+        (Get-Out) | Should Match 'FAIL contenedor x-apiweb-1 con servicio identificable'
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ Containers = @('x-api-1', 'otro-1') })) | Should Be 1
+        $script:State.Images.Remove('x-web-1')
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 1
+        (Get-Out) | Should Match 'FAIL imagen en ejecucion de x-web-1'
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_FAIL '
+    }
+
+    It 'manifiesto incompleto o no verificable: FAIL' {
+        $variants = @(
+            '{"formato":"1","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"}]}',
+            '{"interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}',
+            '{"formato":"1","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":""}]}',
+            '{"formato":"1","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"},{"servicio":"web","imageId":"sha256:bbb"}]}',
+            '{"formato":"1","interfazManufacturaCompilada":true}'
+        )
+        foreach ($v in $variants) {
+            $script:State.Files['imagenes-ui.json'] = $v
+            (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 1
+            (Get-Out) | Should Match 'FAIL manifiesto de imagenes completo'
+            $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_FAIL '
+        }
+        $script:State.Files['imagenes-ui.json'] = '{ esto no es json'
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 1
+        (Get-Out) | Should Match 'FAIL manifiesto de imagenes valido'
+        $script:State = New-ReadyState
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ ImagesManifest = 'no-existe.json' })) | Should Be 1
+        (Get-Out) | Should Match 'FAIL manifiesto de imagenes legible'
+        $script:State = New-ReadyState
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ ImagesManifestSha256 = ('0' * 64) })) | Should Be 1
+        (Get-Out) | Should Match 'FAIL SHA-256 del manifiesto de imagenes'
+    }
+
+    It 'interfazManufacturaCompilada imposible de verificar (ausente, cadena, nula, numero) o contraria a la fase: FAIL' {
+        foreach ($ui in '', '"interfazManufacturaCompilada":"true",', '"interfazManufacturaCompilada":"false",', '"interfazManufacturaCompilada":null,', '"interfazManufacturaCompilada":1,') {
+            foreach ($ph in 'PreDeploy', 'PreEnable') {
+                $script:State = New-ReadyState
+                $f = $(if ($ph -eq 'PreEnable') { 'imagenes-ui.json' } else { 'imagenes.json' })
+                $script:State.Files[$f] = '{"formato":"1","commit":"abc",' + $ui + '"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
+                (Invoke-Readiness (Get-CompleteArgs $ph)) | Should Be 1
+                (Get-Out) | Should Match 'FAIL manifiesto de imagenes: interfazManufacturaCompilada verificable'
+                $script:EvidenceLine | Should Not Match 'READINESS_PASS'
+            }
+        }
+        $script:State = New-ReadyState
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ ImagesManifest = 'imagenes.json'; ImagesManifestSha256 = (Get-TextSha256 $script:State.Files['imagenes.json']) })) | Should Be 1
+        (Get-Out) | Should Match 'FAIL fase PreEnable: la imagen web trae compilada la interfaz'
+    }
+
+    It 'PreEnable con una configuracion que NO habilita: diagnostico parcial (no acredita la configuracion de habilitacion)' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod.env' })) | Should Be 2
+        (Get-Out) | Should Match 'NO EJECUTADO configuracion: PreEnable exige evaluar la configuracion que habilita'
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PARTIAL phase=PreEnable perfil=diagnostico .* faltan=configuracion '
+    }
+
+    It 'commit esperado que no es un SHA hexadecimal: nunca PASS' {
+        $script:State.Health = [pscustomobject]@{ status = 'ok'; database = 'connected'; commit = 'zzzzzzz' }
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ ExpectedCommit = 'zzzzzzz' })) | Should Be 1
+        $script:EvidenceLine | Should Not Match 'READINESS_PASS'
+    }
+
+    It 'un control fallido en un perfil completo: FAIL perfil=completo-v1 y sin commit acreditado si el commit no coincide' {
+        $script:State.Health = [pscustomobject]@{ status = 'ok'; database = 'connected'; commit = 'fffffff' }
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 1
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_FAIL phase=PreEnable perfil=completo-v1 .* commit=- faltan=- '
+    }
+
+    It 'contrato productor -> consumidor: el despliegue acepta SOLO la evidencia completa PreEnable de la version en ejecucion' {
+        $now = (Get-Date).ToUniversalTime()
+        $ev = { param($line) [pscustomobject]@{ Exists = $true; AgeHours = 0; Text = ($line + "`n") } }
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 0
+        $pass = $script:EvidenceLine
+        @(Test-ManufacturingReadinessEvidence (& $ev $pass) 6 '16153a8' $now).Count | Should Be 0
+        @(Test-ManufacturingReadinessEvidence (& $ev $pass) 6 'abcdef1' $now).Count | Should Be 1
+        (Invoke-Readiness (Get-CompleteArgs 'PreDeploy')) | Should Be 0
+        @(Test-ManufacturingReadinessEvidence (& $ev $script:EvidenceLine) 6 '16153a8' $now).Count | Should BeGreaterThan 0
+        foreach ($o in @(@{ SkipDatabase = $true }, @{ Containers = @('x-web-1') }, @{ ClosurePolicyFile = '' }, @{ EnvFile = 'prod.env' })) {
+            (@(1, 2) -contains (Invoke-Readiness (Get-CompleteArgs 'PreEnable' $o))) | Should Be $true
+            ((Test-ManufacturingReadinessEvidence (& $ev $script:EvidenceLine) 6 '16153a8' $now) -join ' ') | Should Match 'NO habilitar'
+        }
+        $script:State.Sql.m024 = '0'
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable')) | Should Be 1
+        @(Test-ManufacturingReadinessEvidence (& $ev $script:EvidenceLine) 6 '16153a8' $now).Count | Should BeGreaterThan 0
+    }
+
+    It 'la lista de grupos obligatorios y el perfil del productor son exactamente los que exige el consumidor' {
+        $fn = $script:DeployAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-ManufacturingReadinessEvidence' }, $true).Extent.Text
+        $fn.Contains("`$groups = '" + ($script:ReadinessGroups -join ',') + "'") | Should Be $true
+        $fn.Contains("`$profileName = '" + $script:ReadinessProfile + "'") | Should Be $true
     }
 }

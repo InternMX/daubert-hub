@@ -10,9 +10,12 @@
 
     Pasos (cualquier fallo DETIENE la secuencia; no se continua con un respaldo no comprobado):
       1. Estado de las tareas programadas (ninguna en ejecucion).            5. Migraciones 020-024 y 026 (Invoke-ManufacturaMigrations.ps1).
-      2. Respaldo previo + comprobacion de integridad (restauracion).        6. Readiness (fase PreDeploy).
+      2. Respaldo previo + comprobacion de integridad (restauracion).        6. Readiness DIAGNOSTICO PreDeploy (perfil parcial, ver abajo).
       3. Pausar tareas (SIMULADO).                                            7. Respaldo nuevo + integridad + restauracion en instancia aislada.
       4. Parche de respaldos (ff-only) + respaldo de control sin migrar.     8. Reanudar tareas (SIMULADO) y corrida de comprobacion.
+    Paso 6: el entorno desechable no tiene API/Web, salud, imagenes, nginx externo ni cierre, asi que readiness responde PARTIAL (exit 2, perfil=diagnostico). El ensayo solo
+    continua si ensayo-readiness-parcial.ps1 acredita que se ejecutaron y pasaron EXACTAMENTE sus controles (bd, respaldo, migraciones) y nada fallo; FAIL, otro exit,
+    grupos distintos o evidencia ambigua lo detienen. Esa evidencia (<escenario>-readiness-diagnostico-ensayo.txt) NUNCA autoriza desplegar ni habilitar.
     Un exit 0 de pg_dump NUNCA basta: cada respaldo se da por bueno solo si verificar-respaldo-manufactura.cjs --restaurar termina sin fallos.
 
     Escenarios (-Scenario): completa | previo-corrupto | sin-parche | bandera-sin-026 | tarea-en-ejecucion.  -SkipReadiness deja ver el fallo del respaldo mismo.
@@ -34,6 +37,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $tools = $PSScriptRoot
+. (Join-Path $tools 'ensayo-readiness-parcial.ps1')
 $realRepo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')).TrimEnd('\')
 $op = [System.IO.Path]::GetFullPath($Operative).TrimEnd('\')
 if ($op -ieq $realRepo) { throw 'Refusing: -Operative must be a disposable clone, never the working repository.' }
@@ -116,11 +120,17 @@ Write-Host ("   Invoke-ManufacturaMigrations hasta la $until : exit $($mg.Code)"
 if ($mg.Code -ne 0) { Stop-Sequence '5' 'una migracion fallo' 'El procedimiento ya se detuvo sin DOWN. Mantener Manufactura apagada y las tareas en pausa hasta decidir (ver plan de reversion: migraciones parciales).' }
 
 if (-not $SkipReadiness) {
-    Write-Host '6. Readiness (PreDeploy): base, coherencia respaldo/026 y evidencia'
-    $rd = Run { & powershell -NoProfile -File (Join-Path $op 'scripts\deploy\Test-ManufacturaReleaseReadiness.ps1') -Phase PreDeploy -Psql $psql -BackupModule (Join-Path $op 'scripts\backup\lib\BackupPgTools.psm1') -MigrationsEvidence $ev -EvidenceFile (Join-Path $Evidence ("$Scenario-readiness.txt")) }
-    $rd.Out | Set-Content -LiteralPath (Join-Path $Evidence ("$Scenario-readiness.log")) -Encoding UTF8
+    Write-Host '6. Readiness DIAGNOSTICO del ensayo (PreDeploy parcial: base, coherencia respaldo/026 y evidencia; NO autoriza desplegar ni habilitar)'
+    # Perfil parcial a proposito (ver ensayo-readiness-parcial.ps1): el entorno desechable no tiene API/Web, salud, imagenes, nginx externo ni cierre que verificar.
+    $rdEvidence = Join-Path $Evidence ("$Scenario-readiness-diagnostico-ensayo.txt")
+    if (Test-Path -LiteralPath $rdEvidence) { Remove-Item -LiteralPath $rdEvidence -Force }
+    $rd = Run { & powershell -NoProfile -File (Join-Path $op 'scripts\deploy\Test-ManufacturaReleaseReadiness.ps1') -Phase PreDeploy -Psql $psql -BackupModule (Join-Path $op 'scripts\backup\lib\BackupPgTools.psm1') -MigrationsEvidence $ev -EvidenceFile $rdEvidence }
+    $rd.Out | Set-Content -LiteralPath (Join-Path $Evidence ("$Scenario-readiness-diagnostico-ensayo.log")) -Encoding UTF8
     foreach ($l in @($rd.Out | Where-Object { $_ -like 'FAIL *' -or $_ -like 'RESULTADO*' })) { Write-Host ('   ' + $(if ($l.Length -gt 220) { $l.Substring(0, 220) } else { $l })) }
-    if ($rd.Code -ne 0) { Stop-Sequence '6' 'readiness FALLO' 'No desplegar ni habilitar. Las tareas siguen en pausa: corregir (aplicar el parche o completar las migraciones) y repetir desde el paso que falto.' }
+    $rdText = $(if (Test-Path -LiteralPath $rdEvidence) { [string](Get-Content -LiteralPath $rdEvidence -Raw) } else { $null })
+    $rdWhy = @(Test-EnsayoReadinessParcial $rd.Code $rd.Out $rdText)
+    if ($rdWhy.Count -gt 0) { Stop-Sequence '6' ('readiness del ensayo NO acreditado: ' + ($rdWhy -join ' ; ')) 'No desplegar ni habilitar. Las tareas siguen en pausa: corregir (aplicar el parche o completar las migraciones) y repetir desde el paso que falto.' }
+    Write-Host '   diagnostico del ensayo ACREDITADO (bd, respaldo, migraciones: ejecutados y PASS). Es PARTIAL: NO es evidencia de despliegue ni de habilitacion.'
 } else { Write-Host '6. (readiness omitido en este escenario)' }
 
 Write-Host '7. Respaldo nuevo + integridad + restauracion en instancia aislada (sin red)'

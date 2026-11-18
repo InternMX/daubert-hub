@@ -79,8 +79,10 @@
 
 .PARAMETER ManufacturingReadinessEvidence
     Evidence file written by scripts/deploy/Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable -EvidenceFile <file outside the repository>. REQUIRED whenever the production
-    configuration enables Manufactura (MANUFACTURING_ENABLED=true in deploy/pilot.prod.env or in the shell): the gate blocks unless the file is recent (-EvidenceMaxAgeHours)
-    and says MANUFACTURA_READINESS_PASS phase=PreEnable. A contradictory configuration (ENABLED=true without EMISSION_ENV=PRODUCCION, EMISSION_ENV=PRUEBA, any value other than
+    configuration enables Manufactura (MANUFACTURING_ENABLED=true in deploy/pilot.prod.env or in the shell): the gate blocks unless the file is recent (-EvidenceMaxAgeHours, by file
+    time AND by its internal UTC timestamp) and contains exactly ONE line of the complete profile: MANUFACTURA_READINESS_PASS phase=PreEnable perfil=completo-v1, every mandatory
+    group, fallos=0, faltan=- and commit = the commit running in PROD. Partial diagnostics (MANUFACTURA_READINESS_PARTIAL / perfil=diagnostico), FAIL, another phase, evidence
+    of the previous contract (no profile), duplicated or contradictory lines are rejected; nothing else enables. A contradictory configuration (ENABLED=true without EMISSION_ENV=PRODUCCION, EMISSION_ENV=PRUEBA, any value other than
     true/false) blocks always. With Manufactura not enabled nothing changes.
 
 .PARAMETER ExpectedN8nPaths
@@ -514,6 +516,37 @@ function Test-DatabaseManifest {
     return $reasons
 }
 
+function Test-ManufacturingReadinessEvidence {
+    # Pure: readiness evidence (Read-DeployEvidence) -> blocking reasons. Empty list = enabling evidence accepted.
+    # Accepts ONLY the contract completo-v1 of Test-ManufacturaReleaseReadiness.ps1: the file holds exactly ONE line
+    #   MANUFACTURA_READINESS_PASS phase=PreEnable perfil=completo-v1 controles=<n> fallos=0 grupos=<every mandatory group> commit=<running commit> faltan=- <UTC>
+    # A partial diagnostic (PARTIAL / perfil=diagnostico), a FAIL, another phase, the previous contract (no profile), duplicated or contradictory lines, a commit that
+    # is not the one running in PROD, or an old/future timestamp are rejected. Self-contained on purpose (the readiness tests load it alone to check the contract).
+    param($Evidence, [double]$MaxAgeHours, [string]$RunningCommit, [datetime]$NowUtc)
+    $profileName = 'completo-v1'
+    $groups = 'bd,respaldo,configuracion,migraciones,salud,imagenes,nginx,cierre'
+    if (-not $Evidence -or -not $Evidence.Exists) { return @('La configuracion HABILITA Manufactura: falta la evidencia de Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable (-ManufacturingReadinessEvidence).') }
+    if ($Evidence.AgeHours -gt $MaxAgeHours) { return @('La evidencia de readiness de Manufactura tiene ' + [math]::Round($Evidence.AgeHours, 1) + ' h (maximo ' + $MaxAgeHours + ' h).') }
+    $bad = 'La evidencia de readiness de Manufactura no dice MANUFACTURA_READINESS_PASS phase=PreEnable perfil=' + $profileName + ' ('
+    $lines = @((([string]$Evidence.Text).TrimStart([char]0xFEFF)) -split "`r?`n" | Where-Object { $_.Trim() })
+    if ($lines.Count -ne 1) { return @($bad + 'debe contener exactamente una linea de veredicto y contiene ' + $lines.Count + '): NO habilitar.') }
+    $m = [regex]::Match([string]$lines[0], '\AMANUFACTURA_READINESS_(?<v>[A-Z]+) phase=(?<ph>\S+) perfil=(?<pf>\S+) controles=(?<n>\d{1,4}) fallos=(?<f>\d{1,4}) grupos=(?<g>\S+) commit=(?<c>\S+) faltan=(?<x>\S+) (?<ts>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\z')
+    if (-not $m.Success) { return @($bad + 'formato no reconocido o del contrato anterior, sin perfil ni controles acreditados): NO habilitar.') }
+    $r = @()
+    if ($m.Groups['v'].Value -cne 'PASS') { $r += ($bad + 'veredicto ' + $m.Groups['v'].Value + '; un diagnostico parcial o fallido no habilita): NO habilitar.') }
+    if ($m.Groups['ph'].Value -cne 'PreEnable') { $r += ($bad + 'fase ' + $m.Groups['ph'].Value + '): NO habilitar.') }
+    if ($m.Groups['pf'].Value -cne $profileName) { $r += ($bad + 'perfil ' + $m.Groups['pf'].Value + ', no el completo): NO habilitar.') }
+    if ($m.Groups['f'].Value -cne '0' -or [int]$m.Groups['n'].Value -lt 1) { $r += ($bad + 'controles=' + $m.Groups['n'].Value + ' fallos=' + $m.Groups['f'].Value + '): NO habilitar.') }
+    if ($m.Groups['g'].Value -cne $groups -or $m.Groups['x'].Value -cne '-') { $r += ($bad + 'grupos ejecutados ' + $m.Groups['g'].Value + ', faltan ' + $m.Groups['x'].Value + '; se exigen ' + $groups + '): NO habilitar.') }
+    $c = $m.Groups['c'].Value
+    if ($c -cnotmatch '\A[0-9a-f]{7}\z' -or -not $RunningCommit -or $c -cne $RunningCommit.ToLower()) { $r += ($bad + 'commit verificado ' + $c + ', en ejecucion ' + $RunningCommit + '; la evidencia debe ser de la version que corre en PROD): NO habilitar.') }
+    $ts = [datetime]::MinValue
+    $tsOk = [datetime]::TryParseExact($m.Groups['ts'].Value, "yyyy-MM-dd'T'HH:mm:ss'Z'", [System.Globalization.CultureInfo]::InvariantCulture, ([System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal), [ref]$ts)
+    $nowU = $NowUtc.ToUniversalTime()
+    if (-not $tsOk -or $ts -gt $nowU.AddMinutes(5) -or ($nowU - $ts).TotalHours -gt $MaxAgeHours) { $r += ('La evidencia de readiness de Manufactura tiene una fecha interna invalida, futura o de mas de ' + $MaxAgeHours + ' h (' + $m.Groups['ts'].Value + '): NO habilitar.') }
+    return $r
+}
+
 function Test-DeploySynchronizedMain {
     param([string]$Candidate)
     if ($Candidate -notmatch '\A[0-9a-fA-F]{40}\z') { return $false }
@@ -611,9 +644,7 @@ function Test-DeployGate {
             if ($mEmission -cne 'PRODUCCION') { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_ENABLED=true exige MANUFACTURING_EMISSION_ENV=PRODUCCION.' }
             $re = $(if ($Context.PSObject.Properties.Name -contains 'ReadinessEvidence') { $Context.ReadinessEvidence } else { $null })
             $reMaxAge = if ($Options.Contains('EvidenceMaxAgeHours')) { [double]$Options['EvidenceMaxAgeHours'] } else { 6 }
-            if (-not $re -or -not $re.Exists) { $reasons += 'La configuracion HABILITA Manufactura: falta la evidencia de Test-ManufacturaReleaseReadiness.ps1 -Phase PreEnable (-ManufacturingReadinessEvidence).' }
-            elseif ($re.AgeHours -gt $reMaxAge) { $reasons += ('La evidencia de readiness de Manufactura tiene ' + [math]::Round($re.AgeHours, 1) + ' h (maximo ' + $reMaxAge + ' h).') }
-            elseif (-not ([string]$re.Text).Contains('MANUFACTURA_READINESS_PASS phase=PreEnable') -or ([string]$re.Text).Contains('MANUFACTURA_READINESS_FAIL')) { $reasons += 'La evidencia de readiness de Manufactura no dice MANUFACTURA_READINESS_PASS phase=PreEnable: NO habilitar.' }
+            $reasons += @(Test-ManufacturingReadinessEvidence $re $reMaxAge ([string]$Context.PreviousCommit) ((Get-Date).ToUniversalTime()))
         }
     }
     if (@($Context.MigrationFiles).Count -gt 0) {

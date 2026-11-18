@@ -24,8 +24,18 @@
       Closure policy (-ClosurePolicyFile, -ClosurePolicySha256): the policy SELECTED for the window has the authorised SHA-256 and blocks writes under /api/manufacturing-sheets.
       Running commit (-HealthUrl, -ExpectedCommit), images (-ImagesManifest, -ImagesManifestSha256, -Containers), external nginx file (-NginxConf).
 
-    -EvidenceFile (outside the repository) receives one line: MANUFACTURA_READINESS_PASS phase=<phase> or MANUFACTURA_READINESS_FAIL phase=<phase>.
-    Deploy-DaubertHub.ps1 requires that PASS line (phase=PreEnable, recent) whenever the production env file enables Manufactura.
+    Profiles (contract completo-v1)
+      COMPLETE   Every mandatory control group of the phase was RUN and PASSED: bd, respaldo, configuracion, migraciones, salud (+ -ExpectedCommit), imagenes (manifest + its
+                 authorised SHA-256 + exactly one API and one Web container + interfazManufacturaCompilada as a JSON boolean), nginx, cierre (file + authorised SHA-256).
+                 PreEnable is complete only when the evaluated configuration IS the enabling one (MANUFACTURING_ENABLED=true); PreEnable needs the web WITH the
+                 interface, PreDeploy WITHOUT it.
+      DIAGNOSTIC Any group missing (argument absent, -SkipDatabase, a container missing, PreEnable with a non-enabling configuration). The selected controls run and print
+                 PASS/FAIL, but the run NEVER produces enabling evidence: exit 2 and MANUFACTURA_READINESS_PARTIAL (exit 1 / FAIL if any executed control failed).
+    -EvidenceFile (outside the repository) receives exactly ONE line:
+      MANUFACTURA_READINESS_<PASS|FAIL|PARTIAL> phase=<phase> perfil=<completo-v1|diagnostico> controles=<n> fallos=<n> grupos=<groups run> commit=<7 hex|-> faltan=<groups|-> <UTC>
+    PASS is written ONLY for a complete profile with zero failures. Deploy-DaubertHub.ps1 accepts nothing but that single PASS line with phase=PreEnable perfil=completo-v1,
+    the complete group list, fallos=0, commit = the commit running in PROD and a recent timestamp, whenever the production env file enables Manufactura.
+    Exit codes: 0 complete PASS, 1 any FAIL, 2 partial diagnostic (no authority).
 
     Dot-sourcing only defines the functions (tests).
 #>
@@ -51,6 +61,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:ReadinessTables = @('cliente_abreviaturas', 'confirmaciones_revision', 'documentos', 'firma_autorizaciones', 'firmas', 'pdf_contenidos', 'pdfs', 'revision_responsables', 'revisiones')
+$script:ReadinessProfile = 'completo-v1'
+# Mandatory control groups of the complete profile (same set for both phases; what differs per phase is the expected content: configuration and web interface).
+$script:ReadinessGroups = @('bd', 'respaldo', 'configuracion', 'migraciones', 'salud', 'imagenes', 'nginx', 'cierre')
 $script:ReadinessMarkers = @('POSTCHECK_020_PASS', 'POSTCHECK_021_PASS', 'POSTCHECK_022_PASS', 'POSTCHECK_023_PASS', 'POSTCHECK_024_PASS', 'POSTCHECK_026_PASS', 'MANUFACTURA_SQL_COMPLETE')
 $script:ReadinessSql = @"
 select 'db=' || current_database();
@@ -152,7 +165,8 @@ function Test-ReadinessBackupCoupling {
 
 function Test-ReadinessConfiguration {
     # Mirrors resolveManufacturing (apps/api/src/config/environment.ts). $DatabaseReady: every database check passed.
-    param($Flags, [string]$PhaseName, [bool]$DatabaseReady, $WebUiCompiled = $null)
+    # The web interface (interfazManufacturaCompilada) is checked by Test-ReadinessWebUi with the images manifest.
+    param($Flags, [string]$PhaseName, [bool]$DatabaseReady)
     $r = @()
     if ($null -eq $Flags) { return @(New-ReadinessResult $false 'archivo de entorno legible' 'no se pudo leer -EnvFile') }
     $enabled = [string]$Flags['MANUFACTURING_ENABLED']; $emission = [string]$Flags['MANUFACTURING_EMISSION_ENV']; $db = [string]$Flags['DB_NAME']
@@ -164,10 +178,53 @@ function Test-ReadinessConfiguration {
     $r += New-ReadinessResult (-not $on -or $DatabaseReady) 'configuracion: Manufactura solo se habilita con la base completamente preparada' 'ENABLED=true con la base sin preparar: /api/health diria ok y las rutas darian 500'
     if ($PhaseName -eq 'PreDeploy') {
         $r += New-ReadinessResult (-not $on) 'fase PreDeploy: la configuracion NO habilita Manufactura' 'MANUFACTURING_ENABLED=true antes del despliegue apagado (activacion accidental)'
-        if ($null -ne $WebUiCompiled) { $r += New-ReadinessResult (-not [bool]$WebUiCompiled) 'fase PreDeploy: la imagen web NO trae compilada la interfaz de Manufactura' 'interfazManufacturaCompilada=true con el API apagado' }
     }
-    elseif ($null -ne $WebUiCompiled -and $on) { $r += New-ReadinessResult ([bool]$WebUiCompiled) 'fase PreEnable: la imagen web trae compilada la interfaz de Manufactura' 'API habilitada con una web sin la interfaz' }
     return $r
+}
+
+function Test-ReadinessWebUi {
+    # interfazManufacturaCompilada of the images manifest: must be a JSON boolean (a string "false" is NOT accepted); PreDeploy expects false, PreEnable expects true.
+    param($ManifestText, [string]$PhaseName)
+    $j = $null; try { $j = $ManifestText | ConvertFrom-Json } catch { $j = $null }
+    $has = ($null -ne $j -and @($j.PSObject.Properties.Name) -contains 'interfazManufacturaCompilada' -and $j.interfazManufacturaCompilada -is [bool])
+    if (-not $has) { return @(New-ReadinessResult $false 'manifiesto de imagenes: interfazManufacturaCompilada verificable (booleano)' 'ausente o no booleano: no se puede comprobar la interfaz de la web; sin dato NO se habilita') }
+    $ui = [bool]$j.interfazManufacturaCompilada
+    if ($PhaseName -eq 'PreDeploy') { return @(New-ReadinessResult (-not $ui) 'fase PreDeploy: la imagen web NO trae compilada la interfaz de Manufactura' 'interfazManufacturaCompilada=true con el API apagado') }
+    return @(New-ReadinessResult $ui 'fase PreEnable: la imagen web trae compilada la interfaz de Manufactura' 'API habilitada con una web sin la interfaz')
+}
+
+function Get-ReadinessContainerService {
+    # Pure: container name -> 'api' | 'web' | '' (ambiguous or unidentifiable names are never guessed).
+    param([string]$Name)
+    $a = ($Name -match 'api'); $w = ($Name -match 'web')
+    if ($a -and -not $w) { return 'api' }
+    if ($w -and -not $a) { return 'web' }
+    return ''
+}
+
+function Get-ReadinessProfileGaps {
+    # Pure: which mandatory groups of the complete profile were NOT (or could not be) evaluated. Empty = complete. Each gap is "<group>: <reason>".
+    param([hashtable]$P, $Flags)
+    $g = @()
+    if ($P.SkipDatabase) { $g += 'bd: -SkipDatabase'; $g += 'respaldo: -SkipDatabase (sin datos de la base no se comprueba)' }
+    elseif (-not $P.BackupModule) { $g += 'respaldo: falta -BackupModule' }
+    if (-not $P.EnvFile) { $g += 'configuracion: falta -EnvFile' }
+    elseif ($P.Phase -eq 'PreEnable' -and ($null -eq $Flags -or [string]$Flags['MANUFACTURING_ENABLED'] -cne 'true')) { $g += 'configuracion: PreEnable exige evaluar la configuracion que habilita (MANUFACTURING_ENABLED=true)' }
+    if (-not $P.MigrationsEvidence) { $g += 'migraciones: falta -MigrationsEvidence' }
+    if (-not $P.HealthUrl) { $g += 'salud: falta -HealthUrl' }
+    if (-not $P.ExpectedCommit) { $g += 'salud: falta -ExpectedCommit' }
+    elseif ([string]$P.ExpectedCommit -notmatch '\A[0-9a-fA-F]{7,40}\z') { $g += 'salud: -ExpectedCommit no es un SHA hexadecimal de 7 a 40 caracteres' }
+    if (-not $P.ImagesManifest) { $g += 'imagenes: falta -ImagesManifest' }
+    if (-not $P.ImagesManifestSha256) { $g += 'imagenes: falta -ImagesManifestSha256' }
+    $names = @(@($P.Containers) | ForEach-Object { ([string]$_) -split ',' } | Where-Object { $_ })
+    $svc = @($names | ForEach-Object { Get-ReadinessContainerService $_ })
+    if (@($svc | Where-Object { $_ -eq 'api' }).Count -ne 1) { $g += 'imagenes: -Containers debe incluir exactamente un contenedor API' }
+    if (@($svc | Where-Object { $_ -eq 'web' }).Count -ne 1) { $g += 'imagenes: -Containers debe incluir exactamente un contenedor Web' }
+    if (@($svc | Where-Object { -not $_ }).Count -gt 0) { $g += 'imagenes: -Containers incluye nombres sin servicio identificable (api/web)' }
+    if (-not $P.NginxConf) { $g += 'nginx: falta -NginxConf' }
+    if (-not $P.ClosurePolicyFile) { $g += 'cierre: falta -ClosurePolicyFile' }
+    if (-not $P.ClosurePolicySha256) { $g += 'cierre: falta -ClosurePolicySha256' }
+    return $g
 }
 
 function Test-ReadinessEvidence {
@@ -208,9 +265,14 @@ function Test-ReadinessImages {
     $r += New-ReadinessResult ([bool]$AuthorisedSha -and $sha -eq $AuthorisedSha.ToLower()) 'SHA-256 del manifiesto de imagenes = el autorizado' $sha
     $m = $null; try { $m = $ManifestText | ConvertFrom-Json } catch { $m = $null }
     if ($null -eq $m) { $r += New-ReadinessResult $false 'manifiesto de imagenes valido' 'JSON invalido'; return $r }
+    $props = @($m.PSObject.Properties.Name)
+    $entries = @($(if ($props -contains 'imagenes') { @($m.imagenes) } else { @() }) | Where-Object { $null -ne $_ })
+    $svcOk = @('api', 'web' | Where-Object { $s = $_; $e = @($entries | Where-Object { [string]$_.servicio -eq $s }); $e.Count -eq 1 -and [string]$e[0].imageId })
+    $r += New-ReadinessResult (($props -contains 'formato') -and [string]$m.formato -eq '1' -and $svcOk.Count -eq 2) 'manifiesto de imagenes completo (formato 1; una imagen api y una web con imageId)' ('servicios completos: ' + ($svcOk -join ','))
     foreach ($c in @($ContainerNames)) {
-        $svc = $(if ($c -match 'api') { 'api' } else { 'web' })
-        $entry = @($m.imagenes | Where-Object { [string]$_.servicio -eq $svc }) | Select-Object -First 1
+        $svc = Get-ReadinessContainerService $c
+        if (-not $svc) { $r += New-ReadinessResult $false ('contenedor ' + $c + ' con servicio identificable (api/web)') 'nombre ambiguo o desconocido: no se compara con ninguna imagen'; continue }
+        $entry = @($entries | Where-Object { [string]$_.servicio -eq $svc }) | Select-Object -First 1
         $want = $(if ($entry) { [string]$entry.imageId } else { '' }); $have = [string]$RunningIds[$c]
         $r += New-ReadinessResult ([bool]$have -and $have -eq $want) ('imagen en ejecucion de ' + $c + ' = imagen validada') ("en ejecucion=$have validada=$want")
     }
@@ -229,39 +291,63 @@ function Invoke-ReadinessMain {
         $dbReady = (@($dbResults | Where-Object { -not $_.Ok }).Count -eq 0)
         if ($P.BackupModule) { $results += @(Test-ReadinessBackupCoupling (Read-ReadinessText $P.BackupModule) $facts) }
     }
-    $webUi = $null; $manifestText = $null
+    $groups = @()
+    if (-not $P.SkipDatabase) { $groups += 'bd'; if ($P.BackupModule) { $groups += 'respaldo' } }
+    $manifestText = $null
     if ($P.ImagesManifest) {
+        $groups += 'imagenes'
         $manifestText = Read-ReadinessText $P.ImagesManifest
-        if ($null -ne $manifestText) { try { $j = $manifestText | ConvertFrom-Json; if ($j.PSObject.Properties.Name -contains 'interfazManufacturaCompilada') { $webUi = [bool]$j.interfazManufacturaCompilada } } catch { $webUi = $null } }
         $ids = @{}
         $names = @($P.Containers | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
-        foreach ($c in $names) { $ids[$c] = Get-ReadinessContainerImage $c }
+        foreach ($c in $names) { if (Get-ReadinessContainerService $c) { $ids[$c] = Get-ReadinessContainerImage $c } }
         $results += @(Test-ReadinessImages $manifestText $P.ImagesManifestSha256 $names $ids)
+        if ($null -ne $manifestText) { $results += @(Test-ReadinessWebUi $manifestText $P.Phase) }
     }
+    $flags = $null
     if ($P.EnvFile) {
+        $groups += 'configuracion'
         $text = Read-ReadinessText $P.EnvFile
         $flags = $(if ($null -eq $text) { $null } else { Get-ReadinessEnvFlags $text })
-        $results += @(Test-ReadinessConfiguration $flags $P.Phase ($dbReady -and -not $P.SkipDatabase) $webUi)
+        $results += @(Test-ReadinessConfiguration $flags $P.Phase ($dbReady -and -not $P.SkipDatabase))
     }
-    if ($P.MigrationsEvidence) { $results += @(Test-ReadinessEvidence (Read-ReadinessText $P.MigrationsEvidence)) }
+    if ($P.MigrationsEvidence) { $groups += 'migraciones'; $results += @(Test-ReadinessEvidence (Read-ReadinessText $P.MigrationsEvidence)) }
+    $runningCommit = '-'
     if ($P.HealthUrl) {
+        $groups += 'salud'
         $h = $null; try { $h = Invoke-ReadinessHealth $P.HealthUrl } catch { $h = $null }
         if ($null -eq $h) { $results += New-ReadinessResult $false '/api/health responde' 'sin respuesta' }
         else {
             $results += New-ReadinessResult ([string]$h.status -eq 'ok' -and [string]$h.database -eq 'connected') '/api/health ok y base conectada' ('status=' + [string]$h.status + ' database=' + [string]$h.database)
-            if ($P.ExpectedCommit) { $want = $P.ExpectedCommit.Substring(0, [Math]::Min(7, $P.ExpectedCommit.Length)); $results += New-ReadinessResult ([string]$h.commit -eq $want) 'commit en ejecucion = el esperado' ('en ejecucion=' + [string]$h.commit + ' esperado=' + $want) }
+            if ($P.ExpectedCommit) {
+                $want = $P.ExpectedCommit.Substring(0, [Math]::Min(7, $P.ExpectedCommit.Length)).ToLower()
+                $commitOk = ([string]$P.ExpectedCommit -match '\A[0-9a-fA-F]{7,40}\z' -and ([string]$h.commit).ToLower() -ceq $want)
+                $results += New-ReadinessResult $commitOk 'commit en ejecucion = el esperado' ('en ejecucion=' + [string]$h.commit + ' esperado=' + $want)
+                if ($commitOk) { $runningCommit = $want }
+            }
         }
     }
-    if ($P.NginxConf) { $results += @(Test-ReadinessNginx (Read-ReadinessText $P.NginxConf)) }
-    if ($P.ClosurePolicyFile) { $results += @(Test-ReadinessClosurePolicy (Read-ReadinessText $P.ClosurePolicyFile) (Get-ReadinessFileSha256 $P.ClosurePolicyFile) $P.ClosurePolicySha256) }
+    if ($P.NginxConf) { $groups += 'nginx'; $results += @(Test-ReadinessNginx (Read-ReadinessText $P.NginxConf)) }
+    if ($P.ClosurePolicyFile) { $groups += 'cierre'; $results += @(Test-ReadinessClosurePolicy (Read-ReadinessText $P.ClosurePolicyFile) (Get-ReadinessFileSha256 $P.ClosurePolicyFile) $P.ClosurePolicySha256) }
 
     if (@($results).Count -eq 0) { $results += New-ReadinessResult $false 'se ejecuto al menos un control' 'nada que comprobar: revise los parametros' }
     foreach ($x in $results) { Write-Host ($(if ($x.Ok) { 'PASS ' } else { 'FAIL ' }) + $x.Name + $(if (-not $x.Ok -and $x.Detail) { ' :: ' + $x.Detail } else { '' })) }
     $fails = @($results | Where-Object { -not $_.Ok }).Count
-    $verdict = $(if ($fails) { 'MANUFACTURA_READINESS_FAIL' } else { 'MANUFACTURA_READINESS_PASS' }) + ' phase=' + $P.Phase
-    if ($P.EvidenceFile) { Write-ReadinessEvidence $P.EvidenceFile ($verdict + ' controles=' + @($results).Count + ' fallos=' + $fails + ' ' + (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) }
-    Write-Host ('RESULTADO: ' + $(if ($fails) { "$fails control(es) FALLARON: NO desplegar ni habilitar Manufactura" } else { 'todos los controles PASS' }) + '  [' + $verdict + ']')
-    return $(if ($fails) { 1 } else { 0 })
+    $gaps = @(Get-ReadinessProfileGaps $P $flags)
+    $complete = ($gaps.Count -eq 0)
+    foreach ($gap in $gaps) { Write-Host ('NO EJECUTADO ' + $gap) }
+    # PASS exists ONLY for a complete profile without failures; anything else has no authority to deploy or enable.
+    $kind = $(if ($fails) { 'FAIL' } elseif ($complete) { 'PASS' } else { 'PARTIAL' })
+    $profileName = $(if ($complete) { $script:ReadinessProfile } else { 'diagnostico' })
+    $missing = @($gaps | ForEach-Object { ($_ -split ':')[0] } | Select-Object -Unique)
+    $groups = @($script:ReadinessGroups | Where-Object { $groups -contains $_ })
+    $verdict = 'MANUFACTURA_READINESS_' + $kind + ' phase=' + $P.Phase + ' perfil=' + $profileName
+    $line = $verdict + ' controles=' + @($results).Count + ' fallos=' + $fails + ' grupos=' + $(if ($groups.Count) { $groups -join ',' } else { '-' }) + ' commit=' + $runningCommit + ' faltan=' + $(if ($missing.Count) { $missing -join ',' } else { '-' }) + ' ' + (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    if ($P.EvidenceFile) { Write-ReadinessEvidence $P.EvidenceFile $line }
+    $summary = $(if ($fails) { "$fails control(es) FALLARON: NO desplegar ni habilitar Manufactura" }
+        elseif ($complete) { 'perfil ' + $script:ReadinessProfile + ': todos los controles PASS y todos los grupos obligatorios ejecutados' }
+        else { 'DIAGNOSTICO PARCIAL: los controles ejecutados pasan pero faltan grupos obligatorios (' + ($missing -join ',') + '): esta corrida NO autoriza desplegar ni habilitar' })
+    Write-Host ('RESULTADO: ' + $summary + '  [' + $verdict + ']')
+    return $(if ($fails) { 1 } elseif ($complete) { 0 } else { 2 })
 }
 function Write-ReadinessEvidence {
     param([string]$Path, [string]$Line)

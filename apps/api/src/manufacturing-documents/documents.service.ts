@@ -122,7 +122,7 @@ export class DocumentsService {
           colorPersonalizado: dto.colorPersonalizado !== undefined ? dto.colorPersonalizado : previa.colorPersonalizado,
           incidenciasReconocidas: dto.incidenciasReconocidas !== undefined ? dto.incidenciasReconocidas : previa.incidenciasReconocidas
         };
-        const especificacion = construirEspecificacion(dto.cliente !== undefined ? this.conClienteImpreso(entrada, cliente) : entrada, fila.codigo_dcmx);
+        const especificacion = construirEspecificacion(this.conClienteImpreso(entrada, cliente), fila.codigo_dcmx);
 
         const resp = dto.responsables !== undefined ? await this.prepararResponsables(c, dto.responsables, fila.revision_id) : null;
         const nombre = resp ? resp.nombrePrincipal : dto.elaboroNombre !== undefined ? textoONulo(dto.elaboroNombre) : fila.elaboro_nombre;
@@ -255,7 +255,7 @@ export class DocumentsService {
 
   /** El cliente impreso en la hoja es el identificado en el documento (no un texto aparte que pueda divergir). */
   private conClienteImpreso<T extends { datos: Record<string, unknown> }>(entrada: T, cliente: Cliente): T {
-    return cliente.clienteNombre ? { ...entrada, datos: { ...entrada.datos, cliente: cliente.clienteNombre } } : entrada;
+    return { ...entrada, datos: { ...entrada.datos, cliente: cliente.clienteNombre ?? '' } };
   }
 
   // ================================================================== vistas
@@ -477,6 +477,10 @@ export class DocumentsService {
         if (actual.estado !== 'BORRADOR' && actual.estado !== 'FINALIZANDO') throw http(HttpStatus.CONFLICT, 'NOT_EDITABLE', 'Esta revisión ya no admite cambios.');
         if (actual.creado_por_usuario_id !== actor.userId && actor.role !== 'ADMIN') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Solo el creador o un ADMIN pueden finalizar.' });
         if (actual.version !== version) throw this.errorDeVersion(actual.version);
+        // Un borrador anterior al control de coherencia debe guardarse de nuevo; nunca se corrige una copia congelada ni histórica al renderizar.
+        if (actual.especificacion.datos.cliente !== (actual.cliente_nombre ?? '')) {
+          throw http(HttpStatus.UNPROCESSABLE_ENTITY, 'SPEC_INVALID', 'El cliente impreso no coincide con el cliente del documento. Guarda de nuevo el borrador antes de finalizar.');
+        }
         // El cliente vinculado debe seguir activo y con el mismo nombre que se va a imprimir: el catálogo puede cambiar entre el borrador y la finalización. Una vez finalizada, la
         // revisión conserva su propio nombre e identificador (inmutables), pase lo que pase después con la empresa.
         if (actual.estado === 'BORRADOR' && actual.cliente_verificado && actual.cliente_empresa_id) {
@@ -595,7 +599,7 @@ export class DocumentsService {
         const abierta = await this.repo.revisionAbiertaDelDocumento(c, documentoId);
         if (abierta) throw http(HttpStatus.CONFLICT, 'OPEN_DRAFT_EXISTS', 'El documento ya tiene un borrador o una finalización en curso.', { borradorId: abierta.public_id });
         const id = await this.repo.crearBorrador(c, await this.documentoIdInterno(c, documentoId), {
-          familia: base.familia, especificacion: base.especificacion, elaboroNombre: actor.displayName, elaboroConfirmado: false, autorizoNombre: null,
+          familia: base.familia, especificacion: construirEspecificacion(this.conClienteImpreso(base.especificacion, this.clienteDe(base)), base.codigo_dcmx), elaboroNombre: actor.displayName, elaboroConfirmado: false, autorizoNombre: null,
           clienteEmpresaId: base.cliente_empresa_id, clienteNombre: base.cliente_nombre, clienteVerificado: base.cliente_verificado, revisorUsuarioId: null
         }, base.revision_id);
         // Los nombres y funciones se recuperan como referencia editable; las imágenes de firma NO se heredan (cada revisión se firma por separado).

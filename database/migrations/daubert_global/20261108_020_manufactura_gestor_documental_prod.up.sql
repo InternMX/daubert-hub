@@ -79,7 +79,7 @@ AS $fn$ SELECT encode(sha256(convert_to(p_familia || E'\n' || p_especificacion::
 -- Nombre del PDF finalizado: CODIGO-VARIANTE_REV01.pdf (o CODIGO_REV01.pdf sin variante). La base lo impone: el nombre y la revisión impresa no pueden divergir.
 CREATE FUNCTION manufactura.fn_nombre_pdf(p_codigo text, p_variante text, p_revision integer) RETURNS text
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog
-AS $fn$ SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, 2, '0') || '.pdf' $fn$;
+AS $fn$ SELECT p_codigo || CASE WHEN p_variante IS NULL THEN '' ELSE '-' || upper(btrim(regexp_replace(btrim(p_variante), '[^A-Za-z0-9]+', '-', 'g'), '-')) END || '_REV' || lpad(p_revision::text, greatest(2, length(p_revision::text)), '0') || '.pdf' $fn$;
 
 -- Validación ESTRUCTURAL de la copia de la especificación (revisión 3). NO examina el texto de los valores: una descripción legítima («TOKEN», «SECRET», «PASSWORD»…)
 -- se acepta. Se rechazan únicamente: claves con nombre de credencial en cualquier nivel (authorization, bearer, api key, password, secret, token, cookie…), claves que no

@@ -74,7 +74,7 @@
     "cat_recovery"
   ],
   "resumen": {
-    "inerte_nunca_en_prod": 55,
+    "inerte_nunca_en_prod": 60,
     "produccion_lectura": 2,
     "produccion_reversion": 6,
     "produccion_aplicar": 18
@@ -160,9 +160,9 @@
     {
       "ruta": "database/migrations/daubert_global/20261108_020_manufactura_gestor_documental_prod.up.sql",
       "categoria": "produccion_aplicar",
-      "blob": "714c1baef8e9d767631f8ad39e9e3b17ee93f2e9",
-      "sha256": "fd7285ac952213eb9138ba35f8578c5168cc21d2bc8b966a0ac4f115038885c8",
-      "bytes": 46978
+      "blob": "090652d9c380287a9e47fec9c093e32efc4f444b",
+      "sha256": "d7aa30388446e511238e5ac5838a66ccfed6004920a646da2c5acae211695e37",
+      "bytes": 47014
     },
     {
       "ruta": "database/migrations/daubert_global/20261108_021_manufactura_responsables_firmas_prod.down.sql",
@@ -307,9 +307,9 @@
     {
       "ruta": "database/migrations/daubert_global/README-manufactura-020-024.md",
       "categoria": "inerte_nunca_en_prod",
-      "blob": "cde3dcedc5a3e74f9537ced356599c324ed8a2a5",
-      "sha256": "77bcd8166c8c072b59b038d39d00b859a19b3daf0f65481bc6d5e5524f7d8312",
-      "bytes": 21698
+      "blob": "561d51a60cf58d6e6c2c7b60f74cd7aa835332dd",
+      "sha256": "00ea124cc978719d2171de48fd79aa9416fb7bb7402772e369138e606b547f19",
+      "bytes": 22873
     },
     {
       "ruta": "database/migrations/daubert_global/replica_only/20261108_020_manufactura_gestor_documental_prod.smoke_replica.sql",
@@ -356,9 +356,9 @@
     {
       "ruta": "database/migrations/daubert_global/tools/generar-manufactura-prod.cjs",
       "categoria": "inerte_nunca_en_prod",
-      "blob": "88dcd016ad9abb11800844ac7a181f92bc13b240",
-      "sha256": "b5b158db3aca0f721bf4dd9795ef7019b12639c90c73cfa12cdb74950edad691",
-      "bytes": 14402
+      "blob": "6743c65e8b5dc015942b676a86aad4549a41befa",
+      "sha256": "051e1971acc122ff3de7e07ee15b11510d52d1011a4d5c1abc704a45bacc52b6",
+      "bytes": 16888
     },
     {
       "ruta": "database/migrations/daubert_global/tools/validar-manufactura-020-024-en-replica-prod.cjs",
@@ -578,6 +578,34 @@
       "bytes": 4628
     },
     {
+      "ruta": "database/migrations/daubert_hub_test/20261113_107_manufactura_nombre_pdf_revision_test.down.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "2f800a77320dfc1f02e2369791f99eba68cc75d5",
+      "sha256": "099dfa55159441fb08ab2bb9926cae60dbdc051691f38d1cd681b50ddcf296dd",
+      "bytes": 5538
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261113_107_manufactura_nombre_pdf_revision_test.postcheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "7172f25477e26d11c085f8862e177b0405c88f7d",
+      "sha256": "82268505d15e800925ee5c4eae51dde1c0cfd32b276bb3088d3b7f7505c78aed",
+      "bytes": 5352
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261113_107_manufactura_nombre_pdf_revision_test.precheck.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "5d7e211147d560776603f6940745fbfd4f25bee6",
+      "sha256": "2acaa409a190f6a8f747cfb2b7a5a6348437fa2f0874b5ce2b4e738ba6c5b3ec",
+      "bytes": 5914
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/20261113_107_manufactura_nombre_pdf_revision_test.up.sql",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "a297f83dee8125a59626290cc5957241432fce68",
+      "sha256": "6ec1ad1ebcf0c486eac1d067a0fe261dcca67bf3ba1043b06e5bb7d86a1c47f5",
+      "bytes": 6221
+    },
+    {
       "ruta": "database/migrations/daubert_hub_test/README-104.md",
       "categoria": "inerte_nunca_en_prod",
       "blob": "710c07f3e98db69b6e11806599b12fbe2346e9e4",
@@ -590,6 +618,13 @@
       "blob": "57978a44b632ff05263133a9669662091f4846d7",
       "sha256": "e7241c324a511a938802cc8ccf80270746dfe62b8c97c60964a518678f269ac2",
       "bytes": 4795
+    },
+    {
+      "ruta": "database/migrations/daubert_hub_test/README-107.md",
+      "categoria": "inerte_nunca_en_prod",
+      "blob": "f6c403a1cc9073714958edd0990c2d0cbece6511",
+      "sha256": "d6558b03e0accce8b6412636809e342eacd7a8f7ffd29731e6e3f669bfab7881",
+      "bytes": 4336
     },
     {
       "ruta": "database/migrations/daubert_hub_test/README.md",

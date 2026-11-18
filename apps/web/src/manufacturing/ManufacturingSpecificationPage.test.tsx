@@ -669,7 +669,12 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     const composicion = () => screen.getByRole('radio', { name: 'PMG' }).closest('div.MuiBox-root') as HTMLElement;
     expect((await leerProcedencia(composicion())).fuentes).toEqual(['Corroborado por Title y Code']);
     await user.click(screen.getByRole('button', { name: 'Buscar en BIND' }));
-    await waitFor(async () => expect((await leerProcedencia(composicion())).fuentes).toEqual(['Extraído de Title']));
+    // Espera sin efectos secundarios a que la SEGUNDA consulta quede aplicada y lee la procedencia una sola vez: reintentar leerProcedencia
+    // dentro de waitFor abre y cierra el Popover en cada intento (≈200-350 ms) y agota el plazo de 1 s de waitFor en un runner lento.
+    await waitFor(() => expect(lookupMock).toHaveBeenCalledTimes(2));
+    await act(async () => { await lookupMock.mock.results[1]!.value; });
+    await waitFor(() => expect(screen.queryByLabelText('Buscando')).not.toBeInTheDocument());
+    expect((await leerProcedencia(composicion())).fuentes).toEqual(['Extraído de Title']);
     expect(await chipsDe('Calibre')).toEqual([]);                                 // los demás campos no muestran fuente de Code
   });
 

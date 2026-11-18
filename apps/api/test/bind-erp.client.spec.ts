@@ -199,6 +199,160 @@ describe('BindErpClient', () => {
     });
   });
 
+  describe('timeout durante la lectura del cuerpo', () => {
+    type Init = { signal: AbortSignal };
+    // Cabeceras inmediatas (200) con un json() controlado por la prueba; registra la señal de cada intento.
+    const cabecerasInmediatas = (json: (signal: AbortSignal) => Promise<unknown>) => {
+      const senales: AbortSignal[] = [];
+      const fn = vi.fn(async (_url: string, init: Init) => {
+        senales.push(init.signal);
+        return { status: 200, ok: true, headers: new Headers(), json: () => json(init.signal) };
+      });
+      return { fn, senales };
+    };
+    const nunca = () => new Promise<never>(() => undefined);
+    const conRetraso = <T>(ms: number, valor: T) => new Promise<T>((resolve) => setTimeout(() => resolve(valor), ms));
+
+    it('cuerpo demorado dentro del timeout: éxito sin reintentos', async () => {
+      const { fn, senales } = cabecerasInmediatas(() => conRetraso(10, pagina([producto()])));
+      usar(fn);
+      expect(await cliente({}, { timeoutMs: 200 }).findByCode('SCHFPMG001')).toMatchObject({ kind: 'RESULTS', products: [{ Code: 'SCHFPMG001' }] });
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(senales[0]!.aborted).toBe(false);
+    });
+
+    it('cuerpo bloqueado que ignora la señal: TIMEOUT por solicitud, con los reintentos existentes', async () => {
+      const { fn, senales } = cabecerasInmediatas(nunca);
+      usar(fn);
+      const inicio = Date.now();
+      expect(await cliente({}, { timeoutMs: 20 }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+      expect(Date.now() - inicio).toBeLessThan(1_000);
+      expect(fn).toHaveBeenCalledTimes(3);
+      expect(senales.every((s) => s.aborted)).toBe(true);
+    });
+
+    it('cuerpo que respeta la señal: se cancela la lectura y se informa TIMEOUT', async () => {
+      const { fn, senales } = cabecerasInmediatas((signal) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))));
+      usar(fn);
+      expect(await cliente({}, { timeoutMs: 15, retryDelaysMs: [] }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(senales[0]!.aborted).toBe(true);
+    });
+
+    it('el deadline total acota la lectura del cuerpo aunque el timeout por solicitud sea mayor', async () => {
+      const { fn } = cabecerasInmediatas(nunca);
+      usar(fn);
+      const inicio = Date.now();
+      expect(await cliente({}, { timeoutMs: 5_000, totalTimeoutMs: 60, retryDelaysMs: [0, 0] }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+      const transcurrido = Date.now() - inicio;
+      expect(transcurrido).toBeGreaterThanOrEqual(50);
+      expect(transcurrido).toBeLessThan(1_000);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('el deadline total es compartido entre páginas: una segunda página bloqueada no lo extiende', async () => {
+      let llamada = 0;
+      const fn = vi.fn(async () => {
+        llamada += 1;
+        const body = llamada === 1 ? Promise.resolve(pagina([], { nextLink: `${BASE}/api/Products?$skip=1` })) : nunca();
+        return { status: 200, ok: true, headers: new Headers(), json: () => body };
+      });
+      usar(fn);
+      const inicio = Date.now();
+      expect(await cliente({}, { timeoutMs: 5_000, totalTimeoutMs: 80, retryDelaysMs: [] }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+      expect(Date.now() - inicio).toBeLessThan(1_000);
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('cuerpo bloqueado en el primer intento y válido en el reintento: se recupera', async () => {
+      let intento = 0;
+      const { fn } = cabecerasInmediatas(() => (intento++ === 0 ? nunca() : Promise.resolve(pagina([producto()]))));
+      usar(fn);
+      expect(await cliente({}, { timeoutMs: 20 }).findByCode('SCHFPMG001')).toMatchObject({ kind: 'RESULTS' });
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('conexión interrumpida a mitad del cuerpo: NETWORK_ERROR (transitorio, se reintenta) sin exponer el error', async () => {
+      const { fn } = cabecerasInmediatas(() => Promise.reject(new TypeError(`terminated ECONNRESET ${API_KEY}`)));
+      usar(fn);
+      const r = await cliente().findByCode('SCHFPMG001');
+      expect(r).toEqual({ kind: 'NETWORK_ERROR' });
+      expect(fn).toHaveBeenCalledTimes(3);
+      expect(JSON.stringify(r)).not.toContain(API_KEY);
+    });
+
+    it('JSON inválido tras un cuerpo demorado: INVALID_RESPONSE sin reintentos', async () => {
+      const { fn } = cabecerasInmediatas(() => new Promise((_resolve, reject) => setTimeout(() => reject(new SyntaxError('Unexpected end of JSON input')), 5)));
+      usar(fn);
+      expect(await cliente({}, { timeoutMs: 200 }).findByCode('SCHFPMG001')).toEqual({ kind: 'INVALID_RESPONSE' });
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('un rechazo tardío del cuerpo tras el timeout se absorbe (sin rechazos no controlados)', async () => {
+      const { fn } = cabecerasInmediatas(() => new Promise((_resolve, reject) => setTimeout(() => reject(new TypeError('terminated')), 40)));
+      usar(fn);
+      expect(await cliente({}, { timeoutMs: 10, retryDelaysMs: [] }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+
+    it('Response nativo con stream: cuerpo parcial que nunca cierra da TIMEOUT; cuerpo completo tardío da éxito', async () => {
+      const texto = JSON.stringify(pagina([producto()]));
+      const bloqueado = () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(texto.slice(0, 10))); } }), { status: 200 });
+      usar(vi.fn(async () => bloqueado()));
+      expect(await cliente({}, { timeoutMs: 20, retryDelaysMs: [] }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+
+      const tardio = () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(texto.slice(0, 10))); setTimeout(() => { c.enqueue(new TextEncoder().encode(texto.slice(10))); c.close(); }, 10); } }), { status: 200 });
+      usar(vi.fn(async () => tardio()));
+      expect(await cliente({}, { timeoutMs: 500, retryDelaysMs: [] }).findByCode('SCHFPMG001')).toMatchObject({ kind: 'RESULTS', products: [{ Code: 'SCHFPMG001' }] });
+    });
+
+    it('cabeceras bloqueadas que ignoran la señal: TIMEOUT igualmente', async () => {
+      const fn = usar(vi.fn(() => nunca()));
+      expect(await cliente({}, { timeoutMs: 15, retryDelaysMs: [] }).findByCode('SCHFPMG001')).toEqual({ kind: 'TIMEOUT' });
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    describe('limpieza de temporizadores y cancelaciones', () => {
+      afterEach(() => { vi.useRealTimers(); });
+
+      it('tras un éxito no quedan temporizadores pendientes ni la señal se cancela después', async () => {
+        vi.useFakeTimers();
+        const { fn, senales } = cabecerasInmediatas(async () => pagina([producto()]));
+        usar(fn);
+        expect(await cliente().findByCode('SCHFPMG001')).toMatchObject({ kind: 'RESULTS' });
+        expect(vi.getTimerCount()).toBe(0);
+        vi.advanceTimersByTime(60_000);
+        expect(senales[0]!.aborted).toBe(false);
+      });
+
+      it('tras un timeout del cuerpo no quedan temporizadores pendientes', async () => {
+        vi.useFakeTimers();
+        const { fn } = cabecerasInmediatas(nunca);
+        usar(fn);
+        const pendiente = cliente({}, { timeoutMs: 20, retryDelaysMs: [] }).findByCode('SCHFPMG001');
+        await vi.advanceTimersByTimeAsync(20);
+        expect(await pendiente).toEqual({ kind: 'TIMEOUT' });
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it.each([[401, 'UNAUTHORIZED'], [500, 'UPSTREAM_ERROR']])('HTTP %i: descarta el cuerpo sin leerlo y libera el temporizador', async (status, kind) => {
+        vi.useFakeTimers();
+        const cancel = vi.fn().mockResolvedValue(undefined);
+        const json = vi.fn();
+        usar(vi.fn().mockResolvedValue({ status, ok: false, headers: new Headers(), json, body: { cancel } }));
+        expect(await cliente({}, { retryDelaysMs: [] }).findByCode('SCHFPMG001')).toEqual({ kind });
+        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(json).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('un fallo al descartar el cuerpo no altera el resultado', async () => {
+        usar(vi.fn().mockResolvedValue({ status: 403, ok: false, headers: new Headers(), body: { cancel: vi.fn().mockRejectedValue(new Error('locked')) } }));
+        expect(await cliente().findByCode('SCHFPMG001')).toEqual({ kind: 'FORBIDDEN' });
+      });
+    });
+  });
+
   it('el resultado nunca contiene las credenciales', async () => {
     usar(vi.fn().mockResolvedValue(ok(pagina([producto()]))));
     const salida = JSON.stringify(await cliente().findByCode('SCHFPMG001'));
