@@ -1,0 +1,12 @@
+# Override SOLO para el proyecto Compose `daubert-hub-test` (demostración de Manufactura). Nunca con el proyecto `daubert-hub` (PROD).
+# - Publica la web únicamente en loopback (127.0.0.1:8081): no queda visible en la red local.
+# - Imágenes fijas de TEST (sin construir): daubert-hub-test-<svc>:latest, promovidas desde release-<commit> por el procedimiento.
+services:
+  api:
+    build: !reset null
+    image: "daubert-hub-test-api:latest"
+  web:
+    build: !reset null
+    image: "daubert-hub-test-web:latest"
+    ports: !override
+      - "127.0.0.1:8081:80"

@@ -1,11 +1,12 @@
 import 'reflect-metadata';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { SafeExceptionFilter } from './common/http-exception.filter';
 import type { EnvironmentConfig } from './config/environment';
+import { createGlobalValidationPipe } from './config/validation-pipe';
 import { detectContainer, ProductionDatabaseGuardError, verifyDatabaseBeforeListening } from './config/production-database-guard';
 import { DatabaseService } from './database/database.service';
 
@@ -50,7 +51,7 @@ async function bootstrap(): Promise<void> {
     contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
     hsts: false
   }));
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+  app.useGlobalPipes(createGlobalValidationPipe());
   app.useGlobalFilters(new SafeExceptionFilter());
 
   await assertDatabaseSafeBeforeListening(app);

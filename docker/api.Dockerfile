@@ -33,6 +33,12 @@ ARG GIT_COMMIT=unknown
 ENV NODE_ENV=production
 ENV APP_VERSION=${APP_VERSION}
 ENV GIT_COMMIT=${GIT_COMMIT}
+# PDF de Manufactura: Chromium y las fuentes de la plantilla (Calibri => Carlito, métricas compatibles) viven EN LA IMAGEN; nada depende de un navegador instalado en el host.
+# fontconfig/ttf-dejavu son el respaldo de caracteres. --no-sandbox lo añade la API solo con MANUFACTURING_PDF_CHROME_NO_SANDBOX=true (el contenedor corre como el usuario node, sin privilegios).
+RUN apk add --no-cache chromium font-carlito fontconfig ttf-dejavu \
+    && fc-cache -f
+ENV MANUFACTURING_PDF_CHROME_PATH=/usr/bin/chromium
+ENV MANUFACTURING_PDF_CHROME_NO_SANDBOX=true
 WORKDIR /app
 
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules

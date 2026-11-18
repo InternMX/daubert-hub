@@ -22,6 +22,10 @@ vi.mock('../services/companyAliases', async (importOriginal) => ({
   getCompanyAliases: vi.fn()
 }));
 
+vi.mock('../services/clientAbbreviations', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/clientAbbreviations')>()),
+  listarAbreviaturas: vi.fn().mockResolvedValue({ disponible: true, puedeResolver: false, data: [], conteos: {} })
+}));
 const getClientMock = vi.mocked(getClient);
 const deactivateClientMock = vi.mocked(deactivateClient);
 const reactivateClientMock = vi.mocked(reactivateClient);
@@ -54,7 +58,7 @@ describe('ClientDetailPage', () => {
     expect(getCompanyAliasesMock).toHaveBeenCalledWith('121');
     expect(screen.getByRole('link', { name: 'Ver contactos' })).toHaveAttribute('href', '/contacts?company=121');
     const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
-    expect(headings).toEqual(['Información general', 'Direcciones', 'Datos fiscales', 'Alias', 'Contactos relacionados']);
+    expect(headings).toEqual(['Información general', 'Direcciones', 'Datos fiscales', 'Alias', 'Abreviaturas de código DCMX', 'Contactos relacionados']);
   });
 
   it('shows fiscal data, multi-role chips, and returns to the filtered directory path', async () => {

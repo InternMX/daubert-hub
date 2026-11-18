@@ -1,0 +1,3 @@
+    /* Nota de manufactura: separada 8 pt del dibujo; la altura crece si el texto lo requiere. */
+    .nota-contenedor { margin-top: 8pt; }
+    .alto-nota { height: 17.5pt; }

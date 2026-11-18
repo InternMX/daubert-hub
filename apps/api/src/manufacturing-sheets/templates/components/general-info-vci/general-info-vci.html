@@ -1,0 +1,45 @@
+    <!-- DATOS GENERALES con campo Resina VCI (BOLSA_FUELLE y, después, HOJA_PAQ): Cliente y Fecha, Resina VCI, Producto, Color,
+         Código DCMX, Descripción, Composición, Presentación y Cantidad. Cuadrícula B:I (8 columnas). -->
+    <div class="tabla-contenedor" id="seccion-datos-generales" data-seccion="datos-generales">
+      <table class="t-bi" aria-label="Datos generales de la hoja de manufactura">
+        <colgroup>
+          <col class="g-b"><col class="g-c"><col class="g-d"><col class="g-e">
+          <col class="g-f"><col class="g-g"><col class="g-h"><col class="g-i">
+        </colgroup>
+        <tbody>
+          <tr class="alto-doble">
+            <th class="rotulo" colspan="2" scope="row">Cliente:</th>
+            <td colspan="3" id="cliente">{{cliente}}</td>
+            <th class="fecha-label" scope="col">Fecha:</th>
+            <td colspan="2" id="fecha">{{fecha_}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Resina VCI:</th>
+            <td colspan="6" id="resina_vci">{{resina_vci}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Producto:</th>
+            <td colspan="6" id="producto">{{producto}}</td>
+          </tr>
+          <tr class="alto-color">
+            <th class="rotulo" colspan="2" scope="row">Color:</th>
+            <td class="destacado" colspan="6" id="color">{{color}}</td>
+          </tr>
+          <tr class="alto-codigo">
+            <th class="rotulo" colspan="2" scope="row">Código DCMX:</th>
+            <td colspan="6" id="codigo">{{codigo}}</td>
+          </tr>
+          <tr class="alto-descripcion">
+            <th class="rotulo" colspan="2" scope="row">Descripción:</th>
+            <td class="descripcion" colspan="6" id="descripcion">{{descripcion}}</td>
+          </tr>
+          <!-- @include components/general-info-vci/composicion-row.@{composicion_fila}.html -->
+          <tr class="alto-136">
+            <th class="rotulo" colspan="2" scope="row">Presentación:</th>
+            <td class="tipo" colspan="2">Rollo</td><td class="marca" id="pres_rollo" data-valor="{{pres_rollo}}">{{pres_rollo}}</td>
+            <td class="tipo" colspan="2">Paquete</td><td class="marca" id="pres_paquete" data-valor="{{pres_paquete}}">{{pres_paquete}}</td>
+          </tr>
+          <!-- @include components/general-info-vci/cantidad-row.@{cantidad_fila}.html -->
+        </tbody>
+      </table>
+    </div>

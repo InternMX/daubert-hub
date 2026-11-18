@@ -1,0 +1,16 @@
+{
+ "motor": "Google Chrome (headless, --print-to-pdf)",
+ "version_chrome": "155.0.8059.40",
+ "parametros_chrome": [
+  "--headless",
+  "--disable-gpu",
+  "--no-pdf-header-footer"
+ ],
+ "so": "Windows-11-10.0.26200-SP0",
+ "pymupdf": "PyMuPDF 1.28.0: Python bindings for the MuPDF 1.29.0 library.",
+ "dpi_raster": 150,
+ "tamano_pagina": "letter portrait (612 x 792 pt)",
+ "@page": "size: letter portrait; margin: 0",
+ "fuente_solicitada": "Calibri, Carlito, \"Segoe UI\", Arial, Helvetica, sans-serif",
+ "tolerancia_coordenadas_pt": 0.15
+}

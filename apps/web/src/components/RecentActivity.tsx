@@ -1,6 +1,6 @@
-import { Box, Button, CircularProgress, Divider, Stack, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Divider, Link as MuiLink, Stack, Typography } from '@mui/material';
 import { useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { listRecentActivity, type RecentActivityCategory, type RecentActivityItem } from '../services/recentActivity';
 import { formatActivityTimestamp } from './activityTimestamp';
 
@@ -45,7 +45,7 @@ export function RecentActivity() {
     const actorLabel = item.actor?.displayName || item.actor?.email || null;
     const timestampLine = actorLabel ? `${actorLabel} · ${formatActivityTimestamp(item.occurredAt)}` : formatActivityTimestamp(item.occurredAt);
     return <Box key={`${item.type}-${item.occurredAt}-${index}`} sx={{ py: 1.5 }}>
-      <Typography fontWeight={700}>{item.title}</Typography>
+      <Typography fontWeight={700}>{item.link ? <MuiLink component={RouterLink} to={item.link} underline="hover" color="inherit">{item.title}</MuiLink> : item.title}</Typography>
       <Typography color="text.secondary">{item.entity}{item.category !== 'AUTOMATION' && item.context ? ` · ${item.context}` : ''}</Typography>
       {item.category === 'AUTOMATION' && item.context ? <Typography variant="body2" color="text.secondary">{item.context}</Typography> : null}
       <Typography variant="body2" color="text.secondary">{timestampLine}</Typography>

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { DocumentSeriesActivityRepository } from './document-series-activity.repository';
+import { ManufacturingActivityRepository } from './manufacturing-activity.repository';
 import { PaymentNotificationActivityRepository } from './payment-notification-activity.repository';
 import { RecentActivityController } from './recent-activity.controller';
 import { RecentActivityRepository } from './recent-activity.repository';
@@ -11,6 +12,6 @@ import { RemisionesCaterpillarActivityRepository } from './remisiones-caterpilla
 @Module({
   imports: [DatabaseModule],
   controllers: [RecentActivityController],
-  providers: [RecentActivityRepository, PaymentNotificationActivityRepository, RemisionesAudiActivityRepository, RemisionesCaterpillarActivityRepository, DocumentSeriesActivityRepository, RecentActivityService]
+  providers: [RecentActivityRepository, PaymentNotificationActivityRepository, RemisionesAudiActivityRepository, RemisionesCaterpillarActivityRepository, DocumentSeriesActivityRepository, ManufacturingActivityRepository, RecentActivityService]
 })
 export class RecentActivityModule {}

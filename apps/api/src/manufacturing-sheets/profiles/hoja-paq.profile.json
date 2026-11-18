@@ -1,0 +1,141 @@
+{
+  "formato": "HOJA_PAQ",
+  "etapa": "HP-C",
+  "nota": "El formato se identifica de forma explícita; nunca se deduce del color, la presentación ni el producto. La modalidad (DOBLADA | EXTENDIDA) es un dato explícito que se valida contra los indicadores X/NA (tools/validate-hoja-paq-data.mjs); no selecciona ningún dibujo. Presentación (Rollo/Paquete) y modalidad son datos independientes. La plantilla no contiene lógica de negocio ni de autorización.",
+  "plantilla": "templates/hoja-paq/hoja-paq.template.html",
+  "titulo": {
+    "base": "Hoja de Instrucción de Manufactura",
+    "sufijo_titulo": ""
+  },
+  "componentes": [
+    {
+      "ruta": "components/base-sheet/base-sheet.css",
+      "uso": "estilos base corporativos (tokens, tablas, alturas)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.print.css",
+      "uso": "@page y reglas de impresión",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.centered.css",
+      "uso": "centrado horizontal del bloque de 400.4 pt en la carta"
+    },
+    {
+      "ruta": "components/header/header.html",
+      "uso": "encabezado compartido",
+      "compartido": true
+    },
+    {
+      "ruta": "components/general-info-vci/general-info-vci.html",
+      "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad",
+      "compartido": true
+    },
+    {
+      "ruta": "components/sheet-type-row/sheet-type-row.html",
+      "uso": "Hoja: Doblada / Extendida"
+    },
+    {
+      "ruta": "components/measures-simple/measures-simple.html",
+      "uso": "Medidas sin fuelles: Unidad, Ancho, Largo y Calibre"
+    },
+    {
+      "ruta": "components/weight-row/weight-row.html",
+      "uso": "peso; rótulo «PESO BOLSA LB:» (parámetro rotulo)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.solo.html",
+      "uso": "Etiqueta (fila rosa B:I) antes de los dibujos"
+    },
+    {
+      "ruta": "components/label-section/label-section.css",
+      "uso": "estilos de Etiqueta",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.bi.css",
+      "uso": "título de dibujo centrado y en negritas",
+      "compartido": true
+    },
+    {
+      "ruta": "components/drawing-title/drawing-title.html",
+      "uso": "franja azul claro «Dibujo Hoja» / «Dibujo de rollo [doblado]» (parámetros id y titulo)"
+    },
+    {
+      "ruta": "components/sheet-drawing/sheet-drawing.hoja-paq.html",
+      "uso": "Dibujo Hoja: rectángulo de 220 x 160 pt (proporción cercana a 1.4:1, como el Excel) con cotas {{ancho}} y {{largo}}; único dibujo de HOJA_PAQ; ROLLO_CONTINUO conserva sheet-drawing.html"
+    },
+    {
+      "ruta": "components/signatures/signatures.html",
+      "uso": "bloques de firma; variante signatures.hoja-paq.css (105 x 70 pt cada uno)",
+      "compartido": true
+    }
+  ],
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo",
+      "cliente",
+      "fecha_",
+      "resina_vci",
+      "producto",
+      "color",
+      "codigo",
+      "descripcion",
+      "comp_pmg",
+      "comp_cp5000",
+      "comp_natural",
+      "pres_rollo",
+      "pres_paquete",
+      "cantidad",
+      "hoja_doblada",
+      "hoja_extendida",
+      "unidad_medidas",
+      "ancho",
+      "largo",
+      "calibre",
+      "peso_bolsa_lb",
+      "etiqueta"
+    ],
+    "color": [
+      "color_bolsa_hex"
+    ],
+    "bloques_html": [
+      "bloque_firma_elaboro",
+      "bloque_firma_aprobo"
+    ]
+  },
+  "campos_nuevos": [
+    "hoja_doblada",
+    "hoja_extendida"
+  ],
+  "pendiente": {
+    "medicion": [
+      "dimensiones definitivas frente a un PDF exportado del Excel de Hoja Paq"
+    ],
+    "negocio": [
+      "la exclusividad Doblada/Extendida se valida en el backend; aquí solo en tools/validate-hoja-paq-data.mjs",
+      "«Dibujo de rollo» (filas 41-47 del Excel) está oculto y sin regla de visibilidad confirmada: no se imprime; sin requisito explícito no se incorporará"
+    ],
+    "firmas": [
+      "las imágenes autorizadas las entrega el backend (Daubert Hub); las pruebas usan marcadores SIN FIRMA"
+    ],
+    "dibujos": [
+      "los componentes roll-drawing (extendido y doblado) se conservan sin usar para ROLLO_CONTINUO"
+    ]
+  },
+  "modalidades": {
+    "DOBLADA": {
+      "indicador_x": "hoja_doblada",
+      "indicador_na": "hoja_extendida"
+    },
+    "EXTENDIDA": {
+      "indicador_x": "hoja_extendida",
+      "indicador_na": "hoja_doblada"
+    }
+  },
+  "campos_contrato_sin_placeholder": [
+    "modalidad"
+  ]
+}

@@ -1,0 +1,30 @@
+    <!-- MEDIDAS simples, sin fuelles (HOJA_PAQ): Unidad, Ancho, Largo y Calibre. Cuadrícula B:I; sin celdas vacías de relleno. -->
+    <div class="tabla-contenedor seccion-pegada" id="seccion-medidas" data-seccion="medidas" data-plantilla="simple">
+      <table class="t-bi" aria-label="Medidas de la hoja">
+        <colgroup>
+          <col class="g-b"><col class="g-c"><col class="g-d"><col class="g-e">
+          <col class="g-f"><col class="g-g"><col class="g-h"><col class="g-i">
+        </colgroup>
+        <tbody>
+          <tr class="alto-136">
+            <td class="seccion-titulo titulo-claro" colspan="8">Medidas:</td>
+          </tr>
+          <tr class="alto-136">
+            <th class="rotulo" colspan="3" scope="row">Unidad de Medidas:</th>
+            <td colspan="5" id="unidad_medidas">{{unidad_medidas}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Ancho:</th>
+            <td colspan="6" id="ancho">{{ancho}}</td>
+          </tr>
+          <tr class="alto-136">
+            <th class="rotulo" colspan="2" scope="row">Largo:</th>
+            <td colspan="6" id="largo">{{largo}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Calibre:</th>
+            <td class="destacado" colspan="6" id="calibre">{{calibre}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>

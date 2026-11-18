@@ -1,0 +1,38 @@
+{
+  "caso": "otro-color",
+  "formato": "BOLSA_NATURAL",
+  "esperado": "valido",
+  "nota": "Otro color de producto (verde confirmado #00B050) con todos los campos opcionales llenos con datos de prueba. La composición de BOLSA_NATURAL es una restricción del formato: PMG = NA, ESD = NA y Natural = X.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "15/10/2026",
+    "resina_vci": "NA",
+    "producto": "Bolsa Con Fuelle",
+    "color": "VERDE",
+    "codigo": "EJEMPLO-FICTICIO-BN-001",
+    "descripcion": "Bolsa con fuelle natural 16 x 18 x 6.25\" Cal. 3.3 mil",
+    "comp_pmg": "NA",
+    "comp_esd": "NA",
+    "comp_natural": "X",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "100 Bolsas",
+    "unidad_medidas": "Pulgadas",
+    "ancho": "16\"",
+    "largo": "18\"",
+    "fuelle_derecho": "6.25\"",
+    "fuelle_izquierdo": "6.25\"",
+    "calibre": "3.3 mil",
+    "peso_bolsa_lb": "0.1129",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#00B050",
+    "color_cotas_internas_hex": "#FFFFFF"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

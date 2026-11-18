@@ -1,0 +1,20 @@
+    <!-- DIBUJO BOLSA (franja azul claro) + ETIQUETA, variante B:I (BOLSA_FUELLE): la franja y la fila Etiqueta tienen el mismo ancho
+         que las tablas de datos (8 columnas B:I). Reutiliza los estilos de label-section.css y label-section.heights.css. -->
+    <div class="tabla-contenedor seccion-pegada" id="seccion-etiqueta" data-seccion="dibujo-bolsa-etiqueta">
+      <table class="t-bi" aria-label="Dibujo de la bolsa y etiqueta">
+        <colgroup>
+          <col class="g-b"><col class="g-c"><col class="g-d"><col class="g-e">
+          <col class="g-f"><col class="g-g"><col class="g-h"><col class="g-i">
+        </colgroup>
+        <tbody id="encabezado-dibujo-bolsa">
+          <tr>
+            <th class="seccion-titulo titulo-claro titulo-dibujo-bi" colspan="8" scope="col">Dibujo Bolsa</th>
+          </tr>
+        </tbody>
+        <tbody id="seccion-etiqueta-valor">
+          <tr>
+            <td class="etiqueta-seccion" colspan="8" id="etiqueta"><strong>Etiqueta:</strong> {{etiqueta}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>

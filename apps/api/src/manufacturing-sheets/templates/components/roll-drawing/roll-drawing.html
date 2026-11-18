@@ -1,0 +1,6 @@
+    <!-- DIBUJO DE ROLLO (HOJA_PAQ): la variante la elige el compositor según la modalidad validada (parámetro rollo = extendido | doblado).
+         La cota {{ancho_rollo}} es un dato independiente de {{ancho}}: llega del backend ya con su unidad. Figura esquemática, sin escala;
+         no representa diámetro, longitud ni número de vueltas. Parámetros: id (marcador de flecha) y rollo. -->
+    <div class="dibujo-rollo-caja" id="seccion-dibujo-rollo" data-seccion="dibujo-rollo" data-modalidad="@{rollo}">
+      <!-- @include components/roll-drawing/geometry/@{rollo}.html id=@{id} -->
+    </div>

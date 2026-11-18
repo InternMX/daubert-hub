@@ -1,0 +1,4 @@
+    /* Centrado horizontal del bloque principal (400.4 pt) en la carta, calculado en CSS (igual criterio que BOLSA_FUELLE).
+       Va después de base-sheet.print.css (mismo selector). */
+    :root { --ancho-bloque: 400.4pt; }
+    .hoja { padding-left: calc((8.5in - var(--ancho-bloque)) / 2); padding-right: 0; }

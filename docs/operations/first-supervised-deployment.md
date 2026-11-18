@@ -1,7 +1,10 @@
 # Primera publicación supervisada: validación y checklist
 
 Revisión del [PR #27](https://github.com/InternMX/daubert-hub/pull/27), 2026-11-11.
-Este documento prepara una ventana futura: **no registra un despliegue ni autoriza PROD**.
+Este documento conserva la preparación previa a la ventana: **no registra un despliegue
+ni autoriza PROD**. El resultado real posterior, incluidas las anclas verificadas y el
+rollback no ejecutado, está en el [expediente del 2026-11-11](../deployments/2026-11-11-hub-cicd-pilot-prod.md).
+Para próximas entregas, aplicar también la [política de releases](release-policy.md).
 Autoridad operativa: [deployment-checklist](deployment-checklist.md). Un solo operador.
 
 ## Resultado de la revisión
@@ -137,6 +140,8 @@ servicios adicionales, SQL y llamadas a n8n. No se inició ningún contenedor ni
   contenedores cambiaron. No ejecutar SQL, restores ni operaciones sobre n8n en esta ruta.
 
 ## Evaluación y pendientes
+
+**Evaluación histórica previa al piloto** (el cierre real se consulta en el expediente anterior).
 
 **Código preparado para revisión y validación operativa condicionada; todavía no es un GO
 de producción.** Faltan CI hospedado verde y los checks del servidor en la ventana futura.

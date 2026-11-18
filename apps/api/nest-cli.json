@@ -1,5 +1,22 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "src"
+  "sourceRoot": "src",
+  "compilerOptions": {
+    "assets": [
+      {
+        "include": "manufacturing-sheets/templates/**/*",
+        "outDir": "dist/src",
+        "watchAssets": true
+      },
+      {
+        "include": "manufacturing-sheets/tools/**/*",
+        "outDir": "dist/src"
+      },
+      {
+        "include": "manufacturing-sheets/profiles/**/*",
+        "outDir": "dist/src"
+      }
+    ]
+  }
 }

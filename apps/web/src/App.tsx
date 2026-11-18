@@ -20,10 +20,15 @@ import { CaterpillarRemissionsPage } from './automations/CaterpillarRemissionsPa
 import { PaymentNotificationsPage } from './automations/PaymentNotificationsPage';
 import { PaymentNotificationExecutionDetailPage } from './automations/PaymentNotificationExecutionDetailPage';
 import { AuditPage } from './audit/AuditPage';
+import { ConfiguracionManufacturaPage } from './manufacturing/ConfiguracionManufacturaPage';
 import { UsersPage } from './users/UsersPage';
 import { NewUserPage } from './users/NewUserPage';
 import { UserDetailPage } from './users/UserDetailPage';
+import { UserSignaturesPage } from './users/UserSignaturesPage';
+import { ProfilePage } from './account/ProfilePage';
 import { EditUserPage } from './users/EditUserPage';
+import { MANUFACTURING_SHEETS_ROUTE, MANUFACTURING_SHEETS_SETTINGS_ROUTE, MANUFACTURING_UI_VISIBLE } from './automations/automationRoutes';
+import { ManufacturingSpecificationPage } from './manufacturing/ManufacturingSpecificationPage';
 import { roleLabels } from './services/userLabels';
 
 function HomePage() {
@@ -41,7 +46,7 @@ function HomePage() {
         <Typography id="quick-actions-title" variant="h2">Acciones rápidas</Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
           <Button component={Link} to="/providers/new" variant="contained">Nuevo proveedor</Button>
-          <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>
+          {user.role === 'ADMIN' && <Button component={Link} to="/clients/new" variant="contained">Nuevo cliente</Button>}
           <Button component={Link} to="/contacts?action=new-contact" variant="contained">Nuevo contacto</Button>
         </Stack>
       </Box>
@@ -61,24 +66,29 @@ export function App() {
       <Route path="/change-password" element={<ChangePasswordRoute><ChangePasswordPage /></ChangePasswordRoute>} />
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/providers" element={<ProvidersPage />} />
         <Route path="/providers/new" element={<NewProviderPage />} />
         <Route path="/providers/:id/edit" element={<EditProviderPage />} />
         <Route path="/providers/:id" element={<ProviderDetailPage />} />
         <Route path="/clients" element={<ClientsPage />} />
-        <Route path="/clients/new" element={<NewClientPage />} />
-        <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
+        {MANUFACTURING_UI_VISIBLE && <Route path={MANUFACTURING_SHEETS_ROUTE} element={<ManufacturingSpecificationPage />} />}
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
         <Route path="/automations/remissions/caterpillar" element={<CaterpillarRemissionsPage />} />
         <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />
         <Route path="/automations/payment-notifications/:executionId" element={<PaymentNotificationExecutionDetailPage />} />
         <Route element={<AdminRoute />}>
+          <Route path="/clients/new" element={<NewClientPage />} />
+          <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
           <Route path="/audit" element={<AuditPage />} />
+          {MANUFACTURING_UI_VISIBLE && <Route path={MANUFACTURING_SHEETS_SETTINGS_ROUTE} element={<ConfiguracionManufacturaPage />} />}
+          {MANUFACTURING_UI_VISIBLE && <Route path="/client-abbreviations" element={<Navigate to={MANUFACTURING_SHEETS_SETTINGS_ROUTE} replace />} />}
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
+          {MANUFACTURING_UI_VISIBLE && <Route path="/users/signatures" element={<UserSignaturesPage />} />}
           <Route path="/users/:userId/edit" element={<EditUserPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
         </Route>

@@ -1,0 +1,35 @@
+# Override de ENSAYO (Fase 6C.2) sobre compose.pilot.yaml: misma configuracion de servicios que PROD, pero SIN build (imagenes ya construidas), red interna aislada,
+# puerto solo en loopback y el conf.d de nginx montado desde una carpeta de ensayo (equivalente al montaje externo de PROD). Nada de esto apunta a contenedores, volumenes,
+# puertos ni credenciales de PROD. Proyecto: ens62.
+services:
+  api:
+    build: !reset null
+    image: "${ENS_API_IMAGE:-ens62-api:latest}"
+    networks: !override
+      - ensayo
+    environment:
+      AUTH_COOKIE_SECURE: "false"
+  web:
+    build: !reset null
+    image: "${ENS_WEB_IMAGE:-ens62-web:latest}"
+    # web tambien en la red con salida solo para poder publicar el puerto de loopback; no necesita (ni usa) salida a Internet.
+    networks: !override
+      - ensayo
+      - anfitrion
+    ports: !override
+      - "127.0.0.1:${ENS_PORT:-18082}:80"
+    volumes:
+      - type: bind
+        source: ${ENS_CONFD:?ENS_CONFD}
+        target: /etc/nginx/conf.d
+        read_only: true
+        bind:
+          create_host_path: false
+networks:
+  ensayo:
+    name: ${ENS_NET:-ens62-net}
+    external: true
+  anfitrion:
+    name: ${ENS_HOSTNET:-ens62-host}
+    external: true
+  pilot: !reset null

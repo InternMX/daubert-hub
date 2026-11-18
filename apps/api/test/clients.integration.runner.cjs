@@ -144,7 +144,7 @@ async function run() {
     api.stdout.on('data', (chunk) => { startup += chunk; });
     api.stderr.on('data', (chunk) => { startup += chunk; });
     await waitForApi();
-    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker, { role: 'ADMIN' });   // POST /clients es solo de ADMIN
     sessionCookie = authSession.cookie;
 
     for (const id of ['0', '01', '-1', '1.5', 'abc', '9223372036854775808']) {

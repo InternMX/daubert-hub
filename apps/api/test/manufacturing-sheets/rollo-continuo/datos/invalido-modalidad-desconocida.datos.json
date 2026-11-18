@@ -1,0 +1,38 @@
+{
+  "caso": "invalido-modalidad-desconocida",
+  "formato": "ROLLO_CONTINUO",
+  "esperado": "invalido",
+  "modalidad": "PLEGADA",
+  "nota": "Modalidad desconocida.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "ROLLO VCI",
+    "color": "VERDE",
+    "codigo": "RCPMG-0001",
+    "descripcion": "Rollo VCI PMG doblado 2 x 230 mts Cal. 2.5 mil",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "METROS (MTS)",
+    "ancho": "2 mts",
+    "largo": "230 mts",
+    "calibre": "2.5 MIL",
+    "ancho_rollo": "1 metro",
+    "peso_bolsa_lb": "12.5000",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#00B050"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

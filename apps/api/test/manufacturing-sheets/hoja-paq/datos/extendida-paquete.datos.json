@@ -1,0 +1,38 @@
+{
+  "caso": "extendida-paquete",
+  "formato": "HOJA_PAQ",
+  "esperado": "valido",
+  "modalidad": "EXTENDIDA",
+  "nota": "Selecciones opuestas (paquete, CP5000) con hoja extendida y rollo distinto del ancho de la hoja.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Hoja Plástica",
+    "color": "VERDE",
+    "codigo": "HPMG-0017",
+    "descripcion": "Hoja VCI CP5000 extendida 36 x 24.5\" Cal. 3 mil, Paquete con 50 hojas",
+    "comp_pmg": "NA",
+    "comp_cp5000": "X",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "cantidad": "50 Paquetes",
+    "hoja_doblada": "NA",
+    "hoja_extendida": "X",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "36\"",
+    "largo": "24.5\"",
+    "calibre": "3 MIL",
+    "peso_bolsa_lb": "0.3125",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#00B050"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

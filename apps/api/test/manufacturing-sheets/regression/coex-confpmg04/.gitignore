@@ -1,0 +1,4 @@
+test-results/
+test-results*/
+*.sonda.html
+__pycache__/

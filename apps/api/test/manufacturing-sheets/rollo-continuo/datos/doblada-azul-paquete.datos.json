@@ -1,0 +1,38 @@
+{
+  "caso": "doblada-azul-paquete",
+  "formato": "ROLLO_CONTINUO",
+  "esperado": "valido",
+  "modalidad": "DOBLADA",
+  "nota": "Producto azul con presentación en paquete y composición CP5000.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "ROLLO VCI",
+    "color": "AZUL",
+    "codigo": "RCPMG-0001",
+    "descripcion": "Rollo VCI CP5000 doblado 1.5 x 100 mts Cal. 2 mil, presentado en paquete",
+    "comp_pmg": "NA",
+    "comp_cp5000": "X",
+    "comp_natural": "NA",
+    "pres_rollo": "NA",
+    "pres_paquete": "X",
+    "hoja_doblada": "X",
+    "hoja_extendida": "NA",
+    "unidad_medidas": "METROS (MTS)",
+    "ancho": "1.5 mts",
+    "largo": "100 mts",
+    "calibre": "2 MIL",
+    "ancho_rollo": "75 cm",
+    "peso_bolsa_lb": "3.1250",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#538DD5"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

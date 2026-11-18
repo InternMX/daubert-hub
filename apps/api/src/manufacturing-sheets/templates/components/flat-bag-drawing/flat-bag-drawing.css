@@ -1,0 +1,6 @@
+    /* Dibujo de bolsa plana: contenedor de 400.4 x 130 pt (igual al ancho B:I); el viewBox coincide con el contenedor. */
+    .dibujo-bolsa-plana-caja { width: 400.4pt; max-width: 100%; height: 130pt; }
+    .dibujo-bolsa-plana-svg { display: block; width: 100%; }
+    .dibujo-bolsa-plana-svg text { font-family: var(--fuente); }
+    /* Vista previa de la plantilla sin datos: si el fill sigue siendo el placeholder "{{color_bolsa_hex}}", se muestra gris claro. */
+    .dibujo-bolsa-plana-svg .bolsa-plana[fill^="{"] { fill: #ddd; }

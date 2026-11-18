@@ -1,0 +1,45 @@
+diff --git a/scripts/backup/lib/BackupPgTools.psm1 b/scripts/backup/lib/BackupPgTools.psm1
+index 9c589c1..8b34d86 100644
+--- a/scripts/backup/lib/BackupPgTools.psm1
++++ b/scripts/backup/lib/BackupPgTools.psm1
+@@ -103,7 +103,10 @@ function Invoke-PgDump {
+         '-d', $Config.PgDatabase,
+         '-Fc',
+         '-f', $OutputPath,
+-        '--no-password'
++        '--no-password',
++        # Manufactura (migracion 026): daubert_backup lee por pertenencia a pg_read_all_data pero NO salta RLS. Sin esta bandera pg_dump FALLA en cuanto existe el esquema manufactura;
++        # con ella vuelca lo que las politicas pol_respaldo_sel le permiten ver (todo). Sin RLS aplicable es un no-op. Ver docs/hub/manufactura-ensayo-6b-resultados.md.
++        '--enable-row-security'
+     )
+     if ($SchemaOnly) { $arguments += '--schema-only' }
+ 
+diff --git a/scripts/backup/tests/BackupPgTools.Tests.ps1 b/scripts/backup/tests/BackupPgTools.Tests.ps1
+index 7af51c5..6a77091 100644
+--- a/scripts/backup/tests/BackupPgTools.Tests.ps1
++++ b/scripts/backup/tests/BackupPgTools.Tests.ps1
+@@ -88,6 +88,24 @@ Describe 'BackupPgTools' {
+             $global:capturedEnv['PGPASSFILE'] | Should Be $global:config.PgPassFile
+         }
+ 
++        It 'siempre pasa --enable-row-security (pg_dump -Fc y --schema-only): daubert_backup no salta RLS y sin la bandera falla con Manufactura' {
++            InModuleScope BackupPgTools {
++                $global:capRls1 = $null; $global:capRls2 = $null
++                Mock Invoke-ExternalProcess {
++                    param($FilePath, $ArgumentList, $EnvironmentVariables)
++                    if ($ArgumentList -contains '--schema-only') { $global:capRls2 = $ArgumentList } else { $global:capRls1 = $ArgumentList }
++                    [pscustomobject]@{ ExitCode = 0; StdOut = ''; StdErr = '' }
++                }
++                Invoke-PgDump -Config $global:config -OutputPath (Join-Path $global:testDir 'out.dump') | Out-Null
++                Invoke-PgDump -Config $global:config -OutputPath (Join-Path $global:testDir 'out2.dump') -SchemaOnly | Out-Null
++            }
++            ($global:capRls1 -contains '--enable-row-security') | Should Be $true
++            ($global:capRls2 -contains '--enable-row-security') | Should Be $true
++            ($global:capRls1 -contains '--no-password') | Should Be $true
++            ($global:capRls1 -join ' ') | Should Not Match 'PGPASSWORD'
++            ($global:capRls1 -contains '--no-owner') | Should Be $false
++            ($global:capRls1 -contains '--disable-triggers') | Should Be $false
++        }
+         It 'agrega --schema-only cuando se pide -SchemaOnly' {
+             InModuleScope BackupPgTools {
+                 $global:capturedArgs2 = $null

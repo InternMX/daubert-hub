@@ -1,0 +1,3 @@
+      .encabezado { grid-template-columns: 32% 68%; padding: 0 0 16px; min-height: 80px; }
+      .titulo { font-size: 13pt; }
+      .logo { width: 100%; height: auto; margin-left: 0; }

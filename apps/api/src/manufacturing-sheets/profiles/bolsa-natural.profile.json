@@ -1,0 +1,140 @@
+{
+  "formato": "BOLSA_NATURAL",
+  "etapa": "BN-2",
+  "nota": "Familia independiente (pestaña «Bolsa Natural» del Excel): comparte la estructura de BOLSA_FUELLE (datos generales con Resina VCI, Cantidad, Medidas con fuelles, dibujo con fuelles, nota y firmas) pero no tiene coextrusión de tres capas ni Doblada/Extendida. El formato se identifica de forma explícita; nunca se deduce del color ni de la composición. La plantilla no contiene lógica de negocio ni de autorización.",
+  "plantilla": "templates/bolsa-natural/bolsa-natural.template.html",
+  "titulo": {
+    "base": "Hoja de Instrucción de Manufactura",
+    "sufijo_titulo": ""
+  },
+  "restricciones": {
+    "composicion": {
+      "descripcion": "La fila Composición muestra PMG / ESD / Natural, como en el Excel original, y es una RESTRICCIÓN DEL FORMATO: PMG = NA, ESD = NA y Natural = X. No hay combinaciones alternativas ni CP5000 en esta familia; solo podría cambiar si Manufactura confirma una variante distinta.",
+      "valores": {
+        "comp_pmg": "NA",
+        "comp_esd": "NA",
+        "comp_natural": "X"
+      },
+      "excluidos": [
+        "comp_cp5000"
+      ],
+      "validacion": "tools/validate-bolsa-natural-data.mjs rechaza cualquier valor distinto, la omisión de un campo de composición y la presencia de comp_cp5000"
+    }
+  },
+  "componentes": [
+    {
+      "ruta": "components/base-sheet/base-sheet.css",
+      "uso": "estilos base corporativos (tokens, tablas, alturas)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.print.css",
+      "uso": "@page y reglas de impresión",
+      "compartido": true
+    },
+    {
+      "ruta": "components/base-sheet/base-sheet.centered.css",
+      "uso": "centrado horizontal del bloque de 400.4 pt en la carta",
+      "compartido": true
+    },
+    {
+      "ruta": "components/header/header.html",
+      "uso": "encabezado compartido",
+      "compartido": true
+    },
+    {
+      "ruta": "components/general-info-vci/general-info-vci.html",
+      "uso": "datos generales con Resina VCI, Composición, Presentación y Cantidad (cantidad_fila=con, composicion_fila=pmg-esd-natural)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/general-info-vci/composicion-row.pmg-esd-natural.html",
+      "uso": "fila Composición PMG / ESD / Natural (variante nueva del componente; las demás familias usan pmg-cp5000-natural, sin cambios)"
+    },
+    {
+      "ruta": "components/measures-gussets/measures-gussets.html",
+      "uso": "Medidas con ambos fuelles",
+      "compartido": true
+    },
+    {
+      "ruta": "components/weight-row/weight-row.html",
+      "uso": "peso; rótulo «Peso lb:» (parámetro rotulo)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/label-section/label-section.bi.html",
+      "uso": "Dibujo Bolsa + Etiqueta, variante B:I (reutiliza label-section.css y label-section.heights.css)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/gusset-bag-drawing/gusset-bag-drawing.html",
+      "uso": "dibujo con fuelles; geometría bolsa-natural (parámetros id, seccion y geometria)",
+      "compartido": true
+    },
+    {
+      "ruta": "components/gusset-bag-drawing/geometry/bolsa-natural.html",
+      "uso": "geometría de BOLSA_NATURAL: cuerpo, fuelles punteados y cotas como BOLSA_FUELLE, con sello de fondo plano y frontal (rectángulo delgado de 6 pt, mismo relleno, bordes negros) en lugar de la barra azul"
+    },
+    {
+      "ruta": "components/note-seal-height/note-seal-height.bolsa-natural.html",
+      "uso": "nota de manufactura (texto fijo de este perfil): fondo amarillo y texto rojo; usa la clase nota-roja de note-seal-height.bolsa-plana-1.css"
+    },
+    {
+      "ruta": "components/signatures/signatures.html",
+      "uso": "bloques de firma; variante signatures.bolsa-fuelle.css (105 x 70 pt)",
+      "compartido": true
+    }
+  ],
+  "placeholders": {
+    "texto": [
+      "sufijo_titulo",
+      "cliente",
+      "fecha_",
+      "resina_vci",
+      "producto",
+      "color",
+      "codigo",
+      "descripcion",
+      "comp_pmg",
+      "comp_esd",
+      "comp_natural",
+      "pres_rollo",
+      "pres_paquete",
+      "cantidad",
+      "unidad_medidas",
+      "ancho",
+      "largo",
+      "fuelle_derecho",
+      "fuelle_izquierdo",
+      "calibre",
+      "peso_bolsa_lb",
+      "etiqueta"
+    ],
+    "color": [
+      "color_bolsa_hex",
+      "color_cotas_internas_hex"
+    ],
+    "bloques_html": [
+      "bloque_firma_elaboro",
+      "bloque_firma_aprobo"
+    ]
+  },
+  "pendiente": {
+    "datos": [
+      "cliente, fecha, Resina VCI, código, color, descripción, cantidad y etiqueta no tienen valores completos en el Excel: las pruebas usan datos ficticios identificados y los opcionales pueden venir vacíos"
+    ],
+    "dibujo": [
+      "el sello de fondo es esquemático: no hay dimensiones técnicas confirmadas, por eso no se acota (rectángulo plano de 6 pt, mismo relleno y bordes negros)",
+      "el Excel muestra un relleno amarillo claro, pero el color del SVG proviene siempre de color_bolsa_hex: no se asocia «Natural» con ningún color hasta que Manufactura lo confirme (las pruebas usan #FFF2CC y #00B050 solo como datos de prueba)"
+    ],
+    "firmas": [
+      "las imágenes autorizadas las entrega el backend (Daubert Hub); las pruebas usan marcadores SIN FIRMA"
+    ],
+    "medicion": [
+      "dimensiones definitivas frente a un PDF exportado del Excel de Bolsa Natural"
+    ]
+  },
+  "textos_fijos": {
+    "nota_manufactura": "Notas: Considerar la altura total de la bolsa a partir del sello"
+  }
+}

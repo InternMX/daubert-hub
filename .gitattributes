@@ -2,3 +2,6 @@
 # regeneration with the committed copies byte for byte. A CRLF checkout (core.autocrlf=true on Windows) changes the
 # embedded text and fails apps/api/test/caterpillar-015-enabled.spec.ts, so these files are always checked out as LF.
 n8n/workflows/remisiones-caterpillar/candidate-015/** text eol=lf
+
+# Las politicas de cierre de nginx se instalan byte a byte y se autorizan por SHA-256: finales de linea fijos (CRLF, como la copia operativa instalada).
+deploy/closure/*.conf text eol=crlf

@@ -1,5 +1,7 @@
 # Checklist de deployment del Hub (PROD)
 
+> **Actualización documental de estado (2026-11-11):** el [primer deployment supervisado](../deployments/2026-11-11-hub-cicd-pilot-prod.md) terminó correctamente y sus anclas fueron verificadas. **No se ejecutó rollback real.** Las instantáneas anteriores conservadas abajo son históricas. Para identificar y aprobar versión/SHA/tags, consultar la [política de releases](release-policy.md); este checklist mantiene la autoridad del procedimiento PROD.
+
 Complementa a [deployment](deployment.md) (orden, trampas) y a [`deploy/README.md`](../../deploy/README.md) (comandos genéricos). Este documento fija el **procedimiento de PROD tal como corre hoy** (proyecto `daubert-hub`, `compose.pilot.yaml` + `compose.prod-temp.yaml`, puerto `8082`; ver [nota 2026-10-01](../deployments/2026-10-01-hub-v1-prod.md)). **Sin secretos.**
 
 > **Estado (actualizado 2026-10-22): en uso.** `Deploy-DaubertHub.ps1 -Deploy` (con su ancla de rollback) se usó en los releases de 2026-10-07 (v1.0.1), 2026-10-09 (v1.0.5) y 2026-10-12 (v1.0.6); ver [deployments](../deployments/README.md). El release de 2026-10-21 (`6370753`, asignación puntual de Pagos) incluía migraciones ya aplicadas a mano y el script **bloquea siempre** los releases con migraciones, por lo que se desplegó con los **comandos manuales** de este documento ([nota](../deployments/2026-10-22-payment-file-assignments-prod.md)). El **rollback por imagen no se ha ejecutado nunca en PROD**: está preparado (anclas y `docker save`) y sus comandos solo se revisaron estáticamente.
@@ -238,7 +240,7 @@ Por eso el ancla **se crea por nombre, tras comprobar que el digest de manifiest
 | **3. Reconstruir desde el commit/tag anterior** | **No**: reconstruye, no recupera (imágenes base y dependencias pueden haber cambiado; ID distinto) | **Sí** (el commit debe existir localmente) | No | Sí (build + recrear) | **Reconstrucción aproximada**, no rollback exacto. Es lenta y no determinista. No presentarla como equivalente a la imagen actual |
 | **4. Lo que ya soporta el Compose actual** | `up -d --no-build api web` usa la imagen que tenga la etiqueta `daubert-hub-<servicio>:latest`; por sí solo no conserva nada | No | Sí | Recrea `api` y `web` | Solo es el *mecanismo* para usar la alternativa 1. Las imágenes `daubert-hub-prod-temp-*` (2026-09-25) son anteriores a V1 y no equivalen al estado actual |
 
-**Opción correcta: la 1** (más la 1b si se quiere independencia del almacén de Docker). La preservación es una operación **previa** y forma parte del PRE-DEPLOY (paso 8 de abajo); no se ha ejecutado.
+**Opción correcta: la 1** (más la 1b si se quiere independencia del almacén de Docker). La preservación es una operación **previa** y forma parte del PRE-DEPLOY (paso 8 de abajo). Las anclas del piloto de 2026-11-11 quedaron verificadas según su expediente; esto no equivale a ejecutar rollback real ni acredita un `docker save` de ese piloto.
 
 ## Checklist
 
@@ -375,42 +377,114 @@ $rollbackDigests = @{ api = '<sha256 registrado antes del deploy>'; web = '<sha2
 $ErrorActionPreference = 'Continue'
 foreach ($v in $prev, $new) { if ($v -notmatch '^[0-9a-f]{7,40}$') { throw "Commit invalido: '$v'" } }
 
+# Ausencia CONFIRMADA de una etiqueta: "docker image inspect" falla Y "docker image ls <repo>" termina con exit 0,
+# con salida bien formada, muestra las etiquetas que SI existen ($MustList) y no muestra $Ref. Un exit no cero
+# de inspect puede ser "no existe" o un fallo de Docker: cualquier otra combinacion detiene el rollback sin mutar.
+$assertAbsent = {
+    param([string]$Ref, [string[]]$MustList)
+    $repo = $Ref.Split(':')[0]
+    docker image inspect $Ref 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { throw "${Ref} ya existe: no se sobrescribe" }
+    $tags = @(docker image ls $repo --format '{{.Repository}}:{{.Tag}}' 2>$null | ForEach-Object { [string]$_ })
+    if ($LASTEXITCODE -ne 0) { throw "No se puede confirmar que ${Ref} no existe (fallo al listar ${repo}): detenerse sin etiquetar." }
+    foreach ($t in $tags) { if ($t -cnotmatch ('^' + [regex]::Escape($repo) + ':([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|<none>)$')) { throw "No se puede confirmar que ${Ref} no existe (listado ambiguo): detenerse sin etiquetar." } }
+    foreach ($m in $MustList) { if ($tags -cnotcontains $m) { throw "No se puede confirmar que ${Ref} no existe (el listado no muestra ${m}): detenerse sin etiquetar." } }
+    if ($tags -ccontains $Ref) { throw "${Ref} figura en el listado aunque inspect fallo: estado ambiguo, detenerse sin etiquetar." }
+}
+$readDigest = {
+    param([string]$Ref)
+    $o = @(docker image inspect $Ref --platform linux/amd64 --format '{{.Id}}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $o.Count -ne 1 -or [string]$o[0] -cnotmatch '^sha256:[0-9a-f]{64}$') { return '' }
+    return [string]$o[0]
+}
+
+# 1) Validar TODO antes de la primera mutacion.
 $latestDigests = @{}
 foreach ($svc in 'api','web') {
     $anchor = "daubert-hub-${svc}:rollback-$prev"
-    $failed = "daubert-hub-${svc}:failed-$new"
-    $digest = @(docker image inspect $anchor --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $digest.Count -ne 1 -or $rollbackDigests[$svc] -cnotmatch '^sha256:[0-9a-f]{64}$' -or $digest[0] -cne $rollbackDigests[$svc]) { throw "Ancla ausente o distinta de la evidencia previa: $svc" }
-    docker image inspect $failed 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { throw "${failed} ya existe: no se sobrescribe" }
-    $current = @(docker image inspect "daubert-hub-${svc}:latest" --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $current.Count -ne 1) { throw "No se puede preservar latest: $svc" }
-    $latestDigests[$svc] = $current[0]
+    $latest = "daubert-hub-${svc}:latest"
+    $digest = & $readDigest $anchor
+    if ($rollbackDigests[$svc] -cnotmatch '^sha256:[0-9a-f]{64}$' -or -not $digest -or $digest -cne $rollbackDigests[$svc]) { throw "Ancla ausente o distinta de la evidencia previa: $svc" }
+    $current = & $readDigest $latest
+    if (-not $current) { throw "No se puede preservar latest: $svc" }
+    $latestDigests[$svc] = $current
+    & $assertAbsent "daubert-hub-${svc}:failed-$new" @($anchor, $latest)
 }
-# Primero preservar AMBAS imagenes; un fallo detiene el procedimiento antes de recrear.
+# 2) Preservar AMBAS imagenes; justo antes de cada tag se vuelve a confirmar la ausencia y que latest no cambio.
 foreach ($svc in 'api','web') {
-    docker tag "daubert-hub-${svc}:latest" "daubert-hub-${svc}:failed-$new" 2>$null | Out-Null
+    $latest = "daubert-hub-${svc}:latest"
+    if ((& $readDigest $latest) -cne $latestDigests[$svc]) { throw "latest cambio desde la validacion: $svc. Detenerse." }
+    & $assertAbsent "daubert-hub-${svc}:failed-$new" @("daubert-hub-${svc}:rollback-$prev", $latest)
+    docker tag $latest "daubert-hub-${svc}:failed-$new" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "No se pudo preservar la imagen fallida: $svc" }
-    $saved = @(docker image inspect "daubert-hub-${svc}:failed-$new" --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $saved.Count -ne 1 -or $saved[0] -cne $latestDigests[$svc]) { throw "Imagen fallida no preservada correctamente: $svc" }
+    if ((& $readDigest "daubert-hub-${svc}:failed-$new") -cne $latestDigests[$svc]) { throw "Imagen fallida no preservada correctamente: $svc" }
 }
+# 3) Devolver las anclas a latest solo si la imagen desplazada sigue preservada en failed-<new>.
 foreach ($svc in 'api','web') {
+    if ((& $readDigest "daubert-hub-${svc}:failed-$new") -cne $latestDigests[$svc] -or (& $readDigest "daubert-hub-${svc}:latest") -cne $latestDigests[$svc]) { throw "failed-$new o latest cambiaron antes de restaurar: $svc. Detenerse." }
     docker tag "daubert-hub-${svc}:rollback-$prev" "daubert-hub-${svc}:latest" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "No se pudo devolver el ancla a latest: $svc" }
-    $restored = @(docker image inspect "daubert-hub-${svc}:latest" --platform linux/amd64 --format '{{.Id}}' 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $restored.Count -ne 1 -or $restored[0] -cne $rollbackDigests[$svc]) { throw "latest no coincide con la imagen anterior: $svc" }
+    if ((& $readDigest "daubert-hub-${svc}:latest") -cne $rollbackDigests[$svc]) { throw "latest no coincide con la imagen anterior: $svc" }
 }
 docker compose @cf up -d --no-build api web 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Rollback Compose fallido: conservar anclas y diagnosticar, no repetir ciegamente.' }
-$health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec 10 -ErrorAction Stop
-if ($health.status -ne 'ok' -or $health.database -ne 'connected' -or $health.environment -ne 'PRODUCTION' -or $health.commit -ne $prev) { throw 'Rollback sin verificar: health no confirma el commit anterior sano.' }
-Write-Host 'Rollback por imagen completado; verificar tambien ambos contenedores y el humo de solo lectura.'
+# Verificacion posterior (solo lectura). Con containerd, .Image del contenedor NO es direccionable y el
+# digest de 'latest' no prueba que el contenedor lo use: se compara el manifiesto con el que se creo cada
+# contenedor (.ImageManifestDescriptor.digest) con el digest del ancla registrado ANTES del deploy.
+# Limite unico de $limitSec s desde aqui: ninguna espera ni GET /api/health termina despues del plazo (el GET usa
+# como -TimeoutSec el tiempo restante, maximo 10 s; con menos de 1 s restante no se consulta y queda pendiente).
+$limitSec = 180; $pollMs = 5000; $httpMaxSec = 10
+$fmtRun = '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}'
+$deadline = (Get-Date).AddSeconds($limitSec)
+while ($true) {
+    $pending = @()
+    foreach ($svc in 'api','web') {
+        $info = @(docker inspect "daubert-hub-${svc}-1" --format $fmtRun 2>$null)
+        $f = @(); if ($LASTEXITCODE -eq 0 -and $info.Count -eq 1) { $f = @(([string]$info[0]).Split('|')) }
+        if ($f.Count -ne 3) { throw "Rollback NO completado: no se pudo inspeccionar daubert-hub-${svc}-1." }
+        if ($f[0] -cnotmatch '^sha256:[0-9a-f]{64}$') { throw "Rollback NO completado: ${svc} no expone un digest de manifiesto valido." }
+        if ($f[0] -cne $rollbackDigests[$svc]) { throw "Rollback NO completado: ${svc} ejecuta $($f[0]), no el ancla registrada." }
+        if ($f[1] -ne 'running') { $pending += "${svc}: estado '$($f[1])', no running" }
+        if ($svc -eq 'api' -and $f[2] -ne 'healthy') { $pending += "api: salud '$($f[2])', no healthy" }
+    }
+    $health = $null
+    $leftSec = [math]::Floor(($deadline - (Get-Date)).TotalSeconds)
+    if ($leftSec -ge 1) {
+        try { $health = Invoke-RestMethod -Uri http://localhost:8082/api/health -TimeoutSec ([int][math]::Min($httpMaxSec, $leftSec)) -ErrorAction Stop } catch { $health = $null }
+    }
+    if (-not $health) { $pending += 'health: sin respuesta (o plazo agotado)' }
+    elseif ($health.status -ne 'ok' -or $health.database -ne 'connected' -or $health.environment -ne 'PRODUCTION' -or $health.commit -ne $prev) { $pending += 'health: no confirma el commit anterior sano' }
+    if ($pending.Count -eq 0) { break }
+    $leftMs = [math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+    if ($leftMs -le 0) { break }
+    Start-Sleep -Milliseconds ([int][math]::Min($pollMs, $leftMs))
+}
+if ($pending.Count -gt 0) {
+    foreach ($p in $pending) { Write-Host "PENDIENTE: $p" }
+    throw "Rollback NO completado: comprobaciones pendientes al agotar el limite de $limitSec s. Ejecutar el diagnostico de rollback-rehearsal.md; no repetir el bloque."
+}
+Write-Host 'Rollback por imagen completado: api y web ejecutan las anclas registradas, api healthy y health confirma el commit anterior. Continuar con el humo de solo lectura.'
 ```
 
 Los SHA y digests se toman del expediente previo, **no** del health posterior al fallo.
 `Deploy-DaubertHub.ps1` restaura `GIT_COMMIT` al salir: no usar esa variable para deducir
-el candidato fallido. Ante cualquier rechazo, detenerse; no borrar etiquetas `failed-*`
-ni repetir el bloque completo sin revisar el estado parcial. Si el proxy devuelve 502 tras
+el candidato fallido. El bloque solo declara el rollback completado cuando `api` y `web`
+están `running` con el manifiesto exacto de su ancla, `api` está `healthy` y `/api/health`
+confirma el commit anterior sano; un contenedor ilegible o con otra imagen falla al instante
+y los estados transitorios (`starting`, contenedor no `running`, health sin respuesta) se
+reintentan dentro de un **límite único de 180 s** (`$limitSec`) medido desde el final de Compose:
+las esperas (5 s) y cada `GET /api/health` (`-TimeoutSec` = tiempo restante, máximo 10 s) nunca
+terminan después del plazo; solo `docker inspect`, local y sin timeout propio, puede añadir su
+propia duración a la última vuelta. Agotado el plazo, falla con `PENDIENTE: …`. Ante cualquier rechazo o interrupción,
+detenerse; no borrar etiquetas `failed-*` ni repetir el bloque completo. Una etiqueta `failed-*` solo se crea con su ausencia
+**confirmada** (inspect falla y un listado válido del repositorio, que muestra el ancla y
+`latest`, no la incluye); cualquier error o ambigüedad de Docker detiene el bloque antes de
+etiquetar. `docker tag` no tiene un modo «crear solo si no existe»: entre la última
+comprobación y cada `tag` queda una ventana mínima en la que otro proceso podría crear la
+misma etiqueta; por eso el rollback exige un único operador y ningún otro proceso Docker en
+la ventana. Tras cualquier rechazo o interrupción, ejecutar el
+[diagnóstico de solo lectura](rollback-rehearsal.md#3-diagnóstico-de-recuperación-solo-lectura)
+y seguir únicamente el paso que indique su veredicto. Si el proxy devuelve 502 tras
 recrear solo API, seguir el paso de `Set-EntryClosure.ps1 -Action Reload` del procedimiento
 de ventana y repetir únicamente las verificaciones; no volver a etiquetar por ese motivo.
 
@@ -423,19 +497,21 @@ de ventana y repetir únicamente las verificaciones; no volver a etiquetar por e
 | Pieza | Estado |
 | --- | --- |
 | Rollback del Hub antes documentado | Solo "reconstruir la versión anterior" ([deployment](deployment.md#rollback-del-hub)): reconstrucción aproximada, lenta y dependiente de Git |
-| Preservar la imagen exacta | Mecanismo definido (ancla por nombre con comprobación de digest). **No ejecutado, no probado** en PROD |
+| Preservar la imagen exacta | Anclas API/Web `rollback-16153a8` comprobadas por digest contra la evidencia predeploy (2/2), según el expediente del piloto de 2026-11-11; no es una prueba de restauración |
 | Imagen `web` en ejecución | **Es** la imagen etiquetada (mismo manifiesto); el ancla debe crearse por nombre, no con `docker inspect … .Image` |
-| Script de ancla | `Deploy-DaubertHub.ps1 -Deploy` la crea y la verifica (**no ejecutado todavía**). El rollback **no tiene script**: son comandos manuales |
-| Prueba del rollback | **Pendiente**: ni el ancla ni `up --no-build` se han ejecutado en PROD |
+| Script de ancla | Usado por el orquestador en el primer deployment supervisado. El rollback sigue siendo manual, sin modo `-Rollback` |
+| Prueba del rollback | **Pendiente**: no se ejecutó rollback real en el piloto; verificar anclas no demuestra restauración de contenedores |
 | Rollback de PostgreSQL | Cada migración trae `down.sql` con guards; manual |
 | Rollback de n8n | Por workflow, ver [runbook de Caterpillar](../automations/caterpillar/production-runbook.md#rollback) |
 
 ## Pendientes y riesgos conocidos (no bloquean el preflight)
 
-- **`Deploy-DaubertHub.ps1 -Deploy` y el ancla de rollback: nunca ejecutados contra PROD**; solo probados con mocks. Su primera ejecución real será con el primer release que cambie `apps/`, `docker/` o `compose*`. Pendiente: modo `-Rollback` separado, con confirmación explícita.
+Las incidencias con fechas antiguas corresponden a esas revisiones, no a un diagnóstico actual del host. El expediente del piloto registra las comprobaciones de su ventana.
+
+- **Primer deployment supervisado ejecutado el 2026-11-11**, con anclas comprobadas por digest. El rollback real sigue sin ejecutarse en ese piloto; pendiente un modo `-Rollback` separado, con confirmación explícita.
 - **Pruebas automatizadas de `Test-DaubertDeployPreflight.ps1`: pendientes** (recomendado, aún no implementado). Deberían vivir en `scripts/deploy/tests` para no alterar el conteo de las 884 pruebas de backup, y cubrir: ausencia de cmdlets de escritura y de verbos mutantes de Docker/Git, asignación de `PASS`/`WARN`/`FAIL`, los tres códigos de salida (incluido el exit `2`) y que no se impriman secretos.
 - La tarea `Daubert - PostgreSQL Frequent` no ha publicado backup desde 2026-10-01 16:30 aunque figura con resultado `0`; Daily y Monthly están al día. Causa no determinada (posible suspensión del equipo).
-- El commit `add458c` no tiene tag; el último es `v0.9.0-pilot.2` (`bdf6e66`).
+- Referencia histórica de 2026-10-02: `add458c` no tenía tag y el último de aquella revisión era `v0.9.0-pilot.2` (`bdf6e66`). La política y el caso posterior `v1.1.1` se documentan en [release-policy](release-policy.md).
 - `compose.prod-temp.yaml` vive solo en el host de deployment (ver [nota](../deployments/2026-10-01-hub-v1-prod.md)); si se pierde el host, hay que reconstruirlo desde su descripción en esa nota.
 - El ancla vive en el almacén de imágenes de Docker Desktop; sin `docker save` (1b) depende de que ese almacén no se pierda.
 - Pendientes de Disaster Recovery (restore en otra estación, `globals`): **no bloquean** el deployment.

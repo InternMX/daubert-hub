@@ -1,0 +1,37 @@
+{
+  "caso": "azul-ejemplo",
+  "formato": "BOLSA_FUELLE",
+  "nota": "Medidas del ejemplo del machote (61 x 70.9, fuelles de 24) y producto azul #538DD5. Datos de prueba, no corresponden a un pedido real; los bloques de firma son marcadores SIN FIRMA.",
+  "datos": {
+    "sufijo_titulo": "",
+    "cliente": "Plásticos y Empaques del Bajío S.A. de C.V.",
+    "fecha_": "14/10/2026",
+    "resina_vci": "VCI PMG al 4%",
+    "producto": "Bolsa Con Fuelle",
+    "color": "AZUL",
+    "codigo": "BFPMG-0042",
+    "descripcion": "Bolsa VCI PMG con fuelles laterales 61 x 70.9 x 24\" Cal. 4 mil, Rollo con 100 bolsas, Color Azul",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "cantidad": "100 Bolsas",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "61\"",
+    "largo": "70.9\"",
+    "fuelle_derecho": "24\"",
+    "fuelle_izquierdo": "24\"",
+    "calibre": "4 MIL",
+    "peso_bolsa_lb": "1.2850",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_bolsa_hex": "#538DD5",
+    "color_cotas_internas_hex": "#FFFFFF"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

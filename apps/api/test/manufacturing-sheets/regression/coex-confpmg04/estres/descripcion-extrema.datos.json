@@ -1,0 +1,53 @@
+{
+  "caso": "descripcion-extrema",
+  "esperado": "estres",
+  "nota": "Prueba de estrés (no es un caso real): descripción de unos 1500 caracteres que obliga a una segunda página. Debe reportarse LÍMITE DETECTADO y el documento queda marcado como no apto para emisión productiva.",
+  "formato": "COEXTRUSION",
+  "variante": "COEX_VERDE",
+  "datos": {
+    "sufijo_titulo": " - COEXTRUSIÓN",
+    "cliente": "AUMOVIO / CONTINENTAL",
+    "fecha_": "29/12/2025",
+    "producto": "Bolsa Con Fuelle",
+    "color": "VERDE",
+    "codigo": "CONFPMG04",
+    "descripcion": "Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo Descripción de prueba de estrés para protección anticorrosiva de componentes maquinados durante almacenamiento y transporte marítimo de largo plazo",
+    "cantidad": "80 Bolsas",
+    "comp_pmg": "X",
+    "comp_cp5000": "NA",
+    "comp_natural": "NA",
+    "pres_rollo": "X",
+    "pres_paquete": "NA",
+    "unidad_medidas": "Pulgadas (IN)",
+    "ancho": "42\"",
+    "largo": "49.6\"",
+    "fuelle_derecho": "17\"",
+    "fuelle_izquierdo": "17\"",
+    "calibre": "3 MIL",
+    "peso_capa_interior": "0.27367",
+    "peso_capa_intermedia": "0.27367",
+    "peso_capa_exterior": "0.27367",
+    "resina_capa_interior": "VCI PMG al 4%",
+    "resina_capa_intermedia": "VCI PMG al 2%",
+    "resina_capa_exterior": "SIN VCI",
+    "resaltar_resina_capa_interior": "SI",
+    "resaltar_resina_capa_intermedia": "SI",
+    "resaltar_resina_capa_exterior": "SI",
+    "lb_vci_interior": "0.010947",
+    "lb_vci_intermedia": "0.005473",
+    "lb_vci_exterior": "0",
+    "peso_bolsa_lb": "0.754",
+    "etiqueta": "Normal"
+  },
+  "visual": {
+    "color_capa_interior": "#00B050",
+    "color_capa_intermedia": "#92D050",
+    "color_capa_exterior": "#D7E4BD",
+    "color_bolsa_hex": "#00B050",
+    "color_cotas_internas_hex": "#4A7EBB"
+  },
+  "firmas": {
+    "bloque_firma_elaboro": "<span class=\"sin-firma\">SIN FIRMA</span>",
+    "bloque_firma_aprobo": "<span class=\"sin-firma\">SIN FIRMA</span>"
+  }
+}

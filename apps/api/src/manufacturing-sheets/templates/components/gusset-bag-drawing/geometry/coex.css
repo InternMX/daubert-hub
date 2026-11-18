@@ -1,0 +1,4 @@
+    /* Dibujo técnico de bolsa con fuelles (debajo de Etiqueta): y 453.0 a 642.8 pt (189.8 pt), ancho B:I (400.4 pt).
+       Sin borde, padding ni margen: el contenedor mide exactamente lo mismo que el viewBox (400.4 x 189.8). */
+    .dibujo-caja { width: 400.4pt; max-width: 100%; height: 189.8pt; }  /* y 453.0 a 642.8; sin borde en la tabla de Etiqueta ya no hace falta compensarlo */
+    .dibujo-bolsa-svg { display: block; width: 100%; height: 189.8pt; }

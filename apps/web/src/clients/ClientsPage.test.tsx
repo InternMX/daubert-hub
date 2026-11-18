@@ -121,3 +121,18 @@ describe('ClientsPage', () => {
     expect(screen.getByLabelText('Cargando clientes')).toBeInTheDocument();
   });
 });
+
+describe('ClientsPage · alta reservada a ADMIN', () => {
+  it('una cuenta GENERAL no ve «Nuevo cliente» (consulta y búsqueda intactas); ADMIN y la ausencia de sesión en el contexto conservan el botón', async () => {
+    const { AuthContext } = await import('../auth/authContext.core');
+    const { createAuthContextValue, testAdminUser, testGeneralUser } = await import('../test/authTestUtils');
+    const montar = (user: typeof testAdminUser) => render(<AuthContext.Provider value={createAuthContextValue({ user })}><MemoryRouter><ClientsPage /></MemoryRouter></AuthContext.Provider>);
+    listClientsMock.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } });
+    const general = montar(testGeneralUser);
+    expect(await screen.findByLabelText('Buscar cliente')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Nuevo cliente' })).toBeNull();
+    general.unmount();
+    montar(testAdminUser);
+    expect(await screen.findByRole('link', { name: 'Nuevo cliente' })).toHaveAttribute('href', '/clients/new');
+  });
+});

@@ -1,0 +1,5 @@
+# Pruebas de hojas de manufactura: finales de línea fijos (LF); los PDF e imágenes son binarios.
+* text eol=lf
+*.pdf binary
+*.png binary
+*.jpg binary

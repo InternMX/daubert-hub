@@ -1,0 +1,4 @@
+    /* Dibujo de rollo doblado: contenedor de 400.4 x 96 pt (igual al ancho B:I); el viewBox coincide con el contenedor. */
+    .dibujo-rollo-doblado-caja { width: 400.4pt; max-width: 100%; height: 96pt; }
+    .dibujo-te-svg { display: block; width: 100%; }
+    .dibujo-te-svg text { font-family: var(--fuente); }

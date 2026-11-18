@@ -1,0 +1,5 @@
+    /* @include components/gusset-bag-drawing/geometry/@{geometria}.css */
+    .dibujo-bolsa-svg text { font-family: var(--fuente); }
+    /* Vista previa de la plantilla sin datos: si el fill sigue siendo el placeholder "{{color_bolsa_hex}}", se muestra gris claro. */
+    .dibujo-bolsa-svg .bolsa[fill^="{"] { fill: #ddd; }
+    .dibujo-bolsa-svg .cota-interna[stroke^="{"] { stroke: #888; }

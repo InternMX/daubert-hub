@@ -1,0 +1,35 @@
+    <!-- MEDIDAS con fuelles (BOLSA_FUELLE): Unidad, Ancho y Fuelle Derecho, Largo y Fuelle Izquierdo, Calibre.
+         Cuadrícula B:I. Es distinta de la de COEX, cuya fila Calibre comparte una celda con el encabezado de capas. -->
+    <div class="tabla-contenedor seccion-pegada" id="seccion-medidas" data-seccion="medidas" data-plantilla="fuelles">
+      <table class="t-bi" aria-label="Medidas de la bolsa">
+        <colgroup>
+          <col class="g-b"><col class="g-c"><col class="g-d"><col class="g-e">
+          <col class="g-f"><col class="g-g"><col class="g-h"><col class="g-i">
+        </colgroup>
+        <tbody>
+          <tr class="alto-136">
+            <td class="seccion-titulo titulo-claro" colspan="8">Medidas:</td>
+          </tr>
+          <tr class="alto-136">
+            <th class="rotulo" colspan="3" scope="row">Unidad de Medidas:</th>
+            <td colspan="5" id="unidad_medidas">{{unidad_medidas}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Ancho:</th>
+            <td colspan="2" id="ancho">{{ancho}}</td>
+            <td class="tipo" colspan="2">Fuelle Derecho</td>
+            <td colspan="2" id="fuelle_derecho">{{fuelle_derecho}}</td>
+          </tr>
+          <tr class="alto-136">
+            <th class="rotulo" colspan="2" scope="row">Largo:</th>
+            <td colspan="2" id="largo">{{largo}}</td>
+            <td class="tipo" colspan="2">Fuelle Izquierdo</td>
+            <td colspan="2" id="fuelle_izquierdo">{{fuelle_izquierdo}}</td>
+          </tr>
+          <tr>
+            <th class="rotulo" colspan="2" scope="row">Calibre:</th>
+            <td class="destacado" colspan="6" id="calibre">{{calibre}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>

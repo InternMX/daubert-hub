@@ -311,7 +311,7 @@ async function run() {
     });
     await waitForApi();
 
-    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker);
+    authSession = await createAuthenticatedTestSession(`http://127.0.0.1:${port}/api`, marker, { role: 'ADMIN' });   // POST /clients es solo de ADMIN
     sessionCookie = authSession.cookie;
 
     paymentFixtures = await transaction(pool, 'DAUBERT_HUB_TEST', paymentRequestId, async (client) => {

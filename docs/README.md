@@ -19,13 +19,14 @@ Este directorio es la **fuente de verdad documental** de Daubert Hub y de las au
 | Backup/restore de PostgreSQL | [operations/database-backup-restore.md](operations/database-backup-restore.md) |
 | Ver la arquitectura self-hosted V1 (LAN, puertos, servidor) | [architecture/README.md](architecture/README.md) |
 | Desplegar el Hub (Docker) | [operations/deployment.md](operations/deployment.md) → [deployment-checklist.md](operations/deployment-checklist.md) (PROD) |
+| Identificar, versionar y aprobar una publicación supervisada | [release-policy](operations/release-policy.md) → [release-pipeline](operations/release-pipeline.md); ejecución según el checklist PROD |
 | Diagnosticar o configurar el servidor (incluye el supervisor de n8n) | [diagnose-daubert-server](operations/diagnose-daubert-server.md) · [configure-daubert-server](operations/configure-daubert-server.md) |
 | Saber por qué algo se diseñó así | [decisions/README.md](decisions/README.md) |
 | Ver qué se promovió a PROD y cuándo | [deployments/](deployments/) |
 | Ver el estado actual del proyecto, módulos, riesgos y qué no tocar a mano | [00-overview/project-status.md](00-overview/project-status.md) |
 | Ver **pendientes, riesgos abiertos, hoja de ruta (1.2.0) y decisiones por aprobar** | [00-overview/pending-and-roadmap.md](00-overview/pending-and-roadmap.md) |
 | Ver el estado de **seguridad, roles, respaldos, recuperación y observabilidad** | [operations/security-and-operations-status.md](operations/security-and-operations-status.md) |
-| Ver el último release (Hub 1.1.0, 2026-10-28) | [deployments/2026-10-28-hub-v1.1.0-prod.md](deployments/2026-10-28-hub-v1.1.0-prod.md) |
+| Ver el último deployment documentado (Hub 1.1.1, 2026-11-11) | [primer piloto CI/CD](deployments/2026-11-11-hub-cicd-pilot-prod.md) |
 | Resolver incidencias | [operations/troubleshooting](operations/troubleshooting.md) · [caterpillar](automations/caterpillar/troubleshooting.md) · [pagos](automations/payment-notifications/troubleshooting.md) · [audi](automations/audi/troubleshooting.md) · [base de datos](database/troubleshooting.md) |
 | Operación diaria de cada automatización | [Caterpillar](automations/caterpillar/production-runbook.md) · [Pagos](automations/payment-notifications/production-runbook.md) · [Audi](automations/audi/production-runbook.md) |
 
