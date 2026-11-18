@@ -103,7 +103,10 @@ function Invoke-PgDump {
         '-d', $Config.PgDatabase,
         '-Fc',
         '-f', $OutputPath,
-        '--no-password'
+        '--no-password',
+        # Manufactura (migracion 026): daubert_backup lee por pertenencia a pg_read_all_data pero NO salta RLS. Sin esta bandera pg_dump FALLA en cuanto existe el esquema manufactura;
+        # con ella vuelca lo que las politicas pol_respaldo_sel le permiten ver (todo). Sin RLS aplicable es un no-op. Ver docs/hub/manufactura-ensayo-6b-resultados.md.
+        '--enable-row-security'
     )
     if ($SchemaOnly) { $arguments += '--schema-only' }
 
