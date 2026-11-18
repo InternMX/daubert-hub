@@ -222,7 +222,7 @@ describe('Audi recovery HTTP with SQL and webhook doubles', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it.each(['ADMIN', 'GENERAL'])('keeps detail available without 027 for %s', async (role) => {
+  it.each(['ADMIN', 'GENERAL'])('keeps detail available without 108 for %s', async (role) => {
     query.mockReset().mockRejectedValue({ code: '42883' });
     const { body } = await request(app.getHttpServer()).get(base + executionId).set('x-test-role', role).expect(200);
     expect(body.data).toMatchObject({

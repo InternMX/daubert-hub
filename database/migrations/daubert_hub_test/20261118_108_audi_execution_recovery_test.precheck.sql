@@ -2,7 +2,7 @@ BEGIN READ ONLY;
 DO $guard$
 BEGIN
   IF current_database() <> 'daubert_hub_test' OR current_user <> 'postgres' THEN
-    RAISE EXCEPTION '027 requires postgres exclusively in daubert_hub_test';
+    RAISE EXCEPTION '108 requires postgres exclusively in daubert_hub_test';
   END IF;
 END;
 $guard$;
@@ -25,7 +25,7 @@ BEGIN
     OR to_regclass('operacion.reservas_admitidas_audi_test') IS NOT NULL
     OR EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname IN ('ops','operacion') AND p.proname LIKE '%audi_test') THEN
-    RAISE EXCEPTION 'BLOCKER: existing 027 objects or Audi TEST functions require review';
+    RAISE EXCEPTION 'BLOCKER: existing 108 objects or Audi TEST functions require review';
   END IF;
 END;
 $objects$;

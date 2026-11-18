@@ -1,4 +1,4 @@
--- TEMPLATE, NOT APPLIED. Use after 027 as postgres in daubert_hub_test.
+-- TEMPLATE, NOT APPLIED. Use after 108 as postgres in daubert_hub_test.
 -- Supply the existing, approved Audi TEST credential role with -v worker_role=<role>.
 \set ON_ERROR_STOP on
 BEGIN;

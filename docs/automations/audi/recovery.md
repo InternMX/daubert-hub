@@ -33,7 +33,7 @@ La expiración perezosa marca `EXPIRADA` con `LEASE_EXPIRED`. El Hub puede invoc
 
 ## Contrato del Hub
 
-Ruta base `/api/automations/remissions/audi/executions/:executionId`. El identificador es un int8 positivo representado como cadena. El GET está disponible para GENERAL y ADMIN. GENERAL recibe todas las acciones deshabilitadas con `FORBIDDEN`. Si faltan los objetos de 027 (SQLSTATE `42883` o `42P01`), el GET conserva el detalle operacional, devuelve `model`, `revision` y `reservation` nulos, listas de evidencia e intentos vacías y acciones deshabilitadas con `RECOVERY_NOT_INSTALLED` para ADMIN. Si 027 está disponible pero falta el webhook, las acciones elegibles muestran `INTEGRATION_NOT_CONFIGURED` y las demás conservan el motivo de SQL. La respuesta excluye rutas completas y tokens.
+Ruta base `/api/automations/remissions/audi/executions/:executionId`. El identificador es un int8 positivo representado como cadena. El GET está disponible para GENERAL y ADMIN. GENERAL recibe todas las acciones deshabilitadas con `FORBIDDEN`. Si faltan los objetos de 108 (SQLSTATE `42883` o `42P01`), el GET conserva el detalle operacional, devuelve `model`, `revision` y `reservation` nulos, listas de evidencia e intentos vacías y acciones deshabilitadas con `RECOVERY_NOT_INSTALLED` para ADMIN. Si 108 está disponible pero falta el webhook, las acciones elegibles muestran `INTEGRATION_NOT_CONFIGURED` y las demás conservan el motivo de SQL. La respuesta excluye rutas completas y tokens.
 ```json
 { "data": {
   "executionId": "31", "outcome": "FAILED", "startedAt": "…", "finishedAt": "…",
@@ -69,7 +69,7 @@ Las cuatro rutas pueden devolver 200 `ACTION_IN_PROGRESS` con el intento activo 
 | 404 | Ejecución inexistente o ajena a Audi. El rechazo explícito puede incluir `NOT_FOUND`. |
 | 409 | Códigos de elegibilidad de la tabla de estados, `STALE_REVISION` o rechazo del worker `STALE_ATTEMPT`, `OUTSIDE_TEST_SCOPE` u `OUTSIDE_ALLOWED_SCOPE`. Un fallo tardío de CANCEL se consulta en el historial. |
 | 502 | `NETWORK_ERROR` o `INVALID_RESPONSE`, con `actionId` si ya se autorizó el intento. |
-| 503 | `INTEGRATION_NOT_CONFIGURED` antes de llamar a SQL o `RECOVERY_NOT_INSTALLED` si faltan los objetos de 027. |
+| 503 | `INTEGRATION_NOT_CONFIGURED` antes de llamar a SQL o `RECOVERY_NOT_INSTALLED` si faltan los objetos de 108. |
 | 504 | `TIMEOUT` con `actionId`. El intento puede seguir activo. El Hub web indica «No se pudo confirmar el resultado; revise el historial antes de reintentar». |
 
 El filtro de Audi conserva los códigos y mensajes públicos fijos de 502, 503 y 504. El Hub web vuelve a solicitar el detalle después de cada respuesta y muestra mensajes locales en español.
@@ -125,16 +125,16 @@ Para REPROCESS, la admisión exige los tres argumentos `p_reproceso_de_id`, `p_a
 
 ## Procedimiento E2E futuro en TEST
 
-La migración 027 sigue sin aplicarse y el worker está pendiente. Usar ejecuciones, documentos y archivos sintéticos de TEST. Preservar los datos históricos de la ejecución 30 (n8n 16050, folios 983–987).
+La migración 108 sigue sin aplicarse y el worker está pendiente. Usar ejecuciones, documentos y archivos sintéticos de TEST. Preservar los datos históricos de la ejecución 30 (n8n 16050, folios 983–987).
 
-1. El operador ejecuta el precheck de 027 en `daubert_hub_test`, guarda las líneas `BLOCKER:` y los baselines, y confirma que el manejo de ERROR conservará la reserva. Antes de aplicar 027 o integrar el worker, resuelve los tres gates con evidencia y obtiene aprobación explícita del usuario. [Precheck de 027](../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test.precheck.sql)
+1. El operador ejecuta el precheck de 108 en `daubert_hub_test`, guarda las líneas `BLOCKER:` y los baselines, y confirma que el manejo de ERROR conservará la reserva. Antes de aplicar 108 o integrar el worker, resuelve los tres gates con evidencia y obtiene aprobación explícita del usuario. [Precheck de 108](../../../database/migrations/daubert_hub_test/20261118_108_audi_execution_recovery_test.precheck.sql)
 
    - **R2.** Verificar si el asignador legado bloquea la fila de serie con `FOR UPDATE` y acordar un corte con una sola versión activa del workflow. Ambos asignadores avanzan el contador de `REMISION_AUDI`.
    - **R3.** Confirmar el rol efectivo de la credencial Audi en n8n TEST, incluidos permisos heredados, y aprobar el mínimo acceso a las funciones del worker.
-   - **R4.** Confirmar exactamente una ruta activa de `REMISION_AUDI` a `REMISIONES_AUDI`. Si falta, resolverla con el operador antes de continuar. 027 conserva el enrutamiento existente.
+   - **R4.** Confirmar exactamente una ruta activa de `REMISION_AUDI` a `REMISIONES_AUDI`. Si falta, resolverla con el operador antes de continuar. 108 conserva el enrutamiento existente.
 
-2. Con aprobación, el operador aplica el script up de 027 en TEST y ejecuta su postcheck con `audi_recovery.series_md5` y `audi_recovery.cat_functions_md5` configurados en la sesión a partir del precheck. Exige `ALL_CHECKS_PASS` y los baselines intactos. [Up de 027](../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test.up.sql), [postcheck de 027](../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test.postcheck.sql)
-3. Con el rol de R3 confirmado, el operador usa la [plantilla de permisos para el worker Audi TEST](../../../database/migrations/daubert_global/20261118_027_audi_worker_role_test.template.sql) con `worker_role` y comprueba los permisos efectivos.
+2. Con aprobación, el operador aplica el script up de 108 en TEST y ejecuta su postcheck con `audi_recovery.series_md5` y `audi_recovery.cat_functions_md5` configurados en la sesión a partir del precheck. Exige `ALL_CHECKS_PASS` y los baselines intactos. [Up de 108](../../../database/migrations/daubert_hub_test/20261118_108_audi_execution_recovery_test.up.sql), [postcheck de 108](../../../database/migrations/daubert_hub_test/20261118_108_audi_execution_recovery_test.postcheck.sql)
+3. Con el rol de R3 confirmado, el operador usa la [plantilla de permisos para el worker Audi TEST](../../../database/migrations/daubert_hub_test/20261118_108_audi_worker_role_test.template.sql) con `worker_role` y comprueba los permisos efectivos.
 4. Implementar el contrato en n8n TEST, verificar el corte a la admisión atómica y configurar las dos variables del webhook en el servidor Hub TEST. Antes de configurarlas, verificar que el GET deshabilita las acciones elegibles y que el POST devuelve 503 sin crear intentos. Una vez configuradas, probar con ADMIN y confirmar que GENERAL puede consultar el detalle y recibe 403 al intentar escribir.
 5. Ejecutar los casos siguientes y guardar las respuestas, el GET de seguimiento y la evidencia de PostgreSQL y n8n correspondiente.
 

@@ -3,13 +3,13 @@ import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-const migration = resolve(__dirname, '../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test');
+const migration = resolve(__dirname, '../../../database/migrations/daubert_hub_test/20261118_108_audi_execution_recovery_test');
 const script = (phase: string) => readFileSync(migration + '.' + phase + '.sql', 'utf8');
 const testDatabase = (sql: string) => sql.replace(/current_database\(\)/g, "'daubert_hub_test'::text");
 const hash = 'a'.repeat(64);
 const remissions = JSON.stringify([{ fecha_documento: '2026-11-18', detalle: [{ cantidad_texto: '1' }] }]);
 
-describe('027 Audi recovery SQL (in-memory PGlite)', () => {
+describe('108 Audi recovery SQL (in-memory PGlite)', () => {
   let db: PGlite;
   beforeAll(async () => {
     db = new PGlite();

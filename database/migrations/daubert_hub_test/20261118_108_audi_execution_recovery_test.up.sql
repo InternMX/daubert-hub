@@ -4,13 +4,13 @@ SET LOCAL lock_timeout = '10s';
 DO $guard$
 BEGIN
   IF current_database() <> 'daubert_hub_test' OR current_user <> 'postgres' THEN
-    RAISE EXCEPTION '027 requires postgres exclusively in daubert_hub_test';
+    RAISE EXCEPTION '108 requires postgres exclusively in daubert_hub_test';
   END IF;
   IF EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname IN ('ops','operacion') AND p.proname LIKE '%audi_test'
   ) THEN
-    RAISE EXCEPTION '027 requires review of existing Audi TEST functions';
+    RAISE EXCEPTION '108 requires review of existing Audi TEST functions';
   END IF;
 END;
 $guard$;
@@ -371,8 +371,8 @@ BEGIN
     -- Admission refusals leave the lease unchanged, including expiry on contact.
     BEGIN
       outcome := ops.fn_validar_intento_audi_test(p_accion_id,p_worker,p_token,false);
-      IF outcome = 'ATTEMPT_EXPIRED' THEN RAISE SQLSTATE 'A0271'; END IF;
-    EXCEPTION WHEN SQLSTATE 'A0271' THEN
+      IF outcome = 'ATTEMPT_EXPIRED' THEN RAISE SQLSTATE 'A1081'; END IF;
+    EXCEPTION WHEN SQLSTATE 'A1081' THEN
       outcome := 'ATTEMPT_EXPIRED';
     END;
     IF outcome <> 'VALID' THEN RETURN NEXT; RETURN; END IF;

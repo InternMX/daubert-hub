@@ -26,7 +26,7 @@ REPROCESS conserva el modelo de ejecución hija con folios nuevos. Requiere un p
 
 - Cada intento conserva su propio estado, historial y arrendamiento renovable. El token de fencing impide escrituras de un intento vencido. Se prohíbe actualizar intentos terminales y borrar cualquier intento.
 - La evidencia se conserva por versión. Una cancelación que descubre archivos conserva esa evidencia y falla.
-- La migración 027 es exclusiva de TEST y sigue sin aplicarse. R2, R3 y R4 bloquean tanto su aplicación en `daubert_hub_test` como la integración del worker. Cada gate requiere evidencia y aprobación explícita. [Recuperación Audi](../automations/audi/recovery.md)
+- La migración 108 es exclusiva de TEST y sigue sin aplicarse. R2, R3 y R4 bloquean tanto su aplicación en `daubert_hub_test` como la integración del worker. Cada gate requiere evidencia y aprobación explícita. [Recuperación Audi](../automations/audi/recovery.md)
 
 ## Alternatives Considered
 

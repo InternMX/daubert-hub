@@ -3,7 +3,7 @@ SET LOCAL lock_timeout = '10s';
 DO $guard$
 BEGIN
   IF current_database() <> 'daubert_hub_test' OR current_user <> 'postgres' THEN
-    RAISE EXCEPTION '027 down requires postgres exclusively in daubert_hub_test';
+    RAISE EXCEPTION '108 down requires postgres exclusively in daubert_hub_test';
   END IF;
 END;
 $guard$;
@@ -16,7 +16,7 @@ BEGIN
   IF EXISTS (SELECT 1 FROM ops.acciones_recuperacion_ejecucion)
     OR EXISTS (SELECT 1 FROM operacion.artefactos_ejecucion)
     OR EXISTS (SELECT 1 FROM operacion.reservas_admitidas_audi_test) THEN
-    RAISE EXCEPTION '027 rollback blocked by Audi recovery history';
+    RAISE EXCEPTION '108 rollback blocked by Audi recovery history';
   END IF;
 END;
 $history$;
