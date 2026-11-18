@@ -1,5 +1,9 @@
 # Remisiones Audi
 
+## Recuperación de ejecuciones
+
+[Contrato de recuperación Audi](recovery.md) (integración n8n pendiente).
+
 Documentado en la Fase D2 **a partir de los exports reales** ([PROD](../../../n8n/workflows/remisiones-audi/prod/workflow.json), [TEST](../../../n8n/workflows/remisiones-audi/test/workflow.json), [subworkflows y manejador de errores](../../../n8n/workflows/remisiones-audi/shared/)). Lo histórico no se asume vigente: **manda el export actual**.
 
 | | |
