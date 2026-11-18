@@ -99,7 +99,7 @@ function mockViewportWidth(initialWidthPx: number) {
     return entry.mql;
   }));
 
-  return (widthPx: number) => {
+  const setViewportWidth = (widthPx: number) => {
     currentWidth = widthPx;
     act(() => {
       for (const { mql, listeners } of registered.values()) {
@@ -107,6 +107,12 @@ function mockViewportWidth(initialWidthPx: number) {
       }
     });
   };
+  // useMediaQuery subscribes to its MediaQueryList in a passive effect. When the component that calls it mounts
+  // after an async load (outside act), that effect can still be pending when findBy* resolves; a viewport change
+  // dispatched before it runs reaches no listener. Wait for every queried MediaQueryList to have a subscriber.
+  setViewportWidth.allSubscribed = () => registered.size > 0 && [...registered.values()].every(({ listeners }) => listeners.size > 0);
+  setViewportWidth.waitForSubscribers = () => waitFor(() => expect(setViewportWidth.allSubscribed(), 'every queried MediaQueryList has a listener').toBe(true));
+  return setViewportWidth;
 }
 
 // Simulates AppShell's own SidebarContext.Provider (see AppShell.tsx) — the shared mechanism the
@@ -875,6 +881,7 @@ describe('PaymentNotificationsPage', () => {
       await screen.findByRole('table', { name: 'Ejecuciones recientes de notificaciones de pago' });
       expect(detailColumnDisplays()).toEqual(FULL); // >=lg: full even though expanded
       const callsAfterMount = listMock.mock.calls.length;
+      await setViewportWidth.waitForSubscribers();
 
       setViewportWidth(VIEWPORT_MD_TO_LG);
       expect(detailColumnDisplays()).toEqual(COMPACT); // md..<lg + expanded: compact
