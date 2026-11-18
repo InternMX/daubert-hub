@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AudiExecutionsApiError, getAudiExecution, listAudiExecutions, type AudiExecutionDetail } from './audiExecutions';
+import { AudiExecutionsApiError, cancelAudiExecution, getAudiExecution, listAudiExecutions, reconcileAudiExecution,
+  reprocessAudiExecution, stopAudiExecution, type AudiExecutionDetail } from './audiExecutions';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -58,6 +59,9 @@ describe('listAudiExecutions', () => {
 const detail: AudiExecutionDetail = {
   executionId: '9007199254740993', outcome: 'COMPLETED', startedAt: summary.occurredAt, finishedAt: null,
   generatedCount: 1, sourceDocument: { documentId: '103', filename: 'entrada.xlsx' }, latestErrorMessage: null,
+  n8nExecutionId: '16061', reprocessOfExecutionId: null, childExecutionId: null, model: null, revision: null,
+  reservation: null, artifacts: [], recoveryAttempts: [],
+  availableActions: [{ action: 'STOP', enabled: false, disabledReason: 'RECOVERY_NOT_INSTALLED' }],
   remittances: [{ remissionId: '11', seriesCode: 'REMISION_AUDI', folio: '9007199254740994', documentDate: '2026-08-27', status: 'GENERADA' }]
 };
 
@@ -82,6 +86,9 @@ describe('getAudiExecution', () => {
     { data: { ...detail, outcome: 'UNKNOWN' } },
     { data: { ...detail, remittances: [{ ...detail.remittances[0], folio: 100 }] } },
     { data: { ...detail, startedAt: 'not-a-date' } },
+    { data: { ...detail, childExecutionId: 9007199254740992 } },
+    { data: { ...detail, availableActions: [{ action: 'STOP', enabled: 'true' }] } },
+    { data: { ...detail, model: 'UNKNOWN' } },
     { nope: detail }
   ])('rejects an invalid detail contract', async (body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(body)));
@@ -95,5 +102,33 @@ describe('getAudiExecution', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('invalid')).mockRejectedValueOnce(new Error('network')));
     await expect(getAudiExecution('8')).rejects.toMatchObject({ status: 200 });
     await expect(getAudiExecution('8')).rejects.toMatchObject({ status: 0 });
+  });
+});
+
+describe('Audi recovery POSTs', () => {
+  it.each([
+    ['reprocess', () => reprocessAudiExecution(detail.executionId, 'Revisar'), { reason: 'Revisar' }],
+    ['reconcile', () => reconcileAudiExecution(detail.executionId, 'Revisar', 'ERROR:4'), { reason: 'Revisar', expectedRevision: 'ERROR:4' }],
+    ['stop', () => stopAudiExecution(detail.executionId, 'Revisar'), { reason: 'Revisar' }],
+    ['cancel', () => cancelAudiExecution(detail.executionId, 'Revisar', 'ERROR:4'), { reason: 'Revisar', expectedRevision: 'ERROR:4' }]
+  ] as const)('POSTs /%s with the session fetch pattern and preserves int8 ids', async (route, request, payload) => {
+    const data = { accepted: true, status: 'ACTION_IN_PROGRESS', executionId: detail.executionId, actionId: '9007199254740999' };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(request()).resolves.toEqual(data);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/automations/remissions/audi/executions/${detail.executionId}/${route}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload)
+    });
+  });
+
+  it('preserves status and code without exposing raw server text or accepting malformed success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse({ code: 'STALE_REVISION', message: 'private' }, 409))
+      .mockResolvedValueOnce(jsonResponse({ data: { accepted: true, actionId: 5 } }, 202))
+      .mockRejectedValueOnce(new Error('network')));
+    await expect(cancelAudiExecution(detail.executionId, 'Revisar', 'ERROR:4')).rejects.toMatchObject({
+      status: 409, code: 'STALE_REVISION', message: 'Audi executions API request failed'
+    });
+    await expect(stopAudiExecution(detail.executionId, 'Revisar')).rejects.toMatchObject({ status: 202 });
+    await expect(stopAudiExecution(detail.executionId, 'Revisar')).rejects.toMatchObject({ status: 0 });
   });
 });

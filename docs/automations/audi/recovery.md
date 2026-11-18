@@ -8,7 +8,7 @@ Una ejecución `LEGACY` carece de reserva vinculada y requiere recuperación man
 
 | Acción | Condición | Códigos de rechazo |
 | --- | --- | --- |
-| `REPROCESS` | `ATOMIC` en `ERROR` o `CANCELADA`, sin remisión vigente, reserva `RESERVADA`, evidencia histórica, hija ni intento activo | `PENDING_RECONCILIATION`, `PARTIAL_ARTIFACTS`, `ALREADY_REPROCESSED`, `ACTION_IN_PROGRESS`, `NOT_ELIGIBLE_STATE`, `LEGACY_EXECUTION` |
+| `REPROCESS` | `ATOMIC` en `ERROR` o `CANCELADA`. Exige ausencia de remisiones vigentes, de una reserva en estado `RESERVADA`, de evidencia histórica, de una hija y de un intento activo. | `PENDING_RECONCILIATION`, `PARTIAL_ARTIFACTS`, `ALREADY_REPROCESSED`, `ACTION_IN_PROGRESS`, `NOT_ELIGIBLE_STATE`, `LEGACY_EXECUTION` |
 | `RECONCILE` | `ATOMIC` en `ERROR` con reserva `RESERVADA` | `ALREADY_COMPLETED`, `NOT_ELIGIBLE_STATE`, `ACTION_IN_PROGRESS`, `STALE_REVISION`, `LEGACY_EXECUTION` |
 | `STOP` | `PROCESANDO` con `n8n_execution_id` y sin intento activo | `NOT_ELIGIBLE_STATE`, `ACTION_IN_PROGRESS`, `LEGACY_EXECUTION` para legadas sin id de n8n |
 | `CANCEL` | `ATOMIC` en `ERROR` o `PROCESANDO` con confirmación de detención, sin remisiones `GENERADA` ni evidencia `VERIFICADO` | `REMISSIONS_ISSUED`, `PARTIAL_ARTIFACTS_REQUIRE_RECONCILIATION`, `N8N_RUNNING`, `ALREADY_CANCELLED`, `STALE_REVISION`, `ACTION_IN_PROGRESS`, `LEGACY_EXECUTION` |
@@ -33,25 +33,25 @@ La expiración perezosa marca `EXPIRADA` con `LEASE_EXPIRED`. El Hub puede invoc
 
 ## Contrato del Hub
 
-Ruta base `/api/automations/remissions/audi/executions/:executionId`. El identificador es un int8 positivo representado como cadena. El GET está disponible para GENERAL y ADMIN. GENERAL recibe todas las acciones deshabilitadas con `FORBIDDEN`. El detalle tolera los SQLSTATE `42883` y `42P01` con campos de recuperación nulos y `RECOVERY_NOT_INSTALLED`. La respuesta excluye rutas completas y tokens.
+Ruta base `/api/automations/remissions/audi/executions/:executionId`. El identificador es un int8 positivo representado como cadena. El GET está disponible para GENERAL y ADMIN. GENERAL recibe todas las acciones deshabilitadas con `FORBIDDEN`. Si faltan los objetos de 027 (SQLSTATE `42883` o `42P01`), el GET conserva el detalle operacional, devuelve `model`, `revision` y `reservation` nulos, listas de evidencia e intentos vacías y acciones deshabilitadas con `RECOVERY_NOT_INSTALLED` para ADMIN. Si 027 está disponible pero falta el webhook, las acciones elegibles muestran `INTEGRATION_NOT_CONFIGURED` y las demás conservan el motivo de SQL. La respuesta excluye rutas completas y tokens.
 ```json
 { "data": {
   "executionId": "31", "outcome": "FAILED", "startedAt": "…", "finishedAt": "…",
   "n8nExecutionId": "16061", "reprocessOfExecutionId": null, "childExecutionId": null,
-  "model": "ATOMIC", "revision": "ERROR:0",
+  "model": "ATOMIC", "revision": "ERROR:5",
   "reservation": { "firstFolio": "988", "lastFolio": "990", "quantity": 3, "status": "RESERVADA" },
   "remittances": [{ "remissionId": "…", "seriesCode": "REMISION_AUDI", "folio": "988", "documentDate": "…", "status": "PENDIENTE" }],
   "artifacts": [{ "type": "REMISION_PDF", "folio": "988", "version": 2, "current": true, "fileName": "…pdf", "sizeBytes": 48211, "sha256": "…", "status": "VERIFICADO", "verifiedAt": "…", "actionId": "5" }],
-  "recoveryAttempts": [{ "actionId": "5", "action": "RECONCILE", "status": "FALLIDA", "resultCode": "LEASE_EXPIRED", "reason": "…", "actorName": "…", "createdAt": "…", "lastHeartbeatAt": "…", "expiresAt": "…", "finishedAt": "…", "error": "…" }],
+  "recoveryAttempts": [{ "actionId": "5", "action": "RECONCILE", "status": "EXPIRADA", "resultCode": "LEASE_EXPIRED", "reason": "…", "actorName": "…", "createdAt": "…", "lastHeartbeatAt": "…", "expiresAt": "…", "finishedAt": "…", "error": "…" }],
   "availableActions": [
     { "action": "RECONCILE", "enabled": false, "disabledReason": "INTEGRATION_NOT_CONFIGURED" },
-    { "action": "REPROCESS", "enabled": false, "disabledReason": "PENDING_RECONCILIATION" },
+    { "action": "REPROCESS", "enabled": false, "disabledReason": "PARTIAL_ARTIFACTS" },
     { "action": "STOP", "enabled": false, "disabledReason": "NOT_ELIGIBLE_STATE" },
-    { "action": "CANCEL", "enabled": false, "disabledReason": "INTEGRATION_NOT_CONFIGURED" } ],
-  "sourceDocument": {}, "latestErrorMessage": "…", "generatedCount": 0 } }
+    { "action": "CANCEL", "enabled": false, "disabledReason": "PARTIAL_ARTIFACTS_REQUIRE_RECONCILIATION" } ],
+  "sourceDocument": { "documentId": "42", "filename": "entrada.xlsx" }, "latestErrorMessage": "…", "generatedCount": 0 } }
 ```
 
-Cada POST exige ADMIN y `reason` recortado de 1 a 500 caracteres. La respuesta tiene forma `{ data: { accepted, status, actionId, executionId, childExecutionId? } }`.
+Cada POST exige sesión ADMIN y `reason` recortado de 1 a 500 caracteres. Las llamadas del navegador utilizan la sesión y la misma comprobación de origen que las otras escrituras del Hub. La respuesta tiene forma `{ data: { accepted, status, actionId, executionId, childExecutionId? } }`. Para RECONCILE y CANCEL se toma `expectedRevision` del GET inmediatamente anterior.
 
 | Ruta | Cuerpo | Respuestas |
 | --- | --- | --- |
@@ -60,24 +60,40 @@ Cada POST exige ADMIN y `reason` recortado de 1 a 500 caracteres. La respuesta t
 | `POST /stop` | `{ reason }` | 202 `STOP_REQUESTED`, 200 `NOT_RUNNING` o `ALREADY_FINISHED` |
 | `POST /cancel` | `{ reason, expectedRevision }` | 202 `DISPATCHED`, 200 `ALREADY_CANCELLED` o `ACTION_IN_PROGRESS` |
 
-400 para id o cuerpo inválido, 401 sin sesión, 403 sin rol, 404 fuera de Audi o inexistente y 409 para conflictos de elegibilidad. El Hub comprueba `INTEGRATION_NOT_CONFIGURED` y `RECOVERY_NOT_INSTALLED` antes de autorizar y devuelve 503. Devuelve 502 si n8n no está disponible o responde de forma inválida y 504 con `actionId` si el resultado es desconocido tras un timeout. Los mensajes salen en español por `SafeExceptionFilter`.
+Las cuatro rutas pueden devolver 200 `ACTION_IN_PROGRESS` con el intento activo o devolver su estado terminal (`COMPLETADA`, `FALLIDA`, `EXPIRADA`) al repetir una autorización. `accepted` es falso para un intento fallido o expirado. La respuesta 202 confirma el despacho. El GET y el historial muestran el resultado del worker.
+
+| HTTP | Contrato de error |
+| --- | --- |
+| 400 | ID o cuerpo inválido. SQL puede devolver `INVALID_REQUEST`. |
+| 401 / 403 | Sin sesión, rol o permisos efectivos. Los códigos incluyen `ROLE_NOT_ALLOWED`, `FORBIDDEN`, `PASSWORD_CHANGE_REQUIRED` y `CSRF_ORIGIN_NOT_ALLOWED`. |
+| 404 | Ejecución inexistente o ajena a Audi. El rechazo explícito puede incluir `NOT_FOUND`. |
+| 409 | Códigos de elegibilidad de la tabla de estados, `STALE_REVISION` o rechazo del worker `STALE_ATTEMPT`, `OUTSIDE_TEST_SCOPE` u `OUTSIDE_ALLOWED_SCOPE`. Un fallo tardío de CANCEL se consulta en el historial. |
+| 502 | `NETWORK_ERROR` o `INVALID_RESPONSE`, con `actionId` si ya se autorizó el intento. |
+| 503 | `INTEGRATION_NOT_CONFIGURED` antes de llamar a SQL o `RECOVERY_NOT_INSTALLED` si faltan los objetos de 027. |
+| 504 | `TIMEOUT` con `actionId`. El intento puede seguir activo. El Hub web indica «No se pudo confirmar el resultado; revise el historial antes de reintentar». |
+
+El filtro de Audi conserva los códigos y mensajes públicos fijos de 502, 503 y 504. El Hub web vuelve a solicitar el detalle después de cada respuesta y muestra mensajes locales en español.
 
 ## Contrato n8n
 
-`AUDI_RECOVERY_WEBHOOK_URL` y `AUDI_RECOVERY_WEBHOOK_TOKEN` son configuración nullable de servidor en `audiRecoveryWebhook: { url, token }`. Cabecera `X-Daubert-Automation-Token`, timeout de 10 segundos y validación de respuesta. Un código desconocido se trata como `INVALID_RESPONSE`.
+`AUDI_RECOVERY_WEBHOOK_URL` y `AUDI_RECOVERY_WEBHOOK_TOKEN` son configuración opcional del servidor Hub. El cliente requiere ambos valores, envía `X-Daubert-Automation-Token`, rechaza redirecciones y espera hasta 10 segundos. Para una respuesta de aceptación exige el mismo `actionId`. Los estados específicos de STOP requieren además un `n8nExecutionId` decimal positivo en cadena. Los rechazos reconocidos pueden viajar en 2xx, 400, 404, 409 o 422. Un código desconocido en esos estados da `INVALID_RESPONSE`. Otros estados HTTP de error dan `NETWORK_ERROR`.
 
 Solicitud del Hub a n8n:
 ```json
 { "contractVersion": 1, "action": "RECONCILE", "actionId": "5", "executionId": "31", "reason": "…" }
 ```
 
-Respuestas de n8n al Hub:
+Ejemplos de respuestas individuales de n8n al Hub:
 ```json
-{ "accepted": true,  "status": "DISPATCHED", "actionId": "5" }
-{ "accepted": true,  "status": "ALREADY_DISPATCHED", "actionId": "5" }
-{ "accepted": true,  "status": "STOP_REQUESTED" | "NOT_RUNNING" | "ALREADY_FINISHED", "actionId": "7", "n8nExecutionId": "16061" }
-{ "accepted": false, "error": "NOT_FOUND" | "NOT_ELIGIBLE_STATE" | "STALE_ATTEMPT" | "OUTSIDE_TEST_SCOPE" | "OUTSIDE_ALLOWED_SCOPE" }
+[
+  { "accepted": true, "status": "DISPATCHED", "actionId": "5" },
+  { "accepted": true, "status": "ALREADY_DISPATCHED", "actionId": "5" },
+  { "accepted": true, "status": "STOP_REQUESTED", "actionId": "7", "n8nExecutionId": "16061" },
+  { "accepted": false, "error": "STALE_ATTEMPT" }
+]
 ```
+
+El cuerpo del webhook es un solo objeto de respuesta. STOP también reconoce `NOT_RUNNING` y `ALREADY_FINISHED`. Los códigos válidos de rechazo son `NOT_FOUND`, `NOT_ELIGIBLE_STATE`, `STALE_ATTEMPT`, `OUTSIDE_TEST_SCOPE` y `OUTSIDE_ALLOWED_SCOPE`.
 
 El worker deduplica por `actionId`, reclama el intento antes de trabajar y verifica o regenera sólo los PDF de los folios reservados y un PDF de hojas de identificación. El contenido nuevo se escribe en otro archivo para conservar el anterior. Usa `ops.fn_completar_cancelacion_audi_test` después de comprobar la detención e inventariar los archivos. Cada archivo se registra antes de cerrar. La admisión normal respeta `REQUIRES_RECOVERY` y la recuperación usa exclusivamente la reserva atómica.
 
@@ -109,14 +125,28 @@ Para REPROCESS, la admisión exige los tres argumentos `p_reproceso_de_id`, `p_a
 
 ## Procedimiento E2E futuro en TEST
 
-Antes de aplicar 027 o integrar al worker, guardar la evidencia del precheck y obtener aprobación explícita para cada gate.
+La migración 027 sigue sin aplicarse y el worker está pendiente. Usar ejecuciones, documentos y archivos sintéticos de TEST. Preservar los datos históricos de la ejecución 30 (n8n 16050, folios 983–987).
 
-- **R2.** Verificar si el asignador legado bloquea la fila de serie con `FOR UPDATE` y acordar un corte con una sola versión del workflow. Ambos asignadores avanzan el contador de `REMISION_AUDI`.
-- **R3.** Confirmar el rol real de n8n Audi TEST y validar los permisos mínimos para las funciones de worker.
-- **R4.** Confirmar la serie `REMISION_AUDI` activa y enrutada a `REMISIONES_AUDI`. Si no existe la ruta activa, resolverla con el operador antes de continuar.
+1. El operador ejecuta el precheck de 027 en `daubert_hub_test`, guarda las líneas `BLOCKER:` y los baselines, y confirma que el manejo de ERROR conservará la reserva. Antes de aplicar 027 o integrar el worker, resuelve los tres gates con evidencia y obtiene aprobación explícita del usuario. [Precheck de 027](../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test.precheck.sql)
 
-Verificar también que el Error Workflow deja la reserva `RESERVADA` al marcar `ERROR`. Con los gates aprobados, el operador aplica precheck, up y postcheck en `daubert_hub_test` y compara los baselines. Implementar el contrato en n8n TEST y configurar el webhook TEST. Probar reconciliación completa, PDF faltante, hojas faltantes, doble clic, timeout, expiración, detención activa, cancelación limpia y parcial y reproceso tras cancelación limpia. Validar de extremo a extremo que `Marcar ejecución ERROR PG` registra `ERROR` con reserva activa. Sólo después se planifica PROD.
+   - **R2.** Verificar si el asignador legado bloquea la fila de serie con `FOR UPDATE` y acordar un corte con una sola versión activa del workflow. Ambos asignadores avanzan el contador de `REMISION_AUDI`.
+   - **R3.** Confirmar el rol efectivo de la credencial Audi en n8n TEST, incluidos permisos heredados, y aprobar el mínimo acceso a las funciones del worker.
+   - **R4.** Confirmar exactamente una ruta activa de `REMISION_AUDI` a `REMISIONES_AUDI`. Si falta, resolverla con el operador antes de continuar. 027 conserva el enrutamiento existente.
 
-El postcheck compara los valores `series_md5` y `cat_functions_md5` del precheck con los parámetros de sesión `audi_recovery.series_md5` y `audi_recovery.cat_functions_md5`. El operador conserva los dos valores del precheck y configura ambos parámetros en la sesión TEST que ejecutará el postcheck.
+2. Con aprobación, el operador aplica el script up de 027 en TEST y ejecuta su postcheck con `audi_recovery.series_md5` y `audi_recovery.cat_functions_md5` configurados en la sesión a partir del precheck. Exige `ALL_CHECKS_PASS` y los baselines intactos. [Up de 027](../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test.up.sql), [postcheck de 027](../../../database/migrations/daubert_global/20261118_027_audi_execution_recovery_test.postcheck.sql)
+3. Con el rol de R3 confirmado, el operador usa la [plantilla de permisos para el worker Audi TEST](../../../database/migrations/daubert_global/20261118_027_audi_worker_role_test.template.sql) con `worker_role` y comprueba los permisos efectivos.
+4. Implementar el contrato en n8n TEST, verificar el corte a la admisión atómica y configurar las dos variables del webhook en el servidor Hub TEST. Antes de configurarlas, verificar que el GET deshabilita las acciones elegibles y que el POST devuelve 503 sin crear intentos. Una vez configuradas, probar con ADMIN y confirmar que GENERAL puede consultar el detalle y recibe 403 al intentar escribir.
+5. Ejecutar los casos siguientes y guardar las respuestas, el GET de seguimiento y la evidencia de PostgreSQL y n8n correspondiente.
 
-El alta del worker exige confirmar el rol de R3. Tras instalar 027 en TEST, el operador puede usar la [plantilla de permisos para el worker Audi TEST](../../../database/migrations/daubert_global/20261118_027_audi_worker_role_test.template.sql) con la variable `worker_role` y verificar los permisos efectivos.
+   | Escenario | Resultado que debe observarse |
+   | --- | --- |
+   | Reconciliación completa | Misma ejecución y folios, evidencia vigente completa, reserva `APLICADA` y ejecución `COMPLETADA`. |
+   | PDF faltante / hojas faltantes | Probar cada caso por separado. El cierre devuelve `INCOMPLETE` hasta registrar la evidencia faltante. Si no se puede generar, el intento falla y el historial conserva el diagnóstico. |
+   | Doble clic y solicitud concurrente | El navegador hace un solo POST durante el envío. Las solicitudes concurrentes devuelven el mismo `actionId` activo y el worker deduplica. |
+   | Timeout o respuesta perdida | GET muestra el intento por `actionId`. Un reenvío controlado de un intento vigente sin reclamar conserva el ID. Un intento reclamado responde `ACTION_IN_PROGRESS`. |
+   | Expiración y latido | Un worker activo renueva la vigencia. Tras 15 minutos de inactividad, el intento vence, el token anterior pierde vigencia y un nuevo RECONCILE conserva y puede reutilizar la evidencia registrada. |
+   | Detener una ejecución activa | STOP devuelve `STOP_REQUESTED` y el estado de PostgreSQL permanece igual por efecto de STOP. |
+   | Cancelación limpia | Confirmar detención e inventario vacío. Ejecutar CANCEL y verificar `CANCELADA`, reserva `ABANDONADA` y folios consumidos. |
+   | Cancelación parcial | Con archivos presentes, guardar inventario y comprobar `PARTIAL_ARTIFACTS_REQUIRE_RECONCILIATION`, intento `FALLIDA` y datos operacionales intactos. |
+   | Reproceso tras cancelación limpia | La hija obtiene folios nuevos, enlaza al padre y conserva los datos del padre. La repetición conserva una sola hija. |
+6. Provocar un fallo en una ejecución sintética y verificar de extremo a extremo que el Error Workflow existente (`Marcar ejecución ERROR PG`) deja `ERROR` con reserva `RESERVADA` y conserva el diagnóstico. El trabajo de promoción a PROD se planifica después de completar la validación de TEST.

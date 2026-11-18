@@ -14,7 +14,7 @@ type UnavailableCode = 'INTEGRATION_NOT_CONFIGURED' | 'RECOVERY_NOT_INSTALLED' |
 const unavailable = {
   INTEGRATION_NOT_CONFIGURED: [503, 'La integración de recuperación de Audi no está configurada.'],
   RECOVERY_NOT_INSTALLED: [503, 'La recuperación de Audi no está instalada.'],
-  TIMEOUT: [504, 'La integración de Audi no respondió a tiempo. El estado de la acción es desconocido. Consulta el historial antes de reintentar.'],
+  TIMEOUT: [504, 'No se pudo confirmar el resultado; revisa el historial antes de reintentar.'],
   NETWORK_ERROR: [502, 'No se pudo confirmar el despacho de la acción de Audi. Consulta el historial antes de reintentar.'],
   INVALID_RESPONSE: [502, 'La integración de Audi devolvió una respuesta no válida. Consulta el historial antes de reintentar.']
 } as const;
@@ -62,7 +62,7 @@ export class AudiRecoveryService {
 
     const configured = this.webhook.isConfigured();
     return {
-      model: detail?.model ?? 'LEGACY',
+      model: detail?.model ?? null,
       revision: detail?.revision ?? null,
       reservation: detail?.reservation ?? null,
       artifacts: (detail?.artifacts ?? []).map((artifact) => ({

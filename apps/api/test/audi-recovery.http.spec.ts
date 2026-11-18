@@ -151,6 +151,9 @@ describe('Audi recovery HTTP with SQL and webhook doubles', () => {
       dispatch.mockResolvedValue({ kind, raw: 'private-secret' });
       const { body } = await post('stop').send({ reason: 'Motivo' }).expect(status);
       expect(body).toEqual({ statusCode: status, code: kind, message: expect.any(String), actionId });
+      if (kind === 'TIMEOUT') {
+        expect(body.message).toBe('No se pudo confirmar el resultado; revisa el historial antes de reintentar.');
+      }
       expect(JSON.stringify(body)).not.toContain('private-secret');
       expect(query).toHaveBeenCalledTimes(2);
     }
@@ -223,7 +226,7 @@ describe('Audi recovery HTTP with SQL and webhook doubles', () => {
     query.mockReset().mockRejectedValue({ code: '42883' });
     const { body } = await request(app.getHttpServer()).get(base + executionId).set('x-test-role', role).expect(200);
     expect(body.data).toMatchObject({
-      model: 'LEGACY', revision: null, reservation: null, artifacts: [], recoveryAttempts: [],
+      model: null, revision: null, reservation: null, artifacts: [], recoveryAttempts: [],
       n8nExecutionId: '16061', reprocessOfExecutionId: '5', childExecutionId: '6'
     });
     expect(body.data.availableActions).toHaveLength(4);

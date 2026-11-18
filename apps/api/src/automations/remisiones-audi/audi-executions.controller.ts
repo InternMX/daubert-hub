@@ -17,6 +17,10 @@ class AudiRecoveryExceptionFilter extends SafeExceptionFilter {
   }
 }
 
+// Route mirrors the existing frontend page path (/automations/remissions/audi) rather than the
+// raw backend code, for the same naming convention already used by automations/payment-notifications.
+// GET routes have no @Roles and remain open to GENERAL and ADMIN (see RolesGuard).
+// Recovery POSTs are ADMIN-only through @Roles on each method.
 @Controller('automations/remissions/audi')
 @UseFilters(new AudiRecoveryExceptionFilter())
 export class AudiExecutionsController {
