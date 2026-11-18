@@ -88,6 +88,24 @@ Describe 'BackupPgTools' {
             $global:capturedEnv['PGPASSFILE'] | Should Be $global:config.PgPassFile
         }
 
+        It 'siempre pasa --enable-row-security (pg_dump -Fc y --schema-only): daubert_backup no salta RLS y sin la bandera falla con Manufactura' {
+            InModuleScope BackupPgTools {
+                $global:capRls1 = $null; $global:capRls2 = $null
+                Mock Invoke-ExternalProcess {
+                    param($FilePath, $ArgumentList, $EnvironmentVariables)
+                    if ($ArgumentList -contains '--schema-only') { $global:capRls2 = $ArgumentList } else { $global:capRls1 = $ArgumentList }
+                    [pscustomobject]@{ ExitCode = 0; StdOut = ''; StdErr = '' }
+                }
+                Invoke-PgDump -Config $global:config -OutputPath (Join-Path $global:testDir 'out.dump') | Out-Null
+                Invoke-PgDump -Config $global:config -OutputPath (Join-Path $global:testDir 'out2.dump') -SchemaOnly | Out-Null
+            }
+            ($global:capRls1 -contains '--enable-row-security') | Should Be $true
+            ($global:capRls2 -contains '--enable-row-security') | Should Be $true
+            ($global:capRls1 -contains '--no-password') | Should Be $true
+            ($global:capRls1 -join ' ') | Should Not Match 'PGPASSWORD'
+            ($global:capRls1 -contains '--no-owner') | Should Be $false
+            ($global:capRls1 -contains '--disable-triggers') | Should Be $false
+        }
         It 'agrega --schema-only cuando se pide -SchemaOnly' {
             InModuleScope BackupPgTools {
                 $global:capturedArgs2 = $null
