@@ -20,7 +20,7 @@ function setup(total: number, executions: ReturnType<typeof row>[], options: { c
     findLatestProblem: vi.fn().mockResolvedValue(options.currentProblem ?? null)
   };
   const reviewAcknowledgements = { findLatest: vi.fn().mockResolvedValue(options.acknowledged ? { acknowledgement_id: '1' } : null) };
-  return { service: new AudiExecutionsService(repository as never, reviewAcknowledgements as never), repository, reviewAcknowledgements };
+  return { service: new AudiExecutionsService(repository as never, reviewAcknowledgements as never, {} as never), repository, reviewAcknowledgements };
 }
 
 describe('AudiExecutionsService', () => {
@@ -31,6 +31,7 @@ describe('AudiExecutionsService', () => {
     };
     const remission = { remision_id: '12', serie_codigo: 'REMISION_AUDI', folio: '9000', document_date: '2026-08-27', estatus: 'GENERADA' };
     const expectedData = {
+      n8nExecutionId: null, reprocessOfExecutionId: null, childExecutionId: null,
       executionId: '8', outcome: 'COMPLETED', startedAt: execution.started_at, finishedAt: execution.finished_at,
       generatedCount: 1, sourceDocument: { documentId: '103', filename: 'entrada.xlsx' }, latestErrorMessage: null,
       remittances: [{ remissionId: '12', seriesCode: 'REMISION_AUDI', folio: '9000', documentDate: '2026-08-27', status: 'GENERADA' }]
@@ -40,7 +41,7 @@ describe('AudiExecutionsService', () => {
       return new AudiExecutionsService({
         findById: vi.fn().mockResolvedValue({ ...execution, error_message: message }),
         findRemissionsByExecutionId: vi.fn().mockResolvedValue([remission])
-      } as never, {} as never);
+      } as never, {} as never, { getDetail: vi.fn().mockResolvedValue({}) } as never);
     }
 
     it('keeps completed executions, remissions and null diagnostics unchanged', async () => {

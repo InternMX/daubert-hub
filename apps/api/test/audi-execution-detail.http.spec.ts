@@ -5,6 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudiExecutionsController } from '../src/automations/remisiones-audi/audi-executions.controller';
 import { AudiExecutionsService } from '../src/automations/remisiones-audi/audi-executions.service';
+import { AudiRecoveryService } from '../src/automations/remisiones-audi/audi-recovery.service';
 import { SafeExceptionFilter } from '../src/common/http-exception.filter';
 import { RolesGuard } from '../src/security/roles.guard';
 import { untrustedAudiDiagnostics } from './support/audi-diagnostic-fixtures';
@@ -32,11 +33,13 @@ describe('Audi detail HTTP (mock repository, no PostgreSQL)', () => {
   const repository = { findById: vi.fn(), findRemissionsByExecutionId: vi.fn() };
   const path = '/api/automations/remissions/audi/executions/';
   beforeAll(async () => {
-    Reflect.defineMetadata('design:paramtypes', [AudiExecutionsService], AudiExecutionsController);
+    const recovery = { getDetail: vi.fn().mockResolvedValue({}) } as never;
+    Reflect.defineMetadata('design:paramtypes', [AudiExecutionsService, AudiRecoveryService], AudiExecutionsController);
     const module = await Test.createTestingModule({
       controllers: [AudiExecutionsController],
       providers: [
-        { provide: AudiExecutionsService, useValue: new AudiExecutionsService(repository as never, {} as never) },
+        { provide: AudiExecutionsService, useValue: new AudiExecutionsService(repository as never, {} as never, recovery) },
+        { provide: AudiRecoveryService, useValue: recovery },
         { provide: APP_GUARD, useClass: FakeAuthGuard },
         { provide: APP_GUARD, useFactory: (reflector: Reflector) => new RolesGuard(reflector), inject: [Reflector] }
       ]
@@ -60,7 +63,8 @@ describe('Audi detail HTTP (mock repository, no PostgreSQL)', () => {
       sourceDocument: { documentId: '103', filename: 'entrada.xlsx' }, remittances: [{ folio: remission.folio, remissionId: '12', documentDate: '2026-08-27' }] });
     expect(repository.findById).toHaveBeenCalledWith(execution.ejecucion_id);
     expect(body.data.latestErrorMessage).toBeNull();
-    expect(JSON.stringify(body)).not.toMatch(/pdf_path|ruta_archivo|reservations|n8n|run_name/);
+    expect(JSON.stringify(body)).not.toMatch(/pdf_path|ruta_archivo|reservations|run_name/);
+    expect(body.data.n8nExecutionId).toBeNull();
   });
   it('returns 200 with empty remittances, even without source metadata or final timestamp', async () => {
     repository.findById.mockResolvedValue({ ...execution, documento_id: null, source_filename: null, finished_at: null });
@@ -87,6 +91,7 @@ describe('Audi detail HTTP (mock repository, no PostgreSQL)', () => {
     repository.findById.mockResolvedValue({ ...execution, execution_state: 'ERROR', error_message: message });
     const { body } = await request(app.getHttpServer()).get(path + execution.ejecucion_id).set('x-test-role', 'GENERAL').expect(200);
     expect(body).toEqual({ data: {
+      n8nExecutionId: null, reprocessOfExecutionId: null, childExecutionId: null,
       executionId: execution.ejecucion_id, outcome: 'FAILED', startedAt: execution.started_at, finishedAt: execution.finished_at,
       generatedCount: 1, sourceDocument: { documentId: '103', filename: 'entrada.xlsx' },
       latestErrorMessage: 'La ejecución registró un error. Consulta los registros autorizados para más información.',
