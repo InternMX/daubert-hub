@@ -163,7 +163,7 @@ function booleanFlag(value: string | undefined, name: string, fallback: boolean)
 // "version" field when bumping releases (environment.spec.ts fails on drift); this is intentionally the one
 // place that small duplication is accepted, in exchange for the app version
 // never failing to resolve to *something* meaningful.
-const DEFAULT_APP_VERSION = '1.1.1';
+const DEFAULT_APP_VERSION = '1.2.0';
 const UNKNOWN_BUILD_METADATA = 'unknown';
 
 export function validateEnvironment(env: Record<string, string | undefined>): EnvironmentConfig {
