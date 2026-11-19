@@ -1,0 +1,51 @@
+
+version: 2
+
+updates:
+  # Monorepo npm: API + Web + lockfile central
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Mexico_City"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      development:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      production:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "deps"
+
+  # Acciones de GitHub CI
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "America/Mexico_City"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+
+  # Imágenes base de Docker
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "monthly"
+      time: "09:00"
+      timezone: "America/Mexico_City"
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "docker"
