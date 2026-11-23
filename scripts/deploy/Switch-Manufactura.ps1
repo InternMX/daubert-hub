@@ -119,9 +119,12 @@ function Get-SwitchHubPort {
     return '8082'
 }
 function Get-SwitchContainerFacts {
+    # The web container has NO healthcheck: '{{.State.Health.Status}}' / '{{if .State.Health}}' make docker fail with 'map has no entry for key Health'
+    # and every fact came back empty (B8 blocked on 2026-11-23). 'index' returns nil for a missing key. The key is a Go raw string (backticks): Windows
+    # PowerShell 5.1 strips embedded double quotes when passing arguments to native executables.
     param([string]$Service)
     $c = $script:Project + '-' + $Service + '-1'
-    $d = Invoke-SwitchRead 'docker' @('inspect', $c, '--format', '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.Id}}|{{.State.StartedAt}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}')
+    $d = Invoke-SwitchRead 'docker' @('inspect', $c, '--format', '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}|{{.Id}}|{{.State.StartedAt}}|{{with index .State `Health`}}{{.Status}}{{end}}')
     $parts = $(if ($d.Code -eq 0 -and $d.Out.Count -gt 0) { ($d.Out -join '').Split('|') } else { @('', '', '', '') })
     return [pscustomobject]@{ Digest = $parts[0]; ContainerId = $parts[1]; StartedAt = $parts[2]; Health = $parts[3] }
 }

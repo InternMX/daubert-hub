@@ -250,3 +250,35 @@ Describe 'Hallazgo 4: el manifiesto autorizado fija las imagenes' {
     Context 'web sin interfaz' { It 'bloquea' { ((Test-SwitchManifest (New-Manifest -Ui $false) $script:ManSha $ctx) -join ' ') | Should Match 'interfaz de Manufactura' } }
     Context 'flujo' { It 'Enable se niega sin publicar' { Set-FlowMocks (New-Ctx); Mock Read-SwitchManifest { New-Manifest -ApiId 'sha256:distinta' }; Invoke-SwitchMain (New-Params) | Should Be 1; Assert-MockCalled Publish-DaubertOverlay -Times 0 -Exactly } }
 }
+
+Describe 'Regresion 2026-11-23: contenedor sin healthcheck (web) en Get-SwitchContainerFacts' {
+    Context 'plantilla de docker inspect' {
+        It 'no accede a .State.Health directamente, usa index con cadena literal sin comillas dobles (PS 5.1 las elimina al llamar a docker)' {
+            $script:Fmt = $null
+            Mock Invoke-SwitchRead { $script:Fmt = $CmdArgs[3]; @{ Code = 0; Out = @('sha256:d|cid|t0|') } }
+            $null = Get-SwitchContainerFacts 'web'
+            $script:Fmt | Should Not Match '\.State\.Health'
+            $script:Fmt | Should Match 'with index \.State `Health`'
+            $script:Fmt.Contains('"') | Should Be $false
+        }
+    }
+    Context 'web sin healthcheck' {
+        It 'conserva digest, id y arranque con health vacio' {
+            Mock Invoke-SwitchRead { @{ Code = 0; Out = @('sha256:web|cid-web|2026-11-23T21:07:40Z|') } }
+            $f = Get-SwitchContainerFacts 'web'
+            $f.Digest | Should Be 'sha256:web'; $f.ContainerId | Should Be 'cid-web'; $f.StartedAt | Should Be '2026-11-23T21:07:40Z'; $f.Health | Should Be ''
+        }
+    }
+    Context 'api con healthcheck' {
+        It 'lee healthy' {
+            Mock Invoke-SwitchRead { @{ Code = 0; Out = @('sha256:api|cid-api|2026-11-23T21:07:34Z|healthy') } }
+            (Get-SwitchContainerFacts 'api').Health | Should Be 'healthy'
+        }
+    }
+    Context 'con los hechos correctos de web la compuerta ya no reporta imagen distinta' {
+        It 'sin motivos de imagen' {
+            $c = New-Ctx; $c.Web = [pscustomobject]@{ Digest = 'sha256:web'; ContainerId = 'c-web'; StartedAt = 't1'; Health = '' }; $c.ReleaseTags['web'] = 'sha256:web'; $c.LatestTags['web'] = 'sha256:web'
+            ((Test-SwitchEnableGate $c $script:Sha $script:PolM @()) -join ' ') | Should Not Match 'web: la imagen en ejecucion'
+        }
+    }
+}
