@@ -34,7 +34,7 @@ if (flag('--restaurar')) {
     if (arg('--roles')) { const crudo = fs.readFileSync(arg('--roles'), 'utf8'); const login = [...crudo.matchAll(/^CREATE ROLE (\w+);/gm)].map((m) => m[1]).filter((n) => n !== 'postgres');
       const sql = crudo.split(/\r?\n/).filter((l) => !/^(CREATE|ALTER) ROLE postgres\b/.test(l) && !/^\\(un)?restrict\b/.test(l)).join('\n') + '\n' + login.map((n) => `ALTER ROLE ${n} PASSWORD 'scratch';`).join('\n') + '\n'; const f = path.join(os.tmpdir(), 'verif-roles.sql'); fs.writeFileSync(f, sql); dk(['cp', f, `${C}:/tmp/roles.sql`]); dk(['exec', '-e', 'PGPASSWORD=scratch', C, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'postgres', '-X', '-q', '-f', '/tmp/roles.sql']); }
     psql('CREATE DATABASE daubert_global', 'postgres'); dk(['cp', DUMP, `${C}:/tmp/r.dump`]);
-    const rs = dk(['exec', '-e', 'PGPASSWORD=scratch', C, 'pg_restore', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'daubert_global', '/tmp/r.dump']); ok(rs.status === 0 || !arg('--roles') === false, 'restauración de prueba del respaldo' + (rs.status === 0 ? '' : ' (con avisos de roles ausentes si no se pasó --roles)'), rs.stderr.slice(0, 200));
+    const rs = dk(['exec', '-e', 'PGPASSWORD=scratch', C, 'pg_restore', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'daubert_global', '/tmp/r.dump']); ok(rs.status === 0, 'restauración de prueba del respaldo', rs.stderr.slice(0, 200));
     if (!PREVIO) {
     const cuentas = TABLAS.map((t) => [t, Number(psql(`SELECT count(*) FROM manufactura.${t}`).out)]);
     console.log('INFO filas restauradas en manufactura: ' + cuentas.map(([t, n]) => `${t}=${n}`).join(', '));
