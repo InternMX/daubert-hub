@@ -1,3 +1,4 @@
+import { TestAuthProvider } from '../test/authTestUtils';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -33,7 +34,7 @@ const listCompanyAddressesMock = vi.mocked(listCompanyAddresses);
 const getCompanyAliasesMock = vi.mocked(getCompanyAliases);
 
 function renderPage(path = '/clients/121', state?: { directoryPath: string }) {
-  return render(<MemoryRouter initialEntries={[{ pathname: path, state }]}><Routes><Route path="/clients/:clientId" element={<ClientDetailPage />} /><Route path="/clients" element={<div>Directorio de clientes</div>} /></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[{ pathname: path, state }]}><TestAuthProvider><Routes><Route path="/clients/:clientId" element={<ClientDetailPage />} /><Route path="/clients" element={<div>Directorio de clientes</div>} /></Routes></TestAuthProvider></MemoryRouter>);
 }
 
 afterEach(() => vi.clearAllMocks());

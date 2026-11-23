@@ -1,3 +1,4 @@
+import { useManufacturaVisible } from '../manufacturing/manufacturaDisponible';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -82,7 +83,6 @@ function AutomationCard({ automation }: { automation: AutomationOverview }) {
 // «Hojas de manufactura» es un PROCESO ASISTIDO (lo opera una persona desde el gestor), no un workflow de n8n: no tiene horario, ejecuciones ni estado de procesamiento, así que esta tarjeta no los
 // inventa. Es estática a propósito (no sale del catálogo de automatizaciones) y reutiliza el patrón visual de las demás tarjetas. Su actividad (hojas creadas y finalizadas) vive en «Actividad reciente».
 function AssistedProcessCard() {
-  if (!MANUFACTURING_UI_VISIBLE) return null;
   return (
     <Paper variant="outlined" data-testid="assisted-process-card" sx={{ p: { xs: 2.5, sm: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'flex-start' }} spacing={1}>
@@ -119,6 +119,7 @@ function ReviewNotice({ automations }: { automations: AutomationOverview[] }) {
 }
 
 export function AutomationsPage() {
+  const { visible } = useManufacturaVisible();
   const [automations, setAutomations] = useState<AutomationOverview[] | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -148,7 +149,7 @@ export function AutomationsPage() {
       {!loading && !error && automations && automations.length === 0 && (
         <>
           <EmptyState title="Aún no hay automatizaciones registradas." description="Cuando haya automatizaciones disponibles, aparecerán aquí." />
-          <Box sx={{ mt: 3, maxWidth: 520 }}><AssistedProcessCard /></Box>
+          {MANUFACTURING_UI_VISIBLE && visible && <Box sx={{ mt: 3, maxWidth: 520 }}><AssistedProcessCard /></Box>}
         </>
       )}
       {!loading && !error && automations && automations.length > 0 && (
@@ -164,7 +165,7 @@ export function AutomationsPage() {
             }}
           >
             {automations.map((automation) => <AutomationCard key={automation.code} automation={automation} />)}
-            <AssistedProcessCard />
+            {MANUFACTURING_UI_VISIBLE && visible && <AssistedProcessCard />}
           </Box>
         </>
       )}

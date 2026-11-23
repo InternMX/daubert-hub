@@ -1,3 +1,4 @@
+import { useManufacturaVisible } from '../manufacturing/manufacturaDisponible';
 import { Box, Paper, Stack, Typography } from '@mui/material';
 import { useAuth } from '../auth/authContext.core';
 import { BreadcrumbNav } from '../components/BreadcrumbNav';
@@ -12,6 +13,7 @@ function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
 
 /** Mi perfil: información básica de la cuenta autenticada y la gestión personal de firmas. */
 export function ProfilePage() {
+  const { visible } = useManufacturaVisible();
   const { user } = useAuth();
   if (!user) return null;
   return (
@@ -28,7 +30,7 @@ export function ProfilePage() {
             <Dato etiqueta="Estado" valor={userStatusLabels[user.status]} />
           </Stack>
         </Paper>
-        {MANUFACTURING_UI_VISIBLE && <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}><MisFirmas /></Paper>}
+        {MANUFACTURING_UI_VISIBLE && visible && <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}><MisFirmas /></Paper>}
       </Stack>
     </>
   );

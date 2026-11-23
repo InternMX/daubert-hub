@@ -1,3 +1,4 @@
+import { useManufacturaVisible } from '../manufacturing/manufacturaDisponible';
 import { Alert, Box, Button, Chip, CircularProgress, Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -24,6 +25,7 @@ function StatusChip({ status }: { status: ManagedUser['status'] }) {
 }
 
 export function UsersPage() {
+  const { visible } = useManufacturaVisible();
   const [users, setUsers] = useState<ManagedUser[] | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,7 +46,7 @@ export function UsersPage() {
     <>
       <BreadcrumbNav items={[{ label: 'Inicio', to: '/' }, { label: 'Usuarios' }]} />
       <PageHeader title="Usuarios" description="Administra las cuentas con acceso a Daubert Hub.">
-        {MANUFACTURING_UI_VISIBLE && <Button component={Link} to="/users/signatures" variant="outlined">Firmas de personas sin cuenta</Button>}
+        {MANUFACTURING_UI_VISIBLE && visible && <Button component={Link} to="/users/signatures" variant="outlined">Firmas de personas sin cuenta</Button>}
         <Button component={Link} to="/users/new" variant="contained">Nuevo usuario</Button>
       </PageHeader>
       {loading && <Box role="status" sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress aria-label="Cargando usuarios" /></Box>}

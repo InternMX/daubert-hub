@@ -355,6 +355,23 @@ function Test-ImageExists {
     return ($r.Code -eq 0)
 }
 
+function Get-ManufacturaActivaState {
+    # Read-only. v1.3.0 has no Deploy support for an ENABLED Manufactura (the activation overlay is not passed to Compose yet): a Deploy would silently switch
+    # it off or recreate api inconsistently. So the gate refuses whenever the overlay is active or the api container is not verifiably OFF. Mocked in the tests.
+    $overlay = 'C:\Users\06\AppData\Local\DaubertHub\manufactura\activa\manufactura.env'
+    $r = Invoke-DeployRead 'docker' @('inspect', ($script:Project + '-api-1'), '--format', '{{json .Config.Env}}')
+    $json = $(if ($r.Code -eq 0) { ($r.Out -join '') } else { '' })
+    Import-Module (Join-Path $PSScriptRoot 'DaubertOps.Common.psm1') -Force
+    return [pscustomobject]@{ OverlayActiva = (Test-Path -LiteralPath $overlay); ApiEstado = (ConvertFrom-DaubertContainerEnv $json).Estado }
+}
+
+function Enter-DeployOperationLock {
+    # Shared with Switch-Manufactura.ps1 and Set-EntryClosure.ps1: no activation or closure change can interleave with this deployment. Mocked in the tests.
+    Import-Module (Join-Path $PSScriptRoot 'DaubertOps.Common.psm1') -Force
+    return (Enter-DaubertOperationLock -Path (Get-DaubertOpsPaths).LockFile -Purpose 'Deploy-DaubertHub')
+}
+function Exit-DeployOperationLock { param($Handle) if ($null -ne $Handle -and (Get-Command Exit-DaubertOperationLock -ErrorAction SilentlyContinue)) { Exit-DaubertOperationLock $Handle } }
+
 function Get-ClosureState {
     # Read-only facts about the external conf.d that the override mounts (create_host_path=false: it must exist) and about the versioned closed policy.
     $conf = Join-Path $script:ClosureDir 'default.conf'
@@ -474,6 +491,7 @@ function Get-DeployContext {
         N8nFiles       = $n8n
         Evidence       = $evidence
         Closure        = (Get-ClosureState)
+        ManufacturaActiva = (Get-ManufacturaActivaState)
         ComposeImages  = @($images.Out)
         Services       = $services
     }
@@ -634,6 +652,10 @@ function Test-DeployGate {
             }
         }
     }
+    # v1.3.0: Deploy is FORBIDDEN while Manufactura is enabled (activation overlay present or api not verifiably OFF). Disable it first with
+    # Switch-Manufactura.ps1 -Disable; Deploy support for an enabled Manufactura (overlay in the Compose arguments) comes in a later release.
+    $ma = $(if ($Context.PSObject.Properties.Name -contains 'ManufacturaActiva') { $Context.ManufacturaActiva } else { $null })
+    if ($ma -and ([bool]$ma.OverlayActiva -or [string]$ma.ApiEstado -ne 'Apagado')) { $reasons += ('Manufactura esta habilitada o su estado no es verificable (overlay activo=' + [bool]$ma.OverlayActiva + ', api=' + [string]$ma.ApiEstado + '): en v1.3.0 no se despliega con Manufactura activa. Desactivela con Switch-Manufactura.ps1 -Disable.') }
     # Manufactura: enabling it is gated by the read-only readiness check; a contradictory configuration never deploys.
     $mf = $(if ($Context.PSObject.Properties.Name -contains 'Manufacturing') { $Context.Manufacturing } else { $null })
     if ($mf) {
@@ -641,6 +663,8 @@ function Test-DeployGate {
         if (-not ($mEnabled -ceq '' -or $mEnabled -ceq 'true' -or $mEnabled -ceq 'false')) { $reasons += 'Configuracion de Manufactura invalida: MANUFACTURING_ENABLED debe ser vacia, true o false (la API no arrancaria).' }
         if (-not ($mEmission -ceq '' -or $mEmission -ceq 'PRODUCCION')) { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_EMISSION_ENV solo puede ser vacia o PRODUCCION con la base de produccion.' }
         if ($mEnabled -ceq 'true') {
+            # v1.3.0: Deploy NEVER enables Manufactura (not even with valid PreEnable evidence): enabling is only Switch-Manufactura.ps1 (overlay + live checks).
+            $reasons += 'v1.3.0: Deploy no habilita Manufactura. Deje MANUFACTURING_ENABLED vacia o false en deploy/pilot.prod.env y en la sesion; la habilitacion se hace con Switch-Manufactura.ps1.'
             if ($mEmission -cne 'PRODUCCION') { $reasons += 'Configuracion de Manufactura contradictoria: MANUFACTURING_ENABLED=true exige MANUFACTURING_EMISSION_ENV=PRODUCCION.' }
             $re = $(if ($Context.PSObject.Properties.Name -contains 'ReadinessEvidence') { $Context.ReadinessEvidence } else { $null })
             $reMaxAge = if ($Options.Contains('EvidenceMaxAgeHours')) { [double]$Options['EvidenceMaxAgeHours'] } else { 6 }
@@ -984,7 +1008,12 @@ function Invoke-DeployMain {
         Write-Safe 'Confirmacion incorrecta: deployment cancelado. PROD no cambio.'
         return 1
     }
+    $opLock = $null
     try {
+        # After the confirmation, under the shared operation lock: Manufactura must still be OFF (a Switch may have finished while the prompt was open).
+        try { $opLock = Enter-DeployOperationLock } catch { Write-Safe ('BLOQUEADO: ' + $_.Exception.Message + ' PROD no cambio.'); return 1 }
+        $maNow = Get-ManufacturaActivaState
+        if ([bool]$maNow.OverlayActiva -or [string]$maNow.ApiEstado -ne 'Apagado') { Write-Safe ('BLOQUEADO: Manufactura se habilito o no es verificable despues de confirmar (overlay activo=' + [bool]$maNow.OverlayActiva + ', api=' + [string]$maNow.ApiEstado + '). PROD no cambio.'); return 1 }
         if ($strict) {
             $fresh = Get-DeployContext $Candidate
             $reasons = @(Test-DeployGate $fresh $AcknowledgeN8n $Options)
@@ -1000,7 +1029,7 @@ function Invoke-DeployMain {
     } catch {
         Show-DeployFailure $plan @('Error inesperado: ' + $_.Exception.Message.Split("`n")[0])
         return 5
-    }
+    } finally { Exit-DeployOperationLock $opLock }
 }
 
 # Dot-sourcing (tests) only defines the functions above.

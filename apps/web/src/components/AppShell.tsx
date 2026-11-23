@@ -1,3 +1,4 @@
+import { useManufacturaVisible } from '../manufacturing/manufacturaDisponible';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
@@ -56,16 +57,15 @@ const auditNavigation = { to: '/audit', label: 'Auditoría', end: false, icon: F
 const automationSubmenu = [
   { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_AUDI!, label: 'Remisiones Audi' },
   { to: AUTOMATION_ROUTE_BY_CODE.PAYMENT_NOTIFICATIONS!, label: 'Notificaciones de pago' },
-  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' },
-  ...(MANUFACTURING_UI_VISIBLE ? [{ to: MANUFACTURING_SHEETS_ROUTE, label: 'Hojas de manufactura' }] : [])
+  { to: AUTOMATION_ROUTE_BY_CODE.REMISIONES_CATERPILLAR!, label: 'Remisiones Caterpillar' }
 ];
 
 // Every automation matches its whole subtree (e.g. /automations/payment-notifications/:executionId
 // still counts as that destination) — mirrors NavLink's own `end` semantics without needing a real
 // NavLink for the current item. /automations itself (no submenu item represents it any more)
 // correctly matches nothing here — the parent control is marked active by isActive below instead.
-function currentSubmenuTo(pathname: string): string | null {
-  const match = automationSubmenu.find((item) => pathname.startsWith(item.to));
+function currentSubmenuTo(pathname: string, items: typeof automationSubmenu): string | null {
+  const match = items.find((item) => pathname.startsWith(item.to));
   return match?.to ?? null;
 }
 
@@ -124,12 +124,15 @@ function NavigationItem({ to, label, end, icon: Icon, collapsed }: typeof naviga
 // mode — the icon stays a pure disclosure control (click/Enter/Space toggles the submenu, never
 // navigates). /automations itself stays reachable while collapsed via each automation page's own
 // BreadcrumbNav ("Automatizaciones" crumb), not via a submenu entry.
-function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
+function AutomationsNavigationItem({ collapsed, manufacturaVisible }: { collapsed: boolean; manufacturaVisible: boolean }) {
+  const items = MANUFACTURING_UI_VISIBLE && manufacturaVisible
+    ? [...automationSubmenu, { to: MANUFACTURING_SHEETS_ROUTE, label: 'Hojas de manufactura' }]
+    : automationSubmenu;
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const open = Boolean(anchorEl);
   const pathname = useLocation().pathname;
   const isActive = pathname.startsWith('/automations');
-  const currentTo = currentSubmenuTo(pathname);
+  const currentTo = currentSubmenuTo(pathname, items);
   const toggleLabel = open ? 'Ocultar automatizaciones' : 'Mostrar automatizaciones';
 
   function closeMenu() {
@@ -151,7 +154,7 @@ function AutomationsNavigationItem({ collapsed }: { collapsed: boolean }) {
       transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       slotProps={{ list: { 'aria-label': 'Submenú de Automatizaciones' } }}
     >
-      {automationSubmenu.map((item) => {
+      {items.map((item) => {
         // CURRENT: readable, visibly selected, aria-current="page" — but never a navigable Link
         // (Phase 10F addendum: current and any future unavailable entry are genuinely different
         // states and must look and behave differently).
@@ -397,6 +400,7 @@ function UserAccountControl({ collapsed, environment, version, commit }: { colla
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { visible: manufacturaVisible } = useManufacturaVisible();
   const { user } = useAuth();
   const theme = useTheme();
   const wideViewport = useMediaQuery(theme.breakpoints.up('lg'), { defaultMatches: true, noSsr: true });
@@ -495,7 +499,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Stack sx={{ mt: 'auto' }}>
           <Divider sx={{ borderColor: appTokens.navigationDivider, mb: 2 }} />
           {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, mb: 0.75 }}>Operación</Typography>}
-          <AutomationsNavigationItem collapsed={collapsed} />
+          <AutomationsNavigationItem collapsed={collapsed} manufacturaVisible={manufacturaVisible} />
           {user?.role === 'ADMIN' && (
             <>
               {!collapsed && <Typography variant="overline" color={appTokens.navigationMuted} sx={{ px: 1, pt: 2, mb: 0.75 }}>Administración</Typography>}
