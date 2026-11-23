@@ -5,6 +5,7 @@ import { AUDI_EXECUTION_SOURCE_TYPE } from '../review/review-source-types';
 import type { ListAudiExecutionsDto } from './dto/list-audi-executions.dto';
 import { AudiExecutionsRepository, type AudiExecutionRow } from './audi-executions.repository';
 import { audiDiagnostic, audiSourceFilename } from './audi-detail-presentation';
+import { AudiRecoveryService } from './audi-recovery.service';
 
 export type AudiExecutionReviewStatus = 'REQUIRED' | 'REVIEWED' | null;
 
@@ -29,8 +30,11 @@ export interface ListAudiExecutionsResponse {
   meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
-export interface AudiExecutionDetail {
+export interface AudiExecutionDetail extends Awaited<ReturnType<AudiRecoveryService['getDetail']>> {
   executionId: string;
+  n8nExecutionId: string | null;
+  reprocessOfExecutionId: string | null;
+  childExecutionId: string | null;
   outcome: AudiProcessingOutcome;
   startedAt: string;
   finishedAt: string | null;
@@ -46,15 +50,23 @@ export interface AudiExecutionDetailResponse { data: AudiExecutionDetail }
 export class AudiExecutionsService {
   constructor(
     private readonly repository: AudiExecutionsRepository,
-    private readonly reviewAcknowledgements: ReviewAcknowledgementsRepository
+    private readonly reviewAcknowledgements: ReviewAcknowledgementsRepository,
+    private readonly recovery: AudiRecoveryService
   ) {}
 
-  async getDetail(executionId: string): Promise<AudiExecutionDetailResponse> {
+  async getDetail(executionId: string, isAdmin = false): Promise<AudiExecutionDetailResponse> {
     const execution = await this.repository.findById(executionId);
     if (!execution) throw new NotFoundException('Ejecución de Audi no encontrada.');
-    const remissions = await this.repository.findRemissionsByExecutionId(executionId);
+    const [remissions, recovery] = await Promise.all([
+      this.repository.findRemissionsByExecutionId(executionId),
+      this.recovery.getDetail(executionId, isAdmin)
+    ]);
     return { data: {
+      ...recovery,
       executionId: execution.ejecucion_id,
+      n8nExecutionId: execution.n8n_execution_id ?? null,
+      reprocessOfExecutionId: execution.reprocess_of_execution_id ?? null,
+      childExecutionId: execution.child_execution_id ?? null,
       outcome: mapAudiExecutionState(execution.execution_state)!,
       startedAt: new Date(execution.started_at).toISOString(),
       finishedAt: execution.finished_at ? new Date(execution.finished_at).toISOString() : null,

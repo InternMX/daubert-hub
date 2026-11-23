@@ -55,6 +55,10 @@ export interface EnvironmentConfig {
     url: string | null;
     token: string | null;
   };
+  audiRecoveryWebhook: {
+    url: string | null;
+    token: string | null;
+  };
   // Fase 2 de manufactura: cliente de solo lectura de BIND ERP (https://api.bind.com.mx). Opcional como las demás integraciones: sin BIND_API_KEY la consulta de
   // productos informa NOT_CONFIGURED en tiempo de llamada y nunca bloquea el arranque. Las claves viven solo en variables de entorno del backend: no se registran
   // en logs, no se devuelven en ninguna respuesta y no van al frontend ni al repositorio. Solo HTTPS y solo hosts *.bind.com.mx.
@@ -196,6 +200,10 @@ export function validateEnvironment(env: Record<string, string | undefined>): En
     caterpillarReprocessWebhook: {
       url: env.CATERPILLAR_REPROCESS_WEBHOOK_URL?.trim() || null,
       token: env.CATERPILLAR_REPROCESS_WEBHOOK_TOKEN?.trim() || null
+    },
+    audiRecoveryWebhook: {
+      url: env.AUDI_RECOVERY_WEBHOOK_URL?.trim() || null,
+      token: env.AUDI_RECOVERY_WEBHOOK_TOKEN?.trim() || null
     },
     bind: {
       baseUrl: bindBaseUrl(env.BIND_API_BASE_URL),

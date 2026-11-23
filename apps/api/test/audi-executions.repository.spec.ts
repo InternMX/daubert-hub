@@ -11,6 +11,10 @@ describe('AudiExecutionsRepository', () => {
     expect(sql).toContain("automation.codigo = 'REMISIONES_AUDI'");
     expect(sql).toContain('LEFT JOIN core.documentos');
     expect(sql).toContain('WHERE execution.ejecucion_id = $1::bigint');
+    expect(sql).toContain('execution.n8n_execution_id::text AS n8n_execution_id');
+    expect(sql).toContain('execution.reproceso_de_id::text AS reprocess_of_execution_id');
+    expect(sql).toContain('SELECT child.ejecucion_id::text');
+    expect(sql).toContain('child.reproceso_de_id = execution.ejecucion_id');
     expect(sql).not.toMatch(/JOIN operacion\.|ruta_archivo|pdf_path|run_name|payload/);
   });
 

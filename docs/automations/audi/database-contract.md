@@ -1,5 +1,10 @@
 # Audi — Contrato de base de datos (desde el workflow)
 
+## Recuperación atómica en TEST
+
+[Contrato de recuperación Audi](recovery.md) (integración n8n pendiente).
+[Migración 108 de TEST](../../../database/migrations/daubert_hub_test/README-108.md).
+
 Verificado en el export PROD (`Remisiones AUDI PRODUCCION`, credencial `Postgres produccion`) y TEST (`Remisiones AUDI PRUEBAS`, credencial `Postgres pruebas`; **mismas consultas**). D3 documentará PostgreSQL objeto por objeto; aquí sólo lo que usa el workflow.
 
 ## Resumen

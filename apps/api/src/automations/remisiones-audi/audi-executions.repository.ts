@@ -31,6 +31,9 @@ export interface AudiExecutionDetailRow extends QueryResultRow {
   error_message: string | null;
   documento_id: string | null;
   source_filename: string | null;
+  n8n_execution_id: string | null;
+  reprocess_of_execution_id: string | null;
+  child_execution_id: string | null;
 }
 
 export interface AudiRemissionRow extends QueryResultRow {
@@ -57,7 +60,12 @@ export class AudiExecutionsRepository {
         execution.finalizada_en AS finished_at,
         execution.error_mensaje AS error_message,
         document.documento_id::text AS documento_id,
-        document.nombre_archivo AS source_filename
+        document.nombre_archivo AS source_filename,
+        execution.n8n_execution_id::text AS n8n_execution_id,
+        execution.reproceso_de_id::text AS reprocess_of_execution_id,
+        (SELECT child.ejecucion_id::text FROM ops.ejecuciones_automatizacion child
+          WHERE child.reproceso_de_id = execution.ejecucion_id
+            AND child.automatizacion_id = execution.automatizacion_id) AS child_execution_id
       FROM ops.ejecuciones_automatizacion execution
       JOIN ops.automatizaciones automation
         ON automation.automatizacion_id = execution.automatizacion_id
