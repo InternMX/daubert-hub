@@ -18,7 +18,7 @@
         no Caterpillar 025 objects (schema cat_recovery_test).
       Backup coupling (-BackupModule): the module passes --enable-row-security  <=>  the pol_respaldo_sel policies exist
         (flag without policy = dump with EMPTY tables and exit 0; policy without flag = pg_dump fails).
-      Configuration (-EnvFile; only DB_NAME, MANUFACTURING_ENABLED and MANUFACTURING_EMISSION_ENV are read, nothing is printed but those three):
+      Configuration (-EnvFile; only DB_NAME, MANUFACTURING_ENABLED and MANUFACTURING_EMISSION_ENV are read, nothing is printed but those three; optional -EnvOverlay = the prepared activation overlay, evaluated base + overlay with Compose precedence):
         mirrors apps/api/src/config/environment.ts resolveManufacturing; contradictions fail.
       Migrations evidence (-MigrationsEvidence): contains every POSTCHECK_0NN_PASS and MANUFACTURA_SQL_COMPLETE.
       Closure policy (-ClosurePolicyFile, -ClosurePolicySha256): the policy SELECTED for the window has the authorised SHA-256 and blocks writes under /api/manufacturing-sheets.
@@ -45,6 +45,7 @@ param(
     [string]$Psql = 'psql',
     [string]$BackupModule = '',
     [string]$EnvFile = '',
+    [string]$EnvOverlay = '',
     [string]$MigrationsEvidence = '',
     [string]$HealthUrl = '',
     [string]$ExpectedCommit = '',
@@ -91,11 +92,25 @@ function Read-ReadinessText { param([string]$Path) if (-not (Test-Path -LiteralP
 function Get-ReadinessFileSha256 { param([string]$Path) if (-not (Test-Path -LiteralPath $Path)) { return '' }; return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLower() }
 function Invoke-ReadinessHealth { param([string]$Url) return ((Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10).Content | ConvertFrom-Json) }
 function Get-ReadinessContainerImage {
+    # Platform manifest digest the container was created from (same read as Deploy-DaubertHub.ps1 Get-RunningDigest, proven in PROD on 2026-11-19).
     param([string]$Name)
     $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { $id = & docker inspect $Name --format '{{.Image}}' 2>$null; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $previous }
+    try { $id = & docker inspect $Name --format '{{if .ImageManifestDescriptor}}{{.ImageManifestDescriptor.digest}}{{end}}' 2>$null; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $previous }
     if ($code -ne 0) { return '' }
-    return [string]$id
+    return ((@($id) | ForEach-Object { [string]$_ }) -join '').Trim()
+}
+function Get-ReadinessTagIds {
+    # Id = `docker image inspect <tag> {{.Id}}` (what New-ReleaseImages.ps1 records as imageId); IdAmd64 = same with --platform linux/amd64 (what Deploy compares with the
+    # running digest). Both reads are the ones Deploy-DaubertHub.ps1 already uses. '' when unreadable.
+    param([string]$Tag)
+    $r = @{ Id = ''; IdAmd64 = '' }
+    if (-not $Tag) { return $r }
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try {
+        $a = & docker image inspect $Tag --format '{{.Id}}' 2>$null; if ($LASTEXITCODE -eq 0) { $r.Id = ((@($a) | ForEach-Object { [string]$_ }) -join '').Trim() }
+        $b = & docker image inspect $Tag --platform linux/amd64 --format '{{.Id}}' 2>$null; if ($LASTEXITCODE -eq 0) { $r.IdAmd64 = ((@($b) | ForEach-Object { [string]$_ }) -join '').Trim() }
+    } finally { $ErrorActionPreference = $previous }
+    return $r
 }
 
 # ------------------------------------------------------------------ Facts
@@ -258,7 +273,7 @@ function Test-ReadinessClosurePolicy {
 
 function Test-ReadinessImages {
     # $ManifestText may be $null. $RunningIds: hashtable container -> image id ('' = container not found).
-    param($ManifestText, [string]$AuthorisedSha, [string[]]$ContainerNames, $RunningIds)
+    param($ManifestText, [string]$AuthorisedSha, [string[]]$ContainerNames, $RunningIds, $TagIds = @{})
     if ($null -eq $ManifestText) { return @(New-ReadinessResult $false 'manifiesto de imagenes legible' 'no existe -ImagesManifest') }
     $r = @()
     $sha = Get-TextSha256 $ManifestText
@@ -273,8 +288,14 @@ function Test-ReadinessImages {
         $svc = Get-ReadinessContainerService $c
         if (-not $svc) { $r += New-ReadinessResult $false ('contenedor ' + $c + ' con servicio identificable (api/web)') 'nombre ambiguo o desconocido: no se compara con ninguna imagen'; continue }
         $entry = @($entries | Where-Object { [string]$_.servicio -eq $svc }) | Select-Object -First 1
-        $want = $(if ($entry) { [string]$entry.imageId } else { '' }); $have = [string]$RunningIds[$c]
-        $r += New-ReadinessResult ([bool]$have -and $have -eq $want) ('imagen en ejecucion de ' + $c + ' = imagen validada') ("en ejecucion=$have validada=$want")
+        # Two proven relations (the same Deploy-DaubertHub.ps1 relies on): the release tag IS the validated image (tag Id = manifest imageId), and the container runs
+        # that tag (running platform-manifest digest = the tag's linux/amd64 Id). The container's .Image is never compared with imageId (containerd index vs manifest).
+        $tag = $(if ($entry -and @($entry.PSObject.Properties.Name) -contains 'tag') { [string]$entry.tag } else { '' })
+        $want = $(if ($entry) { [string]$entry.imageId } else { '' })
+        $ids = $(if ($tag -and $TagIds.ContainsKey($tag)) { $TagIds[$tag] } else { @{ Id = ''; IdAmd64 = '' } })
+        $r += New-ReadinessResult ([bool]$tag -and [bool]$want -and [string]$ids.Id -eq $want) ('etiqueta de ' + $c + ' = imagen validada del manifiesto') ("etiqueta=$tag id=" + [string]$ids.Id + " validada=$want")
+        $have = [string]$RunningIds[$c]
+        $r += New-ReadinessResult ([bool]$have -and [bool]$ids.IdAmd64 -and $have -eq [string]$ids.IdAmd64) ('imagen en ejecucion de ' + $c + ' = etiqueta validada') ("en ejecucion=$have etiqueta(linux/amd64)=" + [string]$ids.IdAmd64)
     }
     return $r
 }
@@ -300,7 +321,10 @@ function Invoke-ReadinessMain {
         $ids = @{}
         $names = @($P.Containers | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
         foreach ($c in $names) { if (Get-ReadinessContainerService $c) { $ids[$c] = Get-ReadinessContainerImage $c } }
-        $results += @(Test-ReadinessImages $manifestText $P.ImagesManifestSha256 $names $ids)
+        $tagIds = @{}
+        $mj = $null; if ($null -ne $manifestText) { try { $mj = $manifestText | ConvertFrom-Json } catch { $mj = $null } }
+        if ($null -ne $mj -and @($mj.PSObject.Properties.Name) -contains 'imagenes') { foreach ($e in @($mj.imagenes)) { if ($null -ne $e -and @($e.PSObject.Properties.Name) -contains 'tag' -and [string]$e.tag) { $tagIds[[string]$e.tag] = Get-ReadinessTagIds ([string]$e.tag) } } }
+        $results += @(Test-ReadinessImages $manifestText $P.ImagesManifestSha256 $names $ids $tagIds)
         if ($null -ne $manifestText) { $results += @(Test-ReadinessWebUi $manifestText $P.Phase) }
     }
     $flags = $null
@@ -308,6 +332,15 @@ function Invoke-ReadinessMain {
         $groups += 'configuracion'
         $text = Read-ReadinessText $P.EnvFile
         $flags = $(if ($null -eq $text) { $null } else { Get-ReadinessEnvFlags $text })
+        if ($P.ContainsKey('EnvOverlay') -and $P.EnvOverlay -and $null -ne $flags) {
+            # Activation overlay (Switch-Manufactura.ps1): evaluate base + overlay with Compose precedence; the base may keep MANUFACTURING_ENABLED=false or empty.
+            Import-Module (Join-Path $PSScriptRoot 'DaubertOps.Common.psm1') -Force
+            $ovBytes = $(if (Test-Path -LiteralPath $P.EnvOverlay) { [System.IO.File]::ReadAllBytes($P.EnvOverlay) } else { $null })
+            $eff = $(if ($null -eq $ovBytes) { $null } else { Get-DaubertEffectiveManufacturing $text $ovBytes })
+            $ovOk = ($null -ne $eff -and @($eff.Errores).Count -eq 0)
+            $results += New-ReadinessResult $ovOk 'configuracion: base + overlay de activacion validos (base sin habilitar, overlay canonico)' $(if ($null -eq $eff) { 'no existe -EnvOverlay' } else { (@($eff.Errores) -join ',') })
+            if ($ovOk) { $flags['MANUFACTURING_ENABLED'] = [string]$eff.Enabled; $flags['MANUFACTURING_EMISSION_ENV'] = [string]$eff.Emission } else { $flags['MANUFACTURING_ENABLED'] = '' }
+        }
         $results += @(Test-ReadinessConfiguration $flags $P.Phase ($dbReady -and -not $P.SkipDatabase))
     }
     if ($P.MigrationsEvidence) { $groups += 'migraciones'; $results += @(Test-ReadinessEvidence (Read-ReadinessText $P.MigrationsEvidence)) }
@@ -357,7 +390,7 @@ function Write-ReadinessEvidence {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
-    $p = @{ Phase = $Phase; Psql = $Psql; BackupModule = $BackupModule; EnvFile = $EnvFile; MigrationsEvidence = $MigrationsEvidence; HealthUrl = $HealthUrl; ExpectedCommit = $ExpectedCommit
+    $p = @{ Phase = $Phase; Psql = $Psql; BackupModule = $BackupModule; EnvFile = $EnvFile; EnvOverlay = $EnvOverlay; MigrationsEvidence = $MigrationsEvidence; HealthUrl = $HealthUrl; ExpectedCommit = $ExpectedCommit
         ImagesManifest = $ImagesManifest; ImagesManifestSha256 = $ImagesManifestSha256; Containers = @($Containers); NginxConf = $NginxConf; ClosurePolicyFile = $ClosurePolicyFile; ClosurePolicySha256 = $ClosurePolicySha256; EvidenceFile = $EvidenceFile; SkipDatabase = [bool]$SkipDatabase }
     exit (Invoke-ReadinessMain $p)
 }

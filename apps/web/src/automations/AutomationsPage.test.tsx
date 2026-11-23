@@ -1,3 +1,4 @@
+import { TestAuthProvider } from '../test/authTestUtils';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -67,7 +68,7 @@ function caterpillar(overrides: Partial<AutomationOverview> = {}): AutomationOve
   };
 }
 
-function renderPage() { return render(<MemoryRouter><AutomationsPage /></MemoryRouter>); }
+function renderPage() { return render(<MemoryRouter><TestAuthProvider><AutomationsPage /></TestAuthProvider></MemoryRouter>); }
 
 async function cardFor(name: string) {
   return (await screen.findByText(name)).closest('.MuiPaper-root') as HTMLElement;

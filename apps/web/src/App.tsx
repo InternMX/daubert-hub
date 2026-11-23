@@ -29,6 +29,7 @@ import { ProfilePage } from './account/ProfilePage';
 import { EditUserPage } from './users/EditUserPage';
 import { MANUFACTURING_SHEETS_ROUTE, MANUFACTURING_SHEETS_SETTINGS_ROUTE, MANUFACTURING_UI_VISIBLE } from './automations/automationRoutes';
 import { ManufacturingSpecificationPage } from './manufacturing/ManufacturingSpecificationPage';
+import { RequiereManufactura } from './manufacturing/RequiereManufactura';
 import { roleLabels } from './services/userLabels';
 
 function HomePage() {
@@ -75,7 +76,7 @@ export function App() {
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/automations" element={<AutomationsPage />} />
-        {MANUFACTURING_UI_VISIBLE && <Route path={MANUFACTURING_SHEETS_ROUTE} element={<ManufacturingSpecificationPage />} />}
+        {MANUFACTURING_UI_VISIBLE && <Route path={MANUFACTURING_SHEETS_ROUTE} element={<RequiereManufactura><ManufacturingSpecificationPage /></RequiereManufactura>} />}
         <Route path="/automations/remissions/audi" element={<AudiRemissionsPage />} />
         <Route path="/automations/remissions/caterpillar" element={<CaterpillarRemissionsPage />} />
         <Route path="/automations/payment-notifications" element={<PaymentNotificationsPage />} />
@@ -84,11 +85,11 @@ export function App() {
           <Route path="/clients/new" element={<NewClientPage />} />
           <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
           <Route path="/audit" element={<AuditPage />} />
-          {MANUFACTURING_UI_VISIBLE && <Route path={MANUFACTURING_SHEETS_SETTINGS_ROUTE} element={<ConfiguracionManufacturaPage />} />}
-          {MANUFACTURING_UI_VISIBLE && <Route path="/client-abbreviations" element={<Navigate to={MANUFACTURING_SHEETS_SETTINGS_ROUTE} replace />} />}
+          {MANUFACTURING_UI_VISIBLE && <Route path={MANUFACTURING_SHEETS_SETTINGS_ROUTE} element={<RequiereManufactura><ConfiguracionManufacturaPage /></RequiereManufactura>} />}
+          {MANUFACTURING_UI_VISIBLE && <Route path="/client-abbreviations" element={<RequiereManufactura><Navigate to={MANUFACTURING_SHEETS_SETTINGS_ROUTE} replace /></RequiereManufactura>} />}
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/new" element={<NewUserPage />} />
-          {MANUFACTURING_UI_VISIBLE && <Route path="/users/signatures" element={<UserSignaturesPage />} />}
+          {MANUFACTURING_UI_VISIBLE && <Route path="/users/signatures" element={<RequiereManufactura><UserSignaturesPage /></RequiereManufactura>} />}
           <Route path="/users/:userId/edit" element={<EditUserPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
         </Route>

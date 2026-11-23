@@ -116,6 +116,9 @@ function Set-StandardMocks {
     Mock Read-DeployConfirmation { $script:Fake.Confirmation }
     Mock Read-DeployEvidence { if ($Path -like '*readiness*') { if ($script:Fake.ContainsKey('Readiness')) { $script:Fake.Readiness } else { [pscustomobject]@{ Exists = $false; AgeHours = 0; Text = '' } } } else { $script:Fake.Evidence } }
     Mock Read-ManufacturingFlags { if ($script:Fake.ContainsKey('Manufacturing')) { [pscustomobject]$script:Fake.Manufacturing } else { [pscustomobject]@{ Enabled = ''; Emission = '' } } }
+    Mock Enter-DeployOperationLock { 'lock-de-prueba' }
+    Mock Exit-DeployOperationLock { }
+    Mock Get-ManufacturaActivaState { if ($script:Fake.ContainsKey('MfActiva')) { [pscustomobject]$script:Fake.MfActiva } else { [pscustomobject]@{ OverlayActiva = $false; ApiEstado = 'Apagado' } } }
     Mock Read-DeployManifest { $script:Fake.Manifest }
     Mock Write-Host { $script:Printed += [string]$Object }
     Mock Invoke-DeployMutation {
@@ -407,6 +410,22 @@ Describe 'Validaciones previas (Deploy)' {
         (Invoke-Main -D $true -C 'HEAD~1') | Should Be 1
         (Get-PrintedText) | Should Match 'no es exactamente HEAD'
         Assert-MockCalled Invoke-DeployMutation -Times 0 -Exactly
+    }
+
+    It 'v1.3.0: con Manufactura habilitada (overlay activo o API encendida) Deploy se niega sin mutar' {
+        foreach ($state in @(@{ OverlayActiva = $true; ApiEstado = 'Apagado' }, @{ OverlayActiva = $false; ApiEstado = 'Encendido' }, @{ OverlayActiva = $false; ApiEstado = 'Indeterminado' }, @{ OverlayActiva = $false; ApiEstado = 'NoArrancaria' })) {
+            $script:Fake.MfActiva = $state
+            (Invoke-Main -D $true) | Should Be 1
+            (Get-PrintedText) | Should Match 'no se despliega con Manufactura activa'
+        }
+        Assert-MockCalled Invoke-DeployMutation -Times 0 -Exactly
+    }
+
+
+
+    It 'v1.3.0: con Manufactura apagada el bloqueo no interviene' {
+        $script:Fake.MfActiva = @{ OverlayActiva = $false; ApiEstado = 'Apagado' }
+        @(Test-DeployGate (Get-DeployContext 'HEAD') | Where-Object { $_ -like '*Manufactura activa*' }).Count | Should Be 0
     }
 
     It 'arbol sucio es FAIL' {
@@ -1147,8 +1166,8 @@ Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readin
         (Invoke-Main -D $true) | Should Be 0
     }
 
-    It 'habilitada con evidencia PASS reciente de la fase PreEnable: se acepta' {
-        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 0
+    It 'v1.3.0: habilitada con evidencia PASS reciente de la fase PreEnable: Deploy NO habilita (solo Switch-Manufactura)' {
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Deploy no habilita Manufactura'; $script:Mutations.Count | Should Be 0
     }
 
     It 'habilitada sin -ManufacturingReadinessEvidence o sin el archivo: bloquea sin mutar nada' {
@@ -1248,21 +1267,15 @@ Describe 'Habilitacion de Manufactura: la compuerta exige la evidencia de readin
         $script:Mutations.Count | Should Be 0
     }
 
-    It 'H2: evidencia completa con BOM y CRLF del archivo real: se acepta' {
+    It 'H2: evidencia completa con BOM y CRLF del archivo real: el parser la acepta, pero en v1.3.0 Deploy no habilita' {
         $script:Fake.Readiness = New-ReadinessEvidence ([string][char]0xFEFF + (New-ReadinessText).TrimEnd() + "`r`n")
-        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 0
+        (Invoke-Main -D $true -Opt $script:RdOpt) | Should Be 1; (Get-PrintedText) | Should Match 'Deploy no habilita Manufactura'; (Get-PrintedText) | Should Not Match 'formato no reconocido'
     }
 
-    It 'H2: sincronizacion estricta conservada y la evidencia se REVALIDA despues de la confirmacion' {
+    It 'v1.3.0: con sincronizacion estricta y configuracion habilitante, Deploy se niega ANTES de pedir confirmacion' {
         $opt = @{ ManufacturingReadinessEvidence = 'C:\fuera\readiness.txt'; RequireSynchronizedMain = $true }
-        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 0
-        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 1 -Exactly
-
-        $script:Fake = New-Fake; Set-StandardMocks
-        $script:Fake.Manufacturing = @{ Enabled = 'true'; Emission = 'PRODUCCION' }; $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText)
-        Mock Read-DeployConfirmation { $script:Fake.Readiness = New-ReadinessEvidence (New-ReadinessText -Verdict 'PARTIAL' -Profile 'diagnostico' -Missing 'bd'); 'DEPLOY DAUBERT HUB' }
-        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1
-        (Get-PrintedText) | Should Match 'revalidacion posterior a la confirmacion fallo'
+        (Invoke-Main -D $true -C $script:Head -Opt $opt) | Should Be 1; (Get-PrintedText) | Should Match 'Deploy no habilita Manufactura'
+        Assert-MockCalled Read-DeployConfirmation -Scope It -Times 0 -Exactly
         $script:Mutations.Count | Should Be 0
 
         $script:Fake = New-Fake; Set-StandardMocks
@@ -1349,5 +1362,27 @@ Describe 'Seleccionar -ClosurePolicy Manufactura implica la exigencia de ventana
         $ctx = Get-DeployContext 'HEAD'
         @(Test-DeployGate $ctx $false @{}).Count | Should Be 0
         (Invoke-Main -D $true) | Should Be 0
+    }
+}
+
+Describe 'v1.3.0: Deploy bajo el bloqueo de operacion y revalidacion de Manufactura tras confirmar' {
+    BeforeEach { $script:Fake = New-Fake; Set-StandardMocks }
+
+    Context 'v1.3.0: bloqueo de operacion ocupado (Switch o cierre en curso) tras confirmar: no muta' {
+        It 'v1.3.0: bloqueo de operacion ocupado (Switch o cierre en curso) tras confirmar: no muta' {
+            Mock Enter-DeployOperationLock { throw 'DAUBERT_LOCK_OCUPADO: otra operacion tiene el bloqueo' }
+            (Invoke-Main -D $true) | Should Be 1
+            (Get-PrintedText) | Should Match 'DAUBERT_LOCK_OCUPADO'
+            $script:Mutations.Count | Should Be 0
+        }
+    }
+
+    Context 'v1.3.0: Manufactura se habilita mientras la confirmacion esta abierta: se revalida bajo el bloqueo y no muta' {
+        It 'v1.3.0: Manufactura se habilita mientras la confirmacion esta abierta: se revalida bajo el bloqueo y no muta' {
+            Mock Read-DeployConfirmation { $script:Fake.MfActiva = @{ OverlayActiva = $true; ApiEstado = 'Encendido' }; 'DEPLOY DAUBERT HUB' }
+            (Invoke-Main -D $true) | Should Be 1
+            (Get-PrintedText) | Should Match 'se habilito o no es verificable despues de confirmar'
+            $script:Mutations.Count | Should Be 0
+        }
     }
 }

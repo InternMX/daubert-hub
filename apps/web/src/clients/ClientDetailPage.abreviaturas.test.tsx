@@ -5,6 +5,7 @@ import { listarAbreviaturas } from '../services/clientAbbreviations';
 import { getClient } from '../services/clients';
 import { listCompanyAddresses } from '../services/companyAddresses';
 import { getCompanyAliases } from '../services/companyAliases';
+import { TestAuthProvider } from '../test/authTestUtils';
 import { ClientDetailPage } from './ClientDetailPage';
 
 vi.mock('../services/clients', async (importOriginal) => ({ ...(await importOriginal<typeof import('../services/clients')>()), getClient: vi.fn() }));
@@ -18,7 +19,7 @@ function abrir() {
   vi.mocked(listCompanyAddresses).mockResolvedValue([]);
   vi.mocked(getCompanyAliases).mockResolvedValue({ aliases: [], otherAliases: [] });
   vi.mocked(listarAbreviaturas).mockResolvedValue({ disponible: true, puedeResolver: false, data: [], conteos: {} });
-  return render(<MemoryRouter initialEntries={['/clients/877']}><Routes><Route path="/clients/:clientId" element={<ClientDetailPage />} /></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={['/clients/877']}><TestAuthProvider><Routes><Route path="/clients/:clientId" element={<ClientDetailPage />} /></Routes></TestAuthProvider></MemoryRouter>);
 }
 
 describe('Clientes → detalle → abreviaturas', () => {

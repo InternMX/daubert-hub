@@ -200,7 +200,7 @@ describe('authentication routing', () => {
     unauthenticated.unmount();
     for (const user of [testAdminUser, testGeneralUser]) {
       const view = renderWithAuth('/automations/manufacturing-sheets', { isLoading: false, user });
-      expect(screen.getByRole('heading', { level: 1, name: 'Especificación de manufactura' })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { level: 1, name: 'Especificación de manufactura' })).toBeInTheDocument();
       expect(screen.getByTestId('location')).toHaveTextContent('/automations/manufacturing-sheets');
       view.unmount();
     }

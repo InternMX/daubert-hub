@@ -1,3 +1,4 @@
+import { useManufacturaVisible } from '../manufacturing/manufacturaDisponible';
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Typography } from '@mui/material';
 import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../auth/authContext.core';
@@ -26,6 +27,7 @@ function DetailField({ label, value }: { label: string; value: string }) {
 }
 
 export function ClientDetailPage() {
+  const { visible } = useManufacturaVisible();
   const { clientId = '' } = useParams();
   // Editar, desactivar y reactivar son solo de ADMIN (la API responde 403 a GENERAL): a una cuenta GENERAL no se le ofrecen. Sin sesión en el contexto (pruebas) se conserva el comportamiento anterior.
   const puedeModificar = useContext(AuthContext)?.user?.role !== 'GENERAL';
@@ -101,7 +103,7 @@ export function ClientDetailPage() {
           {client.fiscal ? <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 2, sm: 6 }} sx={{ mt: 2 }}><DetailField label="Razón social" value={client.fiscal.legalName} /><DetailField label="RFC" value={client.fiscal.rfc} /></Stack> : <Typography color="text.secondary" sx={{ mt: 1 }}>No hay datos fiscales registrados.</Typography>}
         </Paper>
         <CompanyAliasesSection companyId={client.id} />
-        {isActive && MANUFACTURING_UI_VISIBLE && <AbreviaturasDeCliente cliente={{ id: client.id, nombre: client.commercialName }} />}
+        {MANUFACTURING_UI_VISIBLE && visible && isActive && <AbreviaturasDeCliente cliente={{ id: client.id, nombre: client.commercialName }} />}
         <CompanyContactsSection companyId={client.id} />
       </Stack>
       <Dialog open={confirming} onClose={() => !changingStatus && setConfirming(false)}>

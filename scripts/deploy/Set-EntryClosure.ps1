@@ -31,6 +31,9 @@
                             inside a closed window). Without it Prepare behaves exactly as before (it writes the open file to default.conf).
     Reload and Status recognise by SHA-256 which policy is installed, so a window closed with -Policy Manufactura is re-verified with its own probes even if -Policy is omitted.
 
+    Manufactura guard (Close only): if Manufactura is ENABLED (activation overlay <ManufacturaRoot>\manufactura\activa\manufactura.env present, or <Project>-api-1
+    running with MANUFACTURING_ENABLED=true) or its state cannot be determined, Close refuses any policy but -Policy Manufactura, BEFORE touching anything. With
+    Manufactura off nothing changes. -ManufacturaRoot (default C:\Users\06\AppData\Local\DaubertHub) only locates the overlay; the check is read-only.
     Safety: it touches the host directory and, with docker exec, only <Project>-web-1 (nginx -t / nginx -s reload; docker cp ONLY while Web does not yet mount the directory).
     It never recreates, stops or removes anything and never runs compose. Not a control over host administrators, docker, n8n manual runs/CLI/retries (see the plan).
 #>
@@ -46,7 +49,8 @@ param(
     [ValidateSet('Operativa', 'Manufactura')][string]$Policy = 'Operativa',
     [string]$ExpectedPolicySha256 = '',
     [switch]$KeepClosure,
-    [ValidateSet('', 'Closed', 'Open')][string]$ExpectState = ''
+    [ValidateSet('', 'Closed', 'Open')][string]$ExpectState = '',
+    [string]$ManufacturaRoot = 'C:\Users\06\AppData\Local\DaubertHub'
 )
 
 Set-StrictMode -Version Latest
@@ -144,6 +148,25 @@ if ($Policy -eq 'Manufactura' -or ($activeIsManufactura -and $Action -in @('Relo
 
 if ($ExpectState -and $Action -ne 'Reload') { throw '-ExpectState only applies to -Action Reload. Nothing was changed.' }
 
+# Operation lock (shared with Switch-Manufactura.ps1): the Manufactura check and every mutation of default.conf happen while holding it, so a Close cannot
+# slip in between a Switch gate and its activation. Status is read-only and takes no lock. Busy => DAUBERT_LOCK_OCUPADO, nothing changed.
+Import-Module (Join-Path $PSScriptRoot 'DaubertOps.Common.psm1') -Force
+$opLock = $null
+if ($Action -ne 'Status') { $opLock = Enter-DaubertOperationLock -Path (Get-DaubertOpsPaths -Root $ManufacturaRoot).LockFile -Purpose ("Set-EntryClosure $Action") }
+try {
+
+# Manufactura enabled => a closure must also block its writes. With Manufactura OFF this guard allows every policy (historical behaviour unchanged).
+# State = activation overlay present OR API container running with the module on; undeterminable => fail closed (only -Policy Manufactura).
+if ($Action -eq 'Close') {
+    Import-Module (Join-Path $PSScriptRoot 'DaubertOps.Common.psm1') -Force
+    $opsPaths = Get-DaubertOpsPaths -Root $ManufacturaRoot
+    $apiEstado = (ConvertFrom-DaubertContainerEnv (Get-DaubertContainerEnvJson "$Project-api-1")).Estado
+    $mfEstado = Get-DaubertManufacturingRuntimeState -OverlayActivaExiste (Test-Path -LiteralPath $opsPaths.OverlayActiva) -ContainerEstado $apiEstado
+    $refusal = Test-DaubertClosurePolicyAllowed -Policy $Policy -Estado $mfEstado
+    if ($refusal) { throw $refusal }
+    Write-Host ("manufactura: $mfEstado (api=$apiEstado)")
+}
+
 switch ($Action) {
     'Prepare' {
         $null = New-Item -ItemType Directory -Force -Path $ClosureDir
@@ -183,3 +206,4 @@ switch ($Action) {
         [pscustomobject]@{ state = (Get-State); activeSha256 = (Get-Sha $active); policySha256 = (Get-Sha $policyPath); openCopySha256 = (Get-Sha $openCopy); webRunning = (Test-Running); webMountsDir = (Test-Mounted) } | Format-List
     }
 }
+} finally { Exit-DaubertOperationLock $opLock }

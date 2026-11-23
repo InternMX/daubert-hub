@@ -1,3 +1,4 @@
+import { useManufacturaVisible } from '../manufacturing/manufacturaDisponible';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
@@ -21,6 +22,7 @@ function formatTimestamp(value: string | null): string {
 }
 
 export function UserDetailPage() {
+  const { visible } = useManufacturaVisible();
   const { userId = '' } = useParams();
   const location = useLocation();
   const { user: authUser } = useAuth();
@@ -113,7 +115,7 @@ export function UserDetailPage() {
             <DetailField label="Última actualización" value={formatTimestamp(user.updatedAt)} />
           </Stack>
         </Paper>
-        {MANUFACTURING_UI_VISIBLE && (
+        {MANUFACTURING_UI_VISIBLE && visible && (
           <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
             <FirmasAdministrativas consulta={{ propietarioUsuarioId: user.id }} propietarioNuevo={isActive ? { tipo: 'usuario', id: user.id, nombre: user.displayName } : null} titulo="Firmas" />
           </Paper>

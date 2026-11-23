@@ -32,14 +32,33 @@ const familiesMock = vi.mocked(listManufacturingFamilies);
 
 function renderPage() { return render(<MemoryRouter><ManufacturingSpecificationPage /></MemoryRouter>); }
 
-async function buscar(user: ReturnType<typeof userEvent.setup>, code = 'SCHFPMG001') {
-  fireEvent.change(screen.getByLabelText('Código DCMX a buscar'), { target: { value: code } });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Buscar en BIND' })).toBeEnabled());
-  await user.click(screen.getByRole('button', { name: 'Buscar en BIND' }));
+function seccion(nombre: string) {
+  const section = document.body.querySelector<HTMLElement>(`section[aria-label="${nombre}"]`);
+  if (!section) throw new Error(`No se encontró la sección «${nombre}»`);
+  return within(section);
 }
 
-const campo = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
-const frameOf = (label: string) => campo(label).closest('div.MuiBox-root') as HTMLElement;
+async function buscar(user: ReturnType<typeof userEvent.setup>, code = 'SCHFPMG001') {
+  const buscador = within(screen.getByLabelText('Buscar producto en BIND', { selector: 'form' }));
+  fireEvent.change(buscador.getByLabelText('Código DCMX a buscar'), { target: { value: code } });
+  const boton = buscador.getByRole('button', { name: 'Buscar en BIND' });
+  await waitFor(() => expect(boton).toBeEnabled());
+  await user.click(boton);
+}
+
+const datosGenerales = () => seccion('Datos generales');
+const medidas = () => seccion('Medidas y peso');
+const familia = () => seccion('Familia de manufactura');
+const validacion = () => seccion('Validación');
+const seccionColor = () => seccion('Color');
+const capas = () => seccion('Capas COEX');
+const editorColor = () => within(screen.getByTestId('color-personalizado-editor'));
+
+function campo(label: string, area: ReturnType<typeof within> = screen) {
+  return area.getByLabelText(label) as HTMLInputElement;
+}
+
+const frameOf = (label: string, area?: ReturnType<typeof within>) => campo(label, area).closest('div.MuiBox-root') as HTMLElement;
 // La procedencia vive en un ícono de información (Popover): se abre, se lee y se cierra con Escape.
 async function leerProcedencia(frame: HTMLElement): Promise<{ texto: string; fuentes: string[]; nota: string }> {
   const boton = within(frame).queryByTestId('procedencia-info');
@@ -56,7 +75,7 @@ const clienteCatalogo = { id: 'c-1', commercialName: 'Schneider Electric', compa
 
 async function elegirCliente(user: ReturnType<typeof userEvent.setup>) {
   listClientsMock.mockResolvedValue({ data: [clienteCatalogo], meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } });
-  await user.type(campo(CLIENTE), 'Schn');
+  fireEvent.change(campo(CLIENTE, datosGenerales()), { target: { value: 'Schn' } });
   await user.click(await screen.findByRole('option', { name: 'Schneider Electric' }));
 }
 
@@ -84,7 +103,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     const review = await screen.findByRole('button', { name: 'Confirmar revisión del borrador' });
     const color = await screen.findByTestId('incidencia');
     expect(color).toHaveTextContent('BIND menciona COLOR VERDE');
-    expect(within(frameOf('Texto del color en el documento')).getByTestId('incidencia')).toBe(color);                  // se muestra en el campo, una sola vez
+    expect(within(frameOf('Texto del color en el documento', seccionColor())).getByTestId('incidencia')).toBe(color);                  // se muestra en el campo, una sola vez
     expect(screen.getByTestId('review-blocked-hint')).toHaveTextContent('contradicciones técnicas (1)');
     expect(review).toBeDisabled();
     await user.click(within(color).getByRole('button', { name: 'Reconocer esta diferencia' }));
@@ -94,11 +113,11 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await user.click(review);
     expect(screen.getByTestId('status-reviewed')).toHaveTextContent('Datos revisados para este borrador');
     // editar los datos que originaron la contradicción: el reconocimiento caduca y la revisión también
-    fireEvent.change(campo('Texto del color en el documento'), { target: { value: 'VERDE' } });
+    fireEvent.change(campo('Texto del color en el documento', seccionColor()), { target: { value: 'VERDE' } });
     expect(screen.getByTestId('status-reviewed')).toHaveTextContent('pendientes de revisión');
     expect(await screen.findByTestId('review-blocked-hint')).toBeInTheDocument();                  // tras la respuesta del backend para los datos nuevos
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto');
-    expect(campo('Descripción').value).toBe(schfpmg001().producto.Title);
+    expect(campo('Descripción', datosGenerales()).value).toBe(schfpmg001().producto.Title);
   });
   it('muestra el buscador y no consulta nada hasta que el usuario lo pide', async () => {
     renderPage();
@@ -125,19 +144,19 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     const panel = await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(within(panel).getByText('Solo lectura')).toBeInTheDocument();
 
-    expect(campo('Código DCMX').value).toBe('SCHFPMG001');
-    expect(campo('Ancho').value).toBe('13');
-    expect(campo('Calibre').value).toBe('3 MIL');
-    expect(campo('Resina VCI').value).toBe('PMG AL 3%');
-    expect((await leerProcedencia(frameOf('Resina VCI'))).texto).toContain('Sugerido por el sistema');
-    expect(campo('Fecha de emisión de la hoja').value).toBe(localIsoDate());
+    expect(campo('Código DCMX', datosGenerales()).value).toBe('SCHFPMG001');
+    expect(campo('Ancho', medidas()).value).toBe('13');
+    expect(campo('Calibre', medidas()).value).toBe('3 MIL');
+    expect(campo('Resina VCI', datosGenerales()).value).toBe('PMG AL 3%');
+    expect((await leerProcedencia(frameOf('Resina VCI', datosGenerales()))).texto).toContain('Sugerido por el sistema');
+    expect(campo('Fecha de emisión de la hoja', datosGenerales()).value).toBe(localIsoDate());
     expect(campo('Etiqueta').value).toBe('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
-    expect(campo('Texto del color en el documento').value).toBe('DAUBERT AZUL AL 2%');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('DAUBERT AZUL AL 2%');
     expect(screen.getByTestId('color-hex-readonly')).toHaveTextContent('#538DD5');
-    expect((await leerProcedencia(frameOf('Ancho'))).texto).toContain('Recuperado de BIND');
+    expect((await leerProcedencia(frameOf('Ancho', medidas()))).texto).toContain('Recuperado de BIND');
     expect(screen.queryByText('Ver detalles')).not.toBeInTheDocument();                                    // sin enlaces repetidos bajo los campos
-    expect(within(frameOf('Ancho')).getByRole('button', { name: 'Procedencia de Ancho' })).toHaveAttribute('aria-haspopup', 'dialog');   // ícono accesible (teclado/táctil), no solo hover
-    expect(within(frameOf('Ancho')).queryByText('Recuperado de BIND')).not.toBeInTheDocument();
+    expect(within(frameOf('Ancho', medidas())).getByRole('button', { name: 'Procedencia de Ancho' })).toHaveAttribute('aria-haspopup', 'dialog');   // ícono accesible (teclado/táctil), no solo hover
+    expect(within(frameOf('Ancho', medidas())).queryByText('Recuperado de BIND')).not.toBeInTheDocument();
     // las familias disponibles vienen de la configuración del backend
     for (const familia of familyConfigs) expect(screen.getByRole('radio', { name: familia.nombre })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Bolsa Plana 1' })).toBeChecked();
@@ -155,14 +174,14 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user);
     const grupo = await screen.findByRole('group', { name: 'Cliente sugerido por el código' }, { timeout: 3000 });
-    expect(frameOf(CLIENTE).contains(grupo)).toBe(true);                                      // dentro de la columna del campo Cliente
+    expect(frameOf(CLIENTE, datosGenerales()).contains(grupo)).toBe(true);                                      // dentro de la columna del campo Cliente
     expect(grupo).toHaveTextContent('SCHAEFFLER');
     expect(grupo).toHaveTextContent('Abreviatura SCH');
-    expect(campo(CLIENTE).value).toBe('');                                                      // jamás se selecciona solo
+    expect(campo(CLIENTE, datosGenerales()).value).toBe('');                                                      // jamás se selecciona solo
     expect(screen.queryByText(/No se infiere por el prefijo/)).toBeNull();
     expect(screen.getByText('Selecciona un cliente del catálogo o escribe su nombre.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Usar SCHAEFFLER' }));
-    await waitFor(() => expect(campo(CLIENTE).value).toBe('SCHAEFFLER'));
+    await waitFor(() => expect(campo(CLIENTE, datosGenerales()).value).toBe('SCHAEFFLER'));
     expect(screen.queryByRole('group', { name: 'Cliente sugerido por el código' })).toBeNull();
   });
 
@@ -182,7 +201,7 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await screen.findByTitle('Vista previa de la hoja Bolsa Plana 1', undefined, { timeout: 3000 });
     expect(screen.queryByTestId('preview-emission-pending')).not.toBeInTheDocument();                    // el cliente no afecta la representación: la vista previa no lo repite
 
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Datos técnicos suficientes para la vista previa/)).toBeInTheDocument();
     expect(screen.queryByText(/apto para una emisión futura/)).not.toBeInTheDocument();
   });
@@ -193,20 +212,21 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user);
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo(CLIENTE).value).toBe('');
-    await user.type(campo(CLIENTE), 'Nuevo Cliente SA');
-    expect(within(frameOf(CLIENTE)).getByText('Texto libre: no vinculado al catálogo')).toBeInTheDocument();
+    expect(campo(CLIENTE, datosGenerales()).value).toBe('');
+    fireEvent.change(campo(CLIENTE, datosGenerales()), { target: { value: 'Nuevo Cliente SA' } });
+    expect(within(frameOf(CLIENTE, datosGenerales())).getByText('Texto libre: no vinculado al catálogo')).toBeInTheDocument();
     expect(screen.getByTestId('resumen-INFORMACION')).toBeInTheDocument();
-    await user.clear(campo(CLIENTE));
+    await user.clear(campo(CLIENTE, datosGenerales()));
     await elegirCliente(user);
-    expect(within(frameOf(CLIENTE)).getByText('Cliente del catálogo (confirmado)')).toBeInTheDocument();
+    expect(within(frameOf(CLIENTE, datosGenerales())).getByText('Cliente del catálogo (confirmado)')).toBeInTheDocument();
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto para emisión futura');            // la familia sigue siendo una sugerencia
-    await user.click(screen.getByRole('button', { name: 'Confirmar familia' }));
+    await user.click(familia().getByRole('button', { name: 'Confirmar familia' }));
     expect(screen.getByTestId('status-emission')).toHaveTextContent('No apto para emisión futura');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar revisión del borrador' })).toBeEnabled());
-    await user.click(screen.getByRole('button', { name: 'Confirmar revisión del borrador' }));
+    const revisar = validacion().getByRole('button', { name: 'Confirmar revisión del borrador' });
+    await waitFor(() => expect(revisar).toBeEnabled());
+    await user.click(revisar);
     expect(screen.getByTestId('status-emission')).toHaveTextContent('Apto para emisión futura');
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/apto para una emisión futura/)).toBeInTheDocument();
     expect(screen.getByText(/Aún no se guarda ni se emite ninguna hoja/)).toBeInTheDocument();
   });
@@ -218,30 +238,30 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await buscar(user, 'FUELLE61');
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(screen.getByRole('radio', { name: 'Bolsa Fuelle' })).toBeChecked();
-    expect(campo('Ancho').value).toBe('61');
-    expect(campo('Fuelle total').value).toBe('48');
-    expect(campo('Fuelle derecho').value).toBe('24');
-    expect(campo('Fuelle izquierdo').value).toBe('24');
-    expect(campo('Largo').value).toBe('70.9');
-    expect(campo('Calibre').value).toBe('2.7');
-    expect((await leerProcedencia(frameOf('Fuelle derecho'))).texto).toContain('Sugerido por el sistema');
-    expect(within(frameOf('Unidad de las medidas')).getByText('Pendiente de confirmar')).toBeInTheDocument();
+    expect(campo('Ancho', medidas()).value).toBe('61');
+    expect(campo('Fuelle total', medidas()).value).toBe('48');
+    expect(campo('Fuelle derecho', medidas()).value).toBe('24');
+    expect(campo('Fuelle izquierdo', medidas()).value).toBe('24');
+    expect(campo('Largo', medidas()).value).toBe('70.9');
+    expect(campo('Calibre', medidas()).value).toBe('2.7');
+    expect((await leerProcedencia(frameOf('Fuelle derecho', medidas()))).texto).toContain('Sugerido por el sistema');
+    expect(within(frameOf('Unidad de las medidas', medidas())).getByText('Pendiente de confirmar')).toBeInTheDocument();
     // editar el fuelle total recalcula las mitades derivadas
-    fireEvent.change(campo('Fuelle total'), { target: { value: '50' } });
-    expect(campo('Fuelle derecho').value).toBe('25');
-    expect(campo('Fuelle izquierdo').value).toBe('25');
+    fireEvent.change(campo('Fuelle total', medidas()), { target: { value: '50' } });
+    expect(campo('Fuelle derecho', medidas()).value).toBe('25');
+    expect(campo('Fuelle izquierdo', medidas()).value).toBe('25');
     // la procedencia distingue el valor original del actual y las mitades usan el valor vigente
-    const total = await leerProcedencia(frameOf('Fuelle total'));
+    const total = await leerProcedencia(frameOf('Fuelle total', medidas()));
     expect(total.texto).toMatch(/Valor original sugerido: 48/);
     expect(total.texto).toMatch(/Valor actual: 50/);
-    expect((await leerProcedencia(frameOf('Fuelle derecho'))).nota).toMatch(/derivado de 50 ÷ 2/);
-    fireEvent.click(within(frameOf('Fuelle total')).getByRole('button', { name: 'Restaurar Fuelle total' }));
-    expect([campo('Fuelle total').value, campo('Fuelle derecho').value]).toEqual(['48', '24']);
-    expect((await leerProcedencia(frameOf('Fuelle derecho'))).nota).toMatch(/derivado de 48 ÷ 2/);
-    fireEvent.change(campo('Fuelle total'), { target: { value: '50' } });
+    expect((await leerProcedencia(frameOf('Fuelle derecho', medidas()))).nota).toMatch(/derivado de 50 ÷ 2/);
+    fireEvent.click(within(frameOf('Fuelle total', medidas())).getByRole('button', { name: 'Restaurar Fuelle total' }));
+    expect([campo('Fuelle total', medidas()).value, campo('Fuelle derecho', medidas()).value]).toEqual(['48', '24']);
+    expect((await leerProcedencia(frameOf('Fuelle derecho', medidas()))).nota).toMatch(/derivado de 48 ÷ 2/);
+    fireEvent.change(campo('Fuelle total', medidas()), { target: { value: '50' } });
     // editar un fuelle lo marca como del usuario
-    fireEvent.change(campo('Fuelle derecho'), { target: { value: '26' } });
-    expect(within(frameOf('Fuelle derecho')).getByText('Editado por el usuario')).toBeInTheDocument();
+    fireEvent.change(campo('Fuelle derecho', medidas()), { target: { value: '26' } });
+    expect(within(frameOf('Fuelle derecho', medidas())).getByText('Editado por el usuario')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Fuelle').getAttribute('srcdoc')).toContain('fuelles=26/25'), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![0]).toBe('BOLSA_FUELLE');
     expect(previewMock.mock.calls.at(-1)![1]).toHaveProperty('fuelleTotal', '50'); // auxiliar de coherencia: no se imprime
@@ -258,8 +278,8 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByText(/Composición \(fija en esta familia\)/)).toBeInTheDocument();
     for (const radio of [screen.getByRole('radio', { name: 'Natural' })]) { expect(radio).toBeChecked(); expect(radio).toBeDisabled(); }
     expect(screen.queryByRole('radio', { name: 'CP5000' })).not.toBeInTheDocument();
-    expect(campo('Resina VCI').value).toBe('');
-    await user.click(screen.getByRole('button', { name: 'Confirmar familia' }));
+    expect(campo('Resina VCI', datosGenerales()).value).toBe('');
+    await user.click(familia().getByRole('button', { name: 'Confirmar familia' }));
     expect(screen.getByTestId('family-chip')).toHaveTextContent('Familia elegida por el usuario');
   });
 
@@ -269,16 +289,16 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user, 'FUELLE61');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    fireEvent.change(campo('Calibre'), { target: { value: '300' } });
-    fireEvent.change(campo('Fuelle derecho'), { target: { value: '26' } });
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+    fireEvent.change(campo('Calibre', medidas()), { target: { value: '300' } });
+    fireEvent.change(campo('Fuelle derecho', medidas()), { target: { value: '26' } });
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Plana 1' }));
     expect(screen.queryByLabelText('Fuelle derecho')).not.toBeInTheDocument();
-    expect(campo('Calibre').value).toBe('300');                           // compatible: se conserva
+    expect(campo('Calibre', medidas()).value).toBe('300');                           // compatible: se conserva
     expect((await screen.findByTestId('incidencias-familia')).textContent).toMatch(/Fuelle derecho \(26\) no aplica a Bolsa Plana 1/);
     await waitFor(() => expect(previewMock.mock.calls.at(-1)![0]).toBe('BOLSA_PLANA_1'), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('fuelleDerecho');
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
-    expect(campo('Fuelle derecho').value).toBe('26');                     // al volver, el dato sigue ahí
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Fuelle' }));
+    expect(campo('Fuelle derecho', medidas()).value).toBe('26');                     // al volver, el dato sigue ahí
   });
 
   it('familia sin información suficiente: queda pendiente y se explica el motivo', async () => {
@@ -302,14 +322,14 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     await buscar(user);
     const panel = await screen.findByRole('region', { name: 'Producto en BIND' });
     const antes = panel.textContent;
-    await user.clear(campo('Ancho'));
-    await user.type(campo('Ancho'), '14');
-    expect(within(frameOf('Ancho')).getByText('Editado por el usuario')).toBeInTheDocument();
-    expect(within(frameOf('Ancho')).getByText('Valor de BIND: 13')).toBeInTheDocument();
+    await user.clear(campo('Ancho', medidas()));
+    await user.type(campo('Ancho', medidas()), '14');
+    expect(within(frameOf('Ancho', medidas())).getByText('Editado por el usuario')).toBeInTheDocument();
+    expect(within(frameOf('Ancho', medidas())).getByText('Valor de BIND: 13')).toBeInTheDocument();
     expect(panel.textContent).toBe(antes);
     expect(original.interpretacion.campos.ancho.valor).toBe(13);
     await user.click(screen.getByRole('button', { name: 'Restaurar Ancho' }));
-    expect(campo('Ancho').value).toBe('13');
+    expect(campo('Ancho', medidas()).value).toBe('13');
   });
 
   it('Hojas: muestra la modalidad (Doblada y Extendida habilitadas) y la exige; advierte la familia incompatible con una bolsa', async () => {
@@ -324,10 +344,10 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeEnabled();
     expect(screen.getByTestId('resumen-FALTANTES')).toBeInTheDocument();                                 // faltan datos: se cuentan como «por completar» (no como errores); el campo lo marca al validar
     expect(screen.queryByTestId('resumen-ERROR')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Falta hoja doblada o extendida/i)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Extendida' }));
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Datos técnicos suficientes para la vista previa/)).toBeInTheDocument();
     expect((await screen.findByTestId('incidencias-familia')).textContent).toMatch(/Familia incompatible con los datos de BIND: BIND describe una bolsa, no una hoja/);
   });
@@ -338,10 +358,10 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user, 'PRUEBA58X43');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo('Calibre').value).toBe('200');
+    expect(campo('Calibre', medidas()).value).toBe('200');
     expect(screen.queryByLabelText('Calibre (unidad)')).not.toBeInTheDocument();
-    expect(within(frameOf('Peso (lb)')).getByText('Pendiente de confirmar')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    expect(within(frameOf('Peso (lb)', medidas())).getByText('Pendiente de confirmar')).toBeInTheDocument();
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Faltan datos técnicos/)).toBeInTheDocument();
     expect(screen.getByText(/Falta peso \(lb\)/i)).toBeInTheDocument();
     expect(screen.queryByText(/Falta calibre/i)).not.toBeInTheDocument();
@@ -356,17 +376,17 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(83, 141, 213)' });
     await user.click(screen.getByRole('combobox', { name: /^Color/ }));
     await user.click(await screen.findByRole('option', { name: /^Verde/ }));
-    expect(campo('Texto del color en el documento').value).toBe('VERDE');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('VERDE');
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(0, 176, 80)' });
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Plana 1').getAttribute('srcdoc')).toContain('color=VERDE|#00B050'), { timeout: 3000 });
     await user.click(screen.getByRole('combobox', { name: /^Color/ }));
     await user.click(await screen.findByRole('option', { name: /^Otro/ }));
-    fireEvent.change(campo('Código HEX'), { target: { value: '#GG0000' } });
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: '#GG0000' } });
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Escribe el nombre del color/)).toBeInTheDocument();
     expect(screen.getByText(/El color debe tener el formato #RRGGBB/)).toBeInTheDocument();
-    fireEvent.change(campo('Nombre del color'), { target: { value: 'ROJO' } });
-    fireEvent.change(campo('Código HEX'), { target: { value: '#C00000' } });
+    fireEvent.change(campo('Nombre del color', seccionColor()), { target: { value: 'ROJO' } });
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: '#C00000' } });
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(192, 0, 0)' });
   });
 
@@ -379,12 +399,12 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     const restaurar = screen.getByRole('button', { name: 'Restaurar título de BIND' });
     expect(restaurar).toBeDisabled();
     fireEvent.change(campo('Etiqueta'), { target: { value: 'ETIQUETA PERSONALIZADA' } });
-    fireEvent.change(campo('Descripción'), { target: { value: 'Descripción corregida' } });
-    fireEvent.change(campo('Ancho'), { target: { value: '15' } });
+    fireEvent.change(campo('Descripción', datosGenerales()), { target: { value: 'Descripción corregida' } });
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '15' } });
     expect(campo('Etiqueta').value).toBe('ETIQUETA PERSONALIZADA');
     await user.click(restaurar);
     expect(campo('Etiqueta').value).toBe('BOLSA VCI PMG 13 x 16" CAL. 3 MIL PAQUETE C/200 BOLSAS');
-    expect(campo('Descripción').value).toBe('Descripción corregida');
+    expect(campo('Descripción', datosGenerales()).value).toBe('Descripción corregida');
   });
 
   it('vista previa incompleta o bloqueada: advierte, marca el borrador como incompleto y no muestra un documento engañoso', async () => {
@@ -431,10 +451,10 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user);
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    fireEvent.change(campo('Ancho'), { target: { value: '99' } });
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '99' } });
     fireEvent.change(campo('Código DCMX a buscar'), { target: { value: 'PRUEBA58X43' } });
     await user.click(screen.getByRole('button', { name: 'Buscar en BIND' }));
-    await waitFor(() => expect(campo('Ancho').value).toBe('58'));
+    await waitFor(() => expect(campo('Ancho', medidas()).value).toBe('58'));
     expect(screen.queryByText('Editado por el usuario')).not.toBeInTheDocument();
   });
 
@@ -450,8 +470,8 @@ describe('ManufacturingSpecificationPage', { timeout: 30_000 }, () => {
     expect(frame.getAttribute('srcdoc')).toContain('calibre=200 ');
     expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ codigo: 'PRUEBA58X43', composicion: 'PMG', calibre: '200', colorNombre: 'DAUBERT AZUL AL 2%', colorHex: '#538DD5', resinaVci: 'PMG AL 3%' });
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('modalidad');
-    fireEvent.change(campo('Ancho'), { target: { value: '60' } });
-    fireEvent.change(campo('Calibre'), { target: { value: '2 MIL' } });
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '60' } });
+    fireEvent.change(campo('Calibre', medidas()), { target: { value: '2 MIL' } });
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Plana 1').getAttribute('srcdoc')).toContain('ancho=60 largo=43 cantidad=100 calibre=2 MIL'), { timeout: 3000 });
     expect(panel.textContent).toBe(antes);
     expect(original.interpretacion.campos.calibre.valor?.valorOriginal).toBe('200');
@@ -470,17 +490,17 @@ describe('ManufacturingSpecificationPage · Rollo Continuo y Termoencogible', { 
     await buscar(user, 'ROLLO58');
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(screen.getByRole('radio', { name: 'Rollo Continuo' })).toBeChecked();
-    expect(campo('Ancho').value).toBe('58');
-    expect(campo('Ancho del rollo').value).toBe('');
+    expect(campo('Ancho', medidas()).value).toBe('58');
+    expect(campo('Ancho del rollo', medidas()).value).toBe('');
     expect(screen.queryByLabelText('Cantidad por rollo o paquete')).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Doblada' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
     expect(screen.getByTestId('modalidad-EXTENDIDA-blocked')).toHaveTextContent(/no autorizada/);
     expect(screen.getByTestId('family-particularity')).toHaveTextContent(/Extendida no tiene variante gráfica confirmada/);
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Falta ancho del rollo/i)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Doblada' }));
-    fireEvent.change(campo('Ancho del rollo'), { target: { value: '30' } });
+    fireEvent.change(campo('Ancho del rollo', medidas()), { target: { value: '30' } });
     await waitFor(() => expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ modalidad: 'DOBLADA', anchoRollo: '30' }), { timeout: 3000 });
     expect(previewMock.mock.calls.at(-1)![0]).toBe('ROLLO_CONTINUO');
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('cantidad');
@@ -496,7 +516,7 @@ describe('ManufacturingSpecificationPage · Rollo Continuo y Termoencogible', { 
     for (const label of ['Ancho doblado', 'Medida del pliegue', 'Largo de la presentación final', 'Ancho de la presentación final']) expect(campo(label).value).toBe('');
     expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('color-swatch')).not.toBeInTheDocument();
-    expect(campo('Texto del color en el documento')).toBeInTheDocument();
+    expect(campo('Texto del color en el documento', seccionColor())).toBeInTheDocument();
     expect(screen.queryByLabelText('Fuelle derecho')).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Extendida' })).toBeDisabled();
     expect(screen.getByTestId('status-technical')).toHaveTextContent('incompletos');
@@ -510,25 +530,36 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user, 'COEXAZUL');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo('Producto').value).toBe('Bolsa con Fuelle - 20% de material reciclado');
+    expect(campo('Producto', datosGenerales()).value).toBe('Bolsa con Fuelle - 20% de material reciclado');
     expect(screen.queryByText(/no es una característica universal/)).not.toBeInTheDocument();                // la explicación completa queda en el ícono de información
-    expect((await leerProcedencia(frameOf('Producto'))).nota).toMatch(/no es una característica universal/);
-    fireEvent.change(campo('Peso de la capa interior (lb)'), { target: { value: '0.20000' } });
-    fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
-    expect(campo('Peso de la capa interior (lb)').value).toBe('0.20000');
-    expect(campo('Peso de la capa intermedia (lb)').value).toBe('0.25133');
-    expect(campo('Libras de VCI de la capa interior').value).toBe('0.008000');   // 0.20000 × 4 %: sigue al peso de capa vigente
-    await user.click(screen.getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' }));
+    expect((await leerProcedencia(frameOf('Producto', datosGenerales()))).nota).toMatch(/no es una característica universal/);
+    fireEvent.change(campo('Peso de la capa interior (lb)', capas()), { target: { value: '0.20000' } });
+    fireEvent.change(campo('Peso (lb)', medidas()), { target: { value: '0.7540' } });
+    expect(campo('Peso de la capa interior (lb)', capas()).value).toBe('0.20000');
+    expect(campo('Peso de la capa intermedia (lb)', capas()).value).toBe('0.25133');
+    expect(campo('Libras de VCI de la capa interior', capas()).value).toBe('0.008000');   // 0.20000 × 4 %: sigue al peso de capa vigente
+  });
+
+  it('sugiere cinco decimales, protege edición manual y pide revisión antes de sustituir pesos · cancelar y confirmar el reemplazo', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(coexAzul());
+    renderPage();
+    await buscar(user, 'COEXAZUL');
+    await screen.findByRole('region', { name: 'Producto en BIND' });
+    fireEvent.change(campo('Peso de la capa interior (lb)', capas()), { target: { value: '0.20000' } });
+    fireEvent.change(campo('Peso (lb)', medidas()), { target: { value: '0.7540' } });
+    const revisarPesos = capas().getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' });
+    await user.click(revisarPesos);
     const dialog = screen.getByRole('dialog', { name: 'Revisar reemplazo de pesos por capa' });
     expect(within(dialog).getByText(/0.20000 → 0.25133/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Revisar reemplazo de pesos por capa' })).not.toBeInTheDocument());
-    expect(campo('Peso de la capa interior (lb)').value).toBe('0.20000');
-    await user.click(screen.getByRole('button', { name: 'Revisar reemplazo de pesos por sugerencias' }));
-    await user.click(screen.getByRole('button', { name: 'Reemplazar pesos por sugerencias actuales' }));
-    expect(campo('Peso de la capa interior (lb)').value).toBe('0.25133');
-    expect((await leerProcedencia(frameOf('Peso de la capa interior (lb)'))).texto).toContain('Calculado por el sistema');
-    expect(campo('Libras de VCI de la capa interior').value).toBe('0.010053');      // 0.25133 × 4 %
+    expect(campo('Peso de la capa interior (lb)', capas()).value).toBe('0.20000');
+    await user.click(revisarPesos);
+    await user.click(within(screen.getByRole('dialog', { name: 'Revisar reemplazo de pesos por capa' })).getByRole('button', { name: 'Reemplazar pesos por sugerencias actuales' }));
+    expect(campo('Peso de la capa interior (lb)', capas()).value).toBe('0.25133');
+    expect((await leerProcedencia(frameOf('Peso de la capa interior (lb)', capas()))).texto).toContain('Calculado por el sistema');
+    expect(campo('Libras de VCI de la capa interior', capas()).value).toBe('0.010053');      // 0.25133 × 4 %
   });
   it('libras de VCI: calculadas por capa, el valor manual se conserva con aviso y «Restaurar» vuelve al cálculo', async () => {
     const user = userEvent.setup();
@@ -536,10 +567,10 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user, 'COEXAZUL');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo('Libras de VCI de la capa interior').value).toBe('0.005239');
-    expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.002619');
-    expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
-    expect((await leerProcedencia(frameOf('Libras de VCI de la capa interior'))).texto).toContain('Calculado por el sistema');
+    expect(campo('Libras de VCI de la capa interior', capas()).value).toBe('0.005239');
+    expect(campo('Libras de VCI de la capa intermedia', capas()).value).toBe('0.002619');
+    expect(campo('Libras de VCI de la capa exterior', capas()).value).toBe('0.000000');
+    expect((await leerProcedencia(frameOf('Libras de VCI de la capa interior', capas()))).texto).toContain('Calculado por el sistema');
     // la coherencia del cálculo es del backend: la simulamos con su misma regla (id COEX_VCI:lbVciInterior)
     previewMock.mockImplementation(async (familia, datos) => ({
       html: '<p>coex</p>', familia, borrador: true, firmas: 'SIN_FIRMA', completo: true, faltantes: [], advertencias: [], pendientesEmision: [], bloqueado: null,
@@ -547,17 +578,17 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
         ? [{ id: 'COEX_VCI:lbVciInterior', codigo: 'COEX_VCI', nivel: 'CONTRADICCION', campos: ['lbVciInterior'], seccion: 'capas', mensaje: `Las libras de VCI de la capa interior (${datos.lbVciInterior}) no coinciden con el cálculo esperado (0.010053 lb = peso de la capa × 4%). Se conserva el valor capturado; usa «Restaurar» para volver al cálculo.`, origen: 'SISTEMA', afectaVistaPrevia: false, reconocible: true }]
         : []
     }));
-    fireEvent.change(campo('Libras de VCI de la capa interior'), { target: { value: '0.006' } });
-    fireEvent.change(campo('Peso (lb)'), { target: { value: '0.7540' } });
-    expect(campo('Libras de VCI de la capa interior').value).toBe('0.006');
-    expect(campo('Libras de VCI de la capa intermedia').value).toBe('0.005027');
+    fireEvent.change(campo('Libras de VCI de la capa interior', capas()), { target: { value: '0.006' } });
+    fireEvent.change(campo('Peso (lb)', medidas()), { target: { value: '0.7540' } });
+    expect(campo('Libras de VCI de la capa interior', capas()).value).toBe('0.006');
+    expect(campo('Libras de VCI de la capa intermedia', capas()).value).toBe('0.005027');
     // UNA sola incidencia, en el campo de la capa: ni alerta global ni texto en la vista previa
-    const incidencia = await within(frameOf('Libras de VCI de la capa interior')).findByTestId('incidencia', undefined, { timeout: 3000 });
+    const incidencia = await within(frameOf('Libras de VCI de la capa interior', capas())).findByTestId('incidencia', undefined, { timeout: 3000 });
     expect(incidencia).toHaveTextContent(/\(0\.006\) no coinciden con el cálculo esperado \(0\.010053 lb/);
     expect(screen.getAllByText(/no coinciden con el cálculo esperado/)).toHaveLength(1);
     expect(screen.getByTestId('resumen-CONTRADICCION')).toHaveTextContent('1 contradicción');
     await user.click(screen.getByRole('button', { name: 'Restaurar Libras de VCI de la capa interior' }));
-    expect(campo('Libras de VCI de la capa interior').value).toBe('0.010053');
+    expect(campo('Libras de VCI de la capa interior', capas()).value).toBe('0.010053');
     await waitFor(() => expect(screen.queryByText(/no coinciden con el cálculo esperado/)).not.toBeInTheDocument(), { timeout: 3000 });
     expect(screen.queryByTestId('resumen-CONTRADICCION')).not.toBeInTheDocument();
   });
@@ -566,13 +597,13 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await buscar(user);
-    expect(campo('Producto').value).toBe('Bolsa PLANA');
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Natural' }));
-    expect(campo('Producto').value).toBe('Bolsa con Fuelle');
-    fireEvent.change(campo('Producto'), { target: { value: 'Mi producto particular' } });
-    await user.click(screen.getByRole('radio', { name: 'Termoencogible' }));
-    expect(campo('Producto').value).toBe('Mi producto particular');
-    expect(campo('Descripción').value).toBe(schfpmg001().producto.Title);
+    expect(campo('Producto', datosGenerales()).value).toBe('Bolsa PLANA');
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Natural' }));
+    expect(campo('Producto', datosGenerales()).value).toBe('Bolsa con Fuelle');
+    fireEvent.change(campo('Producto', datosGenerales()), { target: { value: 'Mi producto particular' } });
+    await user.click(familia().getByRole('radio', { name: 'Termoencogible' }));
+    expect(campo('Producto', datosGenerales()).value).toBe('Mi producto particular');
+    expect(campo('Descripción', datosGenerales()).value).toBe(schfpmg001().producto.Title);
   });
   it('COEX es UNA familia con selector de variante (Azul/Verde) y tres capas con formulación fija', async () => {
     const user = userEvent.setup();
@@ -582,21 +613,21 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     await screen.findByRole('region', { name: 'Producto en BIND' });
     expect(screen.getAllByRole('radio', { name: /COEX/ })).toHaveLength(1);              // una sola opción de familia: COEX
     expect(screen.getByRole('radio', { name: 'COEX' })).toBeChecked();
-    expect(campo('Variante COEX')).toBeInTheDocument();
-    expect((await leerProcedencia(frameOf('Variante COEX'))).texto).toContain('Sugerido por el sistema');
-    expect(campo('Texto del color en el documento').value).toBe('AZUL');
+    expect(campo('Variante COEX', seccionColor())).toBeInTheDocument();
+    expect((await leerProcedencia(frameOf('Variante COEX', seccionColor()))).texto).toContain('Sugerido por el sistema');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('AZUL');
     expect(screen.queryByLabelText('Resina VCI')).not.toBeInTheDocument();                // sin concentración general de 3 %
     expect(screen.getByTestId('capa-interior')).toHaveTextContent('VCI PMG al 4%');
     expect(screen.getByTestId('capa-intermedia')).toHaveTextContent('VCI PMG al 2%');
     expect(screen.getByTestId('capa-exterior')).toHaveTextContent('SIN VCI');
-    expect(campo('Libras de VCI de la capa exterior').value).toBe('0.000000');
-    expect(campo('Peso de la capa interior (lb)').value).toBe('0.13097');
-    expect((await leerProcedencia(frameOf('Peso de la capa interior (lb)'))).texto).toContain('Calculado por el sistema');
-    expect(campo('Fuelle derecho').value).toBe('11.8');
+    expect(campo('Libras de VCI de la capa exterior', capas()).value).toBe('0.000000');
+    expect(campo('Peso de la capa interior (lb)', capas()).value).toBe('0.13097');
+    expect((await leerProcedencia(frameOf('Peso de la capa interior (lb)', capas()))).texto).toContain('Calculado por el sistema');
+    expect(campo('Fuelle derecho', medidas()).value).toBe('11.8');
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeDisabled();
     expect(screen.queryByRole('combobox', { name: /^Color/ })).not.toBeInTheDocument();  // sin selector de color libre: solo la variante
-    fireEvent.change(campo('Libras de VCI de la capa interior'), { target: { value: '' } });   // el usuario las vacía: el faltante se sigue reportando
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    fireEvent.change(campo('Libras de VCI de la capa interior', capas()), { target: { value: '' } });   // el usuario las vacía: el faltante se sigue reportando
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(screen.getByText(/Faltan datos técnicos/)).toBeInTheDocument();
     expect(screen.getByText(/Falta libras de VCI de la capa interior/i)).toBeInTheDocument();
   });
@@ -616,7 +647,7 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     expect(previewMock.mock.calls.at(-1)![1]).not.toHaveProperty('colorHex');
     await user.click(screen.getByRole('combobox', { name: /^Variante COEX/ }));
     await user.click(await screen.findByRole('option', { name: /COEX Verde/ }));
-    expect(campo('Texto del color en el documento').value).toBe('VERDE');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('VERDE');
     await waitFor(() => expect(previewMock.mock.calls.at(-1)![1]).toMatchObject({ coexVariante: 'VERDE', colorNombre: 'VERDE' }), { timeout: 3000 });
   });
 
@@ -626,8 +657,8 @@ describe('ManufacturingSpecificationPage · COEX', { timeout: 30_000 }, () => {
     renderPage();
     await buscar(user, 'COEXAZUL');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect((campo('Variante COEX')).textContent ?? '').not.toMatch(/COEX (Azul|Verde)/);
-    expect(within(frameOf('Variante COEX')).getByText('Pendiente de confirmar')).toBeInTheDocument();
+    expect((campo('Variante COEX', seccionColor())).textContent ?? '').not.toMatch(/COEX (Azul|Verde)/);
+    expect(within(frameOf('Variante COEX', seccionColor())).getByText('Pendiente de confirmar')).toBeInTheDocument();
     expect(screen.getByTestId('status-technical')).toHaveTextContent('incompletos');
   });
 });
@@ -654,7 +685,7 @@ describe('ManufacturingSpecificationPage · procedencia Title/Code', { timeout: 
     // una corrección manual reemplaza la procedencia y se puede restaurar
     await user.click(screen.getByRole('radio', { name: 'CP5000' }));
     expect(within(composicion).getByText('Editado por el usuario')).toBeInTheDocument();
-    expect(campo('Resina VCI').value).toBe('CP5000 AL 3%');            // la resina sugerida (no editada) sigue a la composición del usuario
+    expect(campo('Resina VCI', datosGenerales()).value).toBe('CP5000 AL 3%');            // la resina sugerida (no editada) sigue a la composición del usuario
     await user.click(within(composicion).getByRole('button', { name: 'Restaurar Composición' }));
     expect(screen.getByRole('radio', { name: 'PMG' })).toBeChecked();
     expect((await leerProcedencia(composicion)).fuentes).toEqual(['Inferido de Code']);
@@ -716,11 +747,11 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     renderPage();
     await buscar(user, 'PRUEBA58X43');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Plana 1' }));
     // antes de validar: el campo no se marca en rojo, pero la revisión ya lo cuenta (y el texto de BIND «no indica la unidad» no se repite como alerta)
     expect(screen.getByTestId('resumen-FALTANTES')).toBeInTheDocument();
     expect(screen.queryByText(/El título no indica la unidad de las dimensiones/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Validar especificación' }));
+    await user.click(validacion().getByRole('button', { name: 'Validar especificación' }));
     expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(1);
     expect(screen.getAllByText('La unidad dimensional no está identificada.')).toHaveLength(1);
     // el resumen coincide con las incidencias reales (errores + contradicciones + pendientes listados) y localiza el campo
@@ -732,7 +763,7 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     expect(new Set(ids).size).toBe(ids.length);
     const unidad = items.find((e) => e.getAttribute('data-incidencia-id') === 'FALTANTE:unidadDimensiones')!;
     await user.click(within(unidad).getByRole('button', { name: /^Ir a: / }));
-    await waitFor(() => expect(frameOf('Unidad de las medidas').contains(document.activeElement)).toBe(true));
+    await waitFor(() => expect(frameOf('Unidad de las medidas', medidas()).contains(document.activeElement)).toBe(true));
     // corregir el dato elimina la incidencia en todos los lugares
     await user.click(screen.getByRole('combobox', { name: /Unidad de las medidas/ }));
     await user.click(await screen.findByRole('option', { name: /Pulgadas/ }));
@@ -782,7 +813,7 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     await buscar(user);
     await user.click(await screen.findByRole('button', { name: 'Confirmar familia' }));
     await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1), { timeout: 3000 });
-    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '14' } });
     await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
     await act(async () => {
       resolverViejo({ ...completa, completo: false, incidencias: [{ id: 'COLOR_AZUL:colorPreset', codigo: 'COLOR_AZUL', nivel: 'CONTRADICCION', campos: ['colorPreset'], seccion: 'color', mensaje: 'MENSAJE OBSOLETO', origen: 'TITLE', afectaVistaPrevia: false, reconocible: true }] });
@@ -822,7 +853,7 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     expect(screen.getByTestId('resumen-CONTRADICCION')).toBeInTheDocument();
     expect(screen.queryByTestId('resumen-vacio')).not.toBeInTheDocument();
     // un cambio posterior vuelve a «Revisando…» y retira los avisos de la solicitud anterior
-    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '14' } });
     expect(screen.getByTestId('resumen-revisando')).toBeInTheDocument();
     expect(screen.queryByText('COLOR VIGENTE')).not.toBeInTheDocument();
   });
@@ -845,15 +876,15 @@ describe('ManufacturingSpecificationPage · incidencias unificadas', { timeout: 
     renderPage();
     await buscar(user, 'PRUEBA58X43');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Plana 1' }));
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Plana 1' }));
     expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(0);                                   // oculto hasta validar o navegar
     await user.click(screen.getByRole('button', { name: 'Ver detalle' }));
     await user.click(screen.getByRole('button', { name: /^Ir a: .*unidad/i }));
     await waitFor(() => expect(deId('FALTANTE:unidadDimensiones')).toHaveLength(1));
     const mensaje = deId('FALTANTE:unidadDimensiones')[0] as HTMLElement;
-    await waitFor(() => expect(frameOf('Unidad de las medidas').contains(document.activeElement)).toBe(true));
+    await waitFor(() => expect(frameOf('Unidad de las medidas', medidas()).contains(document.activeElement)).toBe(true));
     expect((document.activeElement as HTMLElement).getAttribute('aria-describedby') ?? '').toContain(mensaje.id);
-    expect(frameOf('Unidad de las medidas').contains(mensaje)).toBe(true);
+    expect(frameOf('Unidad de las medidas', medidas()).contains(mensaje)).toBe(true);
     // solo se reveló el aviso al que se navegó: los demás datos faltantes siguen ocultos
     expect(screen.queryAllByTestId('incidencia').filter((e) => e.getAttribute('data-incidencia-id')?.startsWith('FALTANTE:') && e !== mensaje)).toHaveLength(0);
   });
@@ -870,15 +901,15 @@ describe('ManufacturingSpecificationPage · Bolsa Natural sugiere NATURAL', { ti
     renderPage();
     await buscar(user, 'FUELLE61');
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo('Texto del color en el documento').value).toMatch(/DAUBERT AZUL/);
+    expect(campo('Texto del color en el documento', seccionColor()).value).toMatch(/DAUBERT AZUL/);
     await elegirFamilia(user, 'Bolsa Natural');
-    expect(campo('Texto del color en el documento').value).toBe('NATURAL');
-    expect(campo('Concentración del color (%)').value).toBe('');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('NATURAL');
+    expect(campo('Concentración del color (%)', seccionColor()).value).toBe('');
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(255, 242, 204)' });
     await waitFor(() => expect(screen.getByTitle('Vista previa de la hoja Bolsa Natural').getAttribute('srcdoc')).toContain('color=NATURAL|#FFF2CC'), { timeout: 3000 });
     expect(ultimoPreview()).toMatchObject({ colorNombre: 'NATURAL', colorHex: '#FFF2CC', composicion: 'NAT' });
     await elegirFamilia(user, 'Bolsa Fuelle');                                                      // y de regreso: el azul y su 2 % vuelven solos
-    expect(campo('Texto del color en el documento').value).toMatch(/DAUBERT AZUL AL 2%/);
+    expect(campo('Texto del color en el documento', seccionColor()).value).toMatch(/DAUBERT AZUL AL 2%/);
   });
 
   it('edición manual y restauración: el color elegido se respeta al cambiar de familia y «Restaurar» vuelve a NATURAL', async () => {
@@ -890,13 +921,13 @@ describe('ManufacturingSpecificationPage · Bolsa Natural sugiere NATURAL', { ti
     await elegirFamilia(user, 'Bolsa Natural');
     await user.click(screen.getByRole('combobox', { name: /^Color/ }));
     await user.click(await screen.findByRole('option', { name: /^Verde/ }));
-    expect(campo('Texto del color en el documento').value).toBe('VERDE');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('VERDE');
     await elegirFamilia(user, 'Bolsa Fuelle');
-    expect(campo('Texto del color en el documento').value).toBe('VERDE');                           // no se sobrescribe
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('VERDE');                           // no se sobrescribe
     await elegirFamilia(user, 'Bolsa Natural');
     await user.click(within(marcoColor()).getByRole('button', { name: 'Restaurar Color' }));
-    expect(campo('Texto del color en el documento').value).toBe('NATURAL');
-    expect(campo('Concentración del color (%)').value).toBe('');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('NATURAL');
+    expect(campo('Concentración del color (%)', seccionColor()).value).toBe('');
   });
 
   it('contradicción con BIND: el aviso del backend (BIND indica otro color) se muestra una vez y no se oculta', async () => {
@@ -943,13 +974,13 @@ describe('ManufacturingSpecificationPage · Novedades del catálogo de BIND', { 
     expect(campo('Código DCMX a buscar').value).toBe('SCHFPMG001');
     expect(screen.getByTestId('family-chip')).toHaveTextContent('Sugerida por el sistema (provisional)');      // la familia se sigue confirmando
     expect(screen.getByRole('button', { name: 'Confirmar familia' })).toBeInTheDocument();
-    expect(campo('Código DCMX').value).toBe('SCHFPMG001');
-    expect(campo('Ancho').value).toBe('13');                                                                    // mismas interpretaciones que la búsqueda manual
+    expect(campo('Código DCMX', datosGenerales()).value).toBe('SCHFPMG001');
+    expect(campo('Ancho', medidas()).value).toBe('13');                                                                    // mismas interpretaciones que la búsqueda manual
     await waitFor(() => expect(previewMock).toHaveBeenCalled(), { timeout: 3000 });
     expect(screen.getByText('Firmas: SIN FIRMA')).toBeInTheDocument();
     expect(screen.getAllByText('BORRADOR · SIN APROBAR').length).toBeGreaterThan(0);
-    fireEvent.change(campo('Ancho'), { target: { value: '14' } });                                              // sigue siendo editable
-    expect(campo('Ancho').value).toBe('14');
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '14' } });                                              // sigue siendo editable
+    expect(campo('Ancho', medidas()).value).toBe('14');
   });
 
   it('cambio de producto durante una solicitud: la respuesta tardía del primero no sobrescribe al seleccionado', async () => {
@@ -965,9 +996,9 @@ describe('ManufacturingSpecificationPage · Novedades del catálogo de BIND', { 
     await abrirNovedades(user);                                                                                  // el usuario cambia de opinión
     await user.click(await screen.findByRole('button', { name: 'Preparar hoja de FUELLE61' }));
     await screen.findByRole('region', { name: 'Producto en BIND' });
-    expect(campo('Código DCMX').value).toBe('FUELLE61');
+    expect(campo('Código DCMX', datosGenerales()).value).toBe('FUELLE61');
     await act(async () => { resolverPrimero(schfpmg001()); await Promise.resolve(); });                          // llega tarde
-    expect(campo('Código DCMX').value).toBe('FUELLE61');
+    expect(campo('Código DCMX', datosGenerales()).value).toBe('FUELLE61');
     expect(campo('Código DCMX a buscar').value).toBe('FUELLE61');
   });
 
@@ -1034,7 +1065,7 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
   beforeEach(() => { window.localStorage.clear(); });
   afterEach(() => { window.localStorage.clear(); });
 
-  const selectorColor = () => screen.getByRole('combobox', { name: /^Color/ });
+  const selectorColor = () => seccionColor().getByRole('combobox', { name: /^Color/ });
   const ultimoPreview = () => previewMock.mock.calls.at(-1)![1];
   async function abrirOtro(user: ReturnType<typeof userEvent.setup>) {
     await user.click(selectorColor());
@@ -1042,9 +1073,9 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
   }
   async function guardarPersonalizado(user: ReturnType<typeof userEvent.setup>, nombre = NOMBRE, hex = HEX) {
     await abrirOtro(user);
-    fireEvent.change(campo('Nombre del color'), { target: { value: nombre } });
-    fireEvent.change(campo('Código HEX'), { target: { value: hex } });
-    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+    fireEvent.change(campo('Nombre del color', seccionColor()), { target: { value: nombre } });
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: hex } });
+    await user.click(editorColor().getByRole('button', { name: 'Guardar color' }));
   }
   async function cargarSchf(user: ReturnType<typeof userEvent.setup>, codigo = 'SCHFPMG001') {
     await buscar(user, codigo);
@@ -1063,12 +1094,12 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     expect(within(editor).getByLabelText('Código HEX')).toBeInTheDocument();
     expect(within(editor).getByRole('img', { name: 'Vista previa del color' })).toBeInTheDocument();
     expect(within(editor).getByRole('button', { name: 'Guardar color' })).toBeInTheDocument();
-    expect(campo('Nombre del color')).toBeInTheDocument();
+    expect(campo('Nombre del color', seccionColor())).toBeInTheDocument();
     expect(within(editor).getByText(/se guardan solo en este navegador y no se comparten entre usuarios/)).toBeInTheDocument();
     // la vista previa del color sigue lo que se escribe y se elige
-    fireEvent.change(campo('Nombre del color'), { target: { value: NOMBRE } });
+    fireEvent.change(campo('Nombre del color', seccionColor()), { target: { value: NOMBRE } });
     fireEvent.change(within(editor).getByLabelText('Selector visual de color'), { target: { value: '#3778c8' } });
-    expect(campo('Código HEX').value).toBe(HEX);
+    expect(campo('Código HEX', editorColor()).value).toBe(HEX);
     expect(screen.getByTestId('color-personalizado-vista')).toHaveTextContent(`${NOMBRE} · ${HEX}`);
     expect(screen.getByTestId('color-personalizado-muestra')).toHaveStyle({ backgroundColor: 'rgb(55, 120, 200)' });
   });
@@ -1079,17 +1110,17 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     renderPage();
     await cargarSchf(user);
     await abrirOtro(user);
-    fireEvent.change(campo('Nombre del color'), { target: { value: '' } });
-    fireEvent.change(campo('Código HEX'), { target: { value: HEX } });
-    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+    fireEvent.change(campo('Nombre del color', seccionColor()), { target: { value: '' } });
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: HEX } });
+    await user.click(editorColor().getByRole('button', { name: 'Guardar color' }));
     expect(screen.getByTestId('color-personalizado-error')).toHaveTextContent('Escribe el nombre del color.');
-    fireEvent.change(campo('Nombre del color'), { target: { value: NOMBRE } });
-    fireEvent.change(campo('Código HEX'), { target: { value: '3778' } });
-    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+    fireEvent.change(campo('Nombre del color', seccionColor()), { target: { value: NOMBRE } });
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: '3778' } });
+    await user.click(editorColor().getByRole('button', { name: 'Guardar color' }));
     expect(screen.getByTestId('color-personalizado-error')).toHaveTextContent(/formato #RRGGBB/);
     expect(window.localStorage.getItem(KEY)).toBeNull();
     expect(screen.queryByTestId('color-personalizados')).not.toBeInTheDocument();
-    fireEvent.change(campo('Código HEX'), { target: { value: HEX } });                              // corregir limpia el mensaje
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: HEX } });                              // corregir limpia el mensaje
     expect(screen.queryByTestId('color-personalizado-error')).not.toBeInTheDocument();
   });
 
@@ -1098,17 +1129,17 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     lookupMock.mockResolvedValue(schfpmg001());
     renderPage();
     await cargarSchf(user);
-    expect(campo('Concentración del color (%)').value).toBe('2');
-    const resina = campo('Resina VCI').value;
+    expect(campo('Concentración del color (%)', seccionColor()).value).toBe('2');
+    const resina = campo('Resina VCI', datosGenerales()).value;
     await guardarPersonalizado(user);
     expect(screen.getByTestId('color-guardado')).toHaveTextContent(`Color «${NOMBRE}» guardado en este navegador y aplicado a la hoja.`);
     expect(selectorColor()).toHaveTextContent(NOMBRE);
     expect(screen.queryByTestId('color-personalizado-editor')).not.toBeInTheDocument();             // ya está seleccionado: el editor se oculta
-    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);                                            // (la etiqueta vuelve a la normal)
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe(NOMBRE);                                            // (la etiqueta vuelve a la normal)
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(55, 120, 200)' });
     await waitFor(() => expect(ultimoPreview()).toMatchObject({ colorNombre: NOMBRE, colorHex: HEX }), { timeout: 3000 });
-    expect(campo('Concentración del color (%)').value).toBe('2');
-    expect(campo('Resina VCI').value).toBe(resina);
+    expect(campo('Concentración del color (%)', seccionColor()).value).toBe('2');
+    expect(campo('Resina VCI', datosGenerales()).value).toBe(resina);
     expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual({ version: 1, colores: [{ nombre: NOMBRE, hex: HEX }] });
     // la opción aparece en el selector y los predeterminados siguen intactos
     await user.click(selectorColor());
@@ -1117,8 +1148,8 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     expect(screen.getByRole('option', { name: /^Verde/ })).toBeInTheDocument();
     await user.keyboard('{Escape}');
     // editar otro campo conserva el color
-    fireEvent.change(campo('Ancho'), { target: { value: '14' } });
-    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);
+    fireEvent.change(campo('Ancho', medidas()), { target: { value: '14' } });
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe(NOMBRE);
     await waitFor(() => expect(ultimoPreview()).toMatchObject({ ancho: '14', colorNombre: NOMBRE, colorHex: HEX }), { timeout: 3000 });
   });
 
@@ -1135,11 +1166,11 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     lookupMock.mockResolvedValue(bolsaFuelle());
     renderPage();
     await cargarSchf(user, 'FUELLE61');
-    expect(campo('Texto del color en el documento').value).toMatch(/DAUBERT AZUL/);                  // otro producto: sugerencia normal
+    expect(campo('Texto del color en el documento', seccionColor()).value).toMatch(/DAUBERT AZUL/);                  // otro producto: sugerencia normal
     expect(screen.getByTestId('color-personalizados')).toHaveTextContent(/Colores personalizados \(1\/20\).*solo en este navegador/);
     await user.click(selectorColor());
     await user.click(await screen.findByRole('option', { name: `${NOMBRE} (${HEX}) · personalizado` }));
-    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe(NOMBRE);
     await waitFor(() => expect(ultimoPreview()).toMatchObject({ colorNombre: NOMBRE, colorHex: HEX }), { timeout: 3000 });
     // eliminar del catálogo local no toca los predeterminados
     await user.click(screen.getByRole('img', { name: `Eliminar ${NOMBRE} del catálogo local` }));
@@ -1152,9 +1183,9 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
   });
   async function guardarPersonalizadoOtraVez(user: ReturnType<typeof userEvent.setup>) {
     await abrirOtro(user);
-    fireEvent.change(campo('Nombre del color'), { target: { value: NOMBRE.toLowerCase() } });
-    fireEvent.change(campo('Código HEX'), { target: { value: HEX.toLowerCase() } });
-    await user.click(screen.getByRole('button', { name: 'Guardar color' }));
+    fireEvent.change(campo('Nombre del color', seccionColor()), { target: { value: NOMBRE.toLowerCase() } });
+    fireEvent.change(campo('Código HEX', editorColor()), { target: { value: HEX.toLowerCase() } });
+    await user.click(editorColor().getByRole('button', { name: 'Guardar color' }));
   }
 
   it('edición manual y restauración: modificar el nombre o el HEX lo deja como edición del usuario (vuelve el editor) y «Restaurar» devuelve la sugerencia de BIND o de la familia', async () => {
@@ -1163,13 +1194,13 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     renderPage();
     await cargarSchf(user);
     await guardarPersonalizado(user);
-    fireEvent.change(campo('Texto del color en el documento'), { target: { value: `${NOMBRE} 2` } });                  // edición manual posterior
+    fireEvent.change(campo('Texto del color en el documento', seccionColor()), { target: { value: `${NOMBRE} 2` } });                  // edición manual posterior
     expect(screen.getByTestId('color-personalizado-editor')).toBeInTheDocument();
-    expect(campo('Nombre del color').value).toBe(`${NOMBRE} 2`);
+    expect(campo('Nombre del color', seccionColor()).value).toBe(`${NOMBRE} 2`);
     await user.click(within(selectorColor().closest('div.MuiBox-root') as HTMLElement).getByRole('button', { name: 'Restaurar Color' }));
-    expect(campo('Texto del color en el documento').value).toBe('DAUBERT AZUL AL 2%');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('DAUBERT AZUL AL 2%');
     expect(screen.getByTestId('color-swatch')).toHaveStyle({ backgroundColor: 'rgb(83, 141, 213)' });
-    expect(campo('Concentración del color (%)').value).toBe('2');
+    expect(campo('Concentración del color (%)', seccionColor()).value).toBe('2');
     await waitFor(() => expect(ultimoPreview()).toMatchObject({ colorNombre: 'DAUBERT AZUL AL 2%', colorHex: '#538DD5' }), { timeout: 3000 });
   });
 
@@ -1179,23 +1210,39 @@ describe('ManufacturingSpecificationPage · colores personalizados', { timeout: 
     renderPage();
     await cargarSchf(user, 'FUELLE61');
     await guardarPersonalizado(user);
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Natural' }));
-    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);                             // una elección del usuario no se sobrescribe
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Fuelle' }));
-    expect(campo('Texto del color en el documento').value).toBe(NOMBRE);
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Natural' }));
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe(NOMBRE);                             // una elección del usuario no se sobrescribe
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Fuelle' }));
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe(NOMBRE);
+  });
+
+  it('cambio de familia: el color personalizado se conserva; Bolsa Natural sigue sugiriendo NATURAL cuando no hay una elección del usuario; COEX conserva sus variantes · sugerencia sin elección previa', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    renderPage();
+    await cargarSchf(user, 'FUELLE61');
+    await guardarPersonalizado(user);
     // otro producto sin color elegido: Bolsa Natural sugiere NATURAL (el catálogo local no interviene)
     lookupMock.mockResolvedValue(bolsaFuelle());
     await buscar(user, 'FUELLE61');
     await screen.findByRole('region', { name: 'Color' });
-    await user.click(screen.getByRole('radio', { name: 'Bolsa Natural' }));
-    expect(campo('Texto del color en el documento').value).toBe('NATURAL');
+    await user.click(familia().getByRole('radio', { name: 'Bolsa Natural' }));
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('NATURAL');
+  });
+
+  it('cambio de familia: el color personalizado se conserva; Bolsa Natural sigue sugiriendo NATURAL cuando no hay una elección del usuario; COEX conserva sus variantes · variantes COEX con catálogo local', async () => {
+    const user = userEvent.setup();
+    lookupMock.mockResolvedValue(bolsaFuelle());
+    renderPage();
+    await cargarSchf(user, 'FUELLE61');
+    await guardarPersonalizado(user);
     // COEX: variantes aprobadas, sin selector de color personalizado
     lookupMock.mockResolvedValue(coexAzul());
     await buscar(user, 'COEXAZUL');
     await screen.findByRole('region', { name: 'Capas COEX' });
     expect(screen.getByRole('combobox', { name: 'Variante COEX' })).toHaveTextContent('COEX Azul');
     expect(screen.queryByRole('combobox', { name: /^Color$/ })).not.toBeInTheDocument();
-    expect(campo('Texto del color en el documento').value).toBe('AZUL');
+    expect(campo('Texto del color en el documento', seccionColor()).value).toBe('AZUL');
   });
 
   it('un catálogo local alterado o dañado no rompe el módulo ni deja pasar valores inválidos', async () => {
@@ -1229,8 +1276,8 @@ describe('ManufacturingSpecificationPage · alta rápida de cliente', { timeout:
     const dialogo = await screen.findByRole('dialog', { name: 'Registrar cliente' });
     expect(within(dialogo).getByLabelText(/Nombre comercial/)).toHaveValue('Cliente Nuevo');          // recuperado, no se vuelve a capturar
     await user.click(within(dialogo).getByRole('button', { name: 'Registrar cliente' }));
-    await waitFor(() => expect(campo(CLIENTE).value).toBe('Cliente Nuevo'));
-    expect(campo(CLIENTE)).toBe(entrada);                                                                // el mismo campo: sin recargar la página
+    await waitFor(() => expect(campo(CLIENTE, datosGenerales()).value).toBe('Cliente Nuevo'));
+    expect(campo(CLIENTE, datosGenerales())).toBe(entrada);                                                                // el mismo campo: sin recargar la página
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(createClient).toHaveBeenCalledWith({ commercialName: 'Cliente Nuevo', fiscal: null, notes: null });
     expect(await screen.findByTestId('alta-rapida-aviso')).toHaveTextContent('Cliente «Cliente Nuevo» registrado y seleccionado.');
@@ -1261,7 +1308,7 @@ describe('ManufacturingSpecificationPage · alta rápida de cliente', { timeout:
     await waitFor(() => expect(listClientsMock).toHaveBeenCalled());
     await esperarCortoAlta();
     expect(screen.queryByTestId('alta-rapida-oferta')).toBeNull();
-    expect(campo(CLIENTE).value).toBe('Cliente Nuevo');
+    expect(campo(CLIENTE, datosGenerales()).value).toBe('Cliente Nuevo');
     expect(createClient).not.toHaveBeenCalled();
   });
 });

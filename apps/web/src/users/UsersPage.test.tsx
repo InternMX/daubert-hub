@@ -1,3 +1,4 @@
+import { TestAuthProvider } from '../test/authTestUtils';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +13,7 @@ vi.mock('../services/users', async (importOriginal) => ({
 const listUsersMock = vi.mocked(listUsers);
 
 function renderPage() {
-  return render(<MemoryRouter initialEntries={['/users']}><Routes><Route path="/users" element={<UsersPage />} /></Routes></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={['/users']}><TestAuthProvider><Routes><Route path="/users" element={<UsersPage />} /></Routes></TestAuthProvider></MemoryRouter>);
 }
 
 afterEach(() => vi.clearAllMocks());

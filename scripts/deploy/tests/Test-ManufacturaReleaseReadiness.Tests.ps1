@@ -22,12 +22,13 @@ function New-ReadyState {
             'prod.env'      = "DB_NAME=daubert_global`nDB_PASSWORD=no-debe-imprimirse`nMANUFACTURING_ENABLED=`nMANUFACTURING_EMISSION_ENV="
             'evidence.txt'  = $script:Markers
             'default.conf'  = $script:NginxOk
-            'imagenes.json' = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":false,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
-            'imagenes-ui.json' = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
+            'imagenes.json' = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":false,"imagenes":[{"servicio":"api","tag":"daubert-hub-api:release-abc","imageId":"sha256:aaa"},{"servicio":"web","tag":"daubert-hub-web:release-abc","imageId":"sha256:bbb"}]}'
+            'imagenes-ui.json' = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","tag":"daubert-hub-api:release-abc","imageId":"sha256:aaa"},{"servicio":"web","tag":"daubert-hub-web:release-abc","imageId":"sha256:bbb"}]}'
             'prod-on.env'   = "DB_NAME=daubert_global`nDB_PASSWORD=no-debe-imprimirse`nMANUFACTURING_ENABLED=true`nMANUFACTURING_EMISSION_ENV=PRODUCCION"
             'cierre-mf.conf' = $script:ClosureMf
         }
         Images   = @{ 'x-api-1' = 'sha256:aaa'; 'x-web-1' = 'sha256:bbb' }
+        TagIds   = @{ 'daubert-hub-api:release-abc' = @{ Id = 'sha256:aaa'; IdAmd64 = 'sha256:aaa' }; 'daubert-hub-web:release-abc' = @{ Id = 'sha256:bbb'; IdAmd64 = 'sha256:bbb' } }
         Health   = [pscustomobject]@{ status = 'ok'; database = 'connected'; commit = '16153a8' }
     }
 }
@@ -35,6 +36,7 @@ function Set-ReadinessMocks {
     Mock Invoke-ReadinessSql { if ($script:State.SqlFails) { throw 'psql failed (exit 2)' }; @($script:State.Sql.Keys | ForEach-Object { $_ + '=' + $script:State.Sql[$_] }) }
     Mock Read-ReadinessText { if ($script:State.Files.ContainsKey($Path)) { $script:State.Files[$Path] } else { $null } }
     Mock Invoke-ReadinessHealth { if ($null -eq $script:State.Health) { throw 'down' }; $script:State.Health }
+    Mock Get-ReadinessTagIds { if ($script:State.TagIds.ContainsKey($Tag)) { $script:State.TagIds[$Tag] } else { @{ Id = ''; IdAmd64 = '' } } }
     Mock Get-ReadinessContainerImage { if ($script:State.Images.ContainsKey($Name)) { $script:State.Images[$Name] } else { '' } }
     Mock Get-ReadinessFileSha256 { if ($script:State.Files.ContainsKey($Path)) { 'sha-' + $Path } else { '' } }
     Mock Write-ReadinessEvidence { $script:EvidenceLine = $Line }
@@ -234,6 +236,30 @@ Describe 'Readiness de Manufactura: cualquier fallo bloquea (exit 1 + MANUFACTUR
         (Get-Out) | Should Match 'FAIL imagen en ejecucion de no-existe-api-1'
     }
 
+    It 'imagenes: etiqueta movida a otra imagen, manifiesto sin etiqueta o digest de plataforma ilegible: FAIL (mismo metodo que Deploy)' {
+        $sha = Get-TextSha256 $script:State.Files['imagenes.json']
+        $script:State.TagIds['daubert-hub-web:release-abc'] = @{ Id = 'sha256:movida'; IdAmd64 = 'sha256:bbb' }
+        (Invoke-Readiness @{ ImagesManifest = 'imagenes.json'; ImagesManifestSha256 = $sha; Containers = @('x-api-1', 'x-web-1') }) | Should Be 1
+        (Get-Out) | Should Match 'FAIL etiqueta de x-web-1 = imagen validada del manifiesto'
+        $script:State.TagIds['daubert-hub-web:release-abc'] = @{ Id = 'sha256:bbb'; IdAmd64 = '' }
+        (Invoke-Readiness @{ ImagesManifest = 'imagenes.json'; ImagesManifestSha256 = $sha; Containers = @('x-api-1', 'x-web-1') }) | Should Be 1
+        (Get-Out) | Should Match 'FAIL imagen en ejecucion de x-web-1 = etiqueta validada'
+        $script:State.TagIds['daubert-hub-web:release-abc'] = @{ Id = 'sha256:bbb'; IdAmd64 = 'sha256:bbb' }
+        $script:State.Files['sin-tag.json'] = '{"formato":"1","commit":"abc","interfazManufacturaCompilada":false,"imagenes":[{"servicio":"api","tag":"daubert-hub-api:release-abc","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
+        (Invoke-Readiness @{ ImagesManifest = 'sin-tag.json'; ImagesManifestSha256 = (Get-TextSha256 $script:State.Files['sin-tag.json']); Containers = @('x-api-1', 'x-web-1') }) | Should Be 1
+        (Get-Out) | Should Match 'FAIL etiqueta de x-web-1 = imagen validada del manifiesto'
+    }
+
+    It 'imagenes: el .Image del contenedor (indice de containerd) ya no se compara con imageId' {
+        $sha = Get-TextSha256 $script:State.Files['imagenes.json']
+        # The running digest is the platform manifest (differs from the manifest imageId, an index id under containerd); it must match the tag's linux/amd64 Id.
+        $script:State.Images['x-web-1'] = 'sha256:manifiesto-web'
+        $script:State.TagIds['daubert-hub-web:release-abc'] = @{ Id = 'sha256:bbb'; IdAmd64 = 'sha256:manifiesto-web' }
+        (Invoke-Readiness @{ ImagesManifest = 'imagenes.json'; ImagesManifestSha256 = $sha; Containers = @('x-api-1', 'x-web-1') })
+        (Get-Out) | Should Match 'PASS imagen en ejecucion de x-web-1 = etiqueta validada'
+        (Get-Out) | Should Match 'PASS etiqueta de x-web-1 = imagen validada del manifiesto'
+    }
+
     It 'nginx externo sin la ruta de firmas, o con el limite ampliado en mas rutas: FAIL' {
         $script:State.Files['default.conf'] = "server { location ^~ /api/ { proxy_pass http://api:3000; } }"
         (Invoke-Readiness) | Should Be 1
@@ -404,7 +430,7 @@ Describe 'H2: solo un readiness COMPLETO (perfil completo-v1) produce evidencia 
     It 'manifiesto incompleto o no verificable: FAIL' {
         $variants = @(
             '{"formato":"1","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"}]}',
-            '{"interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}',
+            '{"interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","tag":"daubert-hub-api:release-abc","imageId":"sha256:aaa"},{"servicio":"web","tag":"daubert-hub-web:release-abc","imageId":"sha256:bbb"}]}',
             '{"formato":"1","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":""}]}',
             '{"formato":"1","interfazManufacturaCompilada":true,"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"},{"servicio":"web","imageId":"sha256:bbb"}]}',
             '{"formato":"1","interfazManufacturaCompilada":true}'
@@ -431,7 +457,7 @@ Describe 'H2: solo un readiness COMPLETO (perfil completo-v1) produce evidencia 
             foreach ($ph in 'PreDeploy', 'PreEnable') {
                 $script:State = New-ReadyState
                 $f = $(if ($ph -eq 'PreEnable') { 'imagenes-ui.json' } else { 'imagenes.json' })
-                $script:State.Files[$f] = '{"formato":"1","commit":"abc",' + $ui + '"imagenes":[{"servicio":"api","imageId":"sha256:aaa"},{"servicio":"web","imageId":"sha256:bbb"}]}'
+                $script:State.Files[$f] = '{"formato":"1","commit":"abc",' + $ui + '"imagenes":[{"servicio":"api","tag":"daubert-hub-api:release-abc","imageId":"sha256:aaa"},{"servicio":"web","tag":"daubert-hub-web:release-abc","imageId":"sha256:bbb"}]}'
                 (Invoke-Readiness (Get-CompleteArgs $ph)) | Should Be 1
                 (Get-Out) | Should Match 'FAIL manifiesto de imagenes: interfazManufacturaCompilada verificable'
                 $script:EvidenceLine | Should Not Match 'READINESS_PASS'
@@ -482,5 +508,35 @@ Describe 'H2: solo un readiness COMPLETO (perfil completo-v1) produce evidencia 
         $fn = $script:DeployAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-ManufacturingReadinessEvidence' }, $true).Extent.Text
         $fn.Contains("`$groups = '" + ($script:ReadinessGroups -join ',') + "'") | Should Be $true
         $fn.Contains("`$profileName = '" + $script:ReadinessProfile + "'") | Should Be $true
+    }
+}
+
+Describe 'Readiness PreEnable con overlay de activacion (base sin habilitar + overlay canonico)' {
+    BeforeEach { $script:SavedDb = $env:PGDATABASE; $env:PGDATABASE = 'daubert_global'; $script:State = New-ReadyState; Set-ReadinessMocks
+        $script:Ov = Join-Path $TestDrive 'manufactura.env'; [IO.File]::WriteAllBytes($script:Ov, [Text.Encoding]::ASCII.GetBytes("MANUFACTURING_ENABLED=true`nMANUFACTURING_EMISSION_ENV=PRODUCCION`n"))
+        $script:State.Files['prod-false.env'] = "DB_NAME=daubert_global`nDB_PASSWORD=no-debe-imprimirse`nMANUFACTURING_ENABLED=false`nMANUFACTURING_EMISSION_ENV=" }
+    AfterEach { $env:PGDATABASE = $script:SavedDb }
+    It 'base con ENABLED vacio + overlay: PASS completo' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod.env'; EnvOverlay = $script:Ov })) | Should Be 0
+        $script:EvidenceLine | Should Match '^MANUFACTURA_READINESS_PASS phase=PreEnable perfil=completo-v1 '
+        (Get-Out) | Should Not Match 'no-debe-imprimirse'
+    }
+    It 'base con ENABLED=false + overlay: PASS completo (no hay que editar el archivo productivo)' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod-false.env'; EnvOverlay = $script:Ov })) | Should Be 0
+    }
+    It 'overlay no canonico: FAIL' {
+        [IO.File]::WriteAllBytes($script:Ov, [Text.Encoding]::ASCII.GetBytes("MANUFACTURING_ENABLED=true`r`nMANUFACTURING_EMISSION_ENV=PRODUCCION`r`n"))
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod.env'; EnvOverlay = $script:Ov })) | Should Be 1
+        (Get-Out) | Should Match 'FAIL configuracion: base \+ overlay'
+    }
+    It 'overlay inexistente: FAIL' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod.env'; EnvOverlay = (Join-Path $TestDrive 'no-existe.env') })) | Should Be 1
+    }
+    It 'base que ya habilita + overlay: FAIL' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod-on.env'; EnvOverlay = $script:Ov })) | Should Be 1
+        (Get-Out) | Should Match 'BASE_HABILITA'
+    }
+    It 'sin overlay y base apagada: PreEnable no es completo (PARTIAL)' {
+        (Invoke-Readiness (Get-CompleteArgs 'PreEnable' @{ EnvFile = 'prod.env' })) | Should Be 2
     }
 }
