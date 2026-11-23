@@ -2,6 +2,7 @@ import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, 
 import { useState, type FormEvent } from 'react';
 import { reprocessCaterpillarExecution, type CaterpillarExecutionOutcome, type CaterpillarReprocessResult } from '../services/caterpillarRemissions';
 import { caterpillarOutcomeLabel, caterpillarReprocessErrorMessage } from './caterpillarPresentation';
+import { CaterpillarFolioRecoveryPanel } from './CaterpillarFolioRecoveryPanel';
 
 const REASON_MAX_LENGTH = 500;
 
@@ -95,6 +96,7 @@ function CaterpillarReprocessForm({ open, executionId, outcome, sourceFilename, 
           <Button type="submit" variant="contained" disabled={!canSubmit}>{saving ? 'Reprocesando...' : 'Reprocesar'}</Button>
         </DialogActions>
       </Box>
+      {import.meta.env.VITE_CAT_FOLIO_RECOVERY_TEST_ENABLED === 'true' && <DialogContent dividers><CaterpillarFolioRecoveryPanel executionId={executionId} /></DialogContent>}
     </Dialog>
   );
 }
