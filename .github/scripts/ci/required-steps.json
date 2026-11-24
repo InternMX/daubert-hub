@@ -1,0 +1,10 @@
+{
+  "validate": {
+    "docs": ["verify-scope", "docs-checks"],
+    "full": ["verify-scope", "docs-checks", "install", "typecheck", "lint", "build", "dev-guard-tests", "release-classifier-tests", "ci-tooling-install", "ci-policy-tests", "api-tests", "web-tests"]
+  },
+  "release-plan": {
+    "docs": ["verify-scope"],
+    "full": ["verify-scope", "pester"]
+  }
+}
