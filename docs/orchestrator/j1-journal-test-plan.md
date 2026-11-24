@@ -1,7 +1,7 @@
 # Plan de pruebas J1 · Journal en Windows con Node
 
-- **Status:** Propuesto, revisión 1.1. No implementado.
-- **Fecha:** 2026-11-24 (1.0); 2026-11-24 (1.1: ajustes A1–A8 aprobados por el operador).
+- **Status:** Propuesto, revisión 1.2. En prueba técnica (no aceptado).
+- **Fecha:** 2026-11-24 (1.0); 2026-11-24 (1.1: ajustes A1–A8 aprobados por el operador); 2026-11-24 (1.2: `lastRecordedSeq` y criterios de P13a/P14, aprobados por el operador).
 - Decide si DF-04 de [ADR-006](../decisions/ADR-006-update-orchestrator-arquitectura.md) pasa de *condicionada* a *aceptada*. Las garantías y límites que este plan debe confirmar están en [ADR-006 § Garantías y límites del journal](../decisions/ADR-006-update-orchestrator-arquitectura.md#garantías-y-límites-del-journal).
 - **Coherencia:** la regla de cola reparable de §3.4 coincide con el punto 4 de las garantías de ADR-006 (alineado en la revisión 1.1).
 
@@ -103,7 +103,9 @@ El orden de adquisición entre ambos es una decisión del motor, fuera de J1.
    - una línea final duplicada;
    - bytes no NUL después de una región NUL;
    - registros válidos después de uno inválido.
-4. El resultado de la apertura siempre declara `lastConfirmedSeq` y `tailEvidence: "clean" | "torn" | "corrupt"`. **Un prefijo limpio no se presenta como prueba de que no se perdió nada** (ver P14).
+4. El resultado de la apertura siempre declara `lastRecordedSeq` (el `seq` del último registro completo y válido encontrado en el journal) y `tailEvidence: "clean" | "torn" | "corrupt"`. **Un prefijo limpio no se presenta como prueba de que no se perdió nada** (ver P14).
+5. **La recuperación no puede saber qué registros fueron confirmados.** Que `fsyncSync` retornara al proceso original no deja rastro distinguible en disco: un registro escrito cuyo fsync no llegó a retornar puede sobrevivir a una caída y ser idéntico byte a byte a uno confirmado. Por eso la apertura informa lo **registrado** (`lastRecordedSeq`), nunca lo **confirmado**; la confirmación solo existe en tiempo de ejecución, en el proceso que recibió el retorno de `fsyncSync`.
+6. **Un `Intent` sin su `Outcome` al final del journal** (o sin `Outcome` posterior en cualquier punto) significa que el efecto pudo ejecutarse o no: la apertura lo marca como `effectUnknown` con su `seq`, y la ejecución queda `Uncertain` y exige reconciliación humana (P-B). Esto vale tanto si el `Intent` fue confirmado como si sobrevivió sin confirmar.
 
 **Límite de lo que se puede demostrar.** No afirmamos que una caída del sistema solo pueda producir los patrones (a)–(c). Los efectos físicos de una caída dependen del sistema de archivos, del controlador y del dispositivo, y J1 no puede observarlos directamente (P13d diferida). Lo que J1 demuestra es:
 
@@ -133,11 +135,11 @@ Abren en solo lectura, exponen únicamente registros completos con hash válido 
 | **P10** | V1 | Latencia de `writeSync` + `fsyncSync` por registro (10 000 muestras) | **Medición informativa:** p50, p99 y máximo documentados; tope de seguridad p99 < 200 ms (una release escribe decenas de registros) |
 | **P11** | V0 | Serialización canónica con pruebas de propiedades (generador propio con semilla registrada) | Ida y vuelta estable; mismo hash para objetos equivalentes; distinto ante cualquier cambio de campo; los valores de §3.1 se rechazan con error |
 | **P12** | V0 | `ENOSPC` y `EIO` inyectados en `write` y en `fsync` mediante la capa de E/S, también con escritura parcial antes del error | El intent no se confirma; el efecto simulado se ejecuta **0** veces; la ejecución pasa a `Suspended`; no se reintenta el fsync; al reabrir, la cola parcial se clasifica según §3.4 |
-| **P13a** | V0 | Enumeración de estados de caída (estilo ALICE/CrashMonkey) sobre el registro de operaciones de la capa de E/S. Espacio de estados acotado: como hay fsync tras cada registro, la ventana no sincronizada es como máximo la última escritura. Por cada punto de corte: archivo ausente o vacío (si su creación no estaba sincronizada), y la última escritura persistida en 0…k sectores de 512 B y de 4 KiB, con el resto ausente o relleno de ceros | Para cada estado: la recuperación da un prefijo válido que contiene **todos** los registros confirmados, o `torn`/`Corrupt`; **nunca** un registro fantasma; **nunca** `lastConfirmedSeq` mayor que lo realmente sincronizado. El número total de estados es determinista y se informa |
+| **P13a** | V0 | Enumeración de estados de caída (estilo ALICE/CrashMonkey) sobre el registro de operaciones de la capa de E/S. Espacio de estados acotado: como hay fsync tras cada registro, la ventana no sincronizada es como máximo la última escritura. Por cada punto de corte: archivo ausente o vacío (si su creación no estaba sincronizada), y la última escritura persistida en 0…k sectores de 512 B y de 4 KiB, con el resto ausente o relleno de ceros | Para cada estado, **dentro del modelo de persistencia probado**: (1) se conservan **todos** los registros confirmados (los anteriores al último retorno de fsync); (2) **nunca** aparece un registro que no se escribió (registro fantasma); (3) **puede** sobrevivir un registro escrito cuyo fsync no retornó: se acepta como registrado y la prueba verifica que la apertura **no** lo presenta como confirmado (solo `lastRecordedSeq`); (4) **ningún** registro inválido se acepta como válido (`torn` o `Corrupt` según §3.4); (5) si el último registro registrado es un `Intent` sin `Outcome`, la apertura lo marca `effectUnknown` y el estado de la ejecución es `Uncertain`. El número total de estados explorados es determinista y se informa |
 | **P13b** | Doc | Correspondencia de la llamada: en el código fuente público de libuv 1.52.1, `uv_fs_fsync` en Windows llega a `FlushFileBuffers` | Referencia a archivo y función de libuv en el informe. Opcional: traza de Process Monitor, solo si el operador acepta ejecutarla elevado |
 | **P13c** | Doc | Inventario de solo lectura del disco: modelo, tipo de bus, política de caché de escritura, **si está activada la política "desactivar el vaciado del búfer de caché de escritura de Windows"** (si lo está, `FlushFileBuffers` no vacía la caché del dispositivo) y protección ante pérdida de energía declarada | Datos documentados en el registro de riesgos (RA-1) |
 | **P13d** | VX | Cortes de energía reales con confirmaciones registradas fuera de la máquina | **Diferida** hasta que exista laboratorio. No bloquea J1 |
-| **P14** | V0 | **Límite declarado (P-B).** Se eliminan limpiamente los N últimos registros confirmados (N = 1…5) | La apertura devuelve un prefijo válido con `tailEvidence: "clean"` y `lastConfirmedSeq` menor. La prueba **documenta** que el journal no puede detectar esta pérdida por sí solo; la detección corresponde a la reconciliación contra el estado observado (incremento 2) |
+| **P14** | V0 | **Límite declarado (P-B).** Se eliminan limpiamente los N últimos registros confirmados (N = 1…5) | La apertura devuelve un prefijo válido con `tailEvidence: "clean"` y un `lastRecordedSeq` menor. Si el corte deja un `Intent` final sin `Outcome`, se marca `effectUnknown` y la ejecución queda `Uncertain`. La prueba **documenta** que el journal no puede detectar la pérdida por sí solo ni distinguir lo confirmado de lo solo registrado; la detección corresponde a la reconciliación contra el estado observado (incremento 2) |
 
 ## 5. Resultado esperado
 
@@ -147,7 +149,7 @@ Un informe `docs/orchestrator/j1-report.md`, en un PR documental separado del c�
 2. resultados medidos de P0–P12, P13a y P14, **separados en V0 y V1** e identificando quién ejecutó cada uno, con qué cuenta y cuándo (§2.1);
 3. resultado de P0 y **decisión de exclusión**: candidato A confirmado o, si falló, las alternativas evaluadas según §3.2;
 4. referencias de P13b;
-5. garantías confirmadas y límites (incluido el de §3.4), para actualizar RA-1;
+5. garantías confirmadas y límites (incluidos los de §3.4: patrones de cola y registrado frente a confirmado), para actualizar RA-1;
 6. recomendación sobre DF-04: *aceptada*, o *revisar*.
 
 ## 6. Fuera de alcance

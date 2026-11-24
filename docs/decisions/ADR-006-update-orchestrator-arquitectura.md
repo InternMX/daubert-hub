@@ -78,6 +78,7 @@ Documentos que desarrollan este ADR:
 1. **Que el disco respete el flush.** `FlushFileBuffers` pide al sistema y al dispositivo vaciar cachés; si el disco miente sobre su caché o no tiene protección ante pérdida de energía, un registro sincronizado puede perderse en un corte. No hay laboratorio para medirlo (J1-P13d diferido).
 2. **Detectar la pérdida de los últimos registros.** Una cadena de hashes no puede detectar el **truncamiento limpio** de su propio final: un journal al que le faltan los N últimos registros es un prefijo válido indistinguible de uno que nunca los tuvo. Tampoco detecta la sustitución completa del archivo por un tercero con acceso de escritura (la integridad frente a un atacante depende de la ACL de DF-06 y del ancla externa de DF-12, no de la cadena).
 3. **Durabilidad de metadatos de directorio.** Windows no permite `fsync` de directorio; por eso el archivo del journal se crea y sincroniza antes de cualquier efecto y no se renombra nunca.
+4. **Distinguir lo confirmado de lo solo registrado.** Que `fsyncSync` retornara al proceso original no deja rastro en disco: un registro escrito cuyo fsync no retornó puede sobrevivir a una caída y ser idéntico a uno confirmado. Al reabrir, el journal informa el último registro válido encontrado (`lastRecordedSeq`), nunca lo confirmado; un `Intent` sin `Outcome` deja el efecto indeterminado y la ejecución en `Uncertain` (P-B).
 
 **Cómo se compensan los límites (P-B):**
 
