@@ -62,7 +62,7 @@ docs/
 │       · backup-restore.md · database-backup-restore.md · postgresql-backup-automation.md
 │       · n8n-backup-automation.md · troubleshooting.md
 ├── decisions/                    ADRs
-│   └── README.md · ADR-001 … ADR-005
+│   └── README.md · ADR-001 … ADR-006
 └── deployments/                  notas de despliegue puntuales (existentes)
 ```
 
@@ -87,7 +87,7 @@ Leyenda de fuentes usada en todo el árbol:
 | Audi | Completo (D2) | [automations/audi/README.md](automations/audi/README.md) |
 | Notificaciones de pago | Completo (D2); export **no versionado**. Configuración por empresa desde el Hub: implementada y en PROD (2026-09-25), ver [company-configuration](automations/payment-notifications/company-configuration.md). Evolución futura: integración directa con Dropbox | [automations/payment-notifications/README.md](automations/payment-notifications/README.md) |
 | Operaciones | Parcial | Deploy Docker, diagnóstico/configuración del servidor (incluido el supervisor de n8n) y backups automatizados documentados; ver [operations/README.md](operations/README.md) |
-| ADRs | 5 creados | Sólo con evidencia en código/documentos |
+| ADRs | 6 creados | Sólo con evidencia en código/documentos |
 
 ## Pendientes transversales (candidatos a Fase D3 y posteriores)
 

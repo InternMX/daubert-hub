@@ -9,6 +9,7 @@ Registro de decisiones **respaldadas por la evidencia del sistema actual** (cód
 | [ADR-003](ADR-003-reserva-de-folios-en-postgresql.md) | Reserva de folios en PostgreSQL | Aceptado (implementado) |
 | [ADR-004](ADR-004-reproceso-ejecucion-hija-inmutable.md) | Reproceso mediante ejecución hija inmutable | Aceptado (implementado, en PROD) |
 | [ADR-005](ADR-005-hub-consume-estado-automatizaciones.md) | El Hub consume estado de automatizaciones y no reconstruye lógica de negocio | Aceptado (implementado) |
+| [ADR-006](ADR-006-update-orchestrator-arquitectura.md) | Arquitectura del Daubert Hub Update Orchestrator | Propuesto (no retroactivo; DF-04 condicionada a J1) |
 
 ## Candidatos a futuros ADR (con evidencia en el código, no redactados)
 
