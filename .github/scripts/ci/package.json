@@ -1,0 +1,8 @@
+{
+  "name": "@daubert/ci-tooling",
+  "private": true,
+  "description": "Pinned tooling used only by the CI workflow policy test. Not a workspace.",
+  "devDependencies": {
+    "js-yaml": "4.3.1"
+  }
+}
