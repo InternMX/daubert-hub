@@ -419,7 +419,7 @@ describe('hojas de manufactura: búsqueda unificada por código DCMX', { timeout
     await new Promise((r) => setTimeout(r, 1800));
     expect(m.actualizarBorrador).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Editar como administrador' }));
-    await waitFor(async () => expect(await ancho()).toBeEnabled(), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByLabelText('Ancho')).toBeEnabled(), { timeout: 4000 });
     expect(screen.queryByTestId('solo-lectura')).not.toBeInTheDocument();
     expect(m.actualizarBorrador).not.toHaveBeenCalled();                                                // pasar a edición tampoco guarda por sí solo
   });
