@@ -50,6 +50,7 @@ function inRepo(fn) {
     git('config', 'user.name', 'Local CI Test');
     git('config', 'user.email', 'ci@example.invalid');
     git('config', 'commit.gpgsign', 'false');
+    git('config', 'core.fileMode', 'false');
     fs.mkdirSync(path.join(cwd, 'docs'));
     fs.mkdirSync(path.join(cwd, 'scripts'));
     fs.writeFileSync(path.join(cwd, 'docs/a.md'), '# Test\n');
@@ -112,7 +113,10 @@ test('C10–C13: event short-circuit, unsafe paths, parent count and release gro
 for (const [name, expected, change] of [
   ['docs rename', 'docs', (_cwd, git) => git('mv', 'docs/a.md', 'docs/b.md')],
   ['cross-directory rename', 'full', (_cwd, git) => git('mv', 'docs/a.md', 'scripts/a.md')],
-  ['executable bit', 'full', (_cwd, git) => git('update-index', '--chmod=+x', 'docs/a.md')],
+  ['executable bit', 'full', (cwd, git) => {
+    git('update-index', '--chmod=+x', 'docs/a.md');
+    if (process.platform !== 'win32') fs.chmodSync(path.join(cwd, 'docs/a.md'), 0o755);
+  }],
   ['deletion', 'docs', (_cwd, git) => git('rm', 'docs/a.md')],
   ['symlink', 'full', (cwd, git) => {
     fs.symlinkSync('a.md', path.join(cwd, 'docs/b.md'));
@@ -125,6 +129,7 @@ for (const [name, expected, change] of [
     git('checkout', '-b', 'feature');
     change(cwd, git);
     git('commit', '-m', name);
+    if (name === 'executable bit') assert.match(git('ls-tree', 'feature', '--', 'docs/a.md'), /^100755 blob /);
     git('checkout', 'main');
     git('merge', '--no-ff', 'feature', '-m', 'merge');
     const output = path.join(cwd, 'out');
@@ -134,6 +139,7 @@ for (const [name, expected, change] of [
     assert.equal(result.status, 0, result.stderr);
     const values = fs.readFileSync(output, 'utf8');
     assert.deepEqual(values.match(/^mode=.*$/gm), [`mode=${expected}`]);
+    if (name === 'executable bit') assert.match(values, /^reason=unsupported-mode$/m);
     assert.match(values, new RegExp(`^base=${git('rev-parse', 'HEAD^1')}$`, 'm'));
     assert.match(values, new RegExp(`^head=${git('rev-parse', 'HEAD')}$`, 'm'));
   }));

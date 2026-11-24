@@ -52,6 +52,7 @@ jobs:
         run: |
           [[ "$SCOPE_RESULT" == success && ( "$CI_MODE" == docs || "$CI_MODE" == full ) ]]
       - uses: actions/checkout@v4
+        if: ${{ !cancelled() }}
         with:
           persist-credentials: false
       - name: Supervised release tests (Windows PowerShell 5.1, mocked operations)
@@ -76,7 +77,12 @@ jobs:
           STEPS_JSON: ${{ toJSON(steps) }}
           CI_MODE: ${{ needs.scope.outputs.mode }}
           SCOPE_RESULT: ${{ needs.scope.result }}
-        run: node .github/scripts/ci/assert-ci-completion.cjs --job release-plan --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"
+        run: |
+          if [[ ! -f .github/scripts/ci/assert-ci-completion.cjs ]]; then
+            printf '::error::completion-guard FAILED: guard script unavailable (checkout did not run); scope result=%s, mode=%s\n' "$SCOPE_RESULT" "$CI_MODE"
+            exit 1
+          fi
+          node .github/scripts/ci/assert-ci-completion.cjs --job release-plan --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"
 
   validate:
     needs: scope
@@ -102,6 +108,7 @@ jobs:
         run: |
           [[ "$SCOPE_RESULT" == success && ( "$CI_MODE" == docs || "$CI_MODE" == full ) ]]
       - uses: actions/checkout@v4
+        if: ${{ !cancelled() }}
         with:
           fetch-depth: 2
           persist-credentials: false
@@ -187,4 +194,9 @@ jobs:
           STEPS_JSON: ${{ toJSON(steps) }}
           CI_MODE: ${{ needs.scope.outputs.mode }}
           SCOPE_RESULT: ${{ needs.scope.result }}
-        run: node .github/scripts/ci/assert-ci-completion.cjs --job validate --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"
+        run: |
+          if [[ ! -f .github/scripts/ci/assert-ci-completion.cjs ]]; then
+            printf '::error::completion-guard FAILED: guard script unavailable (checkout did not run); scope result=%s, mode=%s\n' "$SCOPE_RESULT" "$CI_MODE"
+            exit 1
+          fi
+          node .github/scripts/ci/assert-ci-completion.cjs --job validate --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"

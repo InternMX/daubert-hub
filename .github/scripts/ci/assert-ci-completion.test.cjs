@@ -53,6 +53,19 @@ test('G8: malformed STEPS_JSON fails in the CLI', () => {
   assert.match(result.stderr, /Invalid STEPS_JSON/);
 });
 
+test('G7: CLI annotates scope failure and cancellation for both required jobs', () => {
+  for (const job of Object.keys(required)) {
+    for (const scopeResult of ['failure', 'cancelled']) {
+      const result = spawnSync(process.execPath, [
+        require.resolve('./assert-ci-completion.cjs'), '--job', job, '--mode', '', '--scope-result', scopeResult,
+      ], { env: { ...process.env, STEPS_JSON: '{}' }, encoding: 'utf8' });
+      assert.equal(result.status, 1);
+      assert.equal(result.stderr.trim(),
+        `::error::completion-guard FAILED for ${job}: scope result "${scopeResult}" (expected "success"), mode "". Scope did not succeed`);
+    }
+  }
+});
+
 test('G9: manifest lists both jobs and modes, without duplicate ids', () => {
   assert.deepEqual(Object.keys(required).sort(), ['release-plan', 'validate']);
   for (const policy of Object.values(required)) {

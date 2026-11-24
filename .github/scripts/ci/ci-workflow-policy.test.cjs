@@ -47,8 +47,13 @@ test('W1–W4: required checks always run, verify scope first, and guard complet
     assert.equal(expression(verify.env.CI_MODE), 'needs.scope.outputs.mode');
     const guard = job.steps.at(-1);
     assert.equal(guard.id, 'completion-guard');
+    assert.equal(checkout(job).if, '${{ !cancelled() }}');
     assert.equal(expression(guard.if), 'always()');
     assert.ok(guard.run.includes(`assert-ci-completion.cjs --job ${name}`));
+    assert.match(guard.run, /^if \[\[ ! -f \.github\/scripts\/ci\/assert-ci-completion\.cjs \]\]; then\n  printf .*::error::completion-guard FAILED: guard script unavailable .*\n  exit 1\nfi\n/);
+    assert.ok(guard.run.trimEnd().endsWith(
+      `node .github/scripts/ci/assert-ci-completion.cjs --job ${name} --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"`,
+    ));
     assert.equal(expression(guard.env.STEPS_JSON), 'toJSON(steps)');
     assert.equal(expression(guard.env.SCOPE_RESULT), 'needs.scope.result');
     assert.equal(expression(guard.env.CI_MODE), 'needs.scope.outputs.mode');
