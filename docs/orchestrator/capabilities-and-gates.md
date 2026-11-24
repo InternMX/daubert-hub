@@ -13,11 +13,11 @@ Este documento define qué puede hacer el orquestador, en qué modo y con qué e
 | **V1 · Procesos sintéticos** | Carpeta temporal del host, sin Docker | Node, PowerShell 5.1, NTFS, handles, `taskkill` | Scripts de infraestructura (fixtures que imitan los contratos) | Nulo |
 | **V2 · Docker sintético** | Motor compartido, proyecto `daubert-orch-sandbox` | `docker tag`, `compose up`, recreación, health | El Hub (imágenes mínimas que imitan `/api/health`) | Bajo, solo con las restricciones de §2 |
 | **V3 · TEST** | Pila TEST real | Hub TEST, cierre, Switch | Nada | Bajo, solo con las restricciones de §2 |
-| **V4 · PROD solo lectura** | PROD | Observación | Nada | Nulo si AC1 está demostrado |
+| **V4 · PROD solo lectura** | PROD | Observación | Nada | Acotado por comprobaciones previas en V3 (G-C0a); demostrado nulo tras la validación posterior en V4 (G-C0b) |
 | **V5 · PROD supervisado** | PROD | Todo | Nada | Controlado por las compuertas |
 | *VX · Laboratorio externo (futuro)* | Equipo dedicado | Fallos del motor Docker, del SO y de la energía | Nada | Nulo |
 
-Las suites de prueba se etiquetan por nivel. Lo que solo puede probarse en VX (fallos del motor Docker a mitad de una operación, `wsl --shutdown`, caídas del sistema, cortes de energía) se compensa con los riesgos aceptados RA-1 y RA-2 del [registro de riesgos](risk-register.md).
+Las suites de prueba se etiquetan por nivel. Lo que solo puede probarse en VX (fallos del motor Docker a mitad de una operación, `wsl --shutdown`, caídas del sistema, cortes de energía) se compensa con los riesgos RA-1 y RA-2 del [registro de riesgos](risk-register.md), propuestos y pendientes de aceptación.
 
 ## 2. Restricciones para pruebas en el host compartido
 
@@ -54,9 +54,9 @@ Cualquier cambio → la prueba se detiene, la ejecución pasa a `Escalated` y no
 
 | Clase | Capacidades | Evidencia exigida | Modo máximo TEST / PROD |
 |---|---|---|---|
-| **C0 · Observar** | `status`, drift, `plan`, `report`, `verify-journal`, invariantes de host (DF-14) | V0 + V1 + V3 + **AC1 demostrado en V4** | Automático / Automático (solo lectura) |
+| **C0 · Observar** | `status`, drift, `plan`, `report`, `verify-journal`, invariantes de host (DF-14) | **Previa:** V0 + V1 + AC1 en V3 (G-C0a). **Posterior:** AC9 en V4 (G-C0b) | Automático / **Supervisado (invocación manual) tras G-C0a; Automático tras G-C0b** |
 | **C1 · Registrar** | Journal, aprobaciones, empaquetado de evidencias, correlación pasiva de artefactos de respaldo | V0 + V1 (J1 superada) | Supervisado / Supervisado |
-| **C2 · Efectos rutinarios no destructivos** | Disparar el respaldo Frequent, verificador de restauración aislada, sondas de cierre | V1 + V2 + V3 + **OR-1 resuelto** | Supervisado / **Supervisado tras G-C2** |
+| **C2 · Efectos rutinarios no destructivos** | Disparar el respaldo Frequent, verificador de restauración aislada (con el modelo de [acceso temporal a la identidad](remediation-or1-or2.md#or-1--c2--verificación-de-restauración-tras-retirar-la-identidad-del-host)), sondas de cierre | V1 + V2 + V3 + **OR-1 resuelto** | Supervisado / **Supervisado tras G-C2** |
 | **C3 · Mutaciones reversibles del runtime** | Cierre Close/Open/Reload, Deploy con anclas, Switch Enable/Disable, compensaciones R0 y R1 | Matriz de fallos en V0/V1 + cortes del orquestador en V2 + ensayos V3 con corte en cada frontera de intent + R0/R1 ejecutados en V3 + **OR-4 resuelto** | Supervisado / **Guiado hasta G-C3; Supervisado después** |
 | **C4 · Alto riesgo o difícil de revertir** | R2 en PROD, migraciones, n8n, reubicar la raíz operativa, forzar la continuación tras `Uncertain`, recuperar un journal corrupto | Lo de C3 + laboratorio externo **o** ADR específico con evidencia equivalente + doble aprobación | Guiado / **Guiado** |
 
@@ -77,9 +77,10 @@ Un procedimiento puede mezclar modos: en `hub-release` sobre PROD, respaldo y ve
 
 | Compuerta | Habilita | Condiciones | Quién la cierra |
 |---|---|---|---|
-| **G-C0** | C0 en PROD (V4) | AC1 demostrado en V3 (cero eventos Docker, cero escrituras en raíces gestionadas, refs y hashes intactos) + revisión de Codex | Operador |
+| **G-C0a** (previa) | C0 en PROD solo por invocación manual supervisada, con el operador presente | AC1 demostrado en **V3** (cero eventos Docker, cero escrituras en raíces gestionadas, refs y hashes intactos) + prueba de arquitectura y lista blanca de comandos + revisión de Codex. No usa ninguna evidencia de V4 | Operador |
+| **G-C0b** (posterior) | C0 automático en PROD | AC9: las primeras ejecuciones manuales en V4 (al menos una por comando C0) muestran cero efectos, medidos **de forma independiente del orquestador** (captura de `docker events` en otra consola y hashes/refs de las raíces gestionadas tomados antes y después por el operador). Si cualquier ejecución muestra un efecto, C0 en PROD vuelve a denegado y se abre un incidente | Operador |
 | **G-C1** | C1 en TEST y PROD | J1 superada (P1–P12, P13a–c) + RA-1 aceptado | Operador |
-| **G-C2** | C2 supervisado en PROD | Evidencia de C2 + OR-1 ejecutado (incluido el restore drill previo) + NB-5 y NB-6 satisfechos | Operador |
+| **G-C2** | C2 supervisado en PROD | Evidencia de C2 + OR-1 ejecutado (incluido el restore drill previo) + modelo de [acceso temporal a la identidad](remediation-or1-or2.md#or-1--c2--verificación-de-restauración-tras-retirar-la-identidad-del-host) probado en la estación de recuperación + NB-5 y NB-6 satisfechos | Operador |
 | **G-C3** | C3 supervisado en PROD, paso a paso | Evidencia completa de C3 + OR-4 en M4 + auditoría de Codex + GO explícito del operador | Operador |
 | **G-C4** | C4 supervisado | Laboratorio o ADR específico + doble aprobación implementada | Operador + segundo aprobador |
 

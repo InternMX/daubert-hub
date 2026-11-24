@@ -48,7 +48,7 @@ Documentos que desarrollan este ADR:
 - **DF-08 · Proveedor de aprobaciones intercambiable.** Implementación inicial: un operador, consola interactiva, frase con nonce. Cada aprobación queda ligada a `planHash`, paso, `snapshotHash`, commit, entorno, usuario, nonce y caducidad. El modelo de datos admite `requiredApprovals: 1 | 2`; la doble aprobación se implementa después con firmas `ssh-keygen -Y sign/verify`.
 - **DF-09 · Operaciones extraordinarias:** R2, migraciones en PROD, forzar la continuación tras `Uncertain`, ignorar una compuerta fallida, recuperar un journal corrupto y reubicar la raíz operativa. Exigirán doble aprobación cuando exista; mientras tanto quedan marcadas como extraordinarias con justificación obligatoria, y son clase C4 (solo modo guiado).
 - **DF-10 · Separación de privilegios por cuenta del sistema operativo, no por política.** Los agentes de IA migran a una cuenta estándar `daubert-ai` sin acceso al motor Docker ni a archivos de PROD (migración M0–M4, sin interrumpir herramientas). Grupo `DaubertOps` solo para el operador. Las ejecuciones mutantes en PROD requieren consola interactiva elevada. Objetivo final: PROD en un servidor dedicado.
-- **DF-11 · Sin mutación de PROD por el motor hasta superar las compuertas** G-C2 (efectos rutinarios) y G-C3 (mutaciones del runtime). El uso de solo lectura en PROD se permite desde el MVP una vez demostrado AC1 (cero efectos).
+- **DF-11 · Sin mutación de PROD por el motor hasta superar las compuertas** G-C2 (efectos rutinarios) y G-C3 (mutaciones del runtime). El uso de solo lectura en PROD se permite desde el MVP en dos pasos: comprobaciones previas en V3 (AC1, compuerta G-C0a) habilitan la invocación manual supervisada en PROD, y la validación posterior en V4 (AC9, compuerta G-C0b) habilita el modo automático.
 
 ### Evidencias y host
 
@@ -100,7 +100,7 @@ Documentos que desarrollan este ADR:
 - C3 (Deploy, Switch, cierre) permanece en modo guiado en PROD hasta G-C3, y C4 permanece siempre en modo guiado mientras no haya laboratorio o un ADR específico con doble aprobación.
 - Más disciplina documental: registro de riesgos y de compuertas versionados en Git.
 
-**Riesgos residuales aceptados** (detalle y compensaciones en el [registro de riesgos](../orchestrator/risk-register.md)): RA-1 durabilidad ante corte de energía no demostrada; RA-2 fallos del motor Docker no probados; RA-3 diferencias TEST/PROD; RA-4 consumo de recursos de las pruebas; RA-5 lock colgado; RA-6 comando no verificado en modo guiado.
+**Riesgos residuales propuestos, pendientes de aceptación individual** (NB-7; detalle, compensaciones y estado en el [registro de riesgos](../orchestrator/risk-register.md)). Este ADR no acepta ninguno: cada uno se acepta por separado, y una capacidad no sube de modo mientras alguno de sus riesgos siga pendiente: RA-1 durabilidad ante corte de energía no demostrada; RA-2 fallos del motor Docker no probados; RA-3 diferencias TEST/PROD; RA-4 consumo de recursos de las pruebas; RA-5 lock colgado; RA-6 comando no verificado en modo guiado.
 
 ## Alternatives Considered
 

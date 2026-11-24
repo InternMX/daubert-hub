@@ -6,7 +6,7 @@ Sistema independiente del Hub para preparar, planificar, autorizar, ejecutar, ve
 |---|---|
 | [ADR-006](../decisions/ADR-006-update-orchestrator-arquitectura.md) | Decisiones DF-01…DF-15, precisiones P-A/P-B/P-C, garantías y límites del journal |
 | [capabilities-and-gates.md](capabilities-and-gates.md) | Escalera V0–VX, restricciones del host compartido, clases C0–C4, modos, compuertas, registro de compuertas |
-| [risk-register.md](risk-register.md) | Riesgos aceptables RA, restricciones bloqueantes NB, riesgos operativos OR |
+| [risk-register.md](risk-register.md) | Riesgos RA propuestos (pendientes de aceptación), restricciones bloqueantes NB, riesgos operativos OR |
 | [remediation-or1-or2.md](remediation-or1-or2.md) | Planes para la identidad age y la dependencia del inicio de sesión |
 | [increment-0.md](increment-0.md) | Alcance, orden y criterios de salida del incremento 0 |
 | [j1-journal-test-plan.md](j1-journal-test-plan.md) | PoC del journal: diseño, pruebas P1–P14 y criterios |
@@ -26,7 +26,7 @@ Sistema independiente del Hub para preparar, planificar, autorizar, ejecutar, ve
 ## Condiciones de V1-útil (fin del incremento 2, sin laboratorio)
 
 1. J1 superada y RA-1 aceptado.
-2. AC1–AC9 del MVP superados (incluida la demostración en V3 y V4 de cero eventos Docker y ninguna escritura en raíces gestionadas).
+2. AC1–AC9 del MVP superados: AC1 en V3 como comprobación previa (G-C0a) y AC9 en V4 como validación posterior (G-C0b), ambos con cero eventos Docker y ninguna escritura en raíces gestionadas.
 3. Ensayo guiado completo de `hub-release` en TEST con el orquestador terminado al menos una vez en cada frontera de intent; reanudación correcta y drift nulo.
 4. Expediente generado equivalente al de v1.3.0, sin secretos (canarios a cero), con `MANIFEST` y cadena de hashes verificables.
 5. La reproducción de v1.3.0 en el plan detecta B8 (Web sin healthcheck) y N4 (herramientas sin el PR #45).
@@ -45,4 +45,4 @@ Sistema independiente del Hub para preparar, planificar, autorizar, ejecutar, ve
 | AC6 | Canarios de secretos a cero |
 | AC7 | Portabilidad desde `%ProgramFiles%` con Node propio; ninguna ruta `C:\Users\` |
 | AC8 | Reproducción de v1.3.0 |
-| AC9 | `status` de PROD en solo lectura tras revisión de Codex, con cero eventos Docker |
+| AC9 | Validación posterior en V4: ejecuciones manuales de cada comando C0 en PROD con cero efectos medidos de forma independiente del orquestador (G-C0b) |

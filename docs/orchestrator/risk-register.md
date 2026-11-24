@@ -6,9 +6,9 @@
 
 Convenciones: **[F]** hecho verificado, **[H]** hipótesis, **[R]** recomendación.
 
-## 1. Riesgos aceptables con compensación (RA)
+## 1. Riesgos propuestos para aceptación, con compensación (RA)
 
-Una capacidad solo sube de modo cuando todos sus RA tienen *Aceptación* con fecha y responsable.
+Todos están **pendientes**. Una capacidad solo sube de modo cuando todos sus RA tienen *Aceptación* con fecha y responsable.
 
 | ID | Riesgo | Compensación | Capacidad afectada | Evidencia | Responsable | Revisión | Aceptación |
 |---|---|---|---|---|---|---|---|
@@ -28,9 +28,9 @@ No se aceptan como riesgo; son condiciones técnicas que el registro de compuert
 | **NB-1** | Ningún paso C3 supervisado en PROD sin toda la evidencia de C3 y G-C3 (auditoría de Codex + GO del operador). | Prueba negativa del registro de compuertas. |
 | **NB-2** | Ninguna capacidad C4 ejecutada por el motor sin laboratorio o ADR específico con evidencia equivalente y doble aprobación. | `maxMode` de C4 = `guided` en todos los entornos. |
 | **NB-3** | Ningún paso mutante en V2/V3 sin restricciones preventivas (alcance, lista negra, recursos) **comprobadas antes** del paso, aprobación específica de la prueba y huella de PROD activa; todas probadas en V0/V1. Ninguna prueba que pueda afectar al motor Docker compartido o a servicios productivos (P-A). | Pruebas negativas V0/V1 de cada restricción. |
-| **NB-4** | No se usa el orquestador en PROD, ni en solo lectura, sin AC1 demostrado en V3. | G-C0. |
+| **NB-4** | No se usa el orquestador en PROD, ni en solo lectura, sin AC1 demostrado en V3 (comprobación previa). El modo automático en PROD exige además AC9 en V4 (validación posterior). | G-C0a y G-C0b. |
 | **NB-5** | Ningún modo supervisado en PROD mientras los agentes de IA tengan acceso a Docker de PROD (OR-4). El modo guiado sí, porque el efecto lo ejecuta el operador. | Pruebas negativas M3 (`docker ps` falla como `daubert-ai`). |
-| **NB-6** | El motor no ejecuta verificaciones de restauración mientras la identidad age sea legible por cuentas de agentes o de sandbox (OR-1). | Verificación de ACL (solo metadatos) en el snapshot. |
+| **NB-6** | El motor no ejecuta verificaciones de restauración mientras la identidad age sea legible por cuentas de agentes o de sandbox (OR-1), ni fuera del [modelo de acceso temporal](remediation-or1-or2.md#or-1--c2--verificación-de-restauración-tras-retirar-la-identidad-del-host). | Verificación de ACL (solo metadatos) en el snapshot; poscondiciones de limpieza registradas. |
 | **NB-7** | No se acepta el riesgo "en general". Cada aceptación registra ID, capacidad, compensación, evidencia, responsable y fecha o evento de revisión. | Regla 3 del registro de compuertas. |
 
 ## 3. Riesgos operativos actuales (OR)

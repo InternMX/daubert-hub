@@ -84,6 +84,47 @@ Consecuencia operativa: NB-6 queda satisfecho; el host ya no puede descifrar sus
 
 ---
 
+## OR-1 ↔ C2 · Verificación de restauración tras retirar la identidad del host
+
+Tras las Fases 3–4 el host productor **no conserva** la identidad privada y no puede descifrar sus propios respaldos, como prevé el diseño del pipeline. La capacidad C2 «verificador de restauración aislada» se ejecuta entonces con este modelo. Es una especificación: **no se implementa en el incremento 0 ni se modifica ninguna clave**.
+
+### Dónde se ejecuta
+
+- **Modalidad A (la que se habilita):** en la **estación de recuperación independiente**, con una instalación del orquestador y un perfil propio (DF-07) sin acceso a PROD, al motor Docker de PROD ni a `pilot.prod.env`. La estación recibe solo copias de los `.age` y `.age.sha256`, verificadas por hash. La evidencia resultante, sin secretos, se lleva al host y se registra allí como correlación pasiva (C1) por hash de artefactos.
+- **Modalidad B (host compartido): no habilitada.** Por decisión del operador (2026-11-24) requiere una evaluación separada y una autorización propia. Hasta entonces su `maxMode` en el registro de compuertas es *denegado*.
+
+### Autorización
+
+1. C2 supervisado solo tras G-C2.
+2. Aprobación por paso (DF-08) ligada a: plan, lista de artefactos con sus SHA-256, estación, custodio presente y **ventana máxima** de acceso a la identidad (valor fijado en G-C2).
+3. Fuera de la ventana, o si cambia cualquier elemento ligado, la aprobación caduca y el paso no se ejecuta.
+
+### Acceso temporal seguro a la identidad
+
+1. El custodio trae la identidad desde la custodia offline en un medio extraíble; **no se copia** al disco de la estación.
+2. La identidad debe estar **protegida con frase de paso**. Si la Fase 0 muestra que no lo está, la rotación de la Fase 5 a una identidad protegida es requisito previo.
+3. La frase de paso la teclea el custodio en el aviso interactivo de `age`. **Nunca** pasa por argumentos, variables de entorno, archivos, el journal ni el orquestador. El orquestador solo registra la etiqueta del medio y el SHA-256 del archivo de identidad cifrado.
+4. El texto plano descifrado va a una carpeta temporal cuya ACL solo permite a la cuenta que ejecuta; la restauración usa un clúster desechable (`localhost`, puerto no estándar).
+5. Ninguna cuenta de agentes ni de sandbox tiene acceso a la estación durante la ventana (NB-6).
+
+### Limpieza verificable (poscondiciones del paso)
+
+El orquestador comprueba y registra, sin contenido:
+
+1. el medio extraíble ya no está montado;
+2. la carpeta temporal de texto plano no existe;
+3. el clúster desechable está detenido, su puerto cerrado y su directorio de datos borrado;
+4. no queda ningún archivo con el SHA-256 de la identidad ni con los nombres de los artefactos descifrados en las carpetas temporales y de perfil de la estación;
+5. la ventana de acceso se cerró dentro del límite aprobado.
+
+Si alguna comprobación falla o no puede hacerse, el paso queda `Uncertain`, la ejecución se suspende y el custodio evalúa si la exposición exige rotación (Fase 5).
+
+### Evidencia
+
+Nombres y SHA-256 de los artefactos probados, resultado de `pg_restore -l` (conteos, no contenido), comprobaciones de filas de control, duración de la ventana y resultado de cada poscondición de limpieza.
+
+---
+
 ## OR-2 · Dependencia de PROD del inicio de sesión
 
 **Objetivo:** que un reinicio del host no deje PROD caído sin que nadie lo sepa, y reducir los reinicios no planificados. El objetivo final (motor sin sesión o servidor dedicado) requiere su propio ADR.
