@@ -16,14 +16,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.classify.outputs.mode }}
+      reason: ${{ steps.classify.outputs.reason }}
+      base: ${{ steps.classify.outputs.base }}
+      head: ${{ steps.classify.outputs.head }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - run: node --test .github/scripts/ci/classify-ci-scope.test.cjs .github/scripts/ci/assert-ci-completion.test.cjs .github/scripts/ci/check-docs.test.cjs
+      - id: classify
+        env:
+          CI_PUSH_BEFORE: ${{ github.event.before }}
+        run: node .github/scripts/ci/classify-ci-scope.cjs --event "$GITHUB_EVENT_NAME"
+
   release-plan:
+    needs: scope
+    if: always()
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
+      - id: fail-if-cancelled
+        if: cancelled()
+        run: exit 1
+      - id: verify-scope
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CI_MODE: ${{ needs.scope.outputs.mode }}
+        run: |
+          [[ "$SCOPE_RESULT" == success && ( "$CI_MODE" == docs || "$CI_MODE" == full ) ]]
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Supervised release tests (Windows PowerShell 5.1, mocked operations)
+        id: pester
+        if: needs.scope.outputs.mode != 'docs'
         shell: powershell
         run: |
           Import-Module Pester -RequiredVersion 3.4.0
@@ -36,8 +69,18 @@ jobs:
           path: ${{ runner.temp }}/release-plan-tests.xml
           if-no-files-found: ignore
           retention-days: 14
+      - id: completion-guard
+        if: always()
+        shell: bash
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+          CI_MODE: ${{ needs.scope.outputs.mode }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+        run: node .github/scripts/ci/assert-ci-completion.cjs --job release-plan --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"
 
   validate:
+    needs: scope
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -48,8 +91,19 @@ jobs:
       DB_USER: test
       DB_PASSWORD: ci-not-a-secret
     steps:
+      - id: fail-if-cancelled
+        if: cancelled()
+        run: exit 1
+      - id: verify-scope
+        shell: bash
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CI_MODE: ${{ needs.scope.outputs.mode }}
+        run: |
+          [[ "$SCOPE_RESULT" == success && ( "$CI_MODE" == docs || "$CI_MODE" == full ) ]]
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 2
           persist-credentials: false
 
       - uses: actions/setup-node@v4
@@ -59,32 +113,64 @@ jobs:
 
       # Reproducible install from package-lock.json; lifecycle scripts are not needed for validation.
       - name: Install dependencies
+        id: install
+        if: needs.scope.outputs.mode != 'docs'
         run: npm ci --ignore-scripts
 
       - name: Typecheck
+        id: typecheck
+        if: needs.scope.outputs.mode != 'docs'
         run: npm run typecheck 2>&1 | tee typecheck.log
         shell: bash
       - name: Lint
+        id: lint
+        if: needs.scope.outputs.mode != 'docs'
         run: npm run lint 2>&1 | tee lint.log
         shell: bash
       - name: Build
+        id: build
+        if: needs.scope.outputs.mode != 'docs'
         run: npm run build 2>&1 | tee build.log
         shell: bash
       - name: Dev guard tests
+        id: dev-guard-tests
+        if: needs.scope.outputs.mode != 'docs'
         run: npm run test:dev-guard 2>&1 | tee dev-guard.log
         shell: bash
 
       - name: Release classifier tests
+        id: release-classifier-tests
+        if: needs.scope.outputs.mode != 'docs'
         run: node --test scripts/release/*.test.cjs 2>&1 | tee release-tests.log
         shell: bash
 
+      - name: Install CI policy test dependency
+        id: ci-tooling-install
+        if: needs.scope.outputs.mode != 'docs'
+        run: npm ci --prefix .github/scripts/ci --ignore-scripts
+      - name: CI workflow policy tests
+        id: ci-policy-tests
+        if: needs.scope.outputs.mode != 'docs'
+        run: node --test .github/scripts/ci/ci-workflow-policy.test.cjs
+
       # Suites run sequentially (never in parallel) to avoid resource contention; no automatic retries.
       - name: API tests
+        id: api-tests
+        if: needs.scope.outputs.mode != 'docs'
         run: npm run test:api 2>&1 | tee test-api.log
         shell: bash
       - name: Web tests
+        id: web-tests
+        if: needs.scope.outputs.mode != 'docs'
         run: npm run test:web 2>&1 | tee test-web.log
         shell: bash
+
+      - name: Documentation checks
+        id: docs-checks
+        env:
+          DOCS_BASE: ${{ needs.scope.outputs.base }}
+          DOCS_HEAD: ${{ needs.scope.outputs.head }}
+        run: node .github/scripts/ci/check-docs.cjs --base "$DOCS_BASE" --head "$DOCS_HEAD"
 
       - name: Upload logs
         if: always()
@@ -94,3 +180,11 @@ jobs:
           path: '*.log'
           if-no-files-found: ignore
           retention-days: 14
+      - id: completion-guard
+        if: always()
+        shell: bash
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+          CI_MODE: ${{ needs.scope.outputs.mode }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+        run: node .github/scripts/ci/assert-ci-completion.cjs --job validate --mode "$CI_MODE" --scope-result "$SCOPE_RESULT"
