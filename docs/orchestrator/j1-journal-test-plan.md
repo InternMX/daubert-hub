@@ -3,7 +3,7 @@
 - **Status:** Propuesto, revisión 1.1. No implementado.
 - **Fecha:** 2026-11-24 (1.0); 2026-11-24 (1.1: ajustes A1–A8 aprobados por el operador).
 - Decide si DF-04 de [ADR-006](../decisions/ADR-006-update-orchestrator-arquitectura.md) pasa de *condicionada* a *aceptada*. Las garantías y límites que este plan debe confirmar están en [ADR-006 § Garantías y límites del journal](../decisions/ADR-006-update-orchestrator-arquitectura.md#garantías-y-límites-del-journal).
-- **Nota de coherencia:** la regla de cola reparable de §3.4 es **más restrictiva** que el punto 4 de las garantías de ADR-006 ("JSON o hash inválido al final"). Prevalece este plan; el texto del ADR se alineará en un cambio aparte.
+- **Coherencia:** la regla de cola reparable de §3.4 coincide con el punto 4 de las garantías de ADR-006 (alineado en la revisión 1.1).
 
 ## 1. Objetivo
 
